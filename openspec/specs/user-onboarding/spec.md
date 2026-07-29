@@ -24,6 +24,13 @@ A getting-started document SHALL provide copy-paste setup for one or two concret
 - **WHEN** a student follows a walkthrough
 - **THEN** they reach a working agent with the skills installed using only the documented steps
 
+### Requirement: Visual workflow demo in README
+The README SHALL show a visual, time-condensed impression of the workflow (idea → ideate → literature search → write → check → publish) near the top, before the textual skill explanation, as a storyboard of screenshots from a real condensed session that renders inline on the repository's GitHub page.
+
+#### Scenario: Visitor grasps the tool in seconds
+- **WHEN** a visitor opens the repository page without reading any text
+- **THEN** they see a visual demo conveying that an agent guides a vague thesis idea into a checked, literature-grounded proposal
+
 ### Requirement: Users never work in this repository
 All user activity happens in their own workspace; this repository is exclusively for developing and testing the skills, and its documentation SHALL say so.
 
