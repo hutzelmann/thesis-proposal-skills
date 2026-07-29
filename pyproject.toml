@@ -1,0 +1,13 @@
+[project]
+name = "thesis-proposal-skills"
+version = "0.1.0"
+description = "Development and testing environment for the thesis-proposal-skills agent skill set"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "inspect-ai>=0.3",
+    "openai>=2.50.0",
+    "pytest>=8",
+]
