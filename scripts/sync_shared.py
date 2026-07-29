@@ -29,7 +29,6 @@ SYNC_MAP: dict[str, list[str]] = {
     ],
     "shared/structure.json": [
         "skills/proposal-check/references",
-        "skills/proposal-ideate/references",
     ],
     # common+crossref vendored into import: validate_refs.py imports them as
     # Python modules, so a missing sibling would crash rather than degrade.

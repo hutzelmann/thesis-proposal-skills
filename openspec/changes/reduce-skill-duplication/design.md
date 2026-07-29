@@ -28,7 +28,7 @@ Ideate's grounding section references `../proposal-lit-search/scripts/search.py`
 *Alternative rejected:* vendoring only `search.py` + its source modules — still 7+ copies, keeps the bulk of the problem.
 
 **D2 — SYNC_MAP shrinks; vendored ideate scripts deleted.**
-Remove the nine `skills/proposal-lit-search/scripts/*.py → proposal-ideate` entries from SYNC_MAP (the `common`/`crossref` → import entries stay). Delete `skills/proposal-ideate/scripts/` entirely. `references/guidelines.md` and `references/structure.json` remain synced copies (core-function assets per the modified packaging requirement).
+Remove the nine `skills/proposal-lit-search/scripts/*.py → proposal-ideate` entries from SYNC_MAP (the `common`/`crossref` → import entries stay). Delete `skills/proposal-ideate/scripts/` entirely. `references/guidelines.md` remains a synced copy (core-function asset per the modified packaging requirement). Ideate's `references/structure.json` copy is dropped too: no script reads it, its lone SKILL.md mention adds nothing over guidelines.md (which the guidance-model drift check forces to contain every canonical title verbatim), so the copy fails the core-function test that justifies vendoring.
 
 **D3 — Hook via committed `.githooks/` + `core.hooksPath`.**
 A committed `.githooks/pre-commit` shell script runs `python3 scripts/sync_shared.py` and `git add`s the SYNC_MAP destination paths it regenerated. Auto-staging is safe: destinations are generated files, never hand-edited (marker headers say so). Activation is a one-time `git config core.hooksPath .githooks` per clone, documented in the README dev section. CI `--check` is unchanged and catches bypassed/unactivated hooks (packaging spec scenario).

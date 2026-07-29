@@ -36,7 +36,7 @@ Use findings Socratically: "this 2024 paper does almost exactly that — what's 
 
 ## Guidance awareness
 
-`references/guidelines.md` and `references/structure.json` define where this must land: an analytical research focus, one methodology from the closed set, three-plus scientific references. Steer toward that shape without lecturing about it.
+`references/guidelines.md` defines where this must land: an analytical research focus, one methodology from the closed set, three-plus scientific references. Steer toward that shape without lecturing about it.
 
 ## Ending — always seed the file
 

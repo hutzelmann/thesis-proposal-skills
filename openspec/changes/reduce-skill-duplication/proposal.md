@@ -11,7 +11,7 @@ The self-containment packaging rule currently forces hard vendoring: 17 synced c
 - **Automate sync at commit time**: a pre-commit hook runs `sync_shared.py` in write mode so stale copies cannot be committed; CI `--check` stays as the backstop. Manual sync disappears as a workflow step.
 - **Add drift protection for the single-file format prose**: an L0 test verifies that every SKILL.md describing the proposal file format states the canonical contract (metadata keys, trailing block, blank-line rule) consistently — same pattern as the existing rq-filter and structure-vs-prose drift tests.
 
-Kept as-is (deliberate): guidelines.md and structure.json stay vendored (small, and their consumers need them for core function, not enrichment); import keeps its common/crossref copies (`validate_refs.py` imports them as Python modules — a missing sibling would crash the script rather than degrade).
+Kept as-is (deliberate): guidelines.md stays vendored (small, and its consumers need it for core function, not enrichment); check keeps its structure.json copy (check.py reads it); import keeps its common/crossref copies (`validate_refs.py` imports them as Python modules — a missing sibling would crash the script rather than degrade). Ideate's structure.json copy is dropped as well: its only consumer was one SKILL.md prose mention, and the guidance-model drift check already forces every canonical title verbatim into guidelines.md — synced copies end at 7.
 
 ## Capabilities
 
