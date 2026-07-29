@@ -20,13 +20,19 @@ Short turns. One thought at a time. Let silence work — do not fill every gap w
 
 ## Ground the idea in literature (early, not at the end)
 
-As soon as the idea has searchable shape, check it against the literature using the vendored scripts (same usage as the literature-search skill):
+As soon as the idea has searchable shape, check it against the literature. If the literature-search skill is installed alongside this one, use its search script (path relative to this skill's directory; same usage as in that skill):
 
 ```
-python3 scripts/search.py "the idea's core terms" --limit 8
+python3 ../proposal-lit-search/scripts/search.py "the idea's core terms" --limit 8
 ```
 
-Use findings Socratically: "this 2024 paper does almost exactly that — what's your angle beyond it?" is worth ten questions about differentiation. Prefer peer-reviewed hits; judge relevance yourself. If the scripts fail or networking is denied, fall back to your own fetch tools against the same APIs (see the lit-search skill's fallback URLs) — and if literature is entirely unreachable, continue but say explicitly that ideation is running ungrounded.
+If that skill is not installed, or the script fails, or networking is denied for scripts, use your own fetch tools against the same APIs and judge the results the same way:
+
+- `https://api.crossref.org/works?query=…&rows=8`
+- `https://dblp.org/search/publ/api?q=…&format=json`
+- `https://export.arxiv.org/api/query?search_query=…&max_results=8`
+
+Use findings Socratically: "this 2024 paper does almost exactly that — what's your angle beyond it?" is worth ten questions about differentiation. Prefer peer-reviewed hits; judge relevance yourself. If literature is entirely unreachable, continue but say explicitly that ideation is running ungrounded.
 
 ## Guidance awareness
 

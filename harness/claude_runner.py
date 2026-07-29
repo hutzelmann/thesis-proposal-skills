@@ -65,6 +65,9 @@ def stage(scenario: dict, ws: Path) -> None:
             shutil.copytree(f, ws / "img")
     skill_home = ws / ".claude" / "skills" / scenario["skill"]
     shutil.copytree(SKILLS / scenario["skill"], skill_home)
+    # Sibling skills the scenario relies on (e.g. ideate's lit-search fallback).
+    for sibling in scenario.get("siblings", ()):
+        shutil.copytree(SKILLS / sibling, ws / ".claude" / "skills" / sibling)
 
 
 def run_claude(ws: Path, request: str, model: str, timeout: int) -> str:

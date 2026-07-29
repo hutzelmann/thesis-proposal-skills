@@ -71,13 +71,25 @@ def stage_files(fixture: str, skill: str, extra_skill_files: dict[str, str] | No
     return files
 
 
+def lit_search_sibling() -> dict[str, str]:
+    """Stage lit-search's scripts as an installed sibling skill: ideate's
+    grounding path ../proposal-lit-search/scripts/ resolves there from skill/."""
+    scripts = SKILLS / "proposal-lit-search" / "scripts"
+    return {
+        f"proposal-lit-search/scripts/{f.name}": str(f)
+        for f in scripts.iterdir()
+        if f.is_file() and f.suffix == ".py"
+    }
+
+
 def skill_prompt(skill: str, request: str) -> str:
     text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
     return (
         "You are an AI agent operating a skill inside a user's proposal workspace.\n"
         "The workspace is the `ws/` directory (work there). The skill's reference "
         "files and scripts are under `skill/` (read-only; script paths inside the "
-        "instructions resolve to `skill/scripts/`, references to `skill/references/`).\n\n"
+        "instructions resolve to `skill/scripts/`, references to `skill/references/`; "
+        "sibling skills, when installed, sit next to `skill/` under their own name).\n\n"
         f"=== SKILL INSTRUCTIONS ===\n{text}\n=== END SKILL INSTRUCTIONS ===\n\n"
         f"User request: {request}\n"
         "Fulfil exactly this request — nothing beyond it — following the skill "
@@ -290,7 +302,7 @@ def ideate_socratic() -> Task:
                 "CO2 tracking app once and that seemed cool. I don't really know "
                 "where to start.",
             ),
-            files=stage_files("w03-snowball-seed", "proposal-ideate"),
+            files=stage_files("w03-snowball-seed", "proposal-ideate", lit_search_sibling()),
             setup="rm -f ws/*.md",  # empty workspace: ideate starts from nothing
         )],
         solver=[use_tools(bash(timeout=120), text_editor()), persona_dialogue("hesitant-bachelor.txt")],

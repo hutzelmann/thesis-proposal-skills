@@ -31,21 +31,11 @@ SYNC_MAP: dict[str, list[str]] = {
         "skills/proposal-check/references",
         "skills/proposal-ideate/references",
     ],
-    # lit-search scripts vendored into consumers (self-containment per packaging
-    # spec): all clients into ideate; common+crossref also into import for
-    # reference validation
-    **{
-        f"skills/proposal-lit-search/scripts/{name}.py": (
-            ["skills/proposal-ideate/scripts", "skills/proposal-import/scripts"]
-            if name in ("common", "crossref")
-            else ["skills/proposal-ideate/scripts"]
-        )
-        for name in (
-            "common", "dblp", "crossref", "arxiv",
-            "opencitations", "semantic_scholar", "openalex",
-            "search", "snowball",
-        )
-    },
+    # common+crossref vendored into import: validate_refs.py imports them as
+    # Python modules, so a missing sibling would crash rather than degrade.
+    # Ideate instead uses the sibling-fallback path (packaging spec).
+    "skills/proposal-lit-search/scripts/common.py": ["skills/proposal-import/scripts"],
+    "skills/proposal-lit-search/scripts/crossref.py": ["skills/proposal-import/scripts"],
 }
 
 

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Materialize shared/ copies before every commit so stale copies can never land.
+# One-time activation per clone: git config core.hooksPath .githooks
+# CI runs sync_shared.py --check as the backstop for bypassed hooks.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+out=$(python3 scripts/sync_shared.py)
+# Stage exactly the regenerated destinations ("synced <src> -> <dst>" lines).
+echo "$out" | while read -r _ _ _ dst; do
+  [ -n "$dst" ] && git add "$dst"
+done
