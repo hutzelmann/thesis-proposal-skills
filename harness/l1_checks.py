@@ -43,7 +43,11 @@ def verdict_review(original: str, current: str | None, review: str | None,
                    review_name: str) -> tuple[bool, str]:
     """review_fixture: review file exists, enumerated, proposal untouched."""
     if current != original:
-        return False, "review modified the proposal"
+        detail = "file missing" if current is None else (
+            f"len {len(original)} -> {len(current)}, first diff at "
+            f"{next((i for i, (a, b) in enumerate(zip(original, current, strict=False)) if a != b), min(len(original), len(current)))}"
+        )
+        return False, f"review modified the proposal ({detail})"
     if not review:
         return False, f"{review_name} not written"
     if not is_enumerated_review(review):

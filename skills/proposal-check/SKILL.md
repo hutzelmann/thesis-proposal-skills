@@ -7,6 +7,8 @@ description: Low-level check of a thesis proposal — required sections, citatio
 
 **Read-only skill: you MUST NOT modify any file during a check run — no fixes, no edits, however obvious. You diagnose and report; nothing else.** Editing happens in a separate step, only after the user explicitly asks, via the write skill.
 
+If you are running non-interactively (no user watching the conversation), enforce this mechanically before diagnosing: make the proposal read-only (`chmod a-w <file>` on Unix, `attrib +R <file>` on Windows), run all steps, then restore write permission at the very end. A failed write attempt is your signal that you drifted from the mandate — report instead.
+
 Deterministic low-level checks plus a language pass for one proposal file. Results go to chat only — never write a report file. This check is advisory: it gates nothing; other skills may run it first but proceed on user confirmation.
 
 ## Target

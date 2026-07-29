@@ -1,0 +1,15 @@
+{
+  "fixture": "f18-broken-refs",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "reference Ghost21Vanished carries a DOI that does not resolve (import validation must report UNVERIFIABLE)",
+    "reference Wong10Demystifying lacks a DOI but is a real identifiable paper (import validation should enrich it)",
+    "reference Unknown22Mystery is entirely invented (import validation must report UNVERIFIABLE)",
+    "reference Bacchelli13Expectations is real and correct (import validation must report VERIFIED)"
+  ]
+}
