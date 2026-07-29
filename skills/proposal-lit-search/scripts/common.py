@@ -139,16 +139,18 @@ def dedupe(items: list[dict]) -> list[dict]:
     by_doi: dict[str, dict] = {}
     by_title: dict[str, dict] = {}
     for item in items:
+        title_key = normalize_title(item.get("title", ""))
         existing = None
         if doi := item.get("DOI"):
             existing = by_doi.get(doi)
-        if existing is None:
-            existing = by_title.get(normalize_title(item.get("title", "")))
+        if existing is None and title_key:
+            existing = by_title.get(title_key)
         if existing is None:
             result.append(item)
             if doi := item.get("DOI"):
                 by_doi[doi] = item
-            by_title[normalize_title(item.get("title", ""))] = item
+            if title_key:
+                by_title[title_key] = item
         else:
             for field, value in item.items():
                 if field != "_source" and field not in existing and value:

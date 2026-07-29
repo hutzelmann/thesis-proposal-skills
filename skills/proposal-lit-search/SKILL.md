@@ -39,4 +39,4 @@ Both emit CSL-YAML candidates on stdout; degradation notes (failed sources, miss
 
 ## If script networking is denied
 
-Some agent sandboxes block outbound network for scripts. Fall back to your own fetch tools against the same APIs (`api.crossref.org/works?query=…`, `dblp.org/search/publ/api?q=…&format=json`, `export.arxiv.org/api/query?search_query=…`), apply the same relevance judgment, and construct the CSL-YAML entries yourself following `references/` conventions.
+Some agent sandboxes block outbound network for scripts. Fall back to your own fetch tools against the same APIs (`api.crossref.org/works?query=…`, `dblp.org/search/publ/api?q=…&format=json`, `export.arxiv.org/api/query?search_query=…`), apply the same relevance judgment, and construct the CSL-YAML entries yourself following the rules in step 3 above (AuthorYearFirstWord keys, DOI over URL, abstract when available).

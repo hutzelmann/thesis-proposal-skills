@@ -112,6 +112,16 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
             errors.append(f"duplicate reference id `{rid}`")
         if meta.title is None:
             warnings.append("metadata block has no `title:`")
+        body_lines = body.split("\n")
+        delims = [i for i, l in enumerate(body_lines) if re.fullmatch(r"---\s*", l)]
+        for a, b in zip(delims, delims[1:]):
+            block = "\n".join(body_lines[a + 1 : b])
+            if re.search(r"^\s*\w[\w-]*\s*:", block, re.MULTILINE):
+                errors.append(
+                    "additional metadata block found before the trailing one — "
+                    "exactly one trailing block allowed"
+                )
+                break
 
     # -- sections
     heads = headings(body)
@@ -169,13 +179,14 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
             errors.append(f"(RQ{n}) never referenced in the methodology section")
 
     # -- citations
-    cited = set()
-    for m in re.finditer(r"(?<![\w.])@([A-Za-z][\w:.-]*)", body):
-        cited.add(m.group(1).rstrip(".,;:"))
+    cited: dict[str, int] = {}
+    for lineno, line in enumerate(body.split("\n"), start=1):
+        for m in re.finditer(r"(?<![\w.])@([A-Za-z][\w:.-]*)", line):
+            cited.setdefault(m.group(1).rstrip(".,;:"), lineno)
     defined = set(meta.reference_ids)
-    for key in sorted(cited - defined):
-        errors.append(f"cited key `@{key}` not defined in references")
-    for key in sorted(defined - cited):
+    for key in sorted(set(cited) - defined):
+        errors.append(f"cited key `@{key}` not defined in references (line {cited[key]})")
+    for key in sorted(defined - set(cited)):
         warnings.append(f"reference `{key}` defined but never cited")
     min_refs = overrides.get("min_references", structure["min_references"])
     if len(defined) < min_refs:
@@ -187,15 +198,13 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
         warnings.append(f"open {todo}")
 
     # -- warning-class patterns
-    fp = (r"\b(I|we|my|our)\b" if lang == "en" else r"\b([Ii]ch|[Ww]ir|[Mm]ein\w*|[Uu]nser\w*)\b")
+    fp = (r"\b(I|[Ww]e|[Mm]y|[Oo]ur)\b" if lang == "en"
+          else r"\b([Ii]ch|[Ww]ir|[Mm]ein\w*|[Uu]nser\w*)\b")
     if fps := re.findall(fp, body):
         warnings.append(f"first-person pronouns found ({len(fps)}×) — use third person")
-    prose = [l for l in body.split("\n") if l.strip() and not l.startswith("#")]
-    for i in range(len(prose) - 2):
-        first = [l.split()[0] for l in prose[i : i + 3]]
-        if len(set(first)) == 1 and first[0][0].isalpha():
-            warnings.append(f"three consecutive sentences start with `{first[0]}`")
-            break
+    for start_word in repeated_sentence_starts(body):
+        warnings.append(f"three consecutive sentences start with `{start_word}`")
+        break
     if re.search(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b", body):
         warnings.append("email address found — personal data is forbidden")
     if re.search(r"\b(matriculation|matrikel)", body, re.IGNORECASE) or re.search(r"(?<!\d)\d{7,8}(?!\d)", body):
@@ -210,10 +219,38 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
     return errors, warnings
 
 
+def repeated_sentence_starts(body: str):
+    """First words of runs of three consecutive same-start sentences.
+
+    Sentences are split within paragraphs; headings and blank lines reset the run.
+    """
+    found: list[str] = []
+    run: list[str] = []
+    for line in body.split("\n"):
+        if not line.strip() or line.startswith("#"):
+            run = []
+            continue
+        for sentence in re.split(r"(?<=[.!?])\s+", line.strip()):
+            words = sentence.split()
+            if not words or not words[0][0].isalpha():
+                continue
+            run.append(words[0])
+            if len(run) >= 3 and run[-1] == run[-2] == run[-3]:
+                found.append(run[-1])
+                run = []
+    return found
+
+
 def section_text(body: str, title: str) -> str:
-    """Text of the level-1 section with the given heading."""
-    m = re.search(rf"^#\s+{re.escape(title)}\s*$(.*?)(?=^#\s|\Z)", body, re.MULTILINE | re.DOTALL)
-    return m.group(1) if m else ""
+    """Text of the section with the given heading, at whatever level it appears;
+    stops at the next heading of the same or a shallower level."""
+    m = re.search(rf"^(#{{1,6}})\s+{re.escape(title)}\s*$", body, re.MULTILINE)
+    if not m:
+        return ""
+    level = len(m.group(1))
+    rest = body[m.end():]
+    stop = re.search(rf"^#{{1,{level}}}\s", rest, re.MULTILINE)
+    return rest[: stop.start()] if stop else rest
 
 
 # ---------- report -----------------------------------------------------------

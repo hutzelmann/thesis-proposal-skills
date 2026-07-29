@@ -84,6 +84,11 @@ def _from_work(work: dict) -> dict:
     return item
 
 
+def parse_work(work: dict) -> dict:
+    """Public parser for a Crossref work message (used by snowball enrichment)."""
+    return _from_work(work)
+
+
 def search(query: str, limit: int = 10) -> list[dict]:
     """Relevance search over Crossref works, CSL-JSON-shaped."""
     data = common.http_json(

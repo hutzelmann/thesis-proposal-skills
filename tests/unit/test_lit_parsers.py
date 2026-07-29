@@ -101,3 +101,22 @@ def test_openalex_requires_key(monkeypatch):
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
     with pytest.raises(common.SourceError, match="OPENALEX_API_KEY"):
         openalex.search("anything", 1)
+
+
+def test_snowball_enrichment_uses_public_parser(monkeypatch):
+    import crossref
+    import snowball
+    sample = load("crossref_search_sample.json")
+    work = sample["message"]["items"][0]
+    patched(monkeypatch, {"message": work})
+    enriched = snowball.enrich_bare_dois([{"DOI": "10.1/x", "_source": "opencitations"}])
+    assert enriched and enriched[0]["title"]
+    assert crossref.parse_work(work)["title"] == enriched[0]["title"]
+
+
+def test_semantic_scholar_recommendations(monkeypatch):
+    import semantic_scholar
+    sample = load("semantic_scholar_search_sample.json")
+    patched(monkeypatch, {"recommendedPapers": sample["data"]})
+    items = semantic_scholar.recommendations("10.1/x", 3)
+    assert items and all(i["title"] for i in items)

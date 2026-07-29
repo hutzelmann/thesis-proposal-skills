@@ -49,3 +49,33 @@ def test_default_forbids_timeline(tmp_path):
     victim.write_text(source)  # same file, but no guidelines.md next to it
     result = run_check(victim)
     assert "forbidden section: `Timeline`" in result.stdout
+
+
+def test_level2_sections_still_checked(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    demoted = source.replace("\n# ", "\n## ").replace("\n## Previous", "\n### Previous").replace(
+        "\n## Requirements", "\n### Requirements").replace("\n## Evaluation", "\n### Evaluation")
+    demoted = demoted.replace("(RQ3)", "")  # break one cross-ref
+    victim = tmp_path / "demoted.md"
+    victim.write_text(demoted)
+    result = run_check(victim)
+    assert "(RQ3) never referenced" in result.stdout
+
+
+def test_multiple_metadata_blocks_error(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "double.md"
+    victim.write_text("---\ntitle: front\n---\n\n" + source)
+    result = run_check(victim)
+    assert "additional metadata block" in result.stdout
+
+
+def test_first_person_capitalized_caught(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "fp.md"
+    victim.write_text(source.replace(
+        "Software quality assurance relies heavily",
+        "We propose a novel approach. Our contribution relies heavily",
+    ))
+    result = run_check(victim)
+    assert "first-person pronouns" in result.stdout

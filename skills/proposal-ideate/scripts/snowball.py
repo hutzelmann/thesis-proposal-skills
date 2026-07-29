@@ -33,8 +33,8 @@ def expand(seeds: list[str], limit: int, direction: str) -> list[dict]:
             if not doi:
                 print(f"note: `{seed}` is not a DOI, skipped", file=sys.stderr)
                 continue
-            for kind in ("references", "citations"):
-                if direction == "backward" and kind == "citations":
+            for kind in ("references", "citations", "recommendations"):
+                if direction == "backward" and kind != "references":
                     continue
                 if direction == "forward" and kind == "references":
                     continue
@@ -69,7 +69,7 @@ def enrich_bare_dois(items: list[dict]) -> list[dict]:
                 f"https://api.crossref.org/works/{doi}", source="crossref", min_interval=0.5
             )["message"]
             enriched.append(crossref.parse_work(data))
-        except (common.SourceError, KeyError, TypeError):
+        except Exception:  # enrichment is best-effort; a bad item must not kill the run
             continue
     return enriched
 

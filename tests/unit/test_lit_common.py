@@ -58,3 +58,8 @@ def test_csl_yaml_roundtrip_via_check_regex():
     assert '- id: Doe25Colon' in yaml
     assert 'title: "A: Colon Title"' in yaml
     assert "DOI: 10.1/x" in yaml
+
+
+def test_dedupe_keeps_distinct_bare_doi_items():
+    items = [{"DOI": f"10.1/x{i}", "_source": "opencitations"} for i in range(3)]
+    assert len(common.dedupe(items)) == 3

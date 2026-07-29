@@ -97,6 +97,25 @@ def references(doi: str, limit: int = 30) -> list[dict]:
     return _graph(doi, "references", "citedPaper", limit)
 
 
+def recommendations(doi: str, limit: int = 10) -> list[dict]:
+    """ML-based related papers for a seed (keyless Recommendations API).
+
+    May legitimately return an empty list — not every paper has recommendations.
+    """
+    data = common.http_json(
+        f"https://api.semanticscholar.org/recommendations/v1/papers/forpaper/DOI:{doi}",
+        params={"fields": "title,abstract,year,venue,authors,externalIds,publicationTypes",
+                "limit": limit},
+        source="semantic_scholar",
+        min_interval=1.5,
+    )
+    items = []
+    for paper in data.get("recommendedPapers") or []:
+        if entry := _paper_entry(paper):
+            items.append(entry)
+    return items
+
+
 def citations(doi: str, limit: int = 30) -> list[dict]:
     """Papers citing the given DOI (incoming edges)."""
     return _graph(doi, "citations", "citingPaper", limit)

@@ -131,7 +131,7 @@ Work happens directly on `main` in this workspace — no feature branches, no wo
 6. Replace the LaTeX `.gitignore` with one for the new repo (python, uv, test artifacts, real-proposal PDFs); delete `.vscode/`, `build/`.
 7. Rewrite `README.md` for AI newcomers per D8/onboarding; add `docs/getting-started.md`.
 8. Build the harness + test pyramid per Phase 0 sub-milestones; seed with the fixtures; wire `uv run pytest` entry points.
-9. Publish to skills.sh; verify install + skill discovery end-to-end in a scratch workspace (`npx skills add`, selective `--skill`, `npx skills update`).
+9. **Deferred by decision (2026-07-29): GitHub-only until the implementation is complete.** Only then: verify install + skill discovery end-to-end in a scratch workspace (`npx skills add`, selective `--skill`, `npx skills update`) and let skills.sh list the package. Local verification of the skill layout can use `npx skills add ./` from a path in the meantime.
 
 ## Spikes & Risks
 
