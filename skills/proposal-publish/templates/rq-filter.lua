@@ -22,10 +22,30 @@ function OrderedList(el)
   if not FORMAT:match("typst") then
     return nil
   end
+  -- Wrap each item's already-processed inlines with raw #rq(n)[ ... ] markers
+  -- in place, instead of re-serializing the item as a standalone sub-document:
+  -- a standalone pandoc.write() runs before citeproc has resolved citations
+  -- inside list items, leaving unresolved @key citations that typst can't find.
   local out = {}
   for i, item in ipairs(el.content) do
-    local inner = pandoc.write(pandoc.Pandoc(item), "typst"):gsub("%s+$", "")
-    table.insert(out, pandoc.RawBlock("typst", "#rq(" .. i .. ")[" .. inner .. "]"))
+    local blocks = {}
+    for j, block in ipairs(item) do
+      if block.t == "Plain" or block.t == "Para" then
+        local inlines = block.content
+        if j == 1 then
+          table.insert(inlines, 1, pandoc.RawInline("typst", "#rq(" .. i .. ")["))
+        end
+        if j == #item then
+          table.insert(inlines, pandoc.RawInline("typst", "]"))
+        end
+        table.insert(blocks, pandoc.Plain(inlines))
+      else
+        table.insert(blocks, block)
+      end
+    end
+    for _, b in ipairs(blocks) do
+      table.insert(out, b)
+    end
   end
   return out
 end
