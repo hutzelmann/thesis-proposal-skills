@@ -1,0 +1,19 @@
+{
+  "fixture": "f15-format-broken",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "no blank line before the trailing",
+      "boolean literal",
+      "duplicate reference id `Lee24Index`",
+      "cited key `@Ghost99Missing` not defined",
+      "only 2 references"
+    ],
+    "warnings_contain": [
+      "open [TODO: sharpen motivation]",
+      "open [TODO: name the workload dataset]"
+    ]
+  },
+  "semantic": []
+}

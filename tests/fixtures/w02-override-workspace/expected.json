@@ -1,0 +1,14 @@
+{
+  "fixture": "w02-override-workspace",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "at least 8 required"
+    ],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "workspace override makes the timeline section legitimate — no tool may flag it here"
+  ]
+}

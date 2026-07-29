@@ -1,0 +1,12 @@
+{
+  "fixture": "w03-snowball-seed",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "clean seed with exactly three solid references — oracle for lit-search snowballing expansion, not a defect fixture"
+  ]
+}

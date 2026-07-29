@@ -1,0 +1,23 @@
+{
+  "fixture": "w01-ideate-seed",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "required section missing: `Introduction to the Topic`",
+      "required section missing: `Contribution to the State-of-the-Art`",
+      "required section missing: `Research Focus and Research Questions`",
+      "methodology section missing",
+      "only 1 references — at least 3 required"
+    ],
+    "warnings_contain": [
+      "open [TODO: decide between prototype implementation",
+      "open [TODO: find a second production-trace dataset"
+    ]
+  },
+  "semantic": [
+    "intentionally incomplete ideate seed — the check findings are the expected starting state, not defects to fix mechanically",
+    "candidate RQ bullets are directions, not final research questions; the write skill must develop them into an ordered list",
+    "no methodology chosen yet (open TODO); metadata subtitle still a TODO placeholder"
+  ]
+}

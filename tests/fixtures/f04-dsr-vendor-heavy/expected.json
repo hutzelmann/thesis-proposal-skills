@@ -1,0 +1,22 @@
+{
+  "fixture": "f04-dsr-vendor-heavy",
+  "lang": "de",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "duplicate reference id `NetSentio25Zero`",
+      "forbidden section: `Betreuer`",
+      "forbidden section: `Gliederung der Arbeit`"
+    ],
+    "warnings_contain": [
+      "three consecutive sentences start with `Wie`",
+      "email address found",
+      "possible matriculation number",
+      "confidentiality marker `vertraulich`"
+    ]
+  },
+  "semantic": [
+    "Definitional Zero-Trust claims are grounded in vendor product documentation (NetSentio, CloudArc) instead of scientific literature",
+    "The main research question and all four sub-questions are design-phrased (Wie kann ... gestaltet/aufgebaut/umgesetzt werden) instead of analytical"
+  ]
+}

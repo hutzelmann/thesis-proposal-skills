@@ -1,0 +1,10 @@
+{
+  "fixture": "f14-user-study",
+  "lang": "de",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": []
+}

@@ -1,0 +1,24 @@
+{
+  "fixture": "f03-compliance-audit",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "required section missing: `Introduction to the Topic`",
+      "required section missing: `Contribution to the State-of-the-Art`",
+      "required section missing: `Research Focus and Research Questions`",
+      "methodology section missing",
+      "forbidden section: `4 Preliminary Chapter Structure`",
+      "forbidden section: `5 Timetable and Milestones`"
+    ],
+    "warnings_contain": [
+      "three consecutive sentences start with `How`",
+      "email address found",
+      "possible matriculation number"
+    ]
+  },
+  "semantic": [
+    "research questions are work packages phrased as implementation goals ('how can X be translated/integrated/exported'), not analytical questions",
+    "typos in the prose: 'pipline', 'continous'"
+  ]
+}

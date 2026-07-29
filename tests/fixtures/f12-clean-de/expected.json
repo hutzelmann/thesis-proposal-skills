@@ -1,0 +1,10 @@
+{
+  "fixture": "f12-clean-de",
+  "lang": "de",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": []
+}

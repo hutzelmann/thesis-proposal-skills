@@ -1,0 +1,21 @@
+{
+  "fixture": "f08-concept-sketch",
+  "lang": "de",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "required section missing: `Einführung in das Thema`",
+      "required section missing: `Beitrag zum Stand der Technik`",
+      "required section missing: `Forschungsfokus und Forschungsfragen`",
+      "methodology section missing",
+      "only 0 references — at least 3 required"
+    ],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "Severe passive voice throughout (German 'soll ... werden' chains)",
+    "Goals are construction aims (create a concept, sketch an architecture) rather than analytical research questions",
+    "Unfalsifiable outcome: a 'complete concept' is promised with no criterion for when it succeeds",
+    "Bibliography is a prose URL list in the body instead of a references block with scientific sources"
+  ]
+}

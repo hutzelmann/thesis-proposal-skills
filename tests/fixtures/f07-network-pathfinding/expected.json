@@ -1,0 +1,27 @@
+{
+  "fixture": "f07-network-pathfinding",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "required section missing: `Introduction to the Topic`",
+      "required section missing: `Contribution to the State-of-the-Art`",
+      "required section missing: `Research Focus and Research Questions`",
+      "methodology section missing",
+      "forbidden section: `Schedule`",
+      "forbidden section: `Supervisor`",
+      "only 2 references"
+    ],
+    "warnings_contain": [
+      "first-person pronouns found",
+      "three consecutive sentences start with `How`",
+      "email address found"
+    ]
+  },
+  "semantic": [
+    "RQ1-RQ3 are implementation goals ('How can X be implemented/built/designed')",
+    "RQ4 is a leading question presupposing that adaptive routing outperforms the static baseline",
+    "mid-document switch to first person in the Approach section after a third-person start",
+    "typos in the prose: 'recieve', 'seperate'"
+  ]
+}

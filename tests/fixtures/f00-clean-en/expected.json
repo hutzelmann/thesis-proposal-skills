@@ -1,0 +1,10 @@
+{
+  "fixture": "f00-clean-en",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": []
+}

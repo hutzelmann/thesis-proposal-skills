@@ -1,0 +1,15 @@
+{
+  "fixture": "f06-prototype-testbed",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "Reference Vogel28Edge is forward-dated (issued 2028, after the proposal date) — no mechanical date check exists",
+    "Evaluation subsection is written almost entirely in passive voice",
+    "Four measurement campaigns are planned without any fallback or prioritization — scope risk for a Bachelor's thesis",
+    "Hardware testbed topic lacks an architecture figure of the measurement setup"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "fixture": "f05-slr-interviews",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "Mixed methodology: the Systematic Literature Review is combined with semi-structured practitioner interviews in the Synthesis subsection, violating the single-method rule",
+    "Interviews with industry practitioners are planned without any ethics, consent, or data-handling note"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "fixture": "f09-llm-compliance-docs",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "required section missing: `Contribution to the State-of-the-Art`",
+      "forbidden section: `Work Plan` (matches `work plan`)"
+    ],
+    "warnings_contain": [
+      "metadata block has no `title:`",
+      "reference `Beck23Compliance` defined but never cited",
+      "reference `Iyer25Prompting` defined but never cited",
+      "reference `Novak24Auditing` defined but never cited",
+      "three consecutive sentences start with `Which`"
+    ]
+  },
+  "semantic": [
+    "All three research questions are phrased as bare 'Which ...' questions without analytical degree phrasing (to what degree, under which conditions)",
+    "Mixed methodology: a prototype extraction pipeline is implemented inside the Systematic Literature Review",
+    "Author metadata is missing (import artifact; check.py only flags the missing title)"
+  ]
+}

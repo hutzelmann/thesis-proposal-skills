@@ -1,0 +1,14 @@
+{
+  "fixture": "f11-migration-architecture",
+  "lang": "de",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "RQ2 is a yes/no question (Laesst sich der Bestandsmonolith ... ohne messbare Ausfallzeit abloesen?)",
+    "The Anforderungen subsection reads as a bare muss/soll specification list rather than research-oriented requirements",
+    "Two of five references are vendor documentation (StratoMesh, KubeFlex) grounding the migration-infrastructure choices"
+  ]
+}
