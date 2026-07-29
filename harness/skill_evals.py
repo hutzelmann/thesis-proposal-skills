@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
+import sys as _sys
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -28,11 +28,13 @@ from inspect_ai.solver import Generate, TaskState, basic_agent, solver, system_m
 from inspect_ai.tool import bash, text_editor
 from inspect_ai.util import sandbox
 
-import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from l1_checks import (  # noqa: E402
-    DRAFT_ALLOWED_ERRORS, disallowed_errors, is_enumerated_review, parse_grade,
-    verdict_check_report, verdict_draft, verdict_review, verdict_seed,
+    parse_grade,
+    verdict_check_report,
+    verdict_draft,
+    verdict_review,
+    verdict_seed,
 )
 
 REPO = Path(__file__).resolve().parent.parent

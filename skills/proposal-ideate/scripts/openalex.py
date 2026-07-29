@@ -11,7 +11,6 @@ common.SourceError when the variable is unset.
 
 from __future__ import annotations
 
-import os
 import urllib.parse
 
 import common

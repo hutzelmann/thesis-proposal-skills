@@ -1,4 +1,4 @@
-"""L0: pure scoring helpers from harness/skill_evals.py (no model calls)."""
+"""L0: pure scoring helpers from harness/l1_checks.py (no model calls)."""
 
 import sys
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "harness"))
 
-from skill_evals import disallowed_errors, is_enumerated_review, parse_grade  # noqa: E402
+from l1_checks import disallowed_errors, is_enumerated_review, parse_grade  # noqa: E402
 
 
 def test_disallowed_errors_filters_allowed():

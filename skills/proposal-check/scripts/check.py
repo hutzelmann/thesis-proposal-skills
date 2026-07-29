@@ -114,7 +114,7 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
             warnings.append("metadata block has no `title:`")
         body_lines = body.split("\n")
         delims = [i for i, l in enumerate(body_lines) if re.fullmatch(r"---\s*", l)]
-        for a, b in zip(delims, delims[1:]):
+        for a, b in zip(delims, delims[1:], strict=False):
             block = "\n".join(body_lines[a + 1 : b])
             if re.search(r"^\s*\w[\w-]*\s*:", block, re.MULTILINE):
                 errors.append(

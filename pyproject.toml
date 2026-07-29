@@ -10,4 +10,14 @@ dev = [
     "inspect-ai>=0.3",
     "openai>=2.50.0",
     "pytest>=8",
+    "ruff>=0.16.0",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["skills/proposal-ideate/scripts", "skills/proposal-import/scripts/common.py", "skills/proposal-import/scripts/crossref.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501", "E741"]

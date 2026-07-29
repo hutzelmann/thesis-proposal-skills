@@ -22,6 +22,7 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ```sh
 uv run pytest                      # L0: all tests, no model calls — must stay green
+uv run ruff check .                # lint — must stay clean
 python3 scripts/sync_shared.py --check   # generated-copy drift check
 openspec validate --all --strict   # spec validity
 uv run inspect eval harness/skill_evals.py@<task> --model openrouter/...   # L1/L2, metered
