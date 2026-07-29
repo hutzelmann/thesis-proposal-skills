@@ -28,6 +28,13 @@ from inspect_ai.solver import Generate, TaskState, basic_agent, solver, system_m
 from inspect_ai.tool import bash, text_editor
 from inspect_ai.util import sandbox
 
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+from l1_checks import (  # noqa: E402
+    DRAFT_ALLOWED_ERRORS, disallowed_errors, is_enumerated_review, parse_grade,
+    verdict_check_report, verdict_draft, verdict_review, verdict_seed,
+)
+
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
 FIXTURES = REPO / "tests" / "fixtures"
@@ -37,28 +44,6 @@ JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "openrouter/anthropic/claude-haiku-4
 JUDGE_INSTRUCTIONS = (
     'Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).'
 )
-
-# allowed residual check errors for a draft written from a nearly-empty seed
-DRAFT_ALLOWED_ERRORS = ("references — at least",)
-
-
-# ---------- helpers (pure, unit-tested) --------------------------------------
-
-def disallowed_errors(check_output: str, allowed: tuple[str, ...] = ()) -> list[str]:
-    lines = [l for l in check_output.splitlines() if l.startswith("- ERROR:")]
-    return [l for l in lines if not any(a in l for a in allowed)]
-
-
-def is_enumerated_review(text: str) -> bool:
-    return bool(re.search(r"^\s*(1[.)]|#+\s*1)", text, re.MULTILINE)) or bool(
-        re.search(r"^\d+[.)]\s", text, re.MULTILINE)
-    )
-
-
-def parse_grade(completion: str) -> bool:
-    m = re.findall(r"GRADE:\s*([CI])", completion)
-    return bool(m) and m[-1] == "C"
-
 
 # ---------- staging ----------------------------------------------------------
 
@@ -140,13 +125,9 @@ W01_PROPOSAL = "data-drift-detection.md"
 def write_l1():
     async def score(state: TaskState, target: Target) -> Score:
         text = await read_ws(W01_PROPOSAL)
-        if not text:
-            return Score(value=INCORRECT, explanation="seed proposal file gone")
-        check_out = await run_check(W01_PROPOSAL)
-        bad = disallowed_errors(check_out, DRAFT_ALLOWED_ERRORS)
-        if bad:
-            return Score(value=INCORRECT, explanation="check errors: " + "; ".join(bad))
-        return Score(value=CORRECT, explanation="draft mechanically sound")
+        check_out = await run_check(W01_PROPOSAL) if text else ""
+        ok, why = verdict_draft(text, check_out)
+        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
     return score
 
 
@@ -195,13 +176,8 @@ def review_l1():
         original = (FIXTURES / "f05-slr-interviews" / F05_PROPOSAL).read_text(encoding="utf-8")
         current = await read_ws(F05_PROPOSAL)
         review = await read_ws(F05_REVIEW)
-        if current != original:
-            return Score(value=INCORRECT, explanation="review modified the proposal")
-        if not review:
-            return Score(value=INCORRECT, explanation=f"{F05_REVIEW} not written")
-        if not is_enumerated_review(review):
-            return Score(value=INCORRECT, explanation="review not enumerated")
-        return Score(value=CORRECT, explanation="review file present, proposal untouched")
+        ok, why = verdict_review(original, current, review, F05_REVIEW)
+        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
     return score
 
 
@@ -280,19 +256,9 @@ def ideate_l1_seed():
     async def score(state: TaskState, target: Target) -> Score:
         listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
         files = [f for f in listing.stdout.split() if f.strip()]
-        if not files:
-            return Score(value=INCORRECT, explanation="no seeded proposal file in ws/")
-        text = await sandbox().read_file(files[0])
-        problems = []
-        if "\n---" not in text:
-            problems.append("no metadata block")
-        if "[TODO:" not in text:
-            problems.append("no TODO markers")
-        if "references" not in text:
-            problems.append("no references key")
-        if problems:
-            return Score(value=INCORRECT, explanation="; ".join(problems) + f" in {files[0]}")
-        return Score(value=CORRECT, explanation=f"seed file {files[0]} structurally complete")
+        text = await sandbox().read_file(files[0]) if files else None
+        ok, why = verdict_seed(text, files[0] if files else "")
+        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
     return score
 
 
@@ -347,21 +313,13 @@ def assistant_text(state: TaskState) -> str:
 @scorer(metrics=[accuracy()])
 def check_report_l1():
     async def score(state: TaskState, target: Target) -> Score:
-        oracle = json.loads(
-            (FIXTURES / "f15-format-broken" / "expected.json").read_text(encoding="utf-8")
-        )
         original = (FIXTURES / "f15-format-broken" / F15_PROPOSAL).read_text(encoding="utf-8")
         current = await read_ws(F15_PROPOSAL)
-        if current != original:
-            return Score(
-                value=INCORRECT,
-                explanation="check modified the proposal — advisory skill must only report",
-            )
-        answer = assistant_text(state)
-        hits = sum(1 for n in oracle["check"]["errors_contain"] if n.split("`")[0].strip() in answer)
-        if hits >= 3:
-            return Score(value=CORRECT, explanation=f"{hits}/5 oracle errors surfaced, file untouched")
-        return Score(value=INCORRECT, explanation=f"only {hits}/5 oracle errors surfaced")
+        ok, why = verdict_check_report(
+            FIXTURES / "f15-format-broken" / "expected.json", original, current,
+            assistant_text(state),
+        )
+        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
     return score
 
 

@@ -1,0 +1,80 @@
+"""Pure L1 verdict functions shared by the Inspect scorers and the dev runner.
+
+Every function takes plain strings/paths and returns (passed, explanation).
+No sandbox, no model calls — unit-testable and runner-agnostic.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+DRAFT_ALLOWED_ERRORS = ("references — at least",)
+
+
+def disallowed_errors(check_output: str, allowed: tuple[str, ...] = ()) -> list[str]:
+    lines = [l for l in check_output.splitlines() if l.startswith("- ERROR:")]
+    return [l for l in lines if not any(a in l for a in allowed)]
+
+
+def is_enumerated_review(text: str) -> bool:
+    return bool(re.search(r"^\s*(1[.)]|#+\s*1)", text, re.MULTILINE)) or bool(
+        re.search(r"^\d+[.)]\s", text, re.MULTILINE)
+    )
+
+
+def parse_grade(completion: str) -> bool:
+    matches = re.findall(r"GRADE:\s*([CI])", completion)
+    return bool(matches) and matches[-1] == "C"
+
+
+def verdict_draft(proposal_text: str | None, check_output: str) -> tuple[bool, str]:
+    """write_from_seed: draft survives and check is clean apart from tolerated errors."""
+    if not proposal_text:
+        return False, "seed proposal file gone"
+    bad = disallowed_errors(check_output, DRAFT_ALLOWED_ERRORS)
+    if bad:
+        return False, "check errors: " + "; ".join(bad)
+    return True, "draft mechanically sound"
+
+
+def verdict_review(original: str, current: str | None, review: str | None,
+                   review_name: str) -> tuple[bool, str]:
+    """review_fixture: review file exists, enumerated, proposal untouched."""
+    if current != original:
+        return False, "review modified the proposal"
+    if not review:
+        return False, f"{review_name} not written"
+    if not is_enumerated_review(review):
+        return False, "review not enumerated"
+    return True, "review file present, proposal untouched"
+
+
+def verdict_check_report(oracle_path: Path, original: str, current: str | None,
+                         chat_text: str) -> tuple[bool, str]:
+    """check_report: >=3 oracle errors relayed in chat AND proposal byte-identical."""
+    oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
+    if current != original:
+        return False, "check modified the proposal — advisory skill must only report"
+    needles = oracle["check"]["errors_contain"]
+    hits = sum(1 for n in needles if n.split("`")[0].strip() in chat_text)
+    if hits >= 3:
+        return True, f"{hits}/{len(needles)} oracle errors surfaced, file untouched"
+    return False, f"only {hits}/{len(needles)} oracle errors surfaced"
+
+
+def verdict_seed(seed_text: str | None, filename: str = "") -> tuple[bool, str]:
+    """ideate: seeded file structurally complete."""
+    if not seed_text:
+        return False, "no seeded proposal file"
+    problems = []
+    if "\n---" not in seed_text:
+        problems.append("no metadata block")
+    if "[TODO:" not in seed_text:
+        problems.append("no TODO markers")
+    if "references" not in seed_text:
+        problems.append("no references key")
+    if problems:
+        return False, "; ".join(problems) + (f" in {filename}" if filename else "")
+    return True, f"seed file {filename or ''} structurally complete".strip()
