@@ -1,0 +1,209 @@
+{
+ "status": "ok",
+ "message-type": "work",
+ "message-version": "1.0.0",
+ "message": {
+  "indexed": {
+   "date-parts": [
+    [
+     2026,
+     7,
+     28
+    ]
+   ],
+   "date-time": "2026-07-28T20:10:46Z",
+   "timestamp": 1785269446970,
+   "version": "3.55.0"
+  },
+  "publisher-location": "New York, NY, USA",
+  "reference-count": 33,
+  "publisher": "ACM",
+  "funder": [
+   {
+    "DOI": "10.13039/100000180",
+    "name": "U.S. Department of Homeland Security",
+    "doi-asserted-by": "publisher",
+    "award": [
+     "2017-ST-061-CINA01"
+    ],
+    "award-info": [
+     {
+      "award-number": [
+       "2017-ST-061-CINA01"
+      ]
+     }
+    ],
+    "id": [
+     {
+      "id": "10.13039/100000180",
+      "id-type": "DOI",
+      "asserted-by": "publisher"
+     }
+    ]
+   }
+  ],
+  "short-container-title": [],
+  "published-print": {
+   "date-parts": [
+    [
+     2019,
+     7,
+     25
+    ]
+   ]
+  },
+  "DOI": "10.1145/3292500.3330919",
+  "type": "proceedings-article",
+  "created": {
+   "date-parts": [
+    [
+     2019,
+     7,
+     26
+    ]
+   ],
+   "date-time": "2019-07-26T13:17:26Z",
+   "timestamp": 1564147046000
+  },
+  "page": "1007-1016",
+  "source": "Crossref",
+  "is-referenced-by-count": 66,
+  "title": [
+   "Learning Dynamic Context Graphs for Predicting Social Events"
+  ],
+  "prefix": "10.1145",
+  "author": [
+   {
+    "given": "Songgaojun",
+    "family": "Deng",
+    "sequence": "first",
+    "affiliation": [
+     {
+      "name": "Stevens Institute of Technology, Hoboken, NJ, USA"
+     }
+    ],
+    "role": [
+     {
+      "vocabulary": "crossref",
+      "role": "author"
+     }
+    ]
+   },
+   {
+    "given": "Huzefa",
+    "family": "Rangwala",
+    "sequence": "additional",
+    "affiliation": [
+     {
+      "name": "George Mason University, Fairfax, VA, USA"
+     }
+    ],
+    "role": [
+     {
+      "vocabulary": "crossref",
+      "role": "author"
+     }
+    ]
+   },
+   {
+    "given": "Yue",
+    "family": "Ning",
+    "sequence": "additional",
+    "affiliation": [
+     {
+      "name": "Stevens Institute of Technology, Hoboken, NJ, USA"
+     }
+    ],
+    "role": [
+     {
+      "vocabulary": "crossref",
+      "role": "author"
+     }
+    ]
+   }
+  ],
+  "member": "320",
+  "published-online": {
+   "date-parts": [
+    [
+     2019,
+     7,
+     25
+    ]
+   ]
+  },
+  "reference": [
+   {
+    "key": "e_1_3_2_1_1_1",
+    "doi-asserted-by": "publisher",
+    "DOI": "10.1109/INFCOMW.2011.5928903"
+   },
+   {
+    "key": "e_1_3_2_1_4_1",
+    "unstructured": "Elizabeth Boschee Jennifer Lautenschlager Sean O'Brien Steve Shellman James Starz and Michael Ward. 2015. ICEWS Coded Event Data. (2015).  Elizabeth Boschee Jennifer Lautenschlager Sean O'Brien Steve Shellman James Starz and Michael Ward. 2015. ICEWS Coded Event Data. (2015)."
+   },
+   {
+    "key": "e_1_3_2_1_6_1",
+    "first-page": "1",
+    "article-title": "Word Association Norms, Mutual Information, and",
+    "volume": "16",
+    "author": "Church Kenneth Ward",
+    "year": "1990",
+    "unstructured": "Kenneth Ward Church and Patrick Hanks . 1990 . Word Association Norms, Mutual Information, and Lexicography. Comput. Linguist. , Vol. 16 , 1 (March 1990), 22--29. Kenneth Ward Church and Patrick Hanks. 1990. Word Association Norms, Mutual Information, and Lexicography. Comput. Linguist. , Vol. 16, 1 (March 1990), 22--29.",
+    "journal-title": "Lexicography. Comput. Linguist."
+   }
+  ],
+  "event": {
+   "name": "KDD '19: The 25th ACM SIGKDD Conference on Knowledge Discovery and Data Mining",
+   "location": "Anchorage AK USA",
+   "acronym": "KDD '19",
+   "sponsor": [
+    "SIGMOD ACM Special Interest Group on Management of Data",
+    "SIGKDD ACM Special Interest Group on Knowledge Discovery in Data"
+   ]
+  },
+  "container-title": [
+   "Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery &amp; Data Mining"
+  ],
+  "original-title": [],
+  "deposited": {
+   "date-parts": [
+    [
+     2025,
+     6,
+     18
+    ]
+   ],
+   "date-time": "2025-06-18T00:26:03Z",
+   "timestamp": 1750206363000
+  },
+  "score": 1,
+  "subtitle": [],
+  "short-title": [],
+  "issued": {
+   "date-parts": [
+    [
+     2019,
+     7,
+     25
+    ]
+   ]
+  },
+  "references-count": 33,
+  "alternative-id": [
+   "10.1145/3292500.3330919",
+   "10.1145/3292500"
+  ],
+  "URL": "https://doi.org/10.1145/3292500.3330919",
+  "subject": [],
+  "published": {
+   "date-parts": [
+    [
+     2019,
+     7,
+     25
+    ]
+   ]
+  }
+ }
+}

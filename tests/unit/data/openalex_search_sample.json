@@ -1,0 +1,1609 @@
+{
+ "meta": {
+  "count": 5847715,
+  "db_response_time_ms": 680,
+  "page": 1,
+  "per_page": 3,
+  "groups_count": null,
+  "x_query": {
+   "oql": "works where full text has (code review)",
+   "oqo": {
+    "get_rows": "works",
+    "filter_rows": [
+     {
+      "column_id": "fulltext.search",
+      "value": "code review",
+      "operator": "has"
+     }
+    ]
+   },
+   "url": "/works?filter=fulltext.search:code review&per_page=3"
+  },
+  "cost_usd": 0.001
+ },
+ "results": [
+  {
+   "id": "https://openalex.org/W4235786747",
+   "title": "Expectations, outcomes, and challenges of modern code review",
+   "display_name": "Expectations, outcomes, and challenges of modern code review",
+   "authorships": [
+    {
+     "author_position": "first",
+     "author": {
+      "id": "https://openalex.org/A5082720005",
+      "display_name": "Alberto Bacchelli",
+      "orcid": "https://orcid.org/0000-0003-0193-6823"
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I57201433",
+       "display_name": "Università della Svizzera italiana",
+       "ror": "https://ror.org/03c4atk17",
+       "country_code": "CH",
+       "type": "education",
+       "lineage": [
+        "https://openalex.org/I57201433"
+       ]
+      }
+     ],
+     "countries": [
+      "CH"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Alberto Bacchelli",
+     "raw_affiliation_strings": [
+      "REVEAL @ Faculty of Informatics, University of Lugano, Switzerland"
+     ],
+     "raw_orcid": null,
+     "affiliations": [
+      {
+       "raw_affiliation_string": "REVEAL @ Faculty of Informatics, University of Lugano, Switzerland",
+       "institution_ids": [
+        "https://openalex.org/I57201433"
+       ]
+      }
+     ]
+    },
+    {
+     "author_position": "last",
+     "author": {
+      "id": "https://openalex.org/A5036278905",
+      "display_name": "Christian Bird",
+      "orcid": "https://orcid.org/0000-0002-7774-0387"
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I1290206253",
+       "display_name": "Microsoft (United States)",
+       "ror": "https://ror.org/00d0nc645",
+       "country_code": "US",
+       "type": "company",
+       "lineage": [
+        "https://openalex.org/I1290206253"
+       ]
+      }
+     ],
+     "countries": [
+      "US"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Christian Bird",
+     "raw_affiliation_strings": [
+      "Microsoft Research, Redmond, WA, USA"
+     ],
+     "raw_orcid": null,
+     "affiliations": [
+      {
+       "raw_affiliation_string": "Microsoft Research, Redmond, WA, USA",
+       "institution_ids": [
+        "https://openalex.org/I1290206253"
+       ]
+      }
+     ]
+    }
+   ],
+   "publication_year": 2013,
+   "primary_location": {
+    "id": "doi:10.1109/icse.2013.6606617",
+    "is_oa": false,
+    "landing_page_url": "https://doi.org/10.1109/icse.2013.6606617",
+    "pdf_url": null,
+    "source": null,
+    "license": null,
+    "license_id": null,
+    "version": "publishedVersion",
+    "is_accepted": true,
+    "is_published": true,
+    "raw_source_name": "2013 35th International Conference on Software Engineering (ICSE)",
+    "raw_type": "proceedings-article"
+   },
+   "doi": "https://doi.org/10.1109/icse.2013.6606617",
+   "abstract_inverted_index": {
+    "Code": [
+     0
+    ],
+    "review": [
+     1,
+     61
+    ],
+    "is": [
+     2,
+     18,
+     115
+    ],
+    "a": [
+     3,
+     126
+    ],
+    "common": [
+     4
+    ],
+    "software": [
+     5
+    ],
+    "engineering": [
+     6
+    ],
+    "practice": [
+     7
+    ],
+    "employed": [
+     8
+    ],
+    "both": [
+     9
+    ],
+    "in": [
+     10,
+     31
+    ],
+    "open": [
+     11
+    ],
+    "source": [
+     12
+    ],
+    "and": [
+     13,
+     21,
+     29,
+     34,
+     42,
+     51,
+     54,
+     56,
+     88,
+     100,
+     112,
+     122,
+     150
+    ],
+    "industrial": [
+     14
+    ],
+    "contexts.": [
+     15
+    ],
+    "Review": [
+     16
+    ],
+    "today": [
+     17
+    ],
+    "less": [
+     19,
+     83
+    ],
+    "formal": [
+     20
+    ],
+    "more": [
+     22
+    ],
+    "“lightweight”": [
+     23
+    ],
+    "than": [
+     24,
+     86
+    ],
+    "the": [
+     25,
+     32,
+     39,
+     76,
+     116
+    ],
+    "code": [
+     26,
+     46,
+     111,
+     120
+    ],
+    "inspections": [
+     27
+    ],
+    "performed": [
+     28
+    ],
+    "studied": [
+     30
+    ],
+    "70s": [
+     33
+    ],
+    "80s.": [
+     35
+    ],
+    "We": [
+     36,
+     48,
+     145
+    ],
+    "empirically": [
+     37
+    ],
+    "explore": [
+     38
+    ],
+    "motivations,": [
+     40
+    ],
+    "challenges,": [
+     41
+    ],
+    "outcomes": [
+     43
+    ],
+    "of": [
+     44,
+     60,
+     102,
+     119,
+     129,
+     137
+    ],
+    "tool-based": [
+     45
+    ],
+    "reviews.": [
+     47
+    ],
+    "observed,": [
+     49
+    ],
+    "interviewed,": [
+     50
+    ],
+    "surveyed": [
+     52
+    ],
+    "developers": [
+     53,
+     124
+    ],
+    "managers": [
+     55
+    ],
+    "manually": [
+     57
+    ],
+    "classified": [
+     58
+    ],
+    "hundreds": [
+     59
+    ],
+    "comments": [
+     62
+    ],
+    "across": [
+     63
+    ],
+    "diverse": [
+     64
+    ],
+    "teams": [
+     65
+    ],
+    "at": [
+     66
+    ],
+    "Microsoft.": [
+     67
+    ],
+    "Our": [
+     68
+    ],
+    "study": [
+     69
+    ],
+    "reveals": [
+     70
+    ],
+    "that": [
+     71,
+     110,
+     123
+    ],
+    "while": [
+     72
+    ],
+    "finding": [
+     73
+    ],
+    "defects": [
+     74,
+     85
+    ],
+    "remains": [
+     75
+    ],
+    "main": [
+     77
+    ],
+    "motivation": [
+     78
+    ],
+    "for": [
+     79,
+     148
+    ],
+    "review,": [
+     80
+    ],
+    "reviews": [
+     81
+    ],
+    "are": [
+     82,
+     139
+    ],
+    "about": [
+     84
+    ],
+    "expected": [
+     87
+    ],
+    "instead": [
+     89
+    ],
+    "provide": [
+     90,
+     146
+    ],
+    "additional": [
+     91
+    ],
+    "benefits": [
+     92
+    ],
+    "such": [
+     93
+    ],
+    "as": [
+     94
+    ],
+    "knowledge": [
+     95
+    ],
+    "transfer,": [
+     96
+    ],
+    "increased": [
+     97
+    ],
+    "team": [
+     98
+    ],
+    "awareness,": [
+     99
+    ],
+    "creation": [
+     101
+    ],
+    "alternative": [
+     103
+    ],
+    "solutions": [
+     104
+    ],
+    "to": [
+     105,
+     131
+    ],
+    "problems.": [
+     106
+    ],
+    "Moreover,": [
+     107
+    ],
+    "we": [
+     108
+    ],
+    "find": [
+     109
+    ],
+    "change": [
+     113
+    ],
+    "understanding": [
+     114,
+     134
+    ],
+    "key": [
+     117
+    ],
+    "aspect": [
+     118
+    ],
+    "reviewing": [
+     121
+    ],
+    "employ": [
+     125
+    ],
+    "wide": [
+     127
+    ],
+    "range": [
+     128
+    ],
+    "mechanisms": [
+     130
+    ],
+    "meet": [
+     132
+    ],
+    "their": [
+     133
+    ],
+    "needs,": [
+     135
+    ],
+    "most": [
+     136
+    ],
+    "which": [
+     138
+    ],
+    "not": [
+     140
+    ],
+    "met": [
+     141
+    ],
+    "by": [
+     142
+    ],
+    "current": [
+     143
+    ],
+    "tools.": [
+     144
+    ],
+    "recommendations": [
+     147
+    ],
+    "practitioners": [
+     149
+    ],
+    "researchers.": [
+     151
+    ]
+   },
+   "referenced_works": [
+    "https://openalex.org/W73679903",
+    "https://openalex.org/W171406816",
+    "https://openalex.org/W197235345",
+    "https://openalex.org/W1516255433",
+    "https://openalex.org/W1518365261",
+    "https://openalex.org/W1533574204",
+    "https://openalex.org/W1607073065",
+    "https://openalex.org/W1973799080",
+    "https://openalex.org/W2010136639",
+    "https://openalex.org/W2014347054",
+    "https://openalex.org/W2031459347",
+    "https://openalex.org/W2034628356",
+    "https://openalex.org/W2036487649",
+    "https://openalex.org/W2064893403",
+    "https://openalex.org/W2078241739",
+    "https://openalex.org/W2112357885",
+    "https://openalex.org/W2113537253",
+    "https://openalex.org/W2117852863",
+    "https://openalex.org/W2132464057",
+    "https://openalex.org/W2133561941",
+    "https://openalex.org/W2142759419",
+    "https://openalex.org/W2145890718",
+    "https://openalex.org/W2148357053",
+    "https://openalex.org/W2153646932",
+    "https://openalex.org/W2161407365",
+    "https://openalex.org/W2167926541",
+    "https://openalex.org/W2791687293",
+    "https://openalex.org/W3099937347",
+    "https://openalex.org/W3104849124",
+    "https://openalex.org/W3123489069",
+    "https://openalex.org/W3123732438",
+    "https://openalex.org/W4205778653",
+    "https://openalex.org/W4235475834",
+    "https://openalex.org/W4241226065",
+    "https://openalex.org/W4241570254",
+    "https://openalex.org/W4246897279",
+    "https://openalex.org/W4300858789",
+    "https://openalex.org/W6603016497",
+    "https://openalex.org/W6677004863"
+   ]
+  },
+  {
+   "id": "https://openalex.org/W2091990486",
+   "title": "Expectations, outcomes, and challenges of modern code review",
+   "display_name": "Expectations, outcomes, and challenges of modern code review",
+   "authorships": [
+    {
+     "author_position": "first",
+     "author": {
+      "id": "https://openalex.org/A5082720005",
+      "display_name": "Alberto Bacchelli",
+      "orcid": "https://orcid.org/0000-0003-0193-6823"
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I57201433",
+       "display_name": "Università della Svizzera italiana",
+       "ror": "https://ror.org/03c4atk17",
+       "country_code": "CH",
+       "type": "education",
+       "lineage": [
+        "https://openalex.org/I57201433"
+       ]
+      }
+     ],
+     "countries": [
+      "CH"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Alberto Bacchelli",
+     "raw_affiliation_strings": [
+      "REVEAL @ Fac. of Inf. -, Univ. of Lugano, Lugano, Switzerland"
+     ],
+     "raw_orcid": "https://orcid.org/0000-0003-0193-6823",
+     "affiliations": [
+      {
+       "raw_affiliation_string": "REVEAL @ Fac. of Inf. -, Univ. of Lugano, Lugano, Switzerland",
+       "institution_ids": [
+        "https://openalex.org/I57201433"
+       ]
+      }
+     ]
+    },
+    {
+     "author_position": "last",
+     "author": {
+      "id": "https://openalex.org/A5036278905",
+      "display_name": "Christian Bird",
+      "orcid": "https://orcid.org/0000-0002-7774-0387"
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I1290206253",
+       "display_name": "Microsoft (United States)",
+       "ror": "https://ror.org/00d0nc645",
+       "country_code": "US",
+       "type": "company",
+       "lineage": [
+        "https://openalex.org/I1290206253"
+       ]
+      }
+     ],
+     "countries": [
+      "US"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Christian Bird",
+     "raw_affiliation_strings": [
+      "[Microsoft Research,Redmond,WA,USA]"
+     ],
+     "raw_orcid": "https://orcid.org/0000-0002-7774-0387",
+     "affiliations": [
+      {
+       "raw_affiliation_string": "[Microsoft Research,Redmond,WA,USA]",
+       "institution_ids": [
+        "https://openalex.org/I1290206253"
+       ]
+      }
+     ]
+    }
+   ],
+   "publication_year": 2013,
+   "primary_location": {
+    "id": "pmh:doi:10.5167/uzh-197773",
+    "is_oa": false,
+    "landing_page_url": null,
+    "pdf_url": null,
+    "source": {
+     "id": "https://openalex.org/S4406922384",
+     "display_name": "Open MIND",
+     "issn_l": null,
+     "issn": null,
+     "is_oa": false,
+     "is_in_doaj": false,
+     "is_core": false,
+     "host_organization": null,
+     "host_organization_name": null,
+     "host_organization_lineage": [],
+     "host_organization_lineage_names": [],
+     "type": "repository"
+    },
+    "license": null,
+    "license_id": null,
+    "version": "submittedVersion",
+    "is_accepted": false,
+    "is_published": false,
+    "raw_source_name": null,
+    "raw_type": "Text"
+   },
+   "doi": "https://doi.org/10.5555/2486788.2486882",
+   "abstract_inverted_index": {
+    "Abstract—Code": [
+     0
+    ],
+    "review": [
+     1,
+     62
+    ],
+    "is": [
+     2,
+     18,
+     116
+    ],
+    "a": [
+     3,
+     127
+    ],
+    "common": [
+     4
+    ],
+    "software": [
+     5
+    ],
+    "engineering": [
+     6
+    ],
+    "practice": [
+     7
+    ],
+    "employed": [
+     8
+    ],
+    "both": [
+     9
+    ],
+    "in": [
+     10,
+     32
+    ],
+    "open": [
+     11
+    ],
+    "source": [
+     12
+    ],
+    "and": [
+     13,
+     21,
+     30,
+     35,
+     43,
+     52,
+     55,
+     57,
+     89,
+     101,
+     113,
+     123,
+     151
+    ],
+    "industrial": [
+     14
+    ],
+    "contexts.": [
+     15
+    ],
+    "Review": [
+     16
+    ],
+    "today": [
+     17
+    ],
+    "less": [
+     19,
+     84
+    ],
+    "formal": [
+     20
+    ],
+    "more": [
+     22
+    ],
+    "&amp;quot;lightweight": [
+     23
+    ],
+    "&amp;quot;": [
+     24
+    ],
+    "than": [
+     25,
+     87
+    ],
+    "the": [
+     26,
+     33,
+     40,
+     77,
+     117
+    ],
+    "code": [
+     27,
+     47,
+     112,
+     121
+    ],
+    "inspections": [
+     28
+    ],
+    "performed": [
+     29
+    ],
+    "studied": [
+     31
+    ],
+    "70s": [
+     34
+    ],
+    "80s.": [
+     36
+    ],
+    "We": [
+     37,
+     49,
+     146
+    ],
+    "empirically": [
+     38
+    ],
+    "explore": [
+     39
+    ],
+    "motivations,": [
+     41
+    ],
+    "challenges,": [
+     42
+    ],
+    "outcomes": [
+     44
+    ],
+    "of": [
+     45,
+     61,
+     103,
+     120,
+     130,
+     138
+    ],
+    "tool-based": [
+     46
+    ],
+    "reviews.": [
+     48
+    ],
+    "observed,": [
+     50
+    ],
+    "interviewed,": [
+     51
+    ],
+    "surveyed": [
+     53
+    ],
+    "developers": [
+     54,
+     125
+    ],
+    "managers": [
+     56
+    ],
+    "manually": [
+     58
+    ],
+    "classified": [
+     59
+    ],
+    "hundreds": [
+     60
+    ],
+    "comments": [
+     63
+    ],
+    "across": [
+     64
+    ],
+    "diverse": [
+     65
+    ],
+    "teams": [
+     66
+    ],
+    "at": [
+     67
+    ],
+    "Microsoft.": [
+     68
+    ],
+    "Our": [
+     69
+    ],
+    "study": [
+     70
+    ],
+    "reveals": [
+     71
+    ],
+    "that": [
+     72,
+     111,
+     124
+    ],
+    "while": [
+     73
+    ],
+    "finding": [
+     74
+    ],
+    "defects": [
+     75,
+     86
+    ],
+    "remains": [
+     76
+    ],
+    "main": [
+     78
+    ],
+    "motivation": [
+     79
+    ],
+    "for": [
+     80,
+     149
+    ],
+    "review,": [
+     81
+    ],
+    "reviews": [
+     82
+    ],
+    "are": [
+     83,
+     140
+    ],
+    "about": [
+     85
+    ],
+    "expected": [
+     88
+    ],
+    "instead": [
+     90
+    ],
+    "provide": [
+     91,
+     147
+    ],
+    "additional": [
+     92
+    ],
+    "benefits": [
+     93
+    ],
+    "such": [
+     94
+    ],
+    "as": [
+     95
+    ],
+    "knowledge": [
+     96
+    ],
+    "transfer,": [
+     97
+    ],
+    "increased": [
+     98
+    ],
+    "team": [
+     99
+    ],
+    "awareness,": [
+     100
+    ],
+    "creation": [
+     102
+    ],
+    "alternative": [
+     104
+    ],
+    "solutions": [
+     105
+    ],
+    "to": [
+     106,
+     132
+    ],
+    "problems.": [
+     107
+    ],
+    "Moreover,": [
+     108
+    ],
+    "we": [
+     109
+    ],
+    "find": [
+     110
+    ],
+    "change": [
+     114
+    ],
+    "understanding": [
+     115,
+     135
+    ],
+    "key": [
+     118
+    ],
+    "aspect": [
+     119
+    ],
+    "reviewing": [
+     122
+    ],
+    "employ": [
+     126
+    ],
+    "wide": [
+     128
+    ],
+    "range": [
+     129
+    ],
+    "mechanisms": [
+     131
+    ],
+    "meet": [
+     133
+    ],
+    "their": [
+     134
+    ],
+    "needs,": [
+     136
+    ],
+    "most": [
+     137
+    ],
+    "which": [
+     139
+    ],
+    "not": [
+     141
+    ],
+    "met": [
+     142
+    ],
+    "by": [
+     143
+    ],
+    "current": [
+     144
+    ],
+    "tools.": [
+     145
+    ],
+    "recommendations": [
+     148
+    ],
+    "practitioners": [
+     150
+    ],
+    "researchers.": [
+     152
+    ],
+    "I.": [
+     153
+    ]
+   },
+   "referenced_works": [
+    "https://openalex.org/W73679903",
+    "https://openalex.org/W171406816",
+    "https://openalex.org/W197235345",
+    "https://openalex.org/W638116683",
+    "https://openalex.org/W1516255433",
+    "https://openalex.org/W1518365261",
+    "https://openalex.org/W1533574204",
+    "https://openalex.org/W1594519886",
+    "https://openalex.org/W1607073065",
+    "https://openalex.org/W1714723801",
+    "https://openalex.org/W1973799080",
+    "https://openalex.org/W1986392053",
+    "https://openalex.org/W2010136639",
+    "https://openalex.org/W2014347054",
+    "https://openalex.org/W2019585945",
+    "https://openalex.org/W2022079264",
+    "https://openalex.org/W2031459347",
+    "https://openalex.org/W2034628356",
+    "https://openalex.org/W2036487649",
+    "https://openalex.org/W2039875781",
+    "https://openalex.org/W2064893403",
+    "https://openalex.org/W2078241739",
+    "https://openalex.org/W2112357885",
+    "https://openalex.org/W2113537253",
+    "https://openalex.org/W2117852863",
+    "https://openalex.org/W2127166753",
+    "https://openalex.org/W2132464057",
+    "https://openalex.org/W2133561941",
+    "https://openalex.org/W2142759419",
+    "https://openalex.org/W2145890718",
+    "https://openalex.org/W2148357053",
+    "https://openalex.org/W2167926541",
+    "https://openalex.org/W2177797324",
+    "https://openalex.org/W2410083900",
+    "https://openalex.org/W3123489069",
+    "https://openalex.org/W3123732438"
+   ]
+  },
+  {
+   "id": "https://openalex.org/W2808429234",
+   "title": "Modern code review",
+   "display_name": "Modern code review",
+   "authorships": [
+    {
+     "author_position": "first",
+     "author": {
+      "id": "https://openalex.org/A5013989748",
+      "display_name": "Caitlin Sadowski",
+      "orcid": "https://orcid.org/0000-0002-7742-2784"
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I1291425158",
+       "display_name": "Google (United States)",
+       "ror": "https://ror.org/00njsd438",
+       "country_code": "US",
+       "type": "company",
+       "lineage": [
+        "https://openalex.org/I1291425158",
+        "https://openalex.org/I4210128969"
+       ]
+      }
+     ],
+     "countries": [
+      "US"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Caitlin Sadowski",
+     "raw_affiliation_strings": [
+      "Google, Inc"
+     ],
+     "raw_orcid": null,
+     "affiliations": [
+      {
+       "raw_affiliation_string": "Google, Inc",
+       "institution_ids": [
+        "https://openalex.org/I1291425158"
+       ]
+      }
+     ]
+    },
+    {
+     "author_position": "middle",
+     "author": {
+      "id": "https://openalex.org/A5001336269",
+      "display_name": "Emma Söderberg",
+      "orcid": "https://orcid.org/0000-0001-7966-4560"
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I1291425158",
+       "display_name": "Google (United States)",
+       "ror": "https://ror.org/00njsd438",
+       "country_code": "US",
+       "type": "company",
+       "lineage": [
+        "https://openalex.org/I1291425158",
+        "https://openalex.org/I4210128969"
+       ]
+      }
+     ],
+     "countries": [
+      "US"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Emma Söderberg",
+     "raw_affiliation_strings": [
+      "Google, Inc"
+     ],
+     "raw_orcid": null,
+     "affiliations": [
+      {
+       "raw_affiliation_string": "Google, Inc",
+       "institution_ids": [
+        "https://openalex.org/I1291425158"
+       ]
+      }
+     ]
+    },
+    {
+     "author_position": "middle",
+     "author": {
+      "id": "https://openalex.org/A5047728176",
+      "display_name": "Luke Church",
+      "orcid": "https://orcid.org/0000-0002-9943-6597"
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I1291425158",
+       "display_name": "Google (United States)",
+       "ror": "https://ror.org/00njsd438",
+       "country_code": "US",
+       "type": "company",
+       "lineage": [
+        "https://openalex.org/I1291425158",
+        "https://openalex.org/I4210128969"
+       ]
+      }
+     ],
+     "countries": [
+      "US"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Luke Church",
+     "raw_affiliation_strings": [
+      "Google, Inc"
+     ],
+     "raw_orcid": null,
+     "affiliations": [
+      {
+       "raw_affiliation_string": "Google, Inc",
+       "institution_ids": [
+        "https://openalex.org/I1291425158"
+       ]
+      }
+     ]
+    },
+    {
+     "author_position": "middle",
+     "author": {
+      "id": "https://openalex.org/A5029309259",
+      "display_name": "Michal Sipko",
+      "orcid": null
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I1291425158",
+       "display_name": "Google (United States)",
+       "ror": "https://ror.org/00njsd438",
+       "country_code": "US",
+       "type": "company",
+       "lineage": [
+        "https://openalex.org/I1291425158",
+        "https://openalex.org/I4210128969"
+       ]
+      }
+     ],
+     "countries": [
+      "US"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Michal Sipko",
+     "raw_affiliation_strings": [
+      "Google, Inc"
+     ],
+     "raw_orcid": null,
+     "affiliations": [
+      {
+       "raw_affiliation_string": "Google, Inc",
+       "institution_ids": [
+        "https://openalex.org/I1291425158"
+       ]
+      }
+     ]
+    },
+    {
+     "author_position": "last",
+     "author": {
+      "id": "https://openalex.org/A5082720005",
+      "display_name": "Alberto Bacchelli",
+      "orcid": "https://orcid.org/0000-0003-0193-6823"
+     },
+     "institutions": [
+      {
+       "id": "https://openalex.org/I202697423",
+       "display_name": "University of Zurich",
+       "ror": "https://ror.org/02crff812",
+       "country_code": "CH",
+       "type": "education",
+       "lineage": [
+        "https://openalex.org/I202697423"
+       ]
+      }
+     ],
+     "countries": [
+      "CH"
+     ],
+     "is_corresponding": false,
+     "raw_author_name": "Alberto Bacchelli",
+     "raw_affiliation_strings": [
+      "University of Zurich"
+     ],
+     "raw_orcid": null,
+     "affiliations": [
+      {
+       "raw_affiliation_string": "University of Zurich",
+       "institution_ids": [
+        "https://openalex.org/I202697423"
+       ]
+      }
+     ]
+    }
+   ],
+   "publication_year": 2018,
+   "primary_location": {
+    "id": "doi:10.1145/3183519.3183525",
+    "is_oa": true,
+    "landing_page_url": "https://doi.org/10.1145/3183519.3183525",
+    "pdf_url": "http://dl.acm.org/ft_gateway.cfm?id=3183525&type=pdf",
+    "source": null,
+    "license": null,
+    "license_id": null,
+    "version": "publishedVersion",
+    "is_accepted": true,
+    "is_published": true,
+    "raw_source_name": "Proceedings of the 40th International Conference on Software Engineering: Software Engineering in Practice",
+    "raw_type": "proceedings-article"
+   },
+   "doi": "https://doi.org/10.1145/3183519.3183525",
+   "abstract_inverted_index": {
+    "Employing": [
+     0
+    ],
+    "lightweight,": [
+     1
+    ],
+    "tool-based": [
+     2
+    ],
+    "code": [
+     3,
+     6,
+     10,
+     35,
+     41,
+     75,
+     80,
+     107
+    ],
+    "review": [
+     4,
+     36,
+     42,
+     96,
+     108
+    ],
+    "of": [
+     5,
+     20,
+     33,
+     74,
+     79,
+     84,
+     95
+    ],
+    "changes": [
+     7,
+     76
+    ],
+    "(aka": [
+     8
+    ],
+    "modern": [
+     9,
+     34
+    ],
+    "review)": [
+     11
+    ],
+    "has": [
+     12,
+     69
+    ],
+    "become": [
+     13
+    ],
+    "the": [
+     14,
+     49,
+     67,
+     93
+    ],
+    "norm": [
+     15
+    ],
+    "for": [
+     16,
+     98
+    ],
+    "a": [
+     17,
+     87
+    ],
+    "wide": [
+     18
+    ],
+    "variety": [
+     19
+    ],
+    "open-source": [
+     21
+    ],
+    "and": [
+     22,
+     45,
+     61,
+     77,
+     92,
+     113,
+     116
+    ],
+    "industrial": [
+     23
+    ],
+    "systems.": [
+     24
+    ],
+    "In": [
+     25
+    ],
+    "this": [
+     26,
+     59
+    ],
+    "paper,": [
+     27
+    ],
+    "we": [
+     28,
+     103
+    ],
+    "make": [
+     29
+    ],
+    "an": [
+     30
+    ],
+    "exploratory": [
+     31
+    ],
+    "investigation": [
+     32
+    ],
+    "at": [
+     37,
+     109
+    ],
+    "Google.": [
+     38
+    ],
+    "Google": [
+     39,
+     57
+    ],
+    "introduced": [
+     40,
+     58
+    ],
+    "early": [
+     43
+    ],
+    "on": [
+     44,
+     55
+    ],
+    "evolved": [
+     46
+    ],
+    "it": [
+     47
+    ],
+    "over": [
+     48
+    ],
+    "years;": [
+     50
+    ],
+    "our": [
+     51
+    ],
+    "study": [
+     52
+    ],
+    "sheds": [
+     53
+    ],
+    "light": [
+     54
+    ],
+    "why": [
+     56
+    ],
+    "practice": [
+     60
+    ],
+    "analyzes": [
+     62
+    ],
+    "its": [
+     63
+    ],
+    "current": [
+     64,
+     111
+    ],
+    "status,": [
+     65
+    ],
+    "after": [
+     66
+    ],
+    "process": [
+     68
+    ],
+    "been": [
+     70
+    ],
+    "refined": [
+     71
+    ],
+    "through": [
+     72
+    ],
+    "decades": [
+     73
+    ],
+    "millions": [
+     78
+    ],
+    "reviews.": [
+     81
+    ],
+    "By": [
+     82
+    ],
+    "means": [
+     83
+    ],
+    "12": [
+     85
+    ],
+    "interviews,": [
+     86
+    ],
+    "survey": [
+     88
+    ],
+    "with": [
+     89
+    ],
+    "44": [
+     90
+    ],
+    "respondents,": [
+     91
+    ],
+    "analysis": [
+     94
+    ],
+    "logs": [
+     97
+    ],
+    "9": [
+     99
+    ],
+    "million": [
+     100
+    ],
+    "reviewed": [
+     101
+    ],
+    "changes,": [
+     102
+    ],
+    "investigate": [
+     104
+    ],
+    "motivations": [
+     105
+    ],
+    "behind": [
+     106
+    ],
+    "Google,": [
+     110
+    ],
+    "practices,": [
+     112
+    ],
+    "developers'": [
+     114
+    ],
+    "satisfaction": [
+     115
+    ],
+    "challenges.": [
+     117
+    ]
+   },
+   "referenced_works": [
+    "https://openalex.org/W73679903",
+    "https://openalex.org/W1556808170",
+    "https://openalex.org/W1558091378",
+    "https://openalex.org/W1592081868",
+    "https://openalex.org/W1973799080",
+    "https://openalex.org/W1982335236",
+    "https://openalex.org/W1998900885",
+    "https://openalex.org/W2006192515",
+    "https://openalex.org/W2007210734",
+    "https://openalex.org/W2010136639",
+    "https://openalex.org/W2010321946",
+    "https://openalex.org/W2020400699",
+    "https://openalex.org/W2021365718",
+    "https://openalex.org/W2036487649",
+    "https://openalex.org/W2064296229",
+    "https://openalex.org/W2066709420",
+    "https://openalex.org/W2075917870",
+    "https://openalex.org/W2082638814",
+    "https://openalex.org/W2091990486",
+    "https://openalex.org/W2097227214",
+    "https://openalex.org/W2098044686",
+    "https://openalex.org/W2099332975",
+    "https://openalex.org/W2107086891",
+    "https://openalex.org/W2117852863",
+    "https://openalex.org/W2142759419",
+    "https://openalex.org/W2144160189",
+    "https://openalex.org/W2145574830",
+    "https://openalex.org/W2146691185",
+    "https://openalex.org/W2148854374",
+    "https://openalex.org/W2151979607",
+    "https://openalex.org/W2161407365",
+    "https://openalex.org/W2161585367",
+    "https://openalex.org/W2167926541",
+    "https://openalex.org/W2329395632",
+    "https://openalex.org/W2344367508",
+    "https://openalex.org/W2348249338",
+    "https://openalex.org/W2374812233",
+    "https://openalex.org/W2466101837",
+    "https://openalex.org/W2469513535",
+    "https://openalex.org/W2472590650",
+    "https://openalex.org/W2543971965",
+    "https://openalex.org/W2978796458",
+    "https://openalex.org/W3148527572",
+    "https://openalex.org/W4231404931",
+    "https://openalex.org/W4232918024",
+    "https://openalex.org/W4235786747",
+    "https://openalex.org/W4246032972",
+    "https://openalex.org/W4254666025"
+   ]
+  }
+ ],
+ "group_by": []
+}

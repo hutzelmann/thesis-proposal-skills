@@ -1,0 +1,66 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/1XaWHExVv7qNgyEtoT8qzokA4Dw</id>
+  <title>arXiv Query: search_query=all:code OR all:review&amp;id_list=&amp;start=0&amp;max_results=3</title>
+  <updated>2026-07-29T13:49:55Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=all:code+OR+all:review&amp;start=0&amp;max_results=3&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>3</opensearch:itemsPerPage>
+  <opensearch:totalResults>310775</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/1803.05689v1</id>
+    <title>Using StackOverflow content to assist in code review</title>
+    <updated>2018-03-15T10:58:22Z</updated>
+    <link href="https://arxiv.org/abs/1803.05689v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/1803.05689v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>An important goal for programmers is to minimize cost of identifying and correcting defects in source code. Code review is commonly used for identifying programming defects. However, manual code review has some shortcomings: a) it is time consuming, b) outcomes are subjective and depend on the skills of reviewers. An automated approach for assisting in code reviews is thus highly desirable. We present a tool for assisting in code review and results from our experiments evaluating the tool in different scenarios. The tool leveraged content available from professional programmer support forums (e.g. StackOverflow.com) to determine potential defectiveness of a given piece of source code. The defectiveness is expressed on the scale of {Likely defective, Neutral, Unlikely to be defective}. Basic idea employed in the tool is to: a) Identify a set P of discussion posts on StackOverflow such that each p in P contains source code fragment(s) which sufficiently resemble the input code C being reviewed. b) Determine the likelihood of C being defective by considering all p in P . A novel aspect of our approach is to use document fingerprinting for comparing two pieces of source code. Our choice of document fingerprinting technique is inspired by source code plagiarism detection tools where it has proven to be very successful. In the experiments that we performed to verify effectiveness of our approach source code samples from more than 300 GitHub open source repositories were taken as input. A precision of more than 90% in identifying correct/relevant results has been achieved.</summary>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.ET" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2018-03-15T10:58:22Z</published>
+    <arxiv:comment>Keywords: Code Review, StackOverflow, Software Development, Crowd Knowledge, Automated Software Engineering</arxiv:comment>
+    <arxiv:primary_category term="cs.SE"/>
+    <author>
+      <name>Balwinder Sodhi</name>
+    </author>
+    <author>
+      <name>Shipra Sharma</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2603.03406v1</id>
+    <title>Review Beats Planning: Dual-Model Interaction Patterns for Code Synthesis</title>
+    <updated>2026-03-03T16:57:14Z</updated>
+    <link href="https://arxiv.org/abs/2603.03406v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2603.03406v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>How should two language models interact to produce better code than either can alone? The conventional approach -- a reasoning model plans, a code specialist implements -- seems natural but fails: on HumanEval+, plan-then-code degrades performance by 2.4 percentage points versus the code specialist alone. We show that reversing the interaction changes everything. When the code specialist generates freely and the reasoning model reviews instead of plans, the same two models on the same hardware achieve 90.2% pass@1 -- exceeding GPT-4o (87.2%) and O1 Preview (89.0%) -- on ~$2/hr of commodity GPU. Cross-benchmark validation across 542 problems (HumanEval+ and MBPP+) reveals a moderating variable: review effectiveness scales with specification richness, yielding 4x more improvement on richly-specified problems (+9.8pp) than on lean ones (+2.3pp), while remaining net-positive in both cases. The practical implication is twofold: compose models by their cognitive strengths (reviewers review, coders code), and invest in specification quality to amplify the returns.</summary>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-03-03T16:57:14Z</published>
+    <arxiv:comment>10 pages, 5 figures, 4 tables. Code and results: https://github.com/miller-itsec/review-beats-planning</arxiv:comment>
+    <arxiv:primary_category term="cs.SE"/>
+    <author>
+      <name>Jan Miller</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2606.28438v1</id>
+    <title>When AI Reviews Its Own Code: Recursive Self-Training Collapse in Code LLMs</title>
+    <updated>2026-06-26T07:35:43Z</updated>
+    <link href="https://arxiv.org/abs/2606.28438v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2606.28438v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Recursive self-training can degrade neural generative models when generated data is reused without fresh human data or external quality control. We study this risk in code LLMs, where AI-generated code can enter real repositories, later become training data, and create a repository-scale self-training loop. While software development traditionally interrupts this loop through pull-request review, tests, compilation, and human approval, AI coding tools now produce code faster than humans can review it, and code review itself is increasingly automated by AI systems. We therefore compare three recursive fine-tuning regimes: no review, Human-gate review using model-independent filters such as compilation and static quality checks, and AI-self-gate review using the code LLM's own signals such as perplexity and binary self-scoring. Across multiple code LLMs and benchmarks, no review collapses fastest, Human-gate filters slow but do not stop collapse, and AI-self-gate filters can look strong early but later lose their filtering effect. In the clearest case, the binary self-gate enters a rubber-stamp regime where acceptance scores rise while benchmark correctness falls. We explain this behavior by formulating review as gated distributional reweighting, proving that AI self-gating degenerates to ungated self-training under a self-confirming acceptance condition, and giving a spectral analysis of representation-level covariance concentration under recursive retraining. These results suggest that stable recursive code LLM training requires exogenous verification rather than model-coupled self-review.</summary>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-06-26T07:35:43Z</published>
+    <arxiv:comment>Under Review</arxiv:comment>
+    <arxiv:primary_category term="cs.SE"/>
+    <author>
+      <name>Xinyuan Song</name>
+    </author>
+    <author>
+      <name>Zekun Cai</name>
+    </author>
+    <author>
+      <name>Liang Zhao</name>
+    </author>
+  </entry>
+</feed>

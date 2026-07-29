@@ -1,0 +1,994 @@
+{
+ "lookup": {
+  "id": "https://openalex.org/W2950369002",
+  "referenced_works": [
+   "https://openalex.org/W144670803",
+   "https://openalex.org/W1590495275",
+   "https://openalex.org/W2005617509"
+  ]
+ },
+ "batch": {
+  "meta": {
+   "count": 3,
+   "db_response_time_ms": 23,
+   "page": 1,
+   "per_page": 3,
+   "groups_count": null,
+   "x_query": {
+    "oql": "works where openalex id is (W144670803 or W1590495275 or W2005617509)",
+    "oqo": {
+     "get_rows": "works",
+     "filter_rows": [
+      {
+       "join": "or",
+       "filters": [
+        {
+         "column_id": "ids.openalex",
+         "value": "W144670803"
+        },
+        {
+         "column_id": "ids.openalex",
+         "value": "W1590495275"
+        },
+        {
+         "column_id": "ids.openalex",
+         "value": "W2005617509"
+        }
+       ]
+      }
+     ]
+    },
+    "url": "/works?filter=ids.openalex:W144670803|W1590495275|W2005617509&per_page=3"
+   },
+   "cost_usd": 0.0001
+  },
+  "results": [
+   {
+    "id": "https://openalex.org/W2005617509",
+    "title": "Applied Linear Statistical Models",
+    "display_name": "Applied Linear Statistical Models",
+    "authorships": [
+     {
+      "author_position": "first",
+      "author": {
+       "id": "https://openalex.org/A5024581308",
+       "display_name": "H. Senter",
+       "orcid": null
+      },
+      "institutions": [
+       {
+        "id": "https://openalex.org/I8078737",
+        "display_name": "Clemson University",
+        "ror": "https://ror.org/037s24f05",
+        "country_code": "US",
+        "type": "education",
+        "lineage": [
+         "https://openalex.org/I8078737"
+        ]
+       }
+      ],
+      "countries": [
+       "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Herman F Senter",
+      "raw_affiliation_strings": [
+       "Clemson University"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+       {
+        "raw_affiliation_string": "Clemson University",
+        "institution_ids": [
+         "https://openalex.org/I8078737"
+        ]
+       }
+      ]
+     }
+    ],
+    "publication_year": 2008,
+    "primary_location": {
+     "id": "doi:10.1198/016214508000000300",
+     "is_oa": false,
+     "landing_page_url": "https://doi.org/10.1198/016214508000000300",
+     "pdf_url": null,
+     "source": {
+      "id": "https://openalex.org/S4394736638",
+      "display_name": "Journal of the American Statistical Association",
+      "issn_l": "0162-1459",
+      "issn": [
+       "0162-1459",
+       "1537-274X"
+      ],
+      "is_oa": false,
+      "is_in_doaj": false,
+      "is_core": true,
+      "host_organization": null,
+      "host_organization_name": null,
+      "host_organization_lineage": [],
+      "host_organization_lineage_names": [],
+      "type": "journal"
+     },
+     "license": null,
+     "license_id": null,
+     "version": "publishedVersion",
+     "is_accepted": true,
+     "is_published": true,
+     "raw_source_name": "Journal of the American Statistical Association",
+     "raw_type": "journal-article"
+    },
+    "doi": "https://doi.org/10.1198/016214508000000300",
+    "abstract_inverted_index": {
+     "\"Applied": [
+      0
+     ],
+     "Linear": [
+      1
+     ],
+     "Statistical": [
+      2,
+      8
+     ],
+     "Models.\"": [
+      3
+     ],
+     "Journal": [
+      4
+     ],
+     "of": [
+      5
+     ],
+     "the": [
+      6
+     ],
+     "American": [
+      7
+     ],
+     "Association,": [
+      9
+     ],
+     "103(482),": [
+      10
+     ],
+     "p.": [
+      11
+     ],
+     "880": [
+      12
+     ]
+    },
+    "referenced_works": []
+   },
+   {
+    "id": "https://openalex.org/W1590495275",
+    "title": "Predicting Elections with Twitter: What 140 Characters Reveal about Political Sentiment",
+    "display_name": "Predicting Elections with Twitter: What 140 Characters Reveal about Political Sentiment",
+    "authorships": [
+     {
+      "author_position": "first",
+      "author": {
+       "id": "https://openalex.org/A5037207545",
+       "display_name": "Andranik Tumasjan",
+       "orcid": "https://orcid.org/0000-0002-0127-8499"
+      },
+      "institutions": [
+       {
+        "id": "https://openalex.org/I62916508",
+        "display_name": "Technical University of Munich",
+        "ror": "https://ror.org/02kkvpp62",
+        "country_code": "DE",
+        "type": "education",
+        "lineage": [
+         "https://openalex.org/I62916508"
+        ]
+       }
+      ],
+      "countries": [
+       "DE"
+      ],
+      "is_corresponding": false,
+      "raw_author_name": "Andranik Tumasjan",
+      "raw_affiliation_strings": [
+       "Technische Universität München",
+       "[Technische Universität, München]"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+       {
+        "raw_affiliation_string": "Technische Universität München",
+        "institution_ids": [
+         "https://openalex.org/I62916508"
+        ]
+       },
+       {
+        "raw_affiliation_string": "[Technische Universität, München]",
+        "institution_ids": [
+         "https://openalex.org/I62916508"
+        ]
+       }
+      ]
+     },
+     {
+      "author_position": "middle",
+      "author": {
+       "id": "https://openalex.org/A5079228465",
+       "display_name": "Timm O. Sprenger",
+       "orcid": null
+      },
+      "institutions": [
+       {
+        "id": "https://openalex.org/I62916508",
+        "display_name": "Technical University of Munich",
+        "ror": "https://ror.org/02kkvpp62",
+        "country_code": "DE",
+        "type": "education",
+        "lineage": [
+         "https://openalex.org/I62916508"
+        ]
+       }
+      ],
+      "countries": [
+       "DE"
+      ],
+      "is_corresponding": false,
+      "raw_author_name": "Timm Sprenger",
+      "raw_affiliation_strings": [
+       "Technische Universität München",
+       "[Technische Universität, München]"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+       {
+        "raw_affiliation_string": "Technische Universität München",
+        "institution_ids": [
+         "https://openalex.org/I62916508"
+        ]
+       },
+       {
+        "raw_affiliation_string": "[Technische Universität, München]",
+        "institution_ids": [
+         "https://openalex.org/I62916508"
+        ]
+       }
+      ]
+     },
+     {
+      "author_position": "middle",
+      "author": {
+       "id": "https://openalex.org/A5004371509",
+       "display_name": "Philipp Sandner",
+       "orcid": null
+      },
+      "institutions": [
+       {
+        "id": "https://openalex.org/I62916508",
+        "display_name": "Technical University of Munich",
+        "ror": "https://ror.org/02kkvpp62",
+        "country_code": "DE",
+        "type": "education",
+        "lineage": [
+         "https://openalex.org/I62916508"
+        ]
+       }
+      ],
+      "countries": [
+       "DE"
+      ],
+      "is_corresponding": false,
+      "raw_author_name": "Philipp Sandner",
+      "raw_affiliation_strings": [
+       "Technische Universität München",
+       "[Technische Universität, München]"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+       {
+        "raw_affiliation_string": "Technische Universität München",
+        "institution_ids": [
+         "https://openalex.org/I62916508"
+        ]
+       },
+       {
+        "raw_affiliation_string": "[Technische Universität, München]",
+        "institution_ids": [
+         "https://openalex.org/I62916508"
+        ]
+       }
+      ]
+     },
+     {
+      "author_position": "last",
+      "author": {
+       "id": "https://openalex.org/A5040738362",
+       "display_name": "Isabell M. Welpe",
+       "orcid": null
+      },
+      "institutions": [
+       {
+        "id": "https://openalex.org/I62916508",
+        "display_name": "Technical University of Munich",
+        "ror": "https://ror.org/02kkvpp62",
+        "country_code": "DE",
+        "type": "education",
+        "lineage": [
+         "https://openalex.org/I62916508"
+        ]
+       }
+      ],
+      "countries": [
+       "DE"
+      ],
+      "is_corresponding": false,
+      "raw_author_name": "Isabell Welpe",
+      "raw_affiliation_strings": [
+       "Technische Universität München",
+       "[Technische Universität, München]"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+       {
+        "raw_affiliation_string": "Technische Universität München",
+        "institution_ids": [
+         "https://openalex.org/I62916508"
+        ]
+       },
+       {
+        "raw_affiliation_string": "[Technische Universität, München]",
+        "institution_ids": [
+         "https://openalex.org/I62916508"
+        ]
+       }
+      ]
+     }
+    ],
+    "publication_year": 2010,
+    "primary_location": {
+     "id": "doi:10.1609/icwsm.v4i1.14009",
+     "is_oa": true,
+     "landing_page_url": "https://doi.org/10.1609/icwsm.v4i1.14009",
+     "pdf_url": "https://ojs.aaai.org/index.php/ICWSM/article/download/14009/13858",
+     "source": {
+      "id": "https://openalex.org/S4387284482",
+      "display_name": "Proceedings of the International AAAI Conference on Web and Social Media",
+      "issn_l": "2162-3449",
+      "issn": [
+       "2162-3449",
+       "2334-0770"
+      ],
+      "is_oa": true,
+      "is_in_doaj": false,
+      "is_core": true,
+      "host_organization": null,
+      "host_organization_name": null,
+      "host_organization_lineage": [],
+      "host_organization_lineage_names": [],
+      "type": "journal"
+     },
+     "license": null,
+     "license_id": null,
+     "version": "publishedVersion",
+     "is_accepted": true,
+     "is_published": true,
+     "raw_source_name": "Proceedings of the International AAAI Conference on Web and Social Media",
+     "raw_type": "journal-article"
+    },
+    "doi": "https://doi.org/10.1609/icwsm.v4i1.14009",
+    "abstract_inverted_index": {
+     "Twitter": [
+      0,
+      34,
+      48,
+      82,
+      143
+     ],
+     "is": [
+      1,
+      35,
+      83
+     ],
+     "a": [
+      2,
+      15,
+      38,
+      61,
+      68,
+      72,
+      76,
+      99,
+      160
+     ],
+     "microblogging": [
+      3,
+      156
+     ],
+     "website": [
+      4
+     ],
+     "where": [
+      5
+     ],
+     "users": [
+      6
+     ],
+     "read": [
+      7
+     ],
+     "and": [
+      8,
+      43,
+      119,
+      134,
+      166
+     ],
+     "write": [
+      9
+     ],
+     "millions": [
+      10
+     ],
+     "of": [
+      11,
+      17,
+      26,
+      63,
+      96,
+      108,
+      123,
+      142,
+      155,
+      163
+     ],
+     "short": [
+      12
+     ],
+     "messages": [
+      13,
+      46,
+      66,
+      97,
+      144
+     ],
+     "on": [
+      14,
+      47
+     ],
+     "variety": [
+      16
+     ],
+     "topics": [
+      18
+     ],
+     "every": [
+      19
+     ],
+     "day.": [
+      20
+     ],
+     "This": [
+      21
+     ],
+     "study": [
+      22
+     ],
+     "uses": [
+      23
+     ],
+     "the": [
+      24,
+      27,
+      93,
+      102,
+      124,
+      132,
+      140,
+      147,
+      153
+     ],
+     "context": [
+      25
+     ],
+     "German": [
+      28
+     ],
+     "federal": [
+      29
+     ],
+     "election": [
+      30,
+      103
+     ],
+     "to": [
+      31,
+      70,
+      131
+     ],
+     "investigate": [
+      32
+     ],
+     "whether": [
+      33,
+      44
+     ],
+     "used": [
+      36,
+      85
+     ],
+     "as": [
+      37,
+      159
+     ],
+     "forum": [
+      39
+     ],
+     "for": [
+      40,
+      87,
+      169
+     ],
+     "political": [
+      41,
+      52,
+      73,
+      88,
+      117,
+      126,
+      136,
+      149,
+      164
+     ],
+     "deliberation": [
+      42
+     ],
+     "online": [
+      45
+     ],
+     "validly": [
+      49
+     ],
+     "mirror": [
+      50
+     ],
+     "offline": [
+      51,
+      148
+     ],
+     "sentiment.": [
+      53
+     ],
+     "Using": [
+      54
+     ],
+     "LIWC": [
+      55
+     ],
+     "text": [
+      56
+     ],
+     "analysis": [
+      57,
+      122
+     ],
+     "software,": [
+      58
+     ],
+     "we": [
+      59
+     ],
+     "conducted": [
+      60
+     ],
+     "content-analysis": [
+      62
+     ],
+     "over": [
+      64
+     ],
+     "100,000": [
+      65
+     ],
+     "containing": [
+      67
+     ],
+     "reference": [
+      69
+     ],
+     "either": [
+      71
+     ],
+     "party": [
+      74,
+      100
+     ],
+     "or": [
+      75
+     ],
+     "politician.": [
+      77
+     ],
+     "Our": [
+      78
+     ],
+     "results": [
+      79
+     ],
+     "show": [
+      80
+     ],
+     "that": [
+      81,
+      92,
+      139
+     ],
+     "indeed": [
+      84
+     ],
+     "extensively": [
+      86
+     ],
+     "deliberation.": [
+      89
+     ],
+     "We": [
+      90,
+      151
+     ],
+     "find": [
+      91
+     ],
+     "mere": [
+      94
+     ],
+     "number": [
+      95
+     ],
+     "mentioning": [
+      98
+     ],
+     "reflects": [
+      101,
+      146
+     ],
+     "result.": [
+      104
+     ],
+     "Moreover,": [
+      105
+     ],
+     "joint": [
+      106
+     ],
+     "mentions": [
+      107
+     ],
+     "two": [
+      109
+     ],
+     "parties": [
+      110
+     ],
+     "are": [
+      111
+     ],
+     "in": [
+      112
+     ],
+     "line": [
+      113
+     ],
+     "with": [
+      114
+     ],
+     "real": [
+      115
+     ],
+     "world": [
+      116
+     ],
+     "ties": [
+      118
+     ],
+     "coalitions.": [
+      120
+     ],
+     "An": [
+      121
+     ],
+     "tweets’": [
+      125
+     ],
+     "sentiment": [
+      127,
+      165
+     ],
+     "demonstrates": [
+      128
+     ],
+     "close": [
+      129
+     ],
+     "correspondence": [
+      130
+     ],
+     "parties'": [
+      133
+     ],
+     "politicians’": [
+      135
+     ],
+     "positions": [
+      137
+     ],
+     "indicating": [
+      138
+     ],
+     "content": [
+      141,
+      158
+     ],
+     "plausibly": [
+      145
+     ],
+     "landscape.": [
+      150
+     ],
+     "discuss": [
+      152
+     ],
+     "use": [
+      154
+     ],
+     "message": [
+      157
+     ],
+     "valid": [
+      161
+     ],
+     "indicator": [
+      162
+     ],
+     "derive": [
+      167
+     ],
+     "suggestions": [
+      168
+     ],
+     "further": [
+      170
+     ],
+     "research.": [
+      171
+     ]
+    },
+    "referenced_works": [
+     "https://openalex.org/W120485128",
+     "https://openalex.org/W200809236",
+     "https://openalex.org/W1543393566",
+     "https://openalex.org/W1552538669",
+     "https://openalex.org/W1978030238",
+     "https://openalex.org/W1994512679",
+     "https://openalex.org/W1995044374",
+     "https://openalex.org/W2030894987",
+     "https://openalex.org/W2046804949",
+     "https://openalex.org/W2059422513",
+     "https://openalex.org/W2059503205",
+     "https://openalex.org/W2105247391",
+     "https://openalex.org/W2122379911",
+     "https://openalex.org/W2130059493",
+     "https://openalex.org/W2130402295",
+     "https://openalex.org/W2131855731",
+     "https://openalex.org/W2134746982",
+     "https://openalex.org/W2136407110",
+     "https://openalex.org/W2140173168",
+     "https://openalex.org/W2140910804",
+     "https://openalex.org/W2152284345",
+     "https://openalex.org/W2281492572",
+     "https://openalex.org/W2531441532",
+     "https://openalex.org/W2672569013",
+     "https://openalex.org/W2915177913",
+     "https://openalex.org/W3122139608",
+     "https://openalex.org/W4255173720",
+     "https://openalex.org/W4285719527",
+     "https://openalex.org/W6680475899",
+     "https://openalex.org/W6836791981"
+    ]
+   },
+   {
+    "id": "https://openalex.org/W144670803",
+    "title": "Automatic Crime Prediction Using Events Extracted from Twitter Posts",
+    "display_name": "Automatic Crime Prediction Using Events Extracted from Twitter Posts",
+    "authorships": [
+     {
+      "author_position": "first",
+      "author": {
+       "id": "https://openalex.org/A5100333272",
+       "display_name": "Xiaofeng Wang",
+       "orcid": "https://orcid.org/0009-0001-6453-1826"
+      },
+      "institutions": [
+       {
+        "id": "https://openalex.org/I51556381",
+        "display_name": "University of Virginia",
+        "ror": "https://ror.org/0153tk833",
+        "country_code": "US",
+        "type": "education",
+        "lineage": [
+         "https://openalex.org/I51556381"
+        ]
+       }
+      ],
+      "countries": [
+       "US"
+      ],
+      "is_corresponding": false,
+      "raw_author_name": "Xiaofeng Wang",
+      "raw_affiliation_strings": [
+       "Department of Systems and Information Engineering, University of Virginia, USA",
+       "[Department of Systems & Information Engineering, University of Virginia]"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+       {
+        "raw_affiliation_string": "Department of Systems and Information Engineering, University of Virginia, USA",
+        "institution_ids": [
+         "https://openalex.org/I51556381"
+        ]
+       },
+       {
+        "raw_affiliation_string": "[Department of Systems & Information Engineering, University of Virginia]",
+        "institution_ids": [
+         "https://openalex.org/I51556381"
+        ]
+       }
+      ]
+     },
+     {
+      "author_position": "middle",
+      "author": {
+       "id": "https://openalex.org/A5034370354",
+       "display_name": "Matthew S. Gerber",
+       "orcid": "https://orcid.org/0000-0002-9069-4100"
+      },
+      "institutions": [
+       {
+        "id": "https://openalex.org/I51556381",
+        "display_name": "University of Virginia",
+        "ror": "https://ror.org/0153tk833",
+        "country_code": "US",
+        "type": "education",
+        "lineage": [
+         "https://openalex.org/I51556381"
+        ]
+       }
+      ],
+      "countries": [
+       "US"
+      ],
+      "is_corresponding": false,
+      "raw_author_name": "Matthew S. Gerber",
+      "raw_affiliation_strings": [
+       "Department of Systems and Information Engineering, University of Virginia, USA",
+       "[Department of Systems & Information Engineering, University of Virginia]"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+       {
+        "raw_affiliation_string": "Department of Systems and Information Engineering, University of Virginia, USA",
+        "institution_ids": [
+         "https://openalex.org/I51556381"
+        ]
+       },
+       {
+        "raw_affiliation_string": "[Department of Systems & Information Engineering, University of Virginia]",
+        "institution_ids": [
+         "https://openalex.org/I51556381"
+        ]
+       }
+      ]
+     },
+     {
+      "author_position": "last",
+      "author": {
+       "id": "https://openalex.org/A5086462231",
+       "display_name": "Donald E. Brown",
+       "orcid": "https://orcid.org/0000-0002-9140-2632"
+      },
+      "institutions": [
+       {
+        "id": "https://openalex.org/I51556381",
+        "display_name": "University of Virginia",
+        "ror": "https://ror.org/0153tk833",
+        "country_code": "US",
+        "type": "education",
+        "lineage": [
+         "https://openalex.org/I51556381"
+        ]
+       }
+      ],
+      "countries": [
+       "US"
+      ],
+      "is_corresponding": false,
+      "raw_author_name": "Donald E. Brown",
+      "raw_affiliation_strings": [
+       "Department of Systems and Information Engineering, University of Virginia, USA",
+       "[Department of Systems & Information Engineering, University of Virginia]"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+       {
+        "raw_affiliation_string": "Department of Systems and Information Engineering, University of Virginia, USA",
+        "institution_ids": [
+         "https://openalex.org/I51556381"
+        ]
+       },
+       {
+        "raw_affiliation_string": "[Department of Systems & Information Engineering, University of Virginia]",
+        "institution_ids": [
+         "https://openalex.org/I51556381"
+        ]
+       }
+      ]
+     }
+    ],
+    "publication_year": 2012,
+    "primary_location": {
+     "id": "doi:10.1007/978-3-642-29047-3_28",
+     "is_oa": false,
+     "landing_page_url": "https://doi.org/10.1007/978-3-642-29047-3_28",
+     "pdf_url": null,
+     "source": {
+      "id": "https://openalex.org/S106296714",
+      "display_name": "Lecture notes in computer science",
+      "issn_l": "0302-9743",
+      "issn": [
+       "0302-9743",
+       "1611-3349"
+      ],
+      "is_oa": false,
+      "is_in_doaj": false,
+      "is_core": true,
+      "host_organization": "https://openalex.org/P4310319900",
+      "host_organization_name": "Springer Science+Business Media",
+      "host_organization_lineage": [
+       "https://openalex.org/P4310319900",
+       "https://openalex.org/P4310319965"
+      ],
+      "host_organization_lineage_names": [
+       "Springer Science+Business Media",
+       "Springer Nature"
+      ],
+      "type": "book series"
+     },
+     "license": null,
+     "license_id": null,
+     "version": "publishedVersion",
+     "is_accepted": true,
+     "is_published": true,
+     "raw_source_name": "Lecture Notes in Computer Science",
+     "raw_type": "book-chapter"
+    },
+    "doi": "https://doi.org/10.1007/978-3-642-29047-3_28",
+    "abstract_inverted_index": null,
+    "referenced_works": [
+     "https://openalex.org/W137217113",
+     "https://openalex.org/W158120760",
+     "https://openalex.org/W339285992",
+     "https://openalex.org/W1880262756",
+     "https://openalex.org/W1978620866",
+     "https://openalex.org/W2001932471",
+     "https://openalex.org/W2015186536",
+     "https://openalex.org/W2038324640",
+     "https://openalex.org/W2086260676",
+     "https://openalex.org/W2123906784",
+     "https://openalex.org/W2136842867",
+     "https://openalex.org/W2151170651",
+     "https://openalex.org/W2171118265",
+     "https://openalex.org/W2171468534",
+     "https://openalex.org/W2914181088",
+     "https://openalex.org/W4238964153"
+    ]
+   }
+  ],
+  "group_by": []
+ }
+}

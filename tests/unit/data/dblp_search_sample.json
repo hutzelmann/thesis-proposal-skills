@@ -1,0 +1,197 @@
+{
+ "result": {
+  "query": "code* review*",
+  "status": {
+   "@code": "200",
+   "text": "OK"
+  },
+  "time": {
+   "@unit": "msecs",
+   "text": "10.51"
+  },
+  "completions": {
+   "@total": "11",
+   "@computed": "11",
+   "@sent": "10",
+   "c": [
+    {
+     "@sc": "1095",
+     "@dc": "1049",
+     "@oc": "1095",
+     "@id": "70784109",
+     "text": "review"
+    },
+    {
+     "@sc": "193",
+     "@dc": "190",
+     "@oc": "193",
+     "@id": "70784156",
+     "text": "reviews"
+    },
+    {
+     "@sc": "57",
+     "@dc": "56",
+     "@oc": "57",
+     "@id": "70784126",
+     "text": "reviewer"
+    },
+    {
+     "@sc": "35",
+     "@dc": "35",
+     "@oc": "35",
+     "@id": "70784131",
+     "text": "reviewers"
+    },
+    {
+     "@sc": "17",
+     "@dc": "17",
+     "@oc": "17",
+     "@id": "70784140",
+     "text": "reviewing"
+    },
+    {
+     "@sc": "3",
+     "@dc": "3",
+     "@oc": "3",
+     "@id": "70784123",
+     "text": "reviewed"
+    },
+    {
+     "@sc": "2",
+     "@dc": "2",
+     "@oc": "2",
+     "@id": "70784112",
+     "text": "review4repair"
+    },
+    {
+     "@sc": "2",
+     "@dc": "2",
+     "@oc": "2",
+     "@id": "70784152",
+     "text": "reviewranker"
+    },
+    {
+     "@sc": "1",
+     "@dc": "1",
+     "@oc": "1",
+     "@id": "70784118",
+     "text": "reviewboard"
+    },
+    {
+     "@sc": "1",
+     "@dc": "1",
+     "@oc": "1",
+     "@id": "70784114",
+     "text": "reviewability"
+    }
+   ]
+  },
+  "hits": {
+   "@total": "1300",
+   "@computed": "100",
+   "@sent": "3",
+   "@first": "0",
+   "hit": [
+    {
+     "@score": "6",
+     "@id": "5145172",
+     "info": {
+      "authors": {
+       "author": [
+        {
+         "@pid": "138/8517",
+         "text": "Patanamon Thongtanunam"
+        },
+        {
+         "@pid": "140/7129",
+         "text": "Chakkrit Tantithamthavorn"
+        },
+        {
+         "@pid": "64/7675",
+         "text": "Raula Gaikovina Kula"
+        },
+        {
+         "@pid": "85/877",
+         "text": "Norihiro Yoshida"
+        },
+        {
+         "@pid": "44/6147",
+         "text": "Hajimu Iida"
+        },
+        {
+         "@pid": "73/942",
+         "text": "Ken-ichi Matsumoto"
+        }
+       ]
+      },
+      "title": "Who should review my code? A file location-based code-reviewer recommendation approach for Modern Code Review.",
+      "venue": "SANER",
+      "pages": "141-150",
+      "year": "2015",
+      "type": "Conference and Workshop Papers",
+      "access": "closed",
+      "key": "conf/wcre/ThongtanunamTKY15",
+      "doi": "10.1109/SANER.2015.7081824",
+      "ee": "https://doi.org/10.1109/SANER.2015.7081824",
+      "url": "https://dblp.org/rec/conf/wcre/ThongtanunamTKY15"
+     },
+     "url": "URL#5145172"
+    },
+    {
+     "@score": "5",
+     "@id": "1532065",
+     "info": {
+      "authors": {
+       "author": {
+        "@pid": "62/1607",
+        "text": "Chris Christensen 0001"
+       }
+      },
+      "title": "Review of The Secret Life of an American Codebreaker: Codebreaker Girls by Jan SlimmingSlimming, Jan. The Secret Life of an American Codebreaker: Codebreaker Girls , South Yorkshire, England: Pen and Sword Books. 2022. 289 + xii pages, Hardcover, \u00a325 ($34.95). ISBN 9781526784155.",
+      "venue": "Cryptologia",
+      "volume": "47",
+      "number": "6",
+      "pages": "584-587",
+      "year": "2023",
+      "type": "Journal Articles",
+      "access": "closed",
+      "key": "journals/cryptologia/Christensen23d",
+      "doi": "10.1080/01611194.2022.2105179",
+      "ee": "https://doi.org/10.1080/01611194.2022.2105179",
+      "url": "https://dblp.org/rec/journals/cryptologia/Christensen23d"
+     },
+     "url": "URL#1532065"
+    },
+    {
+     "@score": "5",
+     "@id": "3279862",
+     "info": {
+      "authors": {
+       "author": [
+        {
+         "@pid": "279/2652",
+         "text": "Venia Noella Nanisura Damanik"
+        },
+        {
+         "@pid": "279/2720",
+         "text": "Septia Ulfa Sunaringtyas"
+        }
+       ]
+      },
+      "title": "Secure Code Recommendation Based on Code Review Result Using OWASP Code Review Guide.",
+      "venue": "IWBIS",
+      "pages": "153-158",
+      "year": "2020",
+      "type": "Conference and Workshop Papers",
+      "access": "closed",
+      "key": "conf/iwbis/DamanikS20",
+      "doi": "10.1109/IWBIS50925.2020.9255559",
+      "ee": "https://doi.org/10.1109/IWBIS50925.2020.9255559",
+      "url": "https://dblp.org/rec/conf/iwbis/DamanikS20"
+     },
+     "url": "URL#3279862"
+    }
+   ]
+  }
+ }
+}

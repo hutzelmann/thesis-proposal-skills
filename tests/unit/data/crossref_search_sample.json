@@ -1,0 +1,96 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "facets": {},
+  "total-results": 7553628,
+  "items": [
+   {
+    "DOI": "10.1007/springerreference_10294",
+    "title": [
+     "code review"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       null
+      ]
+     ]
+    },
+    "container-title": [
+     "SpringerReference"
+    ],
+    "type": "reference-entry",
+    "is-referenced-by-count": 0
+   },
+   {
+    "DOI": "10.55277/researchhub.pj4k0adg",
+    "title": [
+     "Ancestral Abundance Code (( Be Careful ! )) Ancestral Abundance Code Review 2026"
+    ],
+    "author": [
+     {
+      "given": "Andrea",
+      "family": "Martinez",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2026,
+       3,
+       8
+      ]
+     ]
+    },
+    "type": "report",
+    "is-referenced-by-count": 0
+   },
+   {
+    "DOI": "10.55277/researchhub.byzbxxz8.1",
+    "title": [
+     "MEXC Referral Code: mexc-2427 (Review + Is KYC Required)"
+    ],
+    "author": [
+     {
+      "given": "Mexc Referral",
+      "family": "Code",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "role": "author",
+        "vocabulary": "crossref"
+       }
+      ]
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       8
+      ]
+     ]
+    },
+    "type": "report",
+    "is-referenced-by-count": 0
+   }
+  ],
+  "items-per-page": 3,
+  "query": {
+   "start-index": 0,
+   "search-terms": "code review"
+  }
+ }
+}

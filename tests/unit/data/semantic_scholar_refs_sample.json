@@ -1,0 +1,182 @@
+{
+ "offset": 0,
+ "citingPaperInfo": {
+  "openAccessPdf": {
+   "url": "https://www.aclweb.org/anthology/2020.findings-emnlp.139.pdf",
+   "status": "HYBRID",
+   "license": "CCBY",
+   "disclaimer": "Notice: Paper or abstract available at https://arxiv.org/abs/2002.08155, which is subject to the license by the author or copyright owner provided with this content. Please go to the source to verify the license and copyright information for your use."
+  },
+  "title": "CodeBERT: A Pre-Trained Model for Programming and Natural Languages",
+  "authors": [
+   {
+    "authorId": "51056532",
+    "name": "Zhangyin Feng"
+   },
+   {
+    "authorId": "2278834796",
+    "name": "Daya Guo"
+   },
+   {
+    "authorId": "39483833",
+    "name": "Duyu Tang"
+   },
+   {
+    "authorId": "46429989",
+    "name": "Nan Duan"
+   },
+   {
+    "authorId": "2674998",
+    "name": "Xiaocheng Feng"
+   },
+   {
+    "authorId": "50175330",
+    "name": "Ming Gong"
+   },
+   {
+    "authorId": "24962156",
+    "name": "Linjun Shou"
+   },
+   {
+    "authorId": "152277111",
+    "name": "Bing Qin"
+   },
+   {
+    "authorId": "40282288",
+    "name": "Ting Liu"
+   },
+   {
+    "authorId": "71790825",
+    "name": "Daxin Jiang"
+   },
+   {
+    "authorId": "92660691",
+    "name": "Ming Zhou"
+   }
+  ]
+ },
+ "next": 3,
+ "data": [
+  {
+   "citedPaper": {
+    "paperId": "43f2ad297941db230c089ba353efc3f281ab678c",
+    "externalIds": {
+     "MAG": "3033156098",
+     "CorpusId": 226096901
+    },
+    "title": "5分で分かる!? 有名論文ナナメ読み：Jacob Devlin et al. : BERT : Pre-training of Deep Bidirectional Transformers for Language Understanding",
+    "venue": "",
+    "year": 2020,
+    "openAccessPdf": {
+     "url": "",
+     "status": null,
+     "license": null
+    },
+    "authors": [
+     {
+      "authorId": "136309159",
+      "name": "知秀 柴田"
+     }
+    ],
+    "abstract": null
+   }
+  },
+  {
+   "citedPaper": {
+    "paperId": "5e0cffc51e8b64a8f11326f955fa4b4f1803e3be",
+    "externalIds": {
+     "DBLP": "journals/tacl/TalmorEGB20",
+     "MAG": "2998696444",
+     "ArXiv": "1912.13283",
+     "DOI": "10.1162/tacl_a_00342",
+     "CorpusId": 209515274
+    },
+    "title": "oLMpics-On What Language Model Pre-training Captures",
+    "venue": "Transactions of the Association for Computational Linguistics",
+    "year": 2019,
+    "openAccessPdf": {
+     "url": "https://direct.mit.edu/tacl/article-pdf/doi/10.1162/tacl_a_00342/1923716/tacl_a_00342.pdf",
+     "status": "GOLD",
+     "license": "CCBY",
+     "disclaimer": "Notice: Paper or abstract available at https://arxiv.org/abs/1912.13283, which is subject to the license by the author or copyright owner provided with this content. Please go to the source to verify the license and copyright information for your use."
+    },
+    "authors": [
+     {
+      "authorId": "12371246",
+      "name": "Alon Talmor"
+     },
+     {
+      "authorId": "51131518",
+      "name": "Yanai Elazar"
+     },
+     {
+      "authorId": "79775260",
+      "name": "Yoav Goldberg"
+     },
+     {
+      "authorId": "1750652",
+      "name": "Jonathan Berant"
+     }
+    ],
+    "abstract": "Abstract Recent success of pre-trained language models (LMs) has spurred widespread interest in the language capabilities that they possess. However, efforts to understand whether LM representations are useful for symbolic reasoning tasks have been limited and scattered. In this work, we propose eight reasoning tasks, which conceptually require operations such as comparison, conjunction, and composition. A fundamental challenge is to understand whether the performance of a LM on a task should be attributed to the pre-trained representations or to the process of fine-tuning on the task data. To address this, we propose an evaluation protocol that includes both zero-shot evaluation (no fine-tuning), as well as comparing the learning curve of a fine-tuned LM to the learning curve of multiple controls, which paints a rich picture of the LM capabilities. Our main findings are that: (a) different LMs exhibit qualitatively different reasoning abilities, e.g., RoBERTa succeeds in reasoning tasks where BERT fails completely; (b) LMs do not reason in an abstract manner and are context-dependent, e.g., while RoBERTa can compare ages, it can do so only when the ages are in the typical range of human ages; (c) On half of our reasoning tasks all models fail completely. Our findings and infrastructure can help future work on designing new datasets, models, and objective functions for pre-training."
+   }
+  },
+  {
+   "citedPaper": {
+    "paperId": "395de0bd3837fdf4b4b5e5f04835bcc69c279481",
+    "externalIds": {
+     "MAG": "2982399380",
+     "ACL": "2020.acl-main.703",
+     "DBLP": "journals/corr/abs-1910-13461",
+     "ArXiv": "1910.13461",
+     "DOI": "10.18653/v1/2020.acl-main.703",
+     "CorpusId": 204960716
+    },
+    "title": "BART: Denoising Sequence-to-Sequence Pre-training for Natural Language Generation, Translation, and Comprehension",
+    "venue": "Annual Meeting of the Association for Computational Linguistics",
+    "year": 2019,
+    "openAccessPdf": {
+     "url": "https://www.aclweb.org/anthology/2020.acl-main.703.pdf",
+     "status": "GOLD",
+     "license": "CCBY",
+     "disclaimer": "Notice: Paper or abstract available at https://arxiv.org/abs/1910.13461, which is subject to the license by the author or copyright owner provided with this content. Please go to the source to verify the license and copyright information for your use."
+    },
+    "authors": [
+     {
+      "authorId": "35084211",
+      "name": "M. Lewis"
+     },
+     {
+      "authorId": "11323179",
+      "name": "Yinhan Liu"
+     },
+     {
+      "authorId": null,
+      "name": "Naman Goyal"
+     },
+     {
+      "authorId": "2320509",
+      "name": "Marjan Ghazvininejad"
+     },
+     {
+      "authorId": "113947684",
+      "name": "Abdel-rahman Mohamed"
+     },
+     {
+      "authorId": "39455775",
+      "name": "Omer Levy"
+     },
+     {
+      "authorId": "1759422",
+      "name": "Veselin Stoyanov"
+     },
+     {
+      "authorId": "1982950",
+      "name": "Luke Zettlemoyer"
+     }
+    ],
+    "abstract": "We present BART, a denoising autoencoder for pretraining sequence-to-sequence models. BART is trained by (1) corrupting text with an arbitrary noising function, and (2) learning a model to reconstruct the original text. It uses a standard Tranformer-based neural machine translation architecture which, despite its simplicity, can be seen as generalizing BERT (due to the bidirectional encoder), GPT (with the left-to-right decoder), and other recent pretraining schemes. We evaluate a number of noising approaches, finding the best performance by both randomly shuffling the order of sentences and using a novel in-filling scheme, where spans of text are replaced with a single mask token. BART is particularly effective when fine tuned for text generation but also works well for comprehension tasks. It matches the performance of RoBERTa on GLUE and SQuAD, and achieves new state-of-the-art results on a range of abstractive dialogue, question answering, and summarization tasks, with gains of up to 3.5 ROUGE. BART also provides a 1.1 BLEU increase over a back-translation system for machine translation, with only target language pretraining. We also replicate other pretraining schemes within the BART framework, to understand their effect on end-task performance."
+   }
+  }
+ ]
+}

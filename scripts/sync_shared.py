@@ -31,8 +31,15 @@ SYNC_MAP: dict[str, list[str]] = {
         "skills/proposal-check/references",
         "skills/proposal-ideate/references",
     ],
-    # lit-search scripts vendored into ideate once they exist:
-    # "skills/proposal-lit-search/scripts/<name>.py": ["skills/proposal-ideate/scripts"],
+    # lit-search scripts vendored into ideate (self-containment per packaging spec)
+    **{
+        f"skills/proposal-lit-search/scripts/{name}.py": ["skills/proposal-ideate/scripts"]
+        for name in (
+            "common", "dblp", "crossref", "arxiv",
+            "opencitations", "semantic_scholar", "openalex",
+            "search", "snowball",
+        )
+    },
 }
 
 
@@ -44,6 +51,12 @@ def render(source: Path) -> str:
         data = json.loads(text)
         stamped = {JSON_HEADER_KEY: JSON_HEADER_VALUE, **data}
         return json.dumps(stamped, ensure_ascii=False, indent=2) + "\n"
+    if source.suffix == ".py":
+        header = f"# GENERATED from {source.relative_to(REPO)} — edit there, then run scripts/sync_shared.py\n"
+        lines = text.split("\n", 1)
+        if lines[0].startswith("#!"):
+            return lines[0] + "\n" + header + (lines[1] if len(lines) > 1 else "")
+        return header + text
     return text
 
 
