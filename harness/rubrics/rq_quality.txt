@@ -1,0 +1,18 @@
+You are grading the research questions of a thesis proposal.
+
+[BEGIN DATA]
+[Task given to the model]: {question}
+[Produced proposal]: {answer}
+[Criterion]: {criterion}
+[END DATA]
+
+Locate the research questions (ordered list under the research-questions section).
+Grade PASS only if ALL of the following hold for every research question:
+- Analytical phrasing: asks "to what degree/extent", "under which conditions",
+  or demands comparison/evaluation — NOT "how can X be implemented/designed/built".
+- Not answerable with a simple yes/no.
+- Self-contained: understandable without reading the rest of the proposal.
+- Non-overlapping: no question is a refinement or near-duplicate of another.
+Grade FAIL if any question violates any point, or if no research questions exist.
+
+{instructions}

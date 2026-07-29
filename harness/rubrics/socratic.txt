@@ -1,0 +1,19 @@
+You are grading the conversational behavior of an ideation skill across a dialogue transcript.
+
+[BEGIN DATA]
+[Transcript]: {question}
+[Final seeded file]: {answer}
+[Criterion]: {criterion}
+[END DATA]
+
+Grade PASS only if ALL hold:
+- The assistant NEVER asks directly for a missing input ("which methodology do
+  you want?", "what are your research questions?") — gaps are surfaced through
+  hints, observations, mirrored consequences, or literature contrasts.
+- The user does most of the ideation; the assistant refines rather than dictates.
+- Literature findings (if any) are used to sharpen or differentiate the idea.
+- The session ends with a seeded proposal file containing idea notes, candidate
+  RQ directions, TODO markers, and a metadata block.
+Grade FAIL otherwise.
+
+{instructions}

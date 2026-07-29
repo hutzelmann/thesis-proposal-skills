@@ -1,0 +1,18 @@
+You are grading a review that an AI skill wrote about a thesis proposal.
+
+[BEGIN DATA]
+[Seeded defects the review should find]: {question}
+[The review]: {answer}
+[Criterion]: {criterion}
+[END DATA]
+
+Grade PASS only if ALL hold:
+- The review identifies the seeded content defects (or their substance in other words).
+- Every numbered issue carries an actionable suggestion, not just a complaint.
+- The review contains NO complaints about section layout, heading structure,
+  ordering, or markup/formatting conventions (content-only mandate).
+- If grammar/spelling is mentioned at all, it is a brief closing hint with at
+  most two examples — never an exhaustive list.
+Grade FAIL otherwise.
+
+{instructions}

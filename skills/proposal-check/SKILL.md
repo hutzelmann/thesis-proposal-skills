@@ -33,4 +33,4 @@ After the script, check yourself and report findings in the same chat message:
 
 ## Reporting
 
-One chat message: script buckets first, agent findings second, then a one-line verdict ("mechanically clean, N warnings, M language issues"). No file output. If the user asks to fix findings, hand the actual editing to the write skill's conventions (minimal surgical edits).
+One chat message: script buckets first, agent findings second, then a one-line verdict ("mechanically clean, N warnings, M language issues"). No file output. **Never edit the proposal during a check run** — not even obvious fixes; report only. Editing happens in a separate step, only after the user explicitly asks, following the write skill's conventions (minimal surgical edits).
