@@ -1,5 +1,0 @@
-{
-    "latex-workshop.latex.build.fromWorkspaceFolder": true,
-    "latex-workshop.latex.auxDir": "%WORKSPACE_FOLDER%/build/",
-    "latex-workshop.latex.outDir": "%WORKSPACE_FOLDER%/build/"
-}
