@@ -1,0 +1,418 @@
+# Demo harvest log
+# Real agent session (claude -p, model sonnet), 2026-07-30, clean config (no user plugins/instructions).
+# Synthetic content: fictional student anecdote (churn-model monitoring), no real persons or company data.
+# Turn 7 was re-run in a fresh session after the first attempt surfaced (and fixed) a bug in
+# proposal-publish's rq-filter.lua; a filename suggestion in it is redacted to [name].
+# Source of truth for docs/demo/transcript.jsonl — audit trail (see openspec demo-recording spec).
+
+===== TURN 1 — USER =====
+For my Master's thesis I want to do something about ML monitoring. At my student job our churn model quietly got worse for months before anyone noticed — is there a thesis in that?
+
+===== TURN 1 — AGENT =====
+There's likely a thesis in this, but the interesting part isn't "the model got worse" — it's *why nobody noticed*. That's actually two different failure modes wearing the same costume.
+
+Before I go dig up literature: when your churn model degraded, was it that the *predictions* silently drifted (score distributions shifting, calibration going off) — or was it that nobody could even *check* accuracy in real time because you only find out if someone actually churned weeks or months later? Which one was it, or was it both tangled together?
+
+===== TURN 2 — USER =====
+Honestly both, but mostly the second — churn labels only arrive weeks later. We did have a dashboard with drift scores, but it alerted so often that everyone ignored it, and nobody could say whether a high score actually meant the model was worse.
+
+===== TURN 2 — AGENT =====
+That helps place it. The closest existing work splits into two camps: **Xu & Klabjan (2021)** build a drift-detection ensemble specifically for the *lagged-labels* setting — your exact churn situation — and **Tan et al. (2025)** attack the *alert-fatigue* side directly, using statistical process control to control false-positive rate in label-less drift detection. There's also work (Woo et al. 2025) estimating accuracy without any labels at all via model agreement.
+
+So the "detect drift without labels" problem and the "stop crying wolf" problem are both already being worked on separately. What none of these seem to do is close the loop back to what actually happened weeks later — i.e., check whether their drift alerts *would have* predicted the real accuracy drop once the labels finally arrived.
+
+Here's the question that matters: when your dashboard's drift score was high but you couldn't tell if the model was actually worse — do you know, in hindsight, whether it *was* worse at those moments? Do you (or could you) still get your hands on that history — drift scores, predictions, and the churn labels that eventually landed — or would this have to run on public/synthetic data instead?
+
+===== TURN 3 — USER =====
+In hindsight it really was worse at some of those moments, but I can't use company data for the thesis — it would have to be public datasets with delayed labels simulated. I like that closing-the-loop angle: do the drift scores actually predict the accuracy drop once labels arrive. Can you save where we are so far? This is for my Master's.
+
+===== TURN 3 — AGENT =====
+Saved to `drift-alert-validity.md`. It captures:
+
+- **Working title**: closing the loop between drift alerts and delayed-label performance decay
+- **3 candidate RQ directions** — correlation of drift signals with realized decay, threshold calibration against false alarms, and effect of label-delay length
+- **5 grounding references** (Xu & Klabjan's lagged-labels ensemble is the closest prior work; Tan et al. tackle the alert-fatigue side)
+- Open TODOs: pick the actual public dataset(s) to simulate label delay on, decide evaluation-study vs. new-method scope, and pin down author/supervisor info
+
+When you're ready to flesh this into a full draft, the `proposal-write` skill picks up from this file. A few things worth chewing on before then: which public dataset actually resembles churn-style delayed labels, and whether you want this to stay a benchmarking/evaluation study or push toward a calibration method of your own.
+
+===== TURN 4 — USER =====
+Before writing anything: can you find proper literature for this? Real papers only — I've heard too many stories about made-up citations.
+
+===== TURN 4 — AGENT =====
+Literature base is now 15 references, all individually verified against Crossref or arXiv (not just taken from search-tool output) — DOIs resolved and titles cross-checked. Summary:
+
+**Direct hits on your angle:**
+- Sethi & Kantardzic (2015, 2017) — MD3, an unsupervised drift detector explicitly built to cut false alarms (the alert-fatigue problem)
+- Zhang, Bui & Apley (2023, *Technometrics*) — score-vector monitoring, an alternative signal to compare against distance-based drift metrics
+- Cerqueira et al. (2026, arXiv:2606.07789) — a very recent benchmarking framework for drift detectors with timing-aware metrics; flagged as a preprint, not yet peer-reviewed, since it hasn't cleared review
+
+**Background/foundational:**
+- Gonçalves et al. (2014) and Webb et al. (2018) for how the field defines and compares drift
+- Krempl et al. (2014, SIGKDD Explorations) — well-known open-problems survey, good for motivating the gap
+- Hoens, Polikar & Chawla (2012) and Klaise et al. (2020) for general framing
+
+I also ran a couple of keyword searches that mostly returned noise sharing surface terms — IoT/cybersecurity intrusion-detection papers, materials-science "fatigue" papers (false-friend on the word), generic BI dashboard book chapters. Those were rejected rather than force-fit; I noted that in the file so you know the net was cast wide.
+
+Everything's appended to `drift-alert-validity.md` under `references:`. Ready to move into a full draft with `proposal-write` whenever you want.
+
+===== TURN 5 — USER =====
+Great. Write the full proposal draft now — keep my framing and just mark whatever is still open as a TODO.
+
+===== TURN 5 — AGENT =====
+The full draft is written to `drift-alert-validity.md`. Structure:
+
+1. **Introduction to the Topic** — motivates concept drift and the delayed-label problem generically (churn as the example), grounded in [@Krempl14Open], [@Webb18Analyzi], [@Hoens12Learnin], [@Klaise20Monitor]
+2. **Contribution to the State-of-the-Art** — splits prior work into the "unsupervised detectors" strand and the "label-free accuracy estimation" strand, cites all 15 references, and states the gap explicitly: nobody checks whether alerts predict *realized* decay once delayed labels land
+3. **Research Focus and Research Questions** — your three directions, tightened so they don't overlap (RQ3 now owns the delay-length dimension exclusively, RQ1 no longer double-covers it) and phrased analytically ("to what degree", "to what extent", "how does") rather than yes/no
+4. **Methodology: Prototype Implementation** — a Previous Work / Requirements / Evaluation structure, each RQ mapped to a specific analysis in Evaluation with `(RQ1)`/`(RQ2)`/`(RQ3)` tags
+
+I picked **Prototype Implementation** as the methodology from the closed set (Prototype / Theoretical Analysis / Systematic Literature Review / User Study) since the actual work is building an evaluation harness and running it — that's what the other three don't fit.
+
+**TODOs left open, exactly where the seed file already flagged them as undecided:**
+- specific streaming ML library to build on
+- exact set of drift detectors forming the "representative sample"
+- specific public dataset(s) for the delayed-label simulation
+- precise definition of "performance decay" (accuracy vs. calibration vs. business metric)
+- author name
+
+Nothing was invented to fill these — they're visible `[TODO: ...]` markers. Before this goes to a supervisor, worth running `proposal-check` as a gate.
+
+===== TURN 6 — USER =====
+Run the check.
+
+===== TURN 6 — AGENT =====
+**Script — mechanical errors:** none.
+
+**Script — mechanical warnings (possible false positives):** the 4 `[TODO: ...]` markers in the body (streaming library choice, drift-detector sample, dataset choice, "performance decay" definition) — these are intentional open items we flagged earlier, not defects. Note the script didn't separately flag the 5th TODO (`author: "[TODO: add author]"` in the metadata block) since that's metadata, not body prose — it's still an open item, just not one the checker's regex scans.
+
+**Agent pass — typos/grammar:** none found. Prose is clean, no misspellings, consistent hyphenation (`false-positive-controlled`, `distributional-distance-based`, etc.), correct apostrophe use.
+
+**Agent pass — forbidden content:** no work plans, timelines, deliverables, code fragments, matriculation number/address/email/study program, or confidentiality markers. No supervisor reference. No results asserted as fact in prose — the gap and methodology are described, not a predicted outcome.
+
+One wording flag worth your attention: in the Research Focus paragraph, "...where company data cannot be used" reads like a personal-circumstance admission rather than a scientific rationale. A supervisor may find it out of place in a proposal that's meant to read as self-contained research motivation. Consider something like "since production telemetry from proprietary systems is not accessible for academic research" — same meaning, but framed as a methodological constraint rather than a personal one. This is a style suggestion, not a mechanical violation.
+
+**Verdict:** mechanically clean, 4 warnings (expected open TODOs), 0 language issues, 1 wording suggestion.
+
+This check doesn't judge RQ quality or argument soundness — run `/code-review`-style `proposal-check`'s sibling, the review flow, or just ask me, if you want that deeper pass before it goes to your supervisor.
+
+===== TURN 7 — USER =====
+Good enough for a first hand-in. Build the PDF please.
+
+===== TURN 7 — AGENT =====
+PDF built successfully via typst: `drift-alert-validity.pdf`.
+
+One reminder from the build: rename it to include your name before sending it to your supervisor (e.g. `[name]-drift-alert-validity.pdf`) — supervisors get many proposals and this avoids mix-ups. Want me to rename it now?
+
+===== FINAL WORKSPACE STATE =====
+drift-alert-validity.md
+drift-alert-validity.pdf
+drift-alert-validity.typ
+
+===== FINAL PROPOSAL FILE (drift-alert-validity.md) =====
+# Introduction to the Topic
+
+Machine learning models deployed in production operate in non-stationary environments, where the statistical relationship between input features and the target variable changes over time, a phenomenon known as concept drift [@Krempl14Open].
+This drift can manifest in different forms, ranging from abrupt to gradual shifts in the joint distribution of inputs and targets [@Webb18Analyzi].
+Left undetected, concept drift silently degrades a model's predictive performance and erodes the value of the automated decisions built on it [@Hoens12Learnin].
+In many practical settings, the true label needed to measure performance directly is not available immediately, but only after a substantial delay.
+A customer churn prediction model is a representative example, since whether a customer actually churns only becomes observable weeks or months after the model produces a prediction.
+During this delay, practitioners commonly rely on unsupervised drift-detection signals, statistical measures of how much the input or prediction distribution has shifted, as an early proxy for performance loss, since true performance cannot yet be computed [@Klaise20Monitor].
+These signals are frequently decoupled from the actual severity of performance decay: they can fire on harmless distribution shifts as readily as on shifts that genuinely degrade the model, which produces frequent, low-value alerts and erodes practitioners' trust in the monitoring system.
+This thesis studies whether unsupervised drift-detection signals, once evaluated against the delayed ground-truth labels that eventually arrive, actually predict the performance decay they are meant to warn about.
+
+# Contribution to the State-of-the-Art
+
+Existing work on concept-drift detection under delayed or absent labels falls into two largely separate strands.
+The first strand designs unsupervised drift detectors that operate without any labels at prediction time, using signals such as margin density [@Sethi15Don; @Sethi17Reliabl], statistical process control on distributional statistics [@Tan25Flexibl], the gradient of the model's log-likelihood [@Zhang23Concept], or approaches that distinguish input-space from target-concept drift under scarcely labeled or fully unlabeled data [@Lughofer16Recogni].
+Existing studies commonly evaluate these detectors against each other on synthetic or benchmark streams using detection-timing and accuracy metrics [@Goncalves14Compara; @Cerqueira26Framewo], and one specific line of work incorporates lagged labels directly into a drift-detection ensemble once they become available [@Xu21Concept].
+The second strand estimates model accuracy without any labels at all, for instance by measuring agreement between multiple models on unlabeled data [@Woo25Classif].
+Related work compares the accuracy-energy trade-off of several drift detectors under controlled conditions [@Omar24How], and discusses when accumulated monitoring evidence should trigger retraining [@Holt22When].
+What this body of work has in common is that it evaluates drift detectors on their internal detection quality, how well they flag a change relative to a known ground-truth drift point, rather than on whether their alerts correspond to a real, measurable drop in downstream performance once labels eventually arrive.
+This thesis closes that loop: it evaluates unsupervised drift-detection signals against the realized performance decay measured once delayed labels become available, and studies whether alert thresholds can be calibrated against this delayed ground truth to reduce false alarms without missing genuine degradation.
+
+# Research Focus and Research Questions
+
+The thesis focuses on the empirical validity of unsupervised drift-detection signals as an early-warning proxy for real performance decay under delayed ground-truth labels, using public streaming and tabular datasets with an artificially simulated label delay to approximate settings such as customer churn prediction where company data cannot be used.
+
+1. To what degree do unsupervised drift-detection signals correlate with the performance decay measured once delayed ground-truth labels become available, across different families of signals and different types of concept drift?
+2. To what extent can drift-alert thresholds calibrated against historical delayed-label outcomes reduce the false-positive alert rate without missing genuine performance degradation, compared to existing label-less drift detectors designed for false-positive control [@Tan25Flexibl]?
+3. How does the length of the label delay affect the reliability of unsupervised drift-detection signals as an early-warning proxy for performance decay?
+
+# Methodology for Research: Prototype Implementation
+
+## Previous Work
+
+The prototype builds on open-source streaming machine learning libraries that provide reference implementations of classifiers and unsupervised drift detectors, including margin-density-based [@Sethi17Reliabl] and statistical-process-control-based [@Tan25Flexibl] detectors.
+It further draws on the drift-simulation and evaluation protocol of Cerqueira et al., which injects controlled distributional changes into real-world datasets and derives timing-aware detection metrics [@Cerqueira26Framewo].
+[TODO: name the specific streaming ML library/libraries chosen, e.g. River]
+
+## Requirements
+
+The prototype must compute a representative set of unsupervised drift-detection signals at prediction time on a streaming dataset, without access to the true label.
+It must simulate a configurable label delay, releasing the true label for each prediction only after a fixed or distributed number of subsequent time steps.
+Once labels are released, the prototype must compute the realized performance decay of the underlying classifier, to serve as ground truth against which the drift signals are evaluated.
+The prototype must also support threshold calibration against historical delayed-label outcomes, to compare a calibrated policy against an uncalibrated baseline and against existing label-less false-positive-controlled detectors [@Tan25Flexibl].
+Real-time or production-grade deployment of the prototype is neglectable, since the goal is retrospective evaluation rather than a deployable monitoring system.
+Exhaustive coverage of every published drift-detection method is neglectable as well; the prototype instead implements a representative sample spanning distributional-distance-based, margin-density-based, and score-based signal families.
+[TODO: finalize which drift-detection methods form the representative sample]
+
+## Evaluation
+
+The evaluation runs the prototype on public datasets that admit a streaming replay with a simulated label delay.
+[TODO: select specific dataset(s), e.g. streaming concept-drift benchmarks or a public churn-style tabular dataset replayed as a stream]
+The first analysis measures the statistical correlation between each drift signal and the realized performance decay across drift types and signal families (RQ1).
+A second analysis compares the false-positive alert rate and the missed-degradation rate of calibrated thresholds against an uncalibrated baseline and against the false-positive-controlled detector of Tan et al. [@Tan25Flexibl] (RQ2).
+A third analysis varies the simulated label-delay length and measures how the correlation and calibration results change as the delay grows (RQ3).
+[TODO: define the precise operationalization of "performance decay" — accuracy, calibration error, or a business-relevant metric]
+
+<!-- markdownlint-disable -->
+
+---
+title: "Closing the Loop: Evaluating the Validity of Unsupervised Drift Alerts Against Delayed-Label Performance Decay"
+author: "[TODO: add author]"
+subtitle: "Master's Thesis Proposal"
+lang: en
+references:
+  - id: Xu21Concept
+    type: paper-conference
+    author:
+      - family: Xu
+        given: Yiming
+      - family: Klabjan
+        given: Diego
+    issued:
+      year: 2021
+    title: Concept Drift and Covariate Shift Detection Ensemble with Lagged Labels
+    container-title: 2021 IEEE International Conference on Big Data (Big Data)
+    DOI: 10.1109/bigdata52589.2021.9671279
+  - id: Tan25Flexibl
+    type: paper-conference
+    author:
+      - family: Tan
+        given: Nelvin
+      - family: Shih
+        given: Yu-Ching
+      - family: Yang
+        given: Dong
+      - family: Salunkhe
+        given: Amol
+    issued:
+      year: 2025
+    title: Flexible and Efficient Drift Detection Without Labels
+    container-title: 2025 IEEE International Conference on Data Mining Workshops (ICDMW)
+    DOI: 10.1109/icdmw69685.2025.00037
+  - id: Woo25Classif
+    type: article-journal
+    author:
+      - family: Woo
+        given: Erin
+      - family: Jun
+        given: Hyungkook
+      - family: Yeo
+        given: Sangyeop
+      - family: Eom
+        given: YoungIk
+      - family: Ma
+        given: YuSeung
+    issued:
+      year: 2025
+    title: Classification Accuracy Estimation Without Labels via Architecture-Agnostic Model Agreement
+    DOI: 10.21203/rs.3.rs-7331038/v1
+  - id: Omar24How
+    type: paper-conference
+    author:
+      - family: Omar
+        given: Rafiullah
+      - family: Bogner
+        given: Justus
+      - family: Leest
+        given: Joran
+      - family: Stoico
+        given: Vincenzo
+      - family: Lago
+        given: Patricia
+      - family: Muccini
+        given: Henry
+    issued:
+      year: 2024
+    title: How to Sustainably Monitor ML-Enabled Systems? Accuracy and Energy Efficiency Tradeoffs in Concept Drift Detection
+    container-title: 2024 10th International Conference on ICT for Sustainability (ICT4S)
+    DOI: 10.1109/ict4s64576.2024.00026
+  - id: Holt22When
+    type: paper-conference
+    author:
+      - family: Holt
+        given: James
+    issued:
+      year: 2022
+    title: "When to retrain? assessing production ML model performance using uncertainty, out-of-distribution detection, and concept drift detection"
+    container-title: Disruptive Technologies in Information Sciences VI
+    DOI: 10.1117/12.2618321
+  - id: Sethi17Reliabl
+    type: article-journal
+    author:
+      - family: Sethi
+        given: Tegjyot Singh
+      - family: Kantardzic
+        given: Mehmed
+    issued:
+      year: 2017
+    title: On the reliable detection of concept drift from streaming unlabeled data
+    container-title: Expert Systems with Applications
+    DOI: 10.1016/j.eswa.2017.04.008
+  - id: Sethi15Don
+    type: article-journal
+    author:
+      - family: Sethi
+        given: Tegjyot Singh
+      - family: Kantardzic
+        given: Mehmed
+    issued:
+      year: 2015
+    title: "Don't Pay for Validation: Detecting Drifts from Unlabeled Data Using Margin Density"
+    container-title: Procedia Computer Science
+    DOI: 10.1016/j.procs.2015.07.284
+  - id: Zhang23Concept
+    type: article-journal
+    author:
+      - family: Zhang
+        given: Kungang
+      - family: Bui
+        given: Alex
+      - family: Apley
+        given: Daniel
+    issued:
+      year: 2023
+    title: Concept Drift Monitoring and Diagnostics of Supervised Learning Models via Score Vectors
+    container-title: Technometrics
+    DOI: 10.1080/00401706.2022.2124310
+  - id: Cerqueira26Framewo
+    type: article
+    author:
+      - family: Cerqueira
+        given: Vitor
+      - family: Gomes
+        given: Heitor Murilo
+      - family: Heyden
+        given: Marco
+      - family: Pfahringer
+        given: Bernhard
+      - family: Bifet
+        given: Albert
+    issued:
+      year: 2026
+    title: A Framework for Evaluating and Benchmarking Concept Drift Detection Methods
+    URL: "http://arxiv.org/abs/2606.07789v1"
+  - id: Goncalves14Compara
+    type: article-journal
+    author:
+      - family: Gonçalves
+        given: Paulo M.
+      - family: Santos
+        given: Silas G. T. C.
+      - family: Barros
+        given: Roberto S. M.
+      - family: Vieira
+        given: Davi C. L.
+    issued:
+      year: 2014
+    title: A comparative study on concept drift detectors
+    container-title: Expert Systems with Applications
+    DOI: 10.1016/j.eswa.2014.07.019
+  - id: Lughofer16Recogni
+    type: article-journal
+    author:
+      - family: Lughofer
+        given: Edwin
+      - family: Weigl
+        given: Eva
+      - family: Heidl
+        given: Wolfgang
+      - family: Eitzinger
+        given: Christian
+      - family: Radauer
+        given: Thomas
+    issued:
+      year: 2016
+    title: Recognizing input space and target concept drifts in data streams with scarcely labeled and unlabelled instances
+    container-title: Information Sciences
+    DOI: 10.1016/j.ins.2016.03.034
+  - id: Webb18Analyzi
+    type: article-journal
+    author:
+      - family: Webb
+        given: Geoffrey I.
+      - family: Lee
+        given: Loong Kuan
+      - family: Goethals
+        given: Bart
+      - family: Petitjean
+        given: François
+    issued:
+      year: 2018
+    title: Analyzing concept drift and shift from sample data
+    container-title: Data Mining and Knowledge Discovery
+    DOI: 10.1007/s10618-018-0554-1
+  - id: Krempl14Open
+    type: article-journal
+    author:
+      - family: Krempl
+        given: Georg
+      - family: Žliobaitė
+        given: Indrė
+      - family: Brzeziński
+        given: Dariusz
+      - family: Hüllermeier
+        given: Eyke
+      - family: Last
+        given: Mark
+      - family: Lemaire
+        given: Vincent
+      - family: Noack
+        given: Tino
+      - family: Shaker
+        given: Ammar
+      - family: Sievi
+        given: Sonja
+      - family: Spiliopoulou
+        given: Myra
+      - family: Stefanowski
+        given: Jerzy
+    issued:
+      year: 2014
+    title: Open challenges for data stream mining research
+    container-title: ACM SIGKDD Explorations Newsletter
+    DOI: 10.1145/2674026.2674028
+  - id: Hoens12Learnin
+    type: article-journal
+    author:
+      - family: Hoens
+        given: T. Ryan
+      - family: Polikar
+        given: Robi
+      - family: Chawla
+        given: Nitesh V.
+    issued:
+      year: 2012
+    title: "Learning from streaming data with concept drift and imbalance: an overview"
+    container-title: Progress in Artificial Intelligence
+    DOI: 10.1007/s13748-011-0008-0
+  - id: Klaise20Monitor
+    type: article
+    author:
+      - family: Klaise
+        given: Janis
+      - family: Van Looveren
+        given: Arnaud
+      - family: Cox
+        given: Clive
+      - family: Vacanti
+        given: Giovanni
+      - family: Coca
+        given: Alexandru
+    issued:
+      year: 2020
+    title: Monitoring and explainability of models in production
+    URL: "http://arxiv.org/abs/2007.06299v1"
+---

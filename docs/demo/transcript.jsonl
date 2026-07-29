@@ -1,0 +1,16 @@
+{"role": "user", "text": "For my Master's thesis I want to do something about ML monitoring. At my student job our churn model quietly got worse for months before anyone noticed — is there a thesis in that?"}
+{"role": "agent", "text": "There's likely a thesis in this, but the interesting part isn't \"the\nmodel got worse\" — it's *why nobody noticed*. That's actually two\ndifferent failure modes wearing the same costume.\n\nWhen your churn model degraded, was it that the *predictions* silently\ndrifted — or that nobody could even *check* accuracy, because you only\nfind out if someone actually churned weeks or months later?"}
+{"role": "user", "text": "Honestly both, but mostly the second — churn labels only arrive weeks later. Our dashboard alerted so often that everyone ignored it, and nobody could say whether a high score actually meant the model was worse.", "clear": true}
+{"role": "agent", "text": "So the \"detect drift without labels\" problem and the \"stop crying\nwolf\" problem are both already being worked on separately. What none of\nthese seem to do is close the loop back to what actually happened weeks\nlater — whether the drift alerts *would have* predicted the real\naccuracy drop once the labels finally arrived."}
+{"role": "user", "text": "Before writing anything: can you find proper literature for this? Real papers only — I've heard too many stories about made-up citations.", "clear": true}
+{"role": "tool", "text": "proposal-lit-search · Crossref + arXiv · verifying DOIs …"}
+{"role": "agent", "text": "Literature base is now 15 references, all individually verified against\nCrossref or arXiv — DOIs resolved and titles cross-checked. Among them:\n\n  - Sethi & Kantardzic — MD3, an unsupervised drift detector built\n    to cut false alarms (the alert-fatigue problem)\n  - Zhang, Bui & Apley (2023) — score-vector monitoring, an\n    alternative signal to compare against drift metrics\n\nKeyword searches that mostly returned noise — IoT intrusion detection,\nmaterials-science \"fatigue\" papers — were rejected rather than\nforce-fit."}
+{"role": "user", "text": "Great. Write the full proposal draft now — keep my framing and just mark whatever is still open as a TODO.", "clear": true}
+{"role": "tool", "text": "proposal-write · drafting the four canonical sections …"}
+{"role": "agent", "text": "The full draft is written to drift-alert-validity.md:\n\n  Introduction · Contribution to the State-of-the-Art ·\n  Research Focus and Research Questions · Methodology\n\nTODOs left open exactly where things are undecided — dataset choice,\ndrift-detector sample, author name. Nothing was invented to fill them."}
+{"role": "user", "text": "Run the check.", "clear": true}
+{"role": "tool", "text": "proposal-check · mechanical scan + language pass …"}
+{"role": "agent", "text": "Mechanically clean — no errors. 4 warnings: the intentional [TODO: …]\nmarkers. No forbidden content: no timelines, no personal data, no\nresults asserted as fact. One wording suggestion on the data-access\nrationale."}
+{"role": "user", "text": "Good enough for a first hand-in. Build the PDF please.", "clear": true}
+{"role": "tool", "text": "proposal-publish · pandoc → typst …"}
+{"role": "agent", "text": "PDF built successfully via typst: drift-alert-validity.pdf"}

@@ -2,6 +2,12 @@
 
 Write a convincing Bachelor's or Master's thesis proposal with the help of an AI agent, in English or German.
 
+A real agent session, condensed — a student turns a work anecdote into a proposal:
+
+![A student asks whether their anecdote about a silently degrading churn model could become a thesis; the ideate skill answers with a sharpening Socratic question](docs/demo/shot1.png)
+![The literature-search skill builds a base of 15 verified references and rejects noise instead of force-fitting it](docs/demo/shot2.png)
+![The check skill verifies the written proposal mechanically, then the publish skill builds the PDF](docs/demo/shot3.png)
+
 This repository contains a set of **agent skills**: instruction packages that teach an AI coding agent (Claude Code, Cursor, Codex, and many others) how to guide you from a vague idea to a polished, literature-grounded proposal. You install the skills once; afterwards you only ever work on your own proposal files, in your own folder. You never need to touch this repository.
 
 **Never used an AI agent before?** Start with [docs/getting-started.md](docs/getting-started.md), which walks you through installing an agent from zero.
