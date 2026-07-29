@@ -29,8 +29,33 @@ class SourceError(Exception):
     """A source is unavailable (network, quota, missing key)."""
 
 
+KEY_FILE = "api-keys.env"
+
+
+def get_key(name: str) -> str | None:
+    """Credential lookup: environment first, then the workspace key file.
+
+    The key file is `api-keys.env` in the current working directory (the
+    user's proposal workspace): one KEY=VALUE per line, `#` comments allowed.
+    It must be gitignored by whichever skill creates it.
+    """
+    if value := os.environ.get(name):
+        return value
+    try:
+        for line in open(KEY_FILE, encoding="utf-8"):
+            line = line.strip()
+            if line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            if key.strip() == name and value.strip():
+                return value.strip().strip("'\"")
+    except OSError:
+        pass
+    return None
+
+
 def user_agent() -> str:
-    contact = os.environ.get("CONTACT_EMAIL")
+    contact = get_key("CONTACT_EMAIL")
     base = "thesis-proposal-skills/0.1 (https://github.com/hutzelmann/thesis-proposal-skills)"
     return f"{base} mailto:{contact}" if contact else base
 

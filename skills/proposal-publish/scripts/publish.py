@@ -92,6 +92,7 @@ def build(proposal: Path, kind: str, tool: str) -> list[Path]:
     base = [
         "pandoc", str(proposal),
         "--lua-filter", str(TEMPLATES / "cite-split.lua"),  # before citeproc: one bracket per citation
+        "--csl", str(TEMPLATES / "compact-numeric.csl"),
         "--citeproc",
         "--lua-filter", str(TEMPLATES / "rq-filter.lua"),
     ]

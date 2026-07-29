@@ -22,9 +22,9 @@ from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
-from inspect_ai.model import get_model
+from inspect_ai.model import ChatMessageUser, get_model
 from inspect_ai.scorer import CORRECT, INCORRECT, Score, Target, accuracy, scorer
-from inspect_ai.solver import TaskState, basic_agent, system_message
+from inspect_ai.solver import Generate, TaskState, basic_agent, solver, system_message, use_tools
 from inspect_ai.tool import bash, text_editor
 from inspect_ai.util import sandbox
 
@@ -232,6 +232,100 @@ def review_fixture() -> Task:
         )],
         solver=agent_solver(),
         scorer=[review_l1(), review_l2_quality()],
+        sandbox="local",
+    )
+
+
+# ---------- task: ideate socratic dialogue ------------------------------------
+
+PERSONAS = Path(__file__).resolve().parent / "personas"
+PERSONA_MODEL = os.environ.get("PERSONA_MODEL", JUDGE_MODEL)
+IDEATE_ROUNDS = int(os.environ.get("IDEATE_ROUNDS", "5"))
+
+
+def dialogue_transcript(state: TaskState) -> str:
+    lines = []
+    for message in state.messages:
+        role = getattr(message, "role", "")
+        if role in ("user", "assistant") and getattr(message, "text", ""):
+            lines.append(f"{'STUDENT' if role == 'user' else 'ASSISTANT'}: {message.text}")
+    return "\n\n".join(lines)
+
+
+@solver
+def persona_dialogue(persona_file: str, rounds: int = IDEATE_ROUNDS):
+    persona = (PERSONAS / persona_file).read_text(encoding="utf-8")
+
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        student = get_model(PERSONA_MODEL)
+        for round_no in range(rounds):
+            state = await generate(state)
+            if round_no == rounds - 1:
+                break
+            reply = await student.generate(
+                persona + "\n\n=== CONVERSATION SO FAR ===\n" + dialogue_transcript(state)
+            )
+            state.messages.append(ChatMessageUser(content=reply.completion.strip()))
+        state.messages.append(ChatMessageUser(content=(
+            "Sorry, I have to run to a lecture. Please capture where we got to "
+            "so I can continue next time."
+        )))
+        return await generate(state)
+
+    return solve
+
+
+@scorer(metrics=[accuracy()])
+def ideate_l1_seed():
+    async def score(state: TaskState, target: Target) -> Score:
+        listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
+        files = [f for f in listing.stdout.split() if f.strip()]
+        if not files:
+            return Score(value=INCORRECT, explanation="no seeded proposal file in ws/")
+        text = await sandbox().read_file(files[0])
+        problems = []
+        if "\n---" not in text:
+            problems.append("no metadata block")
+        if "[TODO:" not in text:
+            problems.append("no TODO markers")
+        if "references" not in text:
+            problems.append("no references key")
+        if problems:
+            return Score(value=INCORRECT, explanation="; ".join(problems) + f" in {files[0]}")
+        return Score(value=CORRECT, explanation=f"seed file {files[0]} structurally complete")
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def ideate_l2_socratic():
+    async def score(state: TaskState, target: Target) -> Score:
+        listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
+        files = [f for f in listing.stdout.split() if f.strip()]
+        seed = await sandbox().read_file(files[0]) if files else "(no file created)"
+        passed, why = await judge(
+            "socratic.txt", dialogue_transcript(state), seed,
+            "Socratic throughout: gaps surfaced indirectly, never asked directly for missing input.",
+        )
+        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
+    return score
+
+
+@task
+def ideate_socratic() -> Task:
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(
+                "proposal-ideate",
+                "Hi... I need to find a thesis topic. I was thinking something with "
+                "app development and maybe sustainability? A friend of mine built a "
+                "CO2 tracking app once and that seemed cool. I don't really know "
+                "where to start.",
+            ),
+            files=stage_files("w03-snowball-seed", "proposal-ideate"),
+            setup="rm -f ws/*.md",  # empty workspace: ideate starts from nothing
+        )],
+        solver=[use_tools(bash(timeout=120), text_editor()), persona_dialogue("hesitant-bachelor.txt")],
+        scorer=[ideate_l1_seed(), ideate_l2_socratic()],
         sandbox="local",
     )
 

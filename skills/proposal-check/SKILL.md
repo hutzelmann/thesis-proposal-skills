@@ -5,6 +5,8 @@ description: Low-level check of a thesis proposal — required sections, citatio
 
 # Proposal Check
 
+**Read-only skill: you MUST NOT modify any file during a check run — no fixes, no edits, however obvious. You diagnose and report; nothing else.** Editing happens in a separate step, only after the user explicitly asks, via the write skill.
+
 Deterministic low-level checks plus a language pass for one proposal file. Results go to chat only — never write a report file. This check is advisory: it gates nothing; other skills may run it first but proceed on user confirmation.
 
 ## Target

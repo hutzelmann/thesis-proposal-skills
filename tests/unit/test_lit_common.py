@@ -63,3 +63,13 @@ def test_csl_yaml_roundtrip_via_check_regex():
 def test_dedupe_keeps_distinct_bare_doi_items():
     items = [{"DOI": f"10.1/x{i}", "_source": "opencitations"} for i in range(3)]
     assert len(common.dedupe(items)) == 3
+
+
+def test_get_key_env_then_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "api-keys.env").write_text("# keys\nOPENALEX_API_KEY = from-file\nCONTACT_EMAIL=a@b.c\n")
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    assert common.get_key("OPENALEX_API_KEY") == "from-file"
+    monkeypatch.setenv("OPENALEX_API_KEY", "from-env")
+    assert common.get_key("OPENALEX_API_KEY") == "from-env"
+    assert common.get_key("MISSING_KEY") is None

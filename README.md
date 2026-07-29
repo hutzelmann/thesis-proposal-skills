@@ -16,14 +16,12 @@ This repository contains a set of **agent skills**: instruction packages that te
 | `proposal-import` | Converts an existing proposal (usually a PDF) into the workable format and strips personal data. |
 | `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs. |
 | `proposal-review` | Supervisor-style content review with numbered, actionable suggestions. |
-| `proposal-publish` | Optional: builds a compact PDF via pandoc and typst. A plain markdown hand-in is fine too. |
+| `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. A plain markdown hand-in is fine too. |
 | `proposal-customize` | Adapts everything to your supervisor's requirements ("timeline required", "max 3 pages"). |
 
 Your whole proposal lives in **one file**: readable text on top, literature entries at the bottom. Many proposals can sit side by side in one folder.
 
 ## Quick start
-
-Nothing to compile, no LaTeX required:
 
 1. Get an AI agent (see [docs/getting-started.md](docs/getting-started.md) if you don't have one).
 2. Create a folder for your proposals and open your agent in it.
@@ -43,7 +41,7 @@ The skills encode conservative academic guidance: analytical research questions 
 
 This repo is **only** for developing and testing the skills. User proposals never live here.
 
-- Specs are the source of truth: `openspec/specs/`, managed with [OpenSpec](https://github.com/Fission-AI/OpenSpec). Every change runs propose, review, apply, archive.
+- Specs are the source of truth: `openspec/specs/`, managed with [OpenSpec](https://github.com/Fission-AI/OpenSpec). Every change runs propose, review, apply, archive. Agent integration files are not committed; run `openspec init --tools <your-agent>` once locally (and `openspec update` after CLI upgrades).
 - `shared/` holds the single-source guidance; `scripts/sync_shared.py` materializes it into the skills (CI-checked).
 - Tests: `uv run pytest` runs L0 without model calls; `harness/` holds the L1/L2 model evals (see `harness/README.md`).
 - Fixtures in `tests/fixtures/` are synthetic: no real proposals, no personal data.

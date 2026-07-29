@@ -23,10 +23,10 @@ BATCH_MAX = 50  # OpenAlex allows at most ~50 OR-joined values per filter
 
 
 def _api_key() -> str:
-    key = os.environ.get("OPENALEX_API_KEY")
+    key = common.get_key("OPENALEX_API_KEY")
     if not key:
         raise common.SourceError(
-            "openalex: no OPENALEX_API_KEY set (free key: https://openalex.org/settings/api)")
+            "openalex: no OPENALEX_API_KEY found in environment or api-keys.env (free key: https://openalex.org/settings/api)")
     return key
 
 
