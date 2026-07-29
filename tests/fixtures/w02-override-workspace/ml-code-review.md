@@ -19,6 +19,10 @@ The focus is on balancing accuracy with false-positive rates to create a practic
 2. Which code features are most predictive of issues that human reviewers identify?
 3. How does model performance vary across different programming languages and project domains?
 
+# Timeline
+
+The work spans six months from data collection to evaluation.
+
 # Methodology for Research: Prototype Implementation
 
 ## Previous Work
