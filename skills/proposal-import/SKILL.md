@@ -28,6 +28,16 @@ End the import with a removal note listing every stripped item class — the use
 
 Do not silently drop figures. For each figure in the source, insert `[TODO: re-add figure from page N as img/<slug>-<name>.png]` at the right position. If `pdfimages` or `mutool` is available on the system, offer to extract images into `img/` directly (slug-prefixed names); otherwise tell the user how to export them manually.
 
+## Validate and complement the references
+
+After conversion, run (Windows: `py` instead of `python3`):
+
+```
+python3 scripts/validate_refs.py <slug>.md
+```
+
+For each reference it reports VERIFIED (DOI resolves and matches), ENRICHED (identified via confident title match — completed CSL-YAML is printed for you to apply, keeping the existing ids), UNVERIFIABLE, or OFFLINE. Apply the completed entries; for every UNVERIFIABLE entry keep it but add `[TODO: verify reference <id>]` next to its first citation — never silently trust or drop it. If everything reports OFFLINE (no network), proceed with the as-found references and say that validation was skipped.
+
 ## Wrap-up
 
-Report: sections mapped, references recovered vs. TODO-marked, items stripped, figures marked. Recommend running check next — imports almost always carry violations worth seeing immediately.
+Report: sections mapped, references verified/enriched/unverifiable (per reference), items stripped, figures marked. Recommend running check next — imports almost always carry violations worth seeing immediately.
