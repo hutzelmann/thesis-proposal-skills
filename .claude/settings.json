@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk read *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk find *)",
+      "Bash(rtk wc *)",
+      "Bash(rtk rg *)",
+      "Bash(rtk git log *)",
+      "Bash(rtk git status *)",
+      "Bash(rtk git diff *)",
+      "Bash(rtk git show *)",
+      "Bash(rtk git branch *)",
+      "Bash(rtk git remote -v)",
+      "Bash(openspec validate *)",
+      "Bash(openspec status *)",
+      "Bash(openspec instructions *)",
+      "Bash(uv run rtk pytest *)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run rtk ruff check *)",
+      "Bash(uv run ruff check *)",
+      "Bash(uv run rtk ruff check --fix *)",
+      "Bash(uv run ruff check --fix *)",
+      "Bash(uv run rtk ruff check . --fix *)",
+      "Bash(uv run ruff check . --fix *)",
+      "Bash(pdfinfo *)",
+      "Bash(pdfgrep *)",
+      "Bash(pdftotext *)",
+      "Bash(pdftoppm *)",
+      "Bash(gunzip -c *)",
+      "Bash(kpsewhich *)",
+      "Bash(python3 scripts/sync_shared.py --check)"
+    ]
+  }
+}

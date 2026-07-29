@@ -18,7 +18,7 @@ uv run inspect eval harness/skill_evals.py@review_fixture \
 Judge model: `JUDGE_MODEL` env, default `openrouter/anthropic/claude-haiku-4.5`.
 View transcripts: `uv run inspect view --log-dir logs/evals`.
 
-Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `review_fixture` (f05; L1 review file + untouched proposal, L2 review rubric), `check_report` (f15; L1 report fidelity + untouched proposal), `ideate_socratic` (persona dialogue; L1 seed file, L2 Socratic rubric).
+Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `review_fixture` (f05; L1 review file + untouched proposal, L2 review rubric), `review_fixture_de` (f04; German review), `check_report` (f15; L1 report fidelity + untouched proposal), `ideate_socratic` (persona dialogue; L1 seed file, L2 Socratic rubric), `customize_override` (f00; supervisor requirements to valid TOML overrides), `publish_build` (f00; real pandoc/typst pipeline to PDF), `import_messy` (pasted messy text to standard format, personal data stripped), `litsearch_expand` (w03; live academic APIs — network-dependent, expect flakiness).
 
 ## Dev runs (real Claude Code binary, Max subscription)
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys as _sys
 from pathlib import Path
 
@@ -59,7 +60,7 @@ def stage_files(fixture: str, skill: str, extra_skill_files: dict[str, str] | No
             for img in f.iterdir():
                 files[f"ws/img/{img.name}"] = str(img)
     skill_dir = SKILLS / skill
-    for sub in ("references", "scripts"):
+    for sub in ("references", "scripts", "templates"):
         d = skill_dir / sub
         if d.exists():
             for f in d.iterdir():
@@ -336,5 +337,227 @@ def check_report() -> Task:
         )],
         solver=agent_solver(),
         scorer=[check_report_l1()],
+        sandbox="local",
+    )
+
+
+# ---------- task: customize writes the override file --------------------------
+
+@scorer(metrics=[accuracy()])
+def customize_l1():
+    async def score(state: TaskState, target: Target) -> Score:
+        import tomllib
+        original = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+        if await read_ws("ml-code-review.md") != original:
+            return Score(value=INCORRECT, explanation="customize modified the proposal")
+        guidelines = await read_ws("guidelines.md")
+        if not guidelines:
+            return Score(value=INCORRECT, explanation="guidelines.md not created")
+        m = re.search(r"```toml\n(.*?)```", guidelines, re.DOTALL)
+        if not m:
+            return Score(value=INCORRECT, explanation="no fenced TOML block")
+        try:
+            data = tomllib.loads(m.group(1))
+        except tomllib.TOMLDecodeError as exc:
+            return Score(value=INCORRECT, explanation=f"TOML does not parse: {exc}")
+        if data.get("min_references") != 8:
+            return Score(value=INCORRECT, explanation=f"min_references is {data.get('min_references')!r}, not 8")
+        forbidden = [str(x).lower() for x in data.get("forbidden_sections", ["<absent>"])]
+        if any("timeline" in f or "zeitplan" in f or "schedule" in f for f in forbidden):
+            return Score(value=INCORRECT, explanation="timeline still forbidden")
+        return Score(value=CORRECT, explanation="valid TOML: min_references=8, timeline un-forbidden")
+    return score
+
+
+@task
+def customize_override() -> Task:
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(
+                "proposal-customize",
+                "My supervisor requires a timeline section in the proposal and at "
+                "least 8 references. Please adjust the rules for this workspace.",
+            ),
+            files=stage_files("f00-clean-en", "proposal-customize"),
+        )],
+        solver=agent_solver(),
+        scorer=[customize_l1()],
+        sandbox="local",
+    )
+
+
+# ---------- task: publish builds a PDF ---------------------------------------
+
+@scorer(metrics=[accuracy()])
+def publish_l1():
+    async def score(state: TaskState, target: Target) -> Score:
+        listing = await sandbox().exec(["bash", "-c", "ls -la ws/*.pdf 2>/dev/null; cat ws/.gitignore 2>/dev/null"], timeout=10)
+        if ".pdf" not in listing.stdout:
+            return Score(value=INCORRECT, explanation="no PDF produced: " + listing.stdout[:200])
+        if "*.pdf" not in listing.stdout:
+            return Score(value=INCORRECT, explanation="workspace .gitignore not maintained")
+        return Score(value=CORRECT, explanation="PDF built, gitignore maintained")
+    return score
+
+
+@task
+def publish_build() -> Task:
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt("proposal-publish", "Please build a PDF of my proposal."),
+            files=stage_files("f00-clean-en", "proposal-publish"),
+        )],
+        solver=agent_solver(),
+        scorer=[publish_l1()],
+        sandbox="local",
+    )
+
+
+# ---------- task: import from messy pasted text -------------------------------
+
+MESSY_SOURCE = """PROPOSAL - CONFIDENTIAL - INTERNAL USE ONLY
+Student: Erika Musterfrau, Matriculation 00000000, erika@example.org
+Supervisor: Prof. Example (prof@example.org)
+
+1 Motivation
+Smart irrigation wastes water because schedules ignore soil data. Our project
+will build a better controller. We reference the survey by Rivera et al. 2023
+(doi:10.5555/fake.survey) and the LoRa study of Tanaka 2024.
+
+2 Goals and Approach
+We will implement the controller and test it on a farm.
+
+3 Timeline
+Month 1-2 literature, month 3-5 implementation, month 6 writing.
+"""
+
+
+@scorer(metrics=[accuracy()])
+def import_l1():
+    async def score(state: TaskState, target: Target) -> Score:
+        listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
+        produced = [f for f in listing.stdout.split() if f.endswith(".md") and "messy" not in f]
+        if not produced:
+            return Score(value=INCORRECT, explanation="no proposal file produced")
+        text = await sandbox().read_file(produced[0])
+        problems = []
+        if "\n---" not in text or "references" not in text:
+            problems.append("not in standard format")
+        for leak in ("00000000", "erika@example.org", "prof@example.org", "Prof. Example",
+                     "CONFIDENTIAL", "INTERNAL USE ONLY"):
+            if leak in text:
+                problems.append(f"personal/confidential data leaked: {leak}")
+        if re.search(r"(?im)^#+.*timeline", text):
+            problems.append("forbidden timeline heading kept")
+        if problems:
+            return Score(value=INCORRECT, explanation="; ".join(problems[:4]))
+        return Score(value=CORRECT, explanation=f"standard file {produced[0]}, stripped clean")
+    return score
+
+
+@task
+def import_messy() -> Task:
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(
+                "proposal-import",
+                "I could not attach the PDF, so here is the pasted text of my old "
+                "proposal — please import it:\n\n" + MESSY_SOURCE,
+            ),
+            files={"ws/README-placeholder.txt": "workspace"},
+        )],
+        solver=agent_solver(),
+        scorer=[import_l1()],
+        sandbox="local",
+    )
+
+
+# ---------- task: literature search expands references (live network) ---------
+
+W03_PROPOSAL = "serverless-energy-scheduling.md"
+
+
+@scorer(metrics=[accuracy()])
+def litsearch_l1():
+    async def score(state: TaskState, target: Target) -> Score:
+        text = await read_ws(W03_PROPOSAL)
+        if not text:
+            return Score(value=INCORRECT, explanation="proposal file gone")
+        ids = re.findall(r"^\s*-\s+id:\s*(\S+)", text, re.MULTILINE)
+        if len(ids) <= 3:
+            return Score(value=INCORRECT, explanation=f"still only {len(ids)} references")
+        if len(ids) != len(set(ids)):
+            return Score(value=INCORRECT, explanation="duplicate reference ids")
+        return Score(value=CORRECT, explanation=f"{len(ids)} references, ids unique")
+    return score
+
+
+@task
+def litsearch_expand() -> Task:
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(
+                "proposal-lit-search",
+                f"Please find about three more relevant sources for ws/{W03_PROPOSAL} "
+                "and add them to my references.",
+            ),
+            files=stage_files("w03-snowball-seed", "proposal-lit-search"),
+        )],
+        solver=agent_solver(),
+        scorer=[litsearch_l1()],
+        sandbox="local",
+    )
+
+
+# ---------- task: German review ------------------------------------------------
+
+F04_PROPOSAL = "zero-trust-referenzmodell.md"
+F04_REVIEW = "zero-trust-referenzmodell-review.md"
+
+
+@scorer(metrics=[accuracy()])
+def review_de_l1():
+    async def score(state: TaskState, target: Target) -> Score:
+        original = (FIXTURES / "f04-dsr-vendor-heavy" / F04_PROPOSAL).read_text(encoding="utf-8")
+        current = await read_ws(F04_PROPOSAL)
+        review = await read_ws(F04_REVIEW)
+        ok, why = verdict_review(original, current, review, F04_REVIEW)
+        if not ok:
+            return Score(value=INCORRECT, explanation=why)
+        german_signals = sum(1 for w in (" der ", " die ", " und ", " nicht ", " werden ")
+                             if w in (review or ""))
+        if german_signals < 2:
+            return Score(value=INCORRECT, explanation="review does not appear to be written in German")
+        return Score(value=CORRECT, explanation="German review file present, proposal untouched")
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def review_de_l2():
+    async def score(state: TaskState, target: Target) -> Score:
+        review = await read_ws(F04_REVIEW) or ""
+        oracle = json.loads(
+            (FIXTURES / "f04-dsr-vendor-heavy" / "expected.json").read_text(encoding="utf-8")
+        )
+        passed, why = await judge(
+            "review_quality.txt", "; ".join(oracle["semantic"]), review,
+            "Finds the seeded defects, actionable, format-agnostic, written in German.",
+        )
+        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
+    return score
+
+
+@task
+def review_fixture_de() -> Task:
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(
+                "proposal-review",
+                f"Bitte begutachte mein Exposé ws/{F04_PROPOSAL} — ist es bereit für die Abgabe?",
+            ),
+            files=stage_files("f04-dsr-vendor-heavy", "proposal-review"),
+        )],
+        solver=agent_solver(),
+        scorer=[review_de_l1(), review_de_l2()],
         sandbox="local",
     )
