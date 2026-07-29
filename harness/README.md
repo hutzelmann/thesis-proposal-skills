@@ -18,7 +18,7 @@ uv run inspect eval harness/skill_evals.py@review_fixture \
 Judge model: `JUDGE_MODEL` env, default `openrouter/anthropic/claude-haiku-4.5`.
 View transcripts: `uv run inspect view --log-dir logs/evals`.
 
-Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `review_fixture` (f05; L1 review file + untouched proposal, L2 review rubric), `check_report` (f15; L1 report fidelity + untouched proposal), `ideate_socratic` (persona dialogue; L1 seed file, L2 Socratic rubric). `rq_quality_task.py` is the minimal S1 spike example.
+Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `review_fixture` (f05; L1 review file + untouched proposal, L2 review rubric), `check_report` (f15; L1 report fidelity + untouched proposal), `ideate_socratic` (persona dialogue; L1 seed file, L2 Socratic rubric).
 
 ## Dev runs (real Claude Code binary, Max subscription)
 

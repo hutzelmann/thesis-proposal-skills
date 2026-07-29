@@ -1,6 +1,6 @@
-# Fixture Blueprint
+# Fixture Corpus
 
-Design for the dummy-proposal test fixtures (`tests/fixtures/`), informed by a private corpus of real student proposals (11 documents, mixed quality). Per D13, nothing here maps to an identifiable original: topics are altered, all names/institutions removed, defect patterns generalized. The real corpus stays outside version control.
+Reference for the synthetic test fixtures in this directory (the "fixture blueprint" the testing-harness spec refers to). The designs were informed by a private corpus of real student proposals (11 documents, mixed quality); nothing here maps to an identifiable original: topics are altered, all names and institutions removed, defect patterns generalized. Each fixture directory holds one proposal file plus an `expected.json` oracle calibrated against the check script.
 
 ## Corpus-derived failure taxonomy (aggregate, anonymized)
 

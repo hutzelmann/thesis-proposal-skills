@@ -36,4 +36,4 @@ Eval details, task list, and known limitations: `harness/README.md`. Model runs 
 
 ## History
 
-The repo was migrated from a LaTeX proposal template on 2026-07-29 (plan: `rewrite.md`, historical; tag `legacy-latex-template` preserves the old state). The archived OpenSpec changes under `openspec/changes/archive/` document every step including eval findings.
+Migrated from a LaTeX proposal template on 2026-07-29; the tag `legacy-latex-template` preserves the old state, and the archived OpenSpec changes under `openspec/changes/archive/` document every step including eval findings.
