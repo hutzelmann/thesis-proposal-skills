@@ -13,7 +13,7 @@ Help students write a convincing thesis proposal.
 The preamble in `proposal.tex` should include the following:
 
 - The document class declaration, which should be `\documentclass[usebib]{compactarticle}` and might include further options, e.g. `\documentclass[usebib,embedsources]{compactarticle}` to embed source files into the PDF.
-- `\usepackage[english]{babel}` for English or `\usepackage[german]{babel}` for German.
+- `\usepackage[english]{babel}` for English or `\usepackage[ngerman]{babel}` for German.
 - The title and author declarations using `\title{}` and `\author{}` stating the title of the thesis and the name of the student working on the thesis.
 - The title should be concise and informative, and should not include any technical terms or details that are not widely known in computer science.
 - `\subtitle{Bachelor's Thesis Proposal}` or ` \subtitle{Master's Thesis Proposal}` depending on the level of the thesis.
@@ -49,6 +49,7 @@ The following sections must not be included in the proposal:
 - Expected results
 - Deliverables or code fragments
 - Personal data like Matriculation number, study program, email address, etc.
+- Preliminary structure of the thesis (e.g. chapter structure, section structure, etc.)
 
 ## Section Content in Detail
 
@@ -62,6 +63,7 @@ The introduction should only refer to the thesis at the end of the section.
 
 Explain the relevant, current approach to the topic from the introduction without repeating the information.
 The contribution should clearly state how this thesis aims to extend the previous works in the field.
+It is vital that this difference to previous work is stated explicitly and precisely.
 
 ### Research Focus and Research Questions
 
@@ -144,7 +146,7 @@ Do not combine multiple scientific methods in the same thesis proposal. Decide f
 - Put one sentence per line.
 - Minimize LaTeX code additional to the given structure of a proposal above.
 - Do not edit `compactarticle.cls` unless explicitly requested.
-- Do nut suggest the usage of `latexmk`, refer to the LaTeX workshop extension instead.
+- Do nut suggest the usage of `latexmk`, `pdflatex`, `biber` or similar for compiling the document, refer to the LaTeX workshop extension instead.
 - The VScode extension LaTeX workshop automatically compiles the project after every file change.
 - Do not add new tooling or dependencies unless explicitly requested.
 - Use `\todo{text}` as a placeholder for missing information, and give a 3 to 10 word outline of what information is missing or how to fill the placeholder in the text, e.g. `\todo{Add a reference to a dataset}`.
