@@ -1,8 +1,8 @@
 # Getting Started (from zero)
 
-You need three things: an AI agent, a folder for your proposals, and the skills. This page covers two concrete agent setups — they are **examples, not endorsements**; the skills work with 70+ agents (anything supporting the SKILL.md standard).
+You need three things: an AI agent, a folder for your proposals, and the skills. This page covers two concrete agent setups. They are **examples, not endorsements**; the skills work with 70+ agents (anything supporting the SKILL.md standard).
 
-## Option A — Claude Code
+## Option A: Claude Code
 
 Terminal-based agent by Anthropic. Paid subscription or API billing.
 
@@ -20,7 +20,7 @@ Terminal-based agent by Anthropic. Paid subscription or API billing.
    ```
 5. In the agent chat: *"Help me develop a thesis idea."*
 
-## Option B — GitHub Copilot CLI
+## Option B: GitHub Copilot CLI
 
 [Free for verified students](https://github.com/education/students) via the GitHub Student Developer Pack.
 
@@ -38,15 +38,15 @@ Terminal-based agent by Anthropic. Paid subscription or API billing.
 
 ## What you get in the folder
 
-- `your-topic-name.md` — the proposal: text on top, literature at the bottom. This is the only file you edit (or let the agent edit).
-- `your-topic-name-review.md` — appears when you ask for a review.
-- `guidelines.md` — appears if you customize the rules for your supervisor.
-- `img/` — only if your proposal uses figures.
+- `your-topic-name.md` is the proposal: text on top, literature at the bottom. This is the only file you edit (or let the agent edit).
+- `your-topic-name-review.md` appears when you ask for a review.
+- `guidelines.md` appears if you customize the rules for your supervisor.
+- `img/` appears only if your proposal uses figures.
 
-Useful prompts: *"Find literature for my proposal"* · *"Check my proposal"* · *"Review it like a supervisor would"* · *"My supervisor wants a timeline — adjust the rules"* · *"Build a PDF"* (the agent tells you what to install, if anything).
+Useful prompts: *"Find literature for my proposal"*, *"Check my proposal"*, *"Review it like a supervisor would"*, *"My supervisor wants a timeline, adjust the rules"*, *"Build a PDF"* (the agent tells you what to install, if anything).
 
 ## Notes
 
-- Your proposals stay on your machine; literature search talks to public academic APIs (DBLP, Crossref, arXiv, and others). Optional free API keys improve abstract coverage — the agent offers to walk you through it when useful.
+- Your proposals stay on your machine; literature search talks to public academic APIs (DBLP, Crossref, arXiv, and others). Optional free API keys improve abstract coverage, and the agent offers to walk you through the setup when useful.
 - English is the default; say *"auf Deutsch"* and the whole proposal switches to German conventions.
-- Nothing here requires LaTeX. PDF export needs `pandoc` + `typst`, and the publish skill guides the install when you first ask for a PDF.
+- Nothing here requires LaTeX. PDF export needs `pandoc` and `typst`; the publish skill guides the install when you first ask for a PDF.
