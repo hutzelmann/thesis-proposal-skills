@@ -22,7 +22,7 @@
 
 - [x] 4.1 `harness/claude_runner.py`: add optional `siblings` list to scenarios; `stage()` copies each sibling into `ws/.claude/skills/`; declare `proposal-lit-search` for ideate scenarios (mechanism added; no ideate scenario exists in claude_runner today, so no declaration site yet)
 - [x] 4.2 `harness/skill_evals.py`: stage lit-search scripts for ideate tasks via `extra_skill_files` under `proposal-lit-search/scripts/…` (staging statically verified: 9 sibling scripts at the sibling path, ideate `skill/` references-only)
-- [ ] 4.3 Smoke-run one ideate eval scenario on the cheap dev loop to confirm grounding uses the staged sibling scripts (blocked: OPENROUTER_API_KEY not set in this session)
+- [x] 4.3 Smoke-run one ideate eval scenario on the cheap dev loop to confirm grounding uses the staged sibling scripts (two haiku runs, all rubrics 1.000; run 1 shows sibling-first attempt with correct degradation to agent-fetch; preamble hint added for sandbox cwd path resolution)
 
 ## 5. Drop ideate's redundant structure.json copy (follow-up fold-in)
 
