@@ -313,6 +313,26 @@ def ideate_socratic() -> Task:
     )
 
 
+@task
+def ideate_anecdote() -> Task:
+    """Anecdote-driven Master's student (persona derived from the demo session)."""
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(
+                "proposal-ideate",
+                "For my Master's thesis I want to do something about ML monitoring. "
+                "At my student job our churn model quietly got worse for months "
+                "before anyone noticed — is there a thesis in that?",
+            ),
+            files=stage_files("w03-snowball-seed", "proposal-ideate", lit_search_sibling()),
+            setup="rm -f ws/*.md",  # empty workspace: ideate starts from nothing
+        )],
+        solver=[use_tools(bash(timeout=120), text_editor()), persona_dialogue("anecdote-master.txt")],
+        scorer=[ideate_l1_seed(), ideate_l2_socratic()],
+        sandbox="local",
+    )
+
+
 # ---------- task: check report fidelity --------------------------------------
 
 F15_PROPOSAL = "broken-format.md"

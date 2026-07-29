@@ -51,6 +51,7 @@ The corpus leaves real coverage holes; these fixtures are designed from the rule
 | `f17-theoretical` | en | BSc | Pure Theoretical Analysis (formalization / requirements / example) — corpus theoretical proposals (f03, f08) are free-form and defect-laden; the compliant branch is untested without this. |
 | `f15-format-broken` | en | BSc | Trailing-YAML guardrail fixture: missing blank line before `---`, boolean-literal citation key (`on`), duplicate metadata block, leftover `[TODO: …]`, exactly 2 references (min_references boundary). Tiny file, pure Check-mechanics oracle. |
 | `f16-figures-import` | en | MSc | Invented PDF containing two figures — the corpus is nearly figure-free, so Import's `img/`-TODO path has no ground truth without it. |
+| `f19-drift-alert-validity` | en | MSc | Session-derived (see `docs/demo/harvest.log`): skills-generated clean-with-TODOs proposal, 15 verified references, citation inside RQ2 — the pattern that broke the publish rq-filter; no other fixture covers either trait. |
 
 Workflow-state fixtures (not proposals, but required test states):
 
