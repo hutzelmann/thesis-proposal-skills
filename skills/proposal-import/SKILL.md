@@ -102,6 +102,25 @@ python3 scripts/validate_refs.py <slug>.md
 
 For each reference it reports VERIFIED (DOI resolves and matches), ENRICHED (identified via confident title match — completed CSL-YAML is printed for you to apply, keeping the existing ids), UNVERIFIABLE, or OFFLINE. Apply the completed entries; for every UNVERIFIABLE entry keep it but add `[TODO: verify reference <id>]` next to its first citation — never silently trust or drop it. If everything reports OFFLINE (no network), proceed with the as-found references and say that validation was skipped.
 
+## Verify before you report
+
+Never report an import you have not read back. Run (Windows: `py` instead of `python3`):
+
+```
+python3 scripts/check.py <slug>.md
+```
+
+Fix every error it reports, then run it again, until the only findings left are the ones the source caused. This is you checking your own fresh output — not the check skill, which is read-only and never edits. Imports fail the same handful of rules over and over, and the script names them precisely, so this is faster than re-reading the file yourself.
+
+Two findings you must **not** "fix":
+
+- **Too few references.** The source carried what it carried; inventing a publication is the one unforgivable error. Report the shortfall and let the user add real sources.
+- **Open `[TODO: …]` markers.** They are the honest record of what the source did not supply.
+
+Everything else is yours to correct: missing `(RQn)` cross-references, a methodology outside the closed set, a section title that drifted, a malformed reference entry, a duplicate key.
+
+If the script cannot read the file, the import did not happen — say so plainly instead of describing it as complete.
+
 ## Wrap-up
 
-Report: sections mapped, references verified/enriched/unverifiable (per reference), items stripped, figures marked. Recommend running check next — imports almost always carry violations worth seeing immediately.
+Report: sections mapped, references verified/enriched/unverifiable (per reference), items stripped, figures marked, and what the check still reports after your fixes.

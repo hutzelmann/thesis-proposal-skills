@@ -8,6 +8,8 @@ Given an existing proposal document, the skill SHALL produce one proposal file i
 
 The produced file SHALL satisfy the mechanical check apart from findings that follow from what the source did not carry, such as too few references. In particular the metadata block SHALL be closed, `references` SHALL be a CSL-YAML list of entries each carrying an `id`, the methodology section SHALL name one methodology from the closed set, and the research questions SHALL be an ordered list. The skill SHALL show these shapes rather than only describing them, because a source document rarely resembles them.
 
+The skill SHALL verify that conformance itself: before reporting completion it SHALL run the mechanical check over the file it wrote and resolve the errors it reports. Errors that reflect what the source did not carry SHALL be reported to the user instead, never resolved by inventing content. Because verification reads the file back, the skill SHALL NOT report a proposal it did not write.
+
 #### Scenario: PDF with free-form structure
 - **WHEN** a PDF proposal with non-canonical sections is imported
 - **THEN** content is mapped to the canonical structure where possible and gaps carry TODO markers
@@ -15,6 +17,18 @@ The produced file SHALL satisfy the mechanical check apart from findings that fo
 #### Scenario: Imported file passes the mechanical check
 - **WHEN** the mechanical check runs over a freshly imported proposal
 - **THEN** it reports no errors other than those caused by information absent from the source
+
+#### Scenario: Verification finds a fixable defect
+- **WHEN** the check reports a structural error such as a research question never referenced from the methodology section
+- **THEN** the skill fixes it and re-runs the check before reporting completion
+
+#### Scenario: Verification finds a defect the source caused
+- **WHEN** the check reports that the proposal cites fewer references than required, because the source carried only two
+- **THEN** the skill reports that to the user and does not invent sources to satisfy it
+
+#### Scenario: The file was never written
+- **WHEN** verification cannot read the proposal file back
+- **THEN** the skill reports the failure rather than describing the import as complete
 
 #### Scenario: Source describes an approach outside the closed methodology set
 - **WHEN** the source describes its approach in its own words, such as "implementation and farm validation"

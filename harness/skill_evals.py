@@ -460,10 +460,9 @@ def import_l1():
             passed, why = verdict_import(None)
             return Score(value=INCORRECT, explanation=why)
         text = await sandbox().read_file(produced[0])
-        # tools/ is staged for the scorer only — the skill under test is not
-        # told it has a check script, so this still tests import alone
+        # the skill ships its own check copy, so the scorer uses that one
         run = await sandbox().exec(
-            ["python3", "tools/scripts/check.py", produced[0]], timeout=60
+            ["python3", "skill/scripts/check.py", produced[0]], timeout=60
         )
         passed, why = verdict_import(text, run.stdout, produced[0])
         return Score(value=CORRECT if passed else INCORRECT, explanation=why)
@@ -477,9 +476,10 @@ def import_messy() -> Task:
             input=skill_prompt("proposal-import", MESSY_REQUEST),
             files={
                 "ws/README-placeholder.txt": "workspace",
-                "tools/scripts/check.py": str(SKILLS / "proposal-check" / "scripts" / "check.py"),
-                "tools/references/structure.json": str(
-                    SKILLS / "proposal-check" / "references" / "structure.json"),
+                "skill/scripts/check.py": str(
+                    SKILLS / "proposal-import" / "scripts" / "check.py"),
+                "skill/references/structure.json": str(
+                    SKILLS / "proposal-import" / "references" / "structure.json"),
             },
         )],
         solver=agent_solver(),

@@ -29,7 +29,14 @@ SYNC_MAP: dict[str, list[str]] = {
     ],
     "shared/structure.json": [
         "skills/proposal-check/references",
+        # import verifies its own output; check.py resolves the skeleton
+        # relative to its own location, so the copy travels with the script
+        "skills/proposal-import/references",
     ],
+    # import runs the check over the file it just wrote before reporting, so
+    # the script is core to its function and ships as a synchronized copy
+    # rather than a sibling fallback (packaging spec)
+    "skills/proposal-check/scripts/check.py": ["skills/proposal-import/scripts"],
     # common+crossref vendored into import: validate_refs.py imports them as
     # Python modules, so a missing sibling would crash rather than degrade.
     # Ideate instead uses the sibling-fallback path (packaging spec).
