@@ -70,6 +70,56 @@ def test_multiple_metadata_blocks_error(tmp_path):
     assert "additional metadata block" in result.stdout
 
 
+def with_nameless_references(source: str, sentence: str) -> str:
+    """Append an authorless and an editor-only reference, and cite them."""
+    lines = source.rstrip("\n").split("\n")
+    extra = [
+        "- id: NoName01Standard",
+        "  type: webpage",
+        "  title: Model monitoring practices",
+        "  issued:",
+        "    year: 2001",
+        "- id: Ed02Collected",
+        "  type: book",
+        "  title: Collected works on drift",
+        "  editor:",
+        "  - family: Klein",
+        "    given: Karl",
+        "  issued:",
+        "    year: 2002",
+    ]
+    body = "\n".join(lines[:-1] + extra + [lines[-1]]) + "\n"
+    return body.replace("# Introduction to the Topic",
+                        "# Introduction to the Topic\n\n" + sentence, 1)
+
+
+def test_author_in_text_citation_of_authorless_reference_warns(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "nameless.md"
+    victim.write_text(with_nameless_references(source, "@NoName01Standard states this."))
+    result = run_check(victim)
+    out = result.stdout
+    assert "`@NoName01Standard` is cited author-in-text" in out
+    assert "use `[@NoName01Standard]` instead" in out
+    assert "WARNING" in out
+
+
+def test_bracketed_citation_of_authorless_reference_is_silent(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "bracketed.md"
+    victim.write_text(with_nameless_references(source, "Reported widely [@NoName01Standard]."))
+    result = run_check(victim)
+    assert "cited author-in-text" not in result.stdout
+
+
+def test_author_in_text_citation_of_editor_only_reference_is_silent(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "editor.md"
+    victim.write_text(with_nameless_references(source, "@Ed02Collected collects work."))
+    result = run_check(victim)
+    assert "cited author-in-text" not in result.stdout
+
+
 def test_first_person_capitalized_caught(tmp_path):
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
     victim = tmp_path / "fp.md"

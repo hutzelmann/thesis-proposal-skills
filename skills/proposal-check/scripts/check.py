@@ -53,6 +53,9 @@ class Metadata:
         self.lang = "en"
         self.title: str | None = None
         self.reference_ids: list[str] = []
+        # ids whose entry declares neither an author nor an editor: an
+        # author-in-text citation of one renders as the quoted title
+        self.reference_ids_without_names: set[str] = set()
 
 
 def split_proposal(text: str) -> tuple[str, Metadata]:
@@ -73,7 +76,15 @@ def split_proposal(text: str) -> tuple[str, Metadata]:
                 meta.title = m.group(1).strip().strip("'\"")
             refs = re.search(r"^references:\s*$(.*)", block, re.MULTILINE | re.DOTALL)
             if refs:
-                meta.reference_ids = re.findall(r"^\s*-\s+id:\s*(\S+)", refs.group(1), re.MULTILINE)
+                entries = re.split(r"^\s*-\s+id:\s*", refs.group(1), flags=re.MULTILINE)[1:]
+                for entry in entries:
+                    first, _, rest = entry.partition("\n")
+                    key = first.split()[0] if first.split() else ""
+                    if not key:
+                        continue
+                    meta.reference_ids.append(key)
+                    if not re.search(r"^\s+(author|editor):", rest, re.MULTILINE):
+                        meta.reference_ids_without_names.add(key)
             return body, meta
     return text, meta
 
@@ -180,14 +191,31 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
 
     # -- citations
     cited: dict[str, int] = {}
+    author_in_text: dict[str, int] = {}
     for lineno, line in enumerate(body.split("\n"), start=1):
-        for m in re.finditer(r"(?<![\w.])@([A-Za-z][\w:.-]*)", line):
-            cited.setdefault(m.group(1).rstrip(".,;:"), lineno)
+        # a key inside a bracketed group renders as a bare number; one outside
+        # is author-in-text and gets an author label prefixed
+        depth = 0
+        for m in re.finditer(r"\[|\]|(?<![\w.])@([A-Za-z][\w:.-]*)", line):
+            if m.group(0) == "[":
+                depth += 1
+            elif m.group(0) == "]":
+                depth = max(0, depth - 1)
+            else:
+                key = m.group(1).rstrip(".,;:")
+                cited.setdefault(key, lineno)
+                if depth == 0:
+                    author_in_text.setdefault(key, lineno)
     defined = set(meta.reference_ids)
     for key in sorted(set(cited) - defined):
         errors.append(f"cited key `@{key}` not defined in references (line {cited[key]})")
     for key in sorted(defined - set(cited)):
         warnings.append(f"reference `{key}` defined but never cited")
+    for key in sorted(set(author_in_text) & meta.reference_ids_without_names):
+        warnings.append(
+            f"`@{key}` is cited author-in-text but its reference declares no author or editor "
+            f"(line {author_in_text[key]}) — it renders as the quoted title; use `[@{key}]` instead"
+        )
     min_refs = overrides.get("min_references", structure["min_references"])
     if len(defined) < min_refs:
         errors.append(f"only {len(defined)} references — at least {min_refs} required")

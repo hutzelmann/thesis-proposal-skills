@@ -91,6 +91,9 @@ def build(proposal: Path, kind: str, tool: str) -> list[Path]:
     stem = proposal.with_suffix("")
     base = [
         "pandoc", str(proposal),
+        # order matters: author-intext expands "@key [see @other]" into a name
+        # plus the intact two-citation group, which cite-split then brackets
+        "--lua-filter", str(TEMPLATES / "author-intext.lua"),  # before citeproc: @key gets its author name
         "--lua-filter", str(TEMPLATES / "cite-split.lua"),  # before citeproc: one bracket per citation
         "--csl", str(TEMPLATES / "compact-numeric.csl"),
         "--citeproc",

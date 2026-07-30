@@ -67,11 +67,13 @@ The methodology section must reference every research question explicitly with `
 
 ## Literature and Citations
 
-- Cite with `[@key]`; use `@key` (author-in-text) when naming the authors in the sentence — never both for the same work in one sentence.
+- Two citation forms, both usable in one proposal. `[@key]` renders as `[1]`: use it when the citation is evidence attached to a claim. `@key` renders as `Smith et al. [1]`: use it only when the cited authors are the grammatical subject or agent of the sentence ("@Smith26Deep propose a detector that …"). Apply the rule consistently — never both forms for the same work in one sentence.
+- Never type an author name next to a bracketed citation (`Smith et al. [@Smith26Deep]`). The name in `@key` is derived from the reference entry, so it stays correct when the entry changes; a typed name does not.
+- Author-in-text names by author count: one author `Smith`, two `Smith and Klein` (German: `Smith und Klein`), three or more `Smith et al.` These are produced automatically — do not write them out.
 - Reference keys follow `AuthorYearFirstWordOfTitle` (e.g. `Smith26Deep`), shorter than 20 characters.
 - Every entry carries a DOI when one exists; add a URL only when there is no DOI. Include the abstract when available. Do not add volume, series, address, or page fields.
 - Cite only keys that exist in the proposal's `references` block. Never fabricate publications. When a supporting source is missing, write `[TODO: add key reference for …]`.
-- Avoid citing the same publication in consecutive sentences; use author-in-text form first, then stop repeating the citation.
+- Avoid citing the same publication in consecutive sentences; cite it once and then stop repeating the citation.
 - At least three relevant scientific publications must be cited (workspace overrides may raise this). Especially the introduction and the contribution section must ground their claims in the literature.
 - Prefer peer-reviewed publications over preprints and over vendor or commercial web sources; vendor pages must never carry definitional or scientific claims.
 

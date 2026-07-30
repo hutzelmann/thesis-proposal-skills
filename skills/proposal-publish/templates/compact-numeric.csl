@@ -4,7 +4,7 @@
     <title>Compact Numeric (thesis-proposal-skills)</title>
     <id>https://github.com/hutzelmann/thesis-proposal-skills/compact-numeric</id>
     <link href="https://github.com/hutzelmann/thesis-proposal-skills" rel="self"/>
-    <summary>Numeric style approximating the legacy compactarticle biblatex look: bracketed numbers, initials, up to five names in the bibliography, DOI shown.</summary>
+    <summary>Numeric style approximating the legacy compactarticle biblatex look: bracketed numbers with optional locator, initials, up to five names in the bibliography, DOI shown.</summary>
     <updated>2026-07-29T00:00:00+00:00</updated>
     <rights license="http://creativecommons.org/licenses/by-sa/3.0/">MIT-compatible use within this project</rights>
   </info>
@@ -53,7 +53,13 @@
       <key variable="citation-number"/>
     </sort>
     <layout prefix="[" suffix="]" delimiter=", ">
-      <text variable="citation-number"/>
+      <group delimiter=", ">
+        <text variable="citation-number"/>
+        <group delimiter=" ">
+          <label variable="locator" form="short"/>
+          <text variable="locator"/>
+        </group>
+      </group>
     </layout>
   </citation>
   <bibliography entry-spacing="0" second-field-align="flush" et-al-min="6" et-al-use-first="5">

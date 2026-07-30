@@ -18,6 +18,8 @@ python3 scripts/publish.py <proposal.md> --handout  # stripped markdown export i
 
 The script resolves the best pipeline automatically: **typst** (preferred) → **LaTeX engine** → **docx** (last resort, no PDF), using the skill's `templates/` (compact layout, `RQ n:` styling, citeproc). Outputs land next to the proposal; the script also ensures the workspace `.gitignore` covers build artifacts (shared rule: whichever skill first creates an ignorable artifact adds the entry).
 
+Citations render in two forms, both usable in one document: `[@key]` becomes `[1]`, and `@key` becomes `Smith et al. [1]` — the author name derived from the proposal's own reference entry, so it never has to be typed. The filter chain producing this is order-dependent (`author-intext.lua` → `cite-split.lua` → citeproc → `rq-filter.lua`); don't reorder it.
+
 ## When tools are missing
 
 The script reports what is missing and what it would unlock. Guide concretely, best first:
