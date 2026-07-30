@@ -456,8 +456,16 @@ def import_l1():
     async def score(state: TaskState, target: Target) -> Score:
         listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
         produced = [f for f in listing.stdout.split() if f.endswith(".md") and "messy" not in f]
-        text = await sandbox().read_file(produced[0]) if produced else None
-        passed, why = verdict_import(text, produced[0] if produced else "")
+        if not produced:
+            passed, why = verdict_import(None)
+            return Score(value=INCORRECT, explanation=why)
+        text = await sandbox().read_file(produced[0])
+        # tools/ is staged for the scorer only — the skill under test is not
+        # told it has a check script, so this still tests import alone
+        run = await sandbox().exec(
+            ["python3", "tools/scripts/check.py", produced[0]], timeout=60
+        )
+        passed, why = verdict_import(text, run.stdout, produced[0])
         return Score(value=CORRECT if passed else INCORRECT, explanation=why)
     return score
 
@@ -467,7 +475,12 @@ def import_messy() -> Task:
     return Task(
         dataset=[Sample(
             input=skill_prompt("proposal-import", MESSY_REQUEST),
-            files={"ws/README-placeholder.txt": "workspace"},
+            files={
+                "ws/README-placeholder.txt": "workspace",
+                "tools/scripts/check.py": str(SKILLS / "proposal-check" / "scripts" / "check.py"),
+                "tools/references/structure.json": str(
+                    SKILLS / "proposal-check" / "references" / "structure.json"),
+            },
         )],
         solver=agent_solver(),
         scorer=[import_l1()],

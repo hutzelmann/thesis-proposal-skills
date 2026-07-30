@@ -68,31 +68,47 @@ def verdict_check_report(oracle_path: Path, original: str, current: str | None,
     return False, f"only {hits}/{len(needles)} oracle errors surfaced"
 
 
+IMPORT_ALLOWED_ERRORS = ("references — at least",)
+
 IMPORT_LEAKS = (
     "00000000", "erika@example.org", "prof@example.org", "Prof. Example",
     "CONFIDENTIAL", "INTERNAL USE ONLY",
 )
 
 
-def verdict_import(proposal_text: str | None, filename: str = "") -> tuple[bool, str]:
-    """import_messy: standard format, nothing leaked, citations converted.
+def verdict_import(proposal_text: str | None, check_output: str = "",
+                   filename: str = "") -> tuple[bool, str]:
+    """import_messy: mechanically sound, nothing leaked, citations converted.
 
-    The typed-name assertion is what stops the source's rendered citations
-    ("Rivera et al. [1]") from being carried over as prose next to a bracketed
-    key, where the name would no longer track the reference entry. `et al.`
-    before a citation is unambiguous; the surname patterns are the ones this
-    source can produce.
+    Format is established by the check script, not by looking for characteristic
+    substrings — an unclosed metadata block and a mapping-shaped reference list
+    both contain "---" and "references" while being unusable. Only the
+    reference-count shortfall is tolerated: the source carries what it carries
+    and import must not invent sources.
+
+    The leak and typed-name assertions stay here because the check cannot make
+    them: it does not know this source's personal data, and a name carried over
+    from a rendered citation is legal markdown.
     """
     if not proposal_text:
         return False, "no proposal file produced"
-    problems = []
-    if "\n---" not in proposal_text or "references" not in proposal_text:
-        problems.append("not in standard format")
+    problems = [
+        l.removeprefix("- ERROR:").strip()
+        for l in disallowed_errors(check_output, IMPORT_ALLOWED_ERRORS)
+    ]
     for leak in IMPORT_LEAKS:
         if leak in proposal_text:
             problems.append(f"personal/confidential data leaked: {leak}")
-    if re.search(r"(?im)^#+.*timeline", proposal_text):
-        problems.append("forbidden timeline heading kept")
+    # a TODO marker as a bare line in the trailing block has no key, so pandoc
+    # rejects the whole block and the file cannot build. Verified: only this
+    # shape breaks — `title: [TODO: …]` and `title: "[TODO: …]"` both parse.
+    # check.py cannot see it, extracting narrowly rather than parsing YAML.
+    lines = proposal_text.rstrip("\n").split("\n")
+    delims = [i for i, l in enumerate(lines) if l.strip() == "---"]
+    if len(delims) >= 2 and any(
+        l.strip().startswith("[TODO:") for l in lines[delims[-2]:]
+    ):
+        problems.append("[TODO: …] as a bare line in the metadata block — the YAML does not parse")
     body = proposal_text.rsplit("\n---", 1)[0]
     for pattern in (r"et al\.\s*\[@", r"\b(?:Rivera|Tanaka)\b[^.\[\]]*\[@"):
         if m := re.search(pattern, body):

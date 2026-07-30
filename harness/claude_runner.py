@@ -114,8 +114,9 @@ def produced_proposal(ws: Path) -> Path | None:
 def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
     if scenario.get("produces"):
         produced = produced_proposal(ws)
-        return verdict_import(read(produced) if produced else None,
-                              produced.name if produced else "")
+        if not produced:
+            return verdict_import(None)
+        return verdict_import(read(produced), run_check(ws, produced.name), produced.name)
     fixture = FIXTURES / scenario["fixture"]
     original = (fixture / scenario["proposal"]).read_text(encoding="utf-8")
     current = read(ws / scenario["proposal"])

@@ -7,6 +7,69 @@ description: Import an existing proposal (usually PDF) into the standard single-
 
 Convert an existing proposal document into one `<slug>.md` in the standard format: markdown body, trailing `---` metadata block (blank line before it) with `title`, `subtitle`, `lang`, `references` in CSL-YAML. Never carry an `author` key over from the source — proposals are anonymous.
 
+## The shape you must produce
+
+A source document rarely resembles the target, so write the target from this shape rather than from the source's structure:
+
+```markdown
+# Introduction to the Topic
+
+Prose, one sentence per line. Evidence citations look like [@Rivera23Survey].
+
+# Contribution to the State-of-the-Art
+
+[TODO: state the delta to prior work]
+
+# Research Focus and Research Questions
+
+One paragraph of research focus, then the questions as an ordered list:
+
+1. To what degree does soil-moisture-driven scheduling reduce water use compared to fixed timetables?
+2. Under which soil conditions does sensor drift degrade scheduling quality?
+
+# Methodology for Research: Prototype Implementation
+
+## Previous Work
+
+The prototype builds on the sensing approach of @Rivera23Survey.
+
+## Requirements
+
+[TODO: state what the prototype must do, and which requirements are neglectable]
+
+## Evaluation
+
+A field trial compares water use under soil-moisture-driven scheduling against a fixed timetable (RQ1).
+A season-long measurement records how sensor drift degrades scheduling quality (RQ2).
+
+---
+title: Soil-Aware Irrigation Control
+subtitle: Bachelor's Thesis Proposal
+lang: en
+references:
+- id: Rivera23Survey
+  type: article-journal
+  author:
+  - family: Rivera
+    given: L.
+  title: A survey of smart irrigation control
+  issued:
+    year: 2023
+  DOI: 10.5555/example
+---
+```
+
+Non-negotiable in that shape, because a source will not supply them:
+
+- The metadata block is **closed** by a second `---` at the very end of the file, and preceded by a blank line.
+- `references` is a **list** — each entry starts with `- id:`. A mapping (`Rivera23Survey:` as a key) does not resolve and is not CSL-YAML.
+- The methodology heading names **one methodology from the closed set**: Prototype Implementation, Theoretical Analysis, Systematic Literature Review, or User Study, each with its own required subsections. Map the source's own wording onto the nearest one — "implementation and field validation" is Prototype Implementation. Never invent a methodology name.
+- Research questions are an **ordered list**, and the methodology section references each as `(RQn)`.
+- Reference keys are `AuthorYearFirstWord` with a real year: `Rivera23Survey`, never `RiveraYearSurvey`. If the year is unknown, keep the key and add `[TODO: recover year for Rivera…]`.
+- An author entry holds **one** person: `- family: Rivera`. "et al." is never part of a name — list the authors the source names and stop.
+- A `[TODO: …]` marker inside the metadata block must be **the value of a key**, quoted: `title: "[TODO: recover the title]"`. A marker on a line of its own has no key, so pandoc rejects the entire block and the file stops building. Prefer keeping the marker in the body beside the reference's first citation.
+- Every research question is referenced from the methodology section as `(RQ1)`, `(RQ2)`, … — one question per statement, never `(RQ1 and RQ2)`. A source that never links its approach to its questions still needs these added; that is part of mapping it onto the canonical structure.
+
 ## Reading the source
 
 Read the PDF directly. If you cannot ingest PDFs in this environment, say so plainly and ask the user to paste the text (or export it as text); then proceed identically. Expect messy sources — Word exports, LaTeX output, LLM-generated PDFs with swallowed headings or missing title blocks. Reconstruct the intended structure; never import formatting noise.
