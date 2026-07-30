@@ -34,9 +34,11 @@ from l1_checks import (  # noqa: E402
     parse_grade,
     verdict_check_report,
     verdict_draft,
+    verdict_import,
     verdict_review,
     verdict_seed,
 )
+from sources import MESSY_REQUEST  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
@@ -449,50 +451,14 @@ def publish_build() -> Task:
 
 # ---------- task: import from messy pasted text -------------------------------
 
-MESSY_SOURCE = """PROPOSAL - CONFIDENTIAL - INTERNAL USE ONLY
-Student: Erika Musterfrau, Matriculation 00000000, erika@example.org
-Supervisor: Prof. Example (prof@example.org)
-
-1 Motivation
-Smart irrigation wastes water because schedules ignore soil data. Our project
-will build a better controller. We reference the survey by Rivera et al. 2023
-(doi:10.5555/fake.survey) and the LoRa study of Tanaka 2024.
-
-2 Goals and Approach
-We will implement the controller and test it on a farm.
-
-3 Timeline
-Month 1-2 literature, month 3-5 implementation, month 6 writing.
-"""
-
-
 @scorer(metrics=[accuracy()])
 def import_l1():
     async def score(state: TaskState, target: Target) -> Score:
         listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
         produced = [f for f in listing.stdout.split() if f.endswith(".md") and "messy" not in f]
-        if not produced:
-            return Score(value=INCORRECT, explanation="no proposal file produced")
-        text = await sandbox().read_file(produced[0])
-        problems = []
-        if "\n---" not in text or "references" not in text:
-            problems.append("not in standard format")
-        for leak in ("00000000", "erika@example.org", "prof@example.org", "Prof. Example",
-                     "CONFIDENTIAL", "INTERNAL USE ONLY"):
-            if leak in text:
-                problems.append(f"personal/confidential data leaked: {leak}")
-        if re.search(r"(?im)^#+.*timeline", text):
-            problems.append("forbidden timeline heading kept")
-        # a name carried over from the source's rendered citations: renders fine,
-        # but stops tracking the reference entry — `@key` is the form for this
-        body = text.rsplit("\n---", 1)[0]
-        for pattern in (r"et al\.\s*\[@", r"\b(?:Rivera|Tanaka)\b[^.\[\]]*\[@"):
-            if m := re.search(pattern, body):
-                problems.append(f"author name typed before a bracketed citation: {m.group(0)!r}")
-                break
-        if problems:
-            return Score(value=INCORRECT, explanation="; ".join(problems[:4]))
-        return Score(value=CORRECT, explanation=f"standard file {produced[0]}, stripped clean")
+        text = await sandbox().read_file(produced[0]) if produced else None
+        passed, why = verdict_import(text, produced[0] if produced else "")
+        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
     return score
 
 
@@ -500,11 +466,7 @@ def import_l1():
 def import_messy() -> Task:
     return Task(
         dataset=[Sample(
-            input=skill_prompt(
-                "proposal-import",
-                "I could not attach the PDF, so here is the pasted text of my old "
-                "proposal — please import it:\n\n" + MESSY_SOURCE,
-            ),
+            input=skill_prompt("proposal-import", MESSY_REQUEST),
             files={"ws/README-placeholder.txt": "workspace"},
         )],
         solver=agent_solver(),

@@ -68,6 +68,41 @@ def verdict_check_report(oracle_path: Path, original: str, current: str | None,
     return False, f"only {hits}/{len(needles)} oracle errors surfaced"
 
 
+IMPORT_LEAKS = (
+    "00000000", "erika@example.org", "prof@example.org", "Prof. Example",
+    "CONFIDENTIAL", "INTERNAL USE ONLY",
+)
+
+
+def verdict_import(proposal_text: str | None, filename: str = "") -> tuple[bool, str]:
+    """import_messy: standard format, nothing leaked, citations converted.
+
+    The typed-name assertion is what stops the source's rendered citations
+    ("Rivera et al. [1]") from being carried over as prose next to a bracketed
+    key, where the name would no longer track the reference entry. `et al.`
+    before a citation is unambiguous; the surname patterns are the ones this
+    source can produce.
+    """
+    if not proposal_text:
+        return False, "no proposal file produced"
+    problems = []
+    if "\n---" not in proposal_text or "references" not in proposal_text:
+        problems.append("not in standard format")
+    for leak in IMPORT_LEAKS:
+        if leak in proposal_text:
+            problems.append(f"personal/confidential data leaked: {leak}")
+    if re.search(r"(?im)^#+.*timeline", proposal_text):
+        problems.append("forbidden timeline heading kept")
+    body = proposal_text.rsplit("\n---", 1)[0]
+    for pattern in (r"et al\.\s*\[@", r"\b(?:Rivera|Tanaka)\b[^.\[\]]*\[@"):
+        if m := re.search(pattern, body):
+            problems.append(f"author name typed before a bracketed citation: {m.group(0)!r}")
+            break
+    if problems:
+        return False, "; ".join(problems[:4])
+    return True, f"standard file {filename or ''}, stripped clean".replace("  ", " ")
+
+
 def verdict_seed(seed_text: str | None, filename: str = "") -> tuple[bool, str]:
     """ideate: seeded file structurally complete."""
     if not seed_text:

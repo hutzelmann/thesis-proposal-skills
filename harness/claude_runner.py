@@ -11,6 +11,7 @@ Usage:
   uv run python harness/claude_runner.py check_report [--model haiku]
   uv run python harness/claude_runner.py review_fixture --model sonnet
   uv run python harness/claude_runner.py write_from_seed
+  uv run python harness/claude_runner.py import_messy
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
 workspace so file edits and script calls work headlessly.
@@ -26,7 +27,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from l1_checks import verdict_check_report, verdict_draft, verdict_review
+from l1_checks import verdict_check_report, verdict_draft, verdict_import, verdict_review
+from sources import MESSY_REQUEST
 
 HARNESS = Path(__file__).resolve().parent
 REPO = HARNESS.parent
@@ -53,16 +55,24 @@ SCENARIOS = {
         "proposal": "data-drift-detection.md",
         "request": "Please turn my idea notes in data-drift-detection.md into a full proposal draft. Keep my idea, mark anything missing as TODO.",
     },
+    # no fixture: the source arrives pasted in the request and the skill
+    # creates the proposal, choosing its own content-derived filename
+    "import_messy": {
+        "skill": "proposal-import",
+        "request": MESSY_REQUEST,
+        "produces": True,
+    },
 }
 
 
 def stage(scenario: dict, ws: Path) -> None:
-    fixture = FIXTURES / scenario["fixture"]
-    for f in fixture.iterdir():
-        if f.is_file() and f.suffix == ".md":
-            shutil.copy(f, ws / f.name)
-        if f.is_dir() and f.name == "img":
-            shutil.copytree(f, ws / "img")
+    if scenario.get("fixture"):
+        fixture = FIXTURES / scenario["fixture"]
+        for f in fixture.iterdir():
+            if f.is_file() and f.suffix == ".md":
+                shutil.copy(f, ws / f.name)
+            if f.is_dir() and f.name == "img":
+                shutil.copytree(f, ws / "img")
     skill_home = ws / ".claude" / "skills" / scenario["skill"]
     shutil.copytree(SKILLS / scenario["skill"], skill_home)
     # Sibling skills the scenario relies on (e.g. ideate's lit-search fallback).
@@ -91,7 +101,21 @@ def read(path: Path) -> str | None:
     return path.read_text(encoding="utf-8") if path.exists() else None
 
 
+def produced_proposal(ws: Path) -> Path | None:
+    """The file the skill created: any workspace markdown that is not a
+    workspace override or an artifact the skill writes alongside it."""
+    candidates = [
+        f for f in sorted(ws.glob("*.md"))
+        if f.name != "guidelines.md" and not f.name.endswith(("-review.md", "-handout.md"))
+    ]
+    return candidates[0] if candidates else None
+
+
 def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
+    if scenario.get("produces"):
+        produced = produced_proposal(ws)
+        return verdict_import(read(produced) if produced else None,
+                              produced.name if produced else "")
     fixture = FIXTURES / scenario["fixture"]
     original = (fixture / scenario["proposal"]).read_text(encoding="utf-8")
     current = read(ws / scenario["proposal"])

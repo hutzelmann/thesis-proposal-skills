@@ -28,7 +28,10 @@ Stages a fixture into a temp workspace, installs the skill into `.claude/skills/
 uv run python harness/claude_runner.py check_report --model haiku
 uv run python harness/claude_runner.py review_fixture --model sonnet
 uv run python harness/claude_runner.py write_from_seed
+uv run python harness/claude_runner.py import_messy --model haiku
 ```
+
+`import_messy` stages no fixture: the source document is pasted into the request and the verdict is applied to whatever proposal file the skill creates. Both runners reach that verdict through `verdict_import()` in `l1_checks.py`, so the two paths cannot drift apart.
 
 Fast, free on the subscription, highest execution fidelity — but no L2 judging and no per-model comparison logs; it is the everyday loop, not the source of record.
 
