@@ -67,7 +67,7 @@ The methodology section must reference every research question explicitly with `
 
 ## Literature and Citations
 
-- Two citation forms, both usable in one proposal. `[@key]` renders as `[1]`: use it when the citation is evidence attached to a claim. `@key` renders as `Smith et al. [1]`: use it only when the cited authors are the grammatical subject or agent of the sentence ("@Smith26Deep propose a detector that …"). Apply the rule consistently — never both forms for the same work in one sentence.
+- Two citation forms, both usable in one proposal. `[@key]` renders as `[1]`: use it when the citation is evidence attached to a claim. `@key` renders as `Smith et al. [1]`: use it whenever the authors belong in the running text — as the subject ("@Smith26Deep propose a detector that …"), or as the possessor of the thing under discussion ("the detector of @Smith26Deep"). Apply the rule consistently — never both forms for the same work in one sentence.
 - Never type an author name next to a bracketed citation (`Smith et al. [@Smith26Deep]`). The name in `@key` is derived from the reference entry, so it stays correct when the entry changes; a typed name does not.
 - Author-in-text names by author count: one author `Smith`, two `Smith and Klein` (German: `Smith und Klein`), three or more `Smith et al.` These are produced automatically — do not write them out.
 - Reference keys follow `AuthorYearFirstWordOfTitle` (e.g. `Smith26Deep`), shorter than 20 characters.

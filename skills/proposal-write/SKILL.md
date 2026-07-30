@@ -14,7 +14,7 @@ Read `references/guidelines.md` first — it is the authority on structure, rese
 Non-negotiable regardless of overrides:
 
 - Cite only keys that exist in the proposal's `references` block. Never invent a publication. Missing support → `[TODO: add key reference for …]`.
-- Pick the citation form by grammatical role: `@key` (renders `Smith et al. [1]`) only where the cited authors are the sentence's subject or agent, `[@key]` (renders `[1]`) where the citation is evidence for a claim. Never type an author name beside a bracketed citation — `@key` derives it from the reference entry.
+- Pick the citation form by grammatical role: `@key` (renders `Smith et al. [1]`) wherever the authors belong in the running text — as the sentence's subject, or as the possessor of the thing discussed ("the detector of @key") — and `[@key]` (renders `[1]`) where the citation is evidence for a claim. Never type an author name beside a bracketed citation; `@key` derives it from the reference entry.
 - Never fabricate facts the user did not provide. Uncertain statement → keep it out or mark `[TODO: verify …]`. Visible `[TODO: 3–10 word hint]` markers for every gap.
 
 Strong defaults (workspace `guidelines.md` may override them):

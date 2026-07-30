@@ -56,8 +56,44 @@ class Metadata:
         # ids whose entry declares neither an author nor an editor: an
         # author-in-text citation of one renders as the quoted title
         self.reference_ids_without_names: set[str] = set()
+        # surnames per id, to catch a name typed in the prose next to its
+        # own citation — anchored to the cited entry, never to capitalization
+        self.reference_surnames: dict[str, set[str]] = {}
         # top-level `author:` — the writer's own name, rendered on the title page
         self.has_author_key = False
+
+
+def surnames_in(entry: str) -> set[str]:
+    """Family/literal names of one reference entry, particles included.
+
+    Block and inline flow style both occur in the wild, so the value is read
+    up to the next comma, brace or newline rather than to end of line.
+    """
+    names = set()
+    for m in re.finditer(r"(?:^|[\s{,])(family|literal):\s*([^\n,}]+)", entry, re.MULTILINE):
+        name = m.group(2).strip().strip("'\"")
+        if name:
+            names.add(name)
+    for m in re.finditer(r"non-dropping-particle:\s*([^\n,}]+)", entry):
+        particle = m.group(1).strip().strip("'\"")
+        names |= {f"{particle} {n}" for n in list(names)}
+    return names
+
+
+def name_precedes(prefix: str, surnames: set[str]) -> bool:
+    """True when `prefix` ends with a surname of the reference about to be cited.
+
+    Anchoring to that reference's own authors is what makes this usable: a
+    general "capitalized word before a citation" rule flags every sentence
+    ending in a proper noun. The optional tail covers the rendered forms a
+    writer copies from a PDF — "Smith et al.", "Smith and Klein", "Smith und
+    Klein".
+    """
+    for name in surnames:
+        tail = r"(?:\s+(?:et\s+al\.?|and\s+\S+|und\s+\S+))?"
+        if re.search(rf"(?:^|[^\w'-])({re.escape(name)}){tail}[\s(]*$", prefix):
+            return True
+    return False
 
 
 def split_proposal(text: str) -> tuple[str, Metadata]:
@@ -89,6 +125,7 @@ def split_proposal(text: str) -> tuple[str, Metadata]:
                     meta.reference_ids.append(key)
                     if not re.search(r"^\s+(author|editor):", rest, re.MULTILINE):
                         meta.reference_ids_without_names.add(key)
+                    meta.reference_surnames[key] = surnames_in(rest)
             return body, meta
     return text, meta
 
@@ -196,6 +233,7 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
     # -- citations
     cited: dict[str, int] = {}
     author_in_text: dict[str, int] = {}
+    typed_names: list[tuple[str, int, bool]] = []
     for lineno, line in enumerate(body.split("\n"), start=1):
         # a key inside a bracketed group renders as a bare number; one outside
         # is author-in-text and gets an author label prefixed
@@ -210,11 +248,25 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
                 cited.setdefault(key, lineno)
                 if depth == 0:
                     author_in_text.setdefault(key, lineno)
+                prefix = line[:m.start()].rstrip().removesuffix("[").rstrip()
+                if name_precedes(prefix, meta.reference_surnames.get(key, set())):
+                    typed_names.append((key, lineno, depth > 0))
     defined = set(meta.reference_ids)
     for key in sorted(set(cited) - defined):
         errors.append(f"cited key `@{key}` not defined in references (line {cited[key]})")
     for key in sorted(defined - set(cited)):
         warnings.append(f"reference `{key}` defined but never cited")
+    for key, lineno, bracketed in typed_names:
+        if bracketed:
+            warnings.append(
+                f"author name typed before `[@{key}]` (line {lineno}) — the name is a copy "
+                f"that stops tracking the entry; write `@{key}` alone instead"
+            )
+        else:
+            warnings.append(
+                f"author name typed before `@{key}` (line {lineno}) — it renders twice "
+                f"(\"Smith et al. Smith et al. [1]\"); write `@{key}` alone"
+            )
     for key in sorted(set(author_in_text) & meta.reference_ids_without_names):
         warnings.append(
             f"`@{key}` is cited author-in-text but its reference declares no author or editor "

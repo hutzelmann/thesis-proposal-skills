@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[2]
 CHECK = REPO / "skills" / "proposal-check" / "scripts" / "check.py"
 FIXTURES = REPO / "tests" / "fixtures"
@@ -146,6 +148,63 @@ def test_reference_author_fields_do_not_trip_the_key_warning():
     """f00 has `author:` inside every reference entry — indented, so not the key."""
     result = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md")
     assert "`author:` found" not in result.stdout
+
+
+def with_sentence(source: str, sentence: str) -> str:
+    return source.replace("# Introduction to the Topic",
+                          "# Introduction to the Topic\n\n" + sentence, 1)
+
+
+def check_sentence(tmp_path, sentence: str, name: str = "typed.md") -> str:
+    """f00's first reference is Chen25Learning, authored by Chen and Novak."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / name
+    victim.write_text(with_sentence(source, sentence))
+    return run_check(victim).stdout
+
+
+@pytest.mark.parametrize("sentence", [
+    "Chen et al. [@Chen25Learning] propose a detector.",
+    "The approach of Chen [@Chen25Learning] is broader.",
+    "Chen and Novak [@Chen25Learning] argue otherwise.",
+])
+def test_typed_author_name_before_bracketed_citation_warns(tmp_path, sentence):
+    out = check_sentence(tmp_path, sentence)
+    assert "author name typed before `[@Chen25Learning]`" in out
+    assert "write `@Chen25Learning` alone" in out
+
+
+def test_typed_author_name_before_author_in_text_citation_warns(tmp_path):
+    """This one renders the name twice — "Chen et al. Chen et al. [1]"."""
+    out = check_sentence(tmp_path, "Chen et al. @Chen25Learning propose a detector.")
+    assert "author name typed before `@Chen25Learning`" in out
+    assert "renders twice" in out
+
+
+@pytest.mark.parametrize("sentence", [
+    "Deployments in Germany [@Chen25Learning] differ.",      # proper noun, not an author
+    "@Chen25Learning propose a drift detector.",             # the correct form
+    "the detector of @Chen25Learning is broader.",           # possessor, also correct
+    "Degradation is widely reported [@Chen25Learning].",     # evidence form
+    "Chen studied this. Later work is broader [@Miller23Review].",  # name is not adjacent
+])
+def test_no_false_positive_for_legitimate_sentences(tmp_path, sentence):
+    assert "author name typed" not in check_sentence(tmp_path, sentence)
+
+
+def test_typed_author_name_of_a_different_reference_is_not_flagged(tmp_path):
+    """Anchoring is per-key: Chen is not an author of Miller23Review."""
+    out = check_sentence(tmp_path, "Work by Chen is broader [@Miller23Review].")
+    assert "author name typed" not in out
+
+
+def test_typed_author_name_never_fails_the_run(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "advisory.md"
+    victim.write_text(with_sentence(source, "Chen et al. [@Chen25Learning] propose a detector."))
+    result = run_check(victim)
+    assert "author name typed" in result.stdout
+    assert result.returncode == 0, "the typed-name check is advisory, never a failure"
 
 
 def test_first_person_capitalized_caught(tmp_path):

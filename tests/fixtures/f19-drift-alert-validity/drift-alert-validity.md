@@ -50,7 +50,7 @@ Exhaustive coverage of every published drift-detection method is neglectable as 
 The evaluation runs the prototype on public datasets that admit a streaming replay with a simulated label delay.
 [TODO: select specific dataset(s), e.g. streaming concept-drift benchmarks or a public churn-style tabular dataset replayed as a stream]
 The first analysis measures the statistical correlation between each drift signal and the realized performance decay across drift types and signal families (RQ1).
-A second analysis compares the false-positive alert rate and the missed-degradation rate of calibrated thresholds against an uncalibrated baseline and against the false-positive-controlled detector of Tan et al. [@Tan25Flexibl] (RQ2).
+A second analysis compares the false-positive alert rate and the missed-degradation rate of calibrated thresholds against an uncalibrated baseline and against the false-positive-controlled detector of @Tan25Flexibl (RQ2).
 A third analysis varies the simulated label-delay length and measures how the correlation and calibration results change as the delay grows (RQ3).
 [TODO: define the precise operationalization of "performance decay" — accuracy, calibration error, or a business-relevant metric]
 

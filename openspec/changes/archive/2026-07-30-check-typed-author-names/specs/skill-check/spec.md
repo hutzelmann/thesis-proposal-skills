@@ -1,84 +1,60 @@
-# skill-check Specification
-
-## Purpose
-Low-level advisory quality gate: deterministic mechanical checks plus an agent pass, reported honestly in two buckets, results in chat only.
-## Requirements
-### Requirement: Deterministic mechanical checks
-The skill SHALL verify deterministically, driven by the structured guidance data plus workspace overrides: required sections present with canonical titles; exactly one methodology from the closed set with its required subsections; forbidden headings absent; every declared research question referenced as `(RQn)` in the methodology section; citation-key consistency in both directions (cited-but-undefined is an error, defined-but-uncited a warning); duplicate reference ids; `min_references` satisfied; leftover `[TODO: …]` markers; and file-format guardrails (blank line before the trailing metadata block, exactly one metadata block, no boolean-literal keys).
-
-#### Scenario: Cited key missing from references
-- **WHEN** the body cites `[@Kim24]` and no reference with id `Kim24` exists
-- **THEN** the check reports it as a mechanical failure with the location
-
-#### Scenario: RQ never referenced in methodology
-- **WHEN** the proposal declares RQ3 and the methodology section never contains `(RQ3)`
-- **THEN** the check reports the missing cross-reference
+## MODIFIED Requirements
 
 ### Requirement: Warning-class pattern checks
+
 The skill SHALL report as warnings (never hard failures, false positives acknowledged): first-person pronouns; three consecutive sentences starting with the same word; personal-data patterns (emails, matriculation numbers); an `author` key in the metadata block, since proposals are anonymous by default and the key is rendered verbatim on the title page; confidentiality markers in English and German ("confidential", "internal use only", "do not distribute", "NDA", "vertraulich", "nur für den internen Gebrauch"), because theses get published; author-in-text citations of references that declare neither an author nor an editor, because those render as a quoted title inside the sentence; and an author surname of a cited reference typed in the prose immediately before that citation, because the typed name is a copy that stops tracking the reference entry. The metadata `author` warning SHALL name the legitimate exception — a program that requires a named title page — because that exception is declared in workspace guidance prose and is therefore not machine-detectable. The skill SHALL NOT attempt to detect writer names in body prose; the typed-author-name check concerns cited authors only and SHALL be anchored to the surnames of the reference actually cited, never to a general capitalisation pattern.
 
 #### Scenario: Confidentiality stamp
+
 - **WHEN** the body contains "vertraulich" as a document marker
 - **THEN** the check emits a warning citing the publication rationale
 
 #### Scenario: Author-in-text citation of an authorless reference
+
 - **WHEN** the body cites a reference author-in-text and that reference declares no author and no editor
 - **THEN** the check emits a warning naming the key and the line, stating that the rendered form is the quoted title, and suggesting the bracketed form instead
 
 #### Scenario: Author-in-text citation of an editor-only reference
+
 - **WHEN** the body cites a reference author-in-text and that reference declares editors but no authors
 - **THEN** no warning is emitted, because the rendered label uses the editor surnames
 
 #### Scenario: Bracketed citation of an authorless reference
+
 - **WHEN** the body cites a reference in the bracketed form and that reference declares no author
 - **THEN** no warning is emitted, because no author label is rendered
 
 #### Scenario: Metadata block declares an author
+
 - **WHEN** the metadata block declares `author: Erika Musterfrau` or `author: [TODO: add author]`
 - **THEN** the check emits a warning to remove it unless the program requires a named cover page, and the run does not fail
 
 #### Scenario: Anonymous proposal
+
 - **WHEN** the metadata block declares no `author` key
 - **THEN** no author-key warning is emitted
 
 #### Scenario: Author surname typed before a bracketed citation
+
 - **WHEN** the body reads "Smith et al. [@Smith26Deep] propose a detector" and `Smith` is an author of `Smith26Deep`
 - **THEN** the check emits a warning naming the key and the line and suggesting the author-in-text form, which renders the name from the entry
 
 #### Scenario: Author surname typed before an author-in-text citation
+
 - **WHEN** the body reads "Smith et al. @Smith26Deep propose a detector"
 - **THEN** the check emits a warning, because the rendered output repeats the name
 
 #### Scenario: Unrelated proper noun before a citation
+
 - **WHEN** a sentence ends in a proper noun that is not an author of the cited reference, as in "deployments in Germany [@Okafor24Carbon]"
 - **THEN** no warning is emitted
 
 #### Scenario: Author-in-text form used correctly
+
 - **WHEN** the body cites a reference author-in-text with no name typed in the prose, including the possessor form "the detector of @key"
 - **THEN** no warning is emitted
 
 #### Scenario: Surname belongs to a different reference
+
 - **WHEN** a surname appears before a citation of a reference that person did not author
 - **THEN** no warning is emitted, because the check is anchored per key
-
-### Requirement: Two-bucket honest reporting
-Results SHALL be presented in chat only (no file), split into "verified mechanically" and "flagged for the agent pass". The skill SHALL never claim semantic rules passed.
-
-#### Scenario: Clean mechanical run
-- **WHEN** all mechanical checks pass
-- **THEN** the report states mechanical success and explicitly defers semantic quality to review
-
-### Requirement: Advisory, not blocking
-Check gates nothing hard: other skills MAY run it first and surface failures, but SHALL proceed on user confirmation.
-
-#### Scenario: Publish despite warnings
-- **WHEN** the user confirms publishing a proposal with check warnings
-- **THEN** publishing proceeds
-
-### Requirement: Agent pass for non-mechanical issues
-An agent pass SHALL cover typos/grammar and content-level forbidden material that regexes cannot catch (e.g. expected results embedded in prose).
-
-#### Scenario: Hidden expected-results paragraph
-- **WHEN** a methodology paragraph asserts concrete expected outcomes
-- **THEN** the agent pass flags it as forbidden content
-
