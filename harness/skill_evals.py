@@ -483,6 +483,13 @@ def import_l1():
                 problems.append(f"personal/confidential data leaked: {leak}")
         if re.search(r"(?im)^#+.*timeline", text):
             problems.append("forbidden timeline heading kept")
+        # a name carried over from the source's rendered citations: renders fine,
+        # but stops tracking the reference entry — `@key` is the form for this
+        body = text.rsplit("\n---", 1)[0]
+        for pattern in (r"et al\.\s*\[@", r"\b(?:Rivera|Tanaka)\b[^.\[\]]*\[@"):
+            if m := re.search(pattern, body):
+                problems.append(f"author name typed before a bracketed citation: {m.group(0)!r}")
+                break
         if problems:
             return Score(value=INCORRECT, explanation="; ".join(problems[:4]))
         return Score(value=CORRECT, explanation=f"standard file {produced[0]}, stripped clean")
