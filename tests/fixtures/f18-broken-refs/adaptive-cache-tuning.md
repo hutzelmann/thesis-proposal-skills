@@ -32,7 +32,6 @@ Replayed traces measure hit-rate deltas between adaptive and static configuratio
 
 ---
 title: Adaptive Cache Tuning for Multi-Tier Services
-author: Erika Musterfrau
 subtitle: "Bachelor's Thesis Proposal"
 lang: en
 references:

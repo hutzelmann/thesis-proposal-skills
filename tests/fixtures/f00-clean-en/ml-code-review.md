@@ -43,7 +43,6 @@ A cross-language case study compares model performance between Python and Java p
 
 ---
 title: Machine Learning for Automated Code Review
-author: Jane Doe
 subtitle: "Master's Thesis Proposal"
 lang: en
 references:

@@ -48,7 +48,6 @@ Measurement uncertainty is estimated by repeating a reference configuration at t
 
 ---
 title: An Energy Measurement Testbed for LoRaWAN Sensor Nodes
-author: Erika Musterfrau
 subtitle: "Bachelor's Thesis Proposal"
 lang: en
 references:

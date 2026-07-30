@@ -58,7 +58,6 @@ A third analysis varies the simulated label-delay length and measures how the co
 
 ---
 title: "Closing the Loop: Evaluating the Validity of Unsupervised Drift Alerts Against Delayed-Label Performance Decay"
-author: "[TODO: add author]"
 subtitle: "Master's Thesis Proposal"
 lang: en
 references:

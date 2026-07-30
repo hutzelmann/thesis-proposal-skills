@@ -32,7 +32,6 @@ Abschließend werden die Ergebnisse tabellarisch gegenübergestellt und im Hinbl
 
 ---
 title: Vergleich statischer Analysewerkzeuge für JavaScript
-author: Erika Musterfrau
 subtitle: "Exposé zur Bachelorarbeit"
 lang: de
 references:

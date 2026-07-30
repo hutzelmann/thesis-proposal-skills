@@ -50,7 +50,6 @@ The approach is validated on a set of intentionally misconfigured example reposi
 
 ---
 title: Automated Compliance Auditing of Cloud Configurations
-author: Erika Musterfrau
 subtitle: "Bachelor's Thesis Proposal"
 lang: en
 references:

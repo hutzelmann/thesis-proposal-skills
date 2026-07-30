@@ -37,7 +37,6 @@ Für die Einarbeitung wurden bisher folgende Seiten verwendet: https://hochschul
 
 ---
 title: Konzept für ein digitales Schwarzes Brett
-author: Erika Musterfrau
 subtitle: "Exposé zur Bachelorarbeit"
 lang: de
 ---

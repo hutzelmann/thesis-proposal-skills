@@ -81,7 +81,6 @@ Eine Fallstudie im Umfeld des Praxispartners untersucht die Umsetzbarkeit des Ge
 
 ---
 title: Ein Referenzmodell für die Einführung von Zero-Trust-Architekturen in KMU
-author: Erika Musterfrau
 subtitle: "Exposé zur Masterarbeit"
 lang: de
 references:

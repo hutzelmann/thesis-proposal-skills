@@ -1,18 +1,21 @@
 """L0: SKILL.md prose describing the single-file format must state the full
 canonical contract (proposal-file-format spec: skill prose must not drift).
 
-Discovery rule: a SKILL.md naming two or more of the five canonical metadata
+Discovery rule: a SKILL.md naming two or more of the four canonical metadata
 keys counts as describing the format; a single key in passing (lit-search's
 `references:` block, check's "ending in a metadata block") stays exempt. A
-discovered file must then name all five keys, the blank-line rule, and the
+discovered file must then name all four keys, the blank-line rule, and the
 trailing position of the block.
+
+`author` is deliberately absent: proposals are anonymous, so the writer's name
+is not part of the contract (see the proposal-file-format spec).
 """
 
 import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-CANONICAL_KEYS = ("title", "author", "subtitle", "lang", "references")
+CANONICAL_KEYS = ("title", "subtitle", "lang", "references")
 EXPECTED_DESCRIBERS = {"proposal-write", "proposal-import", "proposal-ideate"}
 
 

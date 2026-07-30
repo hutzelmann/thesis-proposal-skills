@@ -55,7 +55,6 @@ Das Vorgehen liefert Handelsunternehmen eine belastbare Entscheidungsgrundlage f
 
 ---
 title: Architekturgetriebene Migration einer monolithischen Lagerverwaltung zu Microservices
-author: Erika Musterfrau
 subtitle: "Exposé zur Bachelorarbeit"
 lang: de
 references:

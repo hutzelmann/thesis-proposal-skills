@@ -43,7 +43,6 @@ A scalability benchmark with a growing number of registered functions measures p
 
 ---
 title: Energy-Aware Scheduling for Serverless Functions
-author: Erika Musterfrau
 subtitle: "Bachelor's Thesis Proposal"
 lang: en
 references:

@@ -45,7 +45,6 @@ Die Auswertung der Fragebogendaten stellt die wahrgenommene Verständlichkeit be
 
 ---
 title: Verständlichkeit von Compiler-Fehlermeldungen für Programmieranfänger
-author: Erika Musterfrau
 subtitle: "Exposé zur Bachelorarbeit"
 lang: de
 references:

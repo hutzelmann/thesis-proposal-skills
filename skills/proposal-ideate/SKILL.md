@@ -43,6 +43,6 @@ Use findings Socratically: "this 2024 paper does almost exactly that — what's 
 Before the session ends (or when the user says "enough"), create `<slug>.md` (slug from the working title; never overwrite an existing proposal without asking):
 
 - Body: working title as a note, problem sketch in a few sentences, candidate research-question directions as a bullet list (marked as candidates, not final RQs), what drew interest from the literature, open questions as `[TODO: …]` markers.
-- Trailing metadata block (blank line before `---`): `title`, `author` (if known — else `[TODO: add author]`), `subtitle` ("Bachelor's Thesis Proposal" / "Master's Thesis Proposal" if the level came up, else a TODO), `lang`, and `references:` with any starter entries found during grounding (CSL-YAML) — write `references: []` when none were found; the key must always be present.
+- Trailing metadata block (blank line before `---`): `title`, `subtitle` ("Bachelor's Thesis Proposal" / "Master's Thesis Proposal" if the level came up, else a TODO), `lang`, and `references:` with any starter entries found during grounding (CSL-YAML) — write `references: []` when none were found; the key must always be present. Never write an `author` key or a TODO for one: proposals are anonymous.
 
 Tell the user the file exists and that the write skill turns it into a full draft when they are ready.

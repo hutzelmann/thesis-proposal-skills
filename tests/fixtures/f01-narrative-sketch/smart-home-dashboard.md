@@ -21,7 +21,6 @@ Für die gesamte Bearbeitung plane ich etwa vier Monate ein, wobei die ersten Wo
 
 ---
 title: Ein Dashboard für den Stromverbrauch im Smart Home
-author: Erika Musterfrau
 subtitle: "Exposé zur Bachelorarbeit"
 lang: de
 references:

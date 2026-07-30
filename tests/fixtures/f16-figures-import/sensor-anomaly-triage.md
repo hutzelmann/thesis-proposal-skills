@@ -48,7 +48,6 @@ Comparing triage outcomes against ground-truth labels quantifies accuracy for gr
 
 ---
 title: Interactive Visual Triage of Sensor Anomalies in Industrial Monitoring
-author: Erika Musterfrau
 subtitle: "Master's Thesis Proposal"
 lang: en
 references:

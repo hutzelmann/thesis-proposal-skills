@@ -29,7 +29,6 @@ That gap — synthetic benchmarks everywhere, production evidence nowhere — is
 
 ---
 title: Detecting Data Drift in Deployed Machine Learning Pipelines
-author: Erika Musterfrau
 subtitle: "[TODO: confirm degree level]"
 lang: en
 references:

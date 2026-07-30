@@ -12,7 +12,8 @@
     ],
     "warnings_contain": [
       "open [TODO: sharpen motivation]",
-      "open [TODO: name the workload dataset]"
+      "open [TODO: name the workload dataset]",
+      "`author:` found — proposals are anonymous by default"
     ]
   },
   "semantic": []

@@ -41,7 +41,6 @@ Eine Abbildung der in der Literatur dokumentierten Fehlerklassen auf dieses Beis
 
 ---
 title: Ein Typsystem zur statischen Erkennung von Einheitenfehlern in Simulationssoftware
-author: Erika Musterfrau
 subtitle: "Exposé zur Bachelorarbeit"
 lang: de
 references:

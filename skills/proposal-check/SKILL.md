@@ -32,7 +32,7 @@ python3 scripts/check.py <proposal.md>
 After the script, check yourself and report findings in the same chat message:
 
 - Typos, grammar, and wording issues (full list — this is the exhaustive pass; the review skill only hints).
-- Content-level forbidden material regexes cannot catch: expected results asserted in prose, personal data in unusual forms, supervisor references, confidentiality phrasing.
+- Content-level forbidden material regexes cannot catch: expected results asserted in prose, personal data in unusual forms, the writer's own name in body text (the script only flags the `author:` metadata key), supervisor references, confidentiality phrasing.
 - Do NOT judge semantic quality here (analytical RQs, argument soundness, literature fit) — point the user to the review skill for that.
 
 ## Reporting

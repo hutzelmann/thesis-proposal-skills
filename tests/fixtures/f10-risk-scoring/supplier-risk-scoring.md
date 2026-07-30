@@ -45,7 +45,6 @@ Confidential — internal use only. This document contains internal supplier inf
 
 ---
 title: Data-Driven Risk Scoring for Supplier Management
-author: Erika Musterfrau
 subtitle: "Master's Thesis Proposal"
 lang: en
 references:

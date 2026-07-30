@@ -44,7 +44,6 @@ Counting the annotations the example needs under boundary-only inference against
 
 ---
 title: A Type System for Physical Unit Consistency in Numerical Code
-author: Max Mustermann
 subtitle: "Bachelor's Thesis Proposal"
 lang: en
 references:

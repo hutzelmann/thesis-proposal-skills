@@ -56,6 +56,8 @@ class Metadata:
         # ids whose entry declares neither an author nor an editor: an
         # author-in-text citation of one renders as the quoted title
         self.reference_ids_without_names: set[str] = set()
+        # top-level `author:` — the writer's own name, rendered on the title page
+        self.has_author_key = False
 
 
 def split_proposal(text: str) -> tuple[str, Metadata]:
@@ -74,6 +76,8 @@ def split_proposal(text: str) -> tuple[str, Metadata]:
                 meta.lang = m.group(1).strip("'\"")
             if m := re.search(r"^title:\s*(.+)$", block, re.MULTILINE):
                 meta.title = m.group(1).strip().strip("'\"")
+            # column 0 only: `author:` inside a reference entry is indented
+            meta.has_author_key = bool(re.search(r"^author:", block, re.MULTILINE))
             refs = re.search(r"^references:\s*$(.*)", block, re.MULTILINE | re.DOTALL)
             if refs:
                 entries = re.split(r"^\s*-\s+id:\s*", refs.group(1), flags=re.MULTILINE)[1:]
@@ -237,6 +241,13 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
         warnings.append("email address found — personal data is forbidden")
     if re.search(r"\b(matriculation|matrikel)", body, re.IGNORECASE) or re.search(r"(?<!\d)\d{7,8}(?!\d)", body):
         warnings.append("possible matriculation number / personal data")
+    if meta.has_author_key:
+        # the exception (a program requiring a named title page) is declared in
+        # workspace guidance prose, which is not machine-readable — so warn always
+        warnings.append(
+            "`author:` found — proposals are anonymous by default; remove it "
+            "unless your program requires a named cover page"
+        )
     for pattern in structure["confidentiality_patterns"]:
         if re.search(rf"\b{re.escape(pattern)}\b", body, re.IGNORECASE):
             warnings.append(

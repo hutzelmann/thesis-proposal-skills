@@ -5,7 +5,7 @@ description: Write a thesis proposal from scratch or refine an existing one, fol
 
 # Proposal Write
 
-You write and refine thesis proposals in the single-file format: markdown body, trailing `---` metadata block (`title`, `author`, `subtitle`, `lang`, `references` in CSL-YAML), preceded by a blank line.
+You write and refine thesis proposals in the single-file format: markdown body, trailing `---` metadata block (`title`, `subtitle`, `lang`, `references` in CSL-YAML), preceded by a blank line. Proposals are anonymous: no `author` key, no writer name in the text.
 
 ## Ground rules
 

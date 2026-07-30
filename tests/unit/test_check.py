@@ -32,6 +32,7 @@ def test_broken_fixture_trips_guardrails():
     assert "cited key `@Ghost99Missing` not defined" in out
     assert "only 2 references" in out
     assert out.count("open [TODO:") == 2
+    assert "`author:` found — proposals are anonymous by default" in out
 
 
 def test_override_workspace_changes_verdicts():
@@ -118,6 +119,33 @@ def test_author_in_text_citation_of_editor_only_reference_is_silent(tmp_path):
     victim.write_text(with_nameless_references(source, "@Ed02Collected collects work."))
     result = run_check(victim)
     assert "cited author-in-text" not in result.stdout
+
+
+def test_author_metadata_key_warns(tmp_path):
+    """Proposals are anonymous; the key renders verbatim on the title page."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "named.md"
+    victim.write_text(source.replace("\ntitle:", "\nauthor: Erika Musterfrau\ntitle:", 1))
+    result = run_check(victim)
+    out = result.stdout
+    assert "`author:` found — proposals are anonymous by default" in out
+    assert "unless your program requires a named cover page" in out
+    assert "WARNING" in out
+    assert result.returncode == 0, "the author key is advisory, never a failure"
+
+
+def test_author_placeholder_warns_too(tmp_path):
+    """The reported defect: an unfilled placeholder reaching the title page."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "todo-author.md"
+    victim.write_text(source.replace("\ntitle:", "\nauthor: [TODO: add author]\ntitle:", 1))
+    assert "`author:` found" in run_check(victim).stdout
+
+
+def test_reference_author_fields_do_not_trip_the_key_warning():
+    """f00 has `author:` inside every reference entry — indented, so not the key."""
+    result = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md")
+    assert "`author:` found" not in result.stdout
 
 
 def test_first_person_capitalized_caught(tmp_path):

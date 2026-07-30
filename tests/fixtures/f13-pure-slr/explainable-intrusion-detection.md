@@ -44,7 +44,6 @@ Mapping the extracted audience and deployment attributes against documented anal
 
 ---
 title: Explainability in Machine-Learning-Based Network Intrusion Detection
-author: Jane Doe
 subtitle: "Master's Thesis Proposal"
 lang: en
 references:

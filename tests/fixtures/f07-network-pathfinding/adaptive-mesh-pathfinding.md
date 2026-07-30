@@ -39,7 +39,6 @@ The thesis is supervised by Prof. Dr. Max Mustermann (max.mustermann@example.org
 
 ---
 title: Adaptive Pathfinding in Wireless Mesh Networks
-author: Erika Musterfrau
 subtitle: "Bachelor's Thesis Proposal"
 lang: en
 references:

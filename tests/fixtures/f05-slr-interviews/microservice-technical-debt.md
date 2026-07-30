@@ -46,7 +46,6 @@ Interview findings are folded back into the final version of the strategy catalo
 
 ---
 title: Managing Technical Debt in Microservice Architectures
-author: Erika Musterfrau
 subtitle: "Master's Thesis Proposal"
 lang: en
 references:
