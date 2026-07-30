@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 TIMEOUT = 20
 RETRIES = 2
@@ -30,27 +31,65 @@ class SourceError(Exception):
 
 
 KEY_FILE = "api-keys.env"
+KEY_FILE_ENV = "THESIS_PROPOSAL_KEYS"
+GLOBAL_KEY_FILE = Path.home() / ".config" / "thesis-proposal" / KEY_FILE
+KEY_LOCATIONS = (
+    f"the {KEY_FILE_ENV} path, "
+    f"{KEY_FILE} in the working directory or any parent, "
+    f"or ~/.config/thesis-proposal/{KEY_FILE}"
+)
+
+
+def key_file_candidates() -> list[Path]:
+    """Key files to consult, most specific first.
+
+    Explicit `THESIS_PROPOSAL_KEYS` override, then `api-keys.env` in the working
+    directory and its ancestors — so a script works from anywhere inside the
+    user's proposal workspace, not only its root — then a user-global file for
+    keys shared across workspaces. Ancestor walking stops at the home directory.
+    """
+    candidates: list[Path] = []
+    if override := os.environ.get(KEY_FILE_ENV):
+        candidates.append(Path(override).expanduser())
+    home = Path.home()
+    cwd = Path.cwd()
+    for directory in (cwd, *cwd.parents):
+        candidates.append(directory / KEY_FILE)
+        if directory == home:
+            break
+    if GLOBAL_KEY_FILE not in candidates:
+        candidates.append(GLOBAL_KEY_FILE)
+    return candidates
+
+
+def _read_key(path: Path, name: str) -> str | None:
+    """One KEY=VALUE per line, `#` comments allowed; missing file is not an error."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() == name and value.strip():
+            return value.strip().strip("'\"")
+    return None
 
 
 def get_key(name: str) -> str | None:
-    """Credential lookup: environment first, then the workspace key file.
+    """Credential lookup: environment first, then each key file in turn.
 
-    The key file is `api-keys.env` in the current working directory (the
-    user's proposal workspace): one KEY=VALUE per line, `#` comments allowed.
-    It must be gitignored by whichever skill creates it.
+    Resolution is per key, so a workspace file can hold the API key while the
+    global file supplies CONTACT_EMAIL. Any key file must be gitignored by
+    whichever skill creates it.
     """
     if value := os.environ.get(name):
         return value
-    try:
-        for line in open(KEY_FILE, encoding="utf-8"):
-            line = line.strip()
-            if line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            if key.strip() == name and value.strip():
-                return value.strip().strip("'\"")
-    except OSError:
-        pass
+    for path in key_file_candidates():
+        if value := _read_key(path, name):
+            return value
     return None
 
 

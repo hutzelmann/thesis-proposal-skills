@@ -67,9 +67,37 @@ def test_dedupe_keeps_distinct_bare_doi_items():
 
 def test_get_key_env_then_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(common.KEY_FILE_ENV, raising=False)
     (tmp_path / "api-keys.env").write_text("# keys\nOPENALEX_API_KEY = from-file\nCONTACT_EMAIL=a@b.c\n")
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
     assert common.get_key("OPENALEX_API_KEY") == "from-file"
     monkeypatch.setenv("OPENALEX_API_KEY", "from-env")
     assert common.get_key("OPENALEX_API_KEY") == "from-env"
     assert common.get_key("MISSING_KEY") is None
+
+
+def test_get_key_found_from_workspace_subdirectory(tmp_path, monkeypatch):
+    """Running a script from a subdirectory must still see the workspace key file."""
+    (tmp_path / "api-keys.env").write_text("OPENALEX_API_KEY=from-workspace-root\n")
+    deep = tmp_path / "skills" / "proposal-lit-search" / "scripts"
+    deep.mkdir(parents=True)
+    monkeypatch.chdir(deep)
+    monkeypatch.delenv(common.KEY_FILE_ENV, raising=False)
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    assert common.get_key("OPENALEX_API_KEY") == "from-workspace-root"
+
+
+def test_get_key_explicit_path_overrides_and_resolves_per_key(tmp_path, monkeypatch):
+    override = tmp_path / "elsewhere" / "keys.env"
+    override.parent.mkdir()
+    override.write_text("OPENALEX_API_KEY=from-override\n")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "api-keys.env").write_text("OPENALEX_API_KEY=from-workspace\nCONTACT_EMAIL=a@b.c\n")
+    monkeypatch.chdir(workspace)
+    monkeypatch.setenv(common.KEY_FILE_ENV, str(override))
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    monkeypatch.delenv("CONTACT_EMAIL", raising=False)
+    assert common.get_key("OPENALEX_API_KEY") == "from-override"
+    # the override has no CONTACT_EMAIL, so the next candidate supplies it
+    assert common.get_key("CONTACT_EMAIL") == "a@b.c"

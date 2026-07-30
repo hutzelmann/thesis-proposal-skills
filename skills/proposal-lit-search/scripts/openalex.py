@@ -25,7 +25,8 @@ def _api_key() -> str:
     key = common.get_key("OPENALEX_API_KEY")
     if not key:
         raise common.SourceError(
-            "openalex: no OPENALEX_API_KEY found in environment or api-keys.env (free key: https://openalex.org/settings/api)")
+            f"openalex: no OPENALEX_API_KEY in the environment, {common.KEY_LOCATIONS} "
+            "(free key: https://openalex.org/settings/api)")
     return key
 
 

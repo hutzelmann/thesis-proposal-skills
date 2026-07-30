@@ -32,8 +32,8 @@ Both emit CSL-YAML candidates on stdout; degradation notes (failed sources, miss
 
 ## Keys (all optional — keyless mode always works)
 
-- Storage: the scripts look up credentials in the environment first, then in **`api-keys.env` in the workspace root** (one `KEY=VALUE` per line, `#` comments allowed). For students, the file is the recommended path — no shell knowledge needed.
-- `OPENALEX_API_KEY` missing → OpenAlex skipped. Offer guided setup when abstracts are sparse: free key at https://openalex.org/settings/api. Then **you create or update `api-keys.env` for the user** (`OPENALEX_API_KEY=...`), ensure `.gitignore` covers `api-keys.env` (add the entry if the workspace is a git repo — the file holds a secret), and verify with a single search.
+- Storage: the scripts look up each credential in the environment first, then in the first key file that defines it — `$THESIS_PROPOSAL_KEYS`, then **`api-keys.env` in the working directory or any parent up to `$HOME`**, then `~/.config/thesis-proposal/api-keys.env` for keys shared across workspaces. One `KEY=VALUE` per line, `#` comments allowed. For students, the workspace file is the recommended path — no shell knowledge needed, and it is found from any subdirectory.
+- `OPENALEX_API_KEY` missing → OpenAlex skipped. Offer guided setup when abstracts are sparse: free key at https://openalex.org/settings/api. Then **you create or update `api-keys.env` in the workspace root for the user** (`OPENALEX_API_KEY=...`), ensure `.gitignore` covers `api-keys.env` (add the entry if the workspace is a git repo — the file holds a secret), and verify with a single search.
 - Semantic Scholar runs keyless by design (shared pool; the script backs off on 429 and degrades — no key setup is offered).
 - `CONTACT_EMAIL` improves politeness standing with Crossref/arXiv — suggest setting it once in `api-keys.env`; it is not a secret.
 - Quota errors (HTTP 409/429) → the affected source is skipped with a note; the search continues on the rest.

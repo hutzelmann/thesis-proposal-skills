@@ -47,6 +47,6 @@ Useful prompts: *"Find literature for my proposal"*, *"Check my proposal"*, *"Re
 
 ## Notes
 
-- Your proposals stay on your machine; literature search talks to public academic APIs (DBLP, Crossref, arXiv, and others). Optional free API keys improve abstract coverage; the agent offers to walk you through the signup and stores the key in a small `api-keys.env` file in your folder (kept out of version control).
+- Your proposals stay on your machine; literature search talks to public academic APIs (DBLP, Crossref, arXiv, and others). Optional free API keys improve abstract coverage; the agent offers to walk you through the signup and stores the key in a small `api-keys.env` file in your folder (kept out of version control). Subfolders inherit it; to reuse one key across several proposal folders, put the file in `~/.config/thesis-proposal/api-keys.env` instead.
 - English is the default; say *"auf Deutsch"* and the whole proposal switches to German conventions.
 - Writing needs no extra software. PDF export needs `pandoc` plus one engine: `typst` (recommended, small and fast) or an existing LaTeX installation (TeX Live, MiKTeX) if you already have one. The publish skill detects what is available and guides the installation when you first ask for a PDF.
