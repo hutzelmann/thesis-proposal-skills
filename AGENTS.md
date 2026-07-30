@@ -31,6 +31,30 @@ uv run python harness/claude_runner.py <scenario> --model haiku            # dev
 
 Eval details, task list, and known limitations: `harness/README.md`. Model runs cost money or quota — run them deliberately, never in loops.
 
+## Inspecting output
+
+Reach for `jq` and the Edit/Write tools before inline Python. `jq` runs without a permission prompt (Claude Code auto-allows it as read-only), and an Edit prompt shows a reviewable diff. Inline `python3 -c` and `python3 - <<'PY'` heredocs prompt every time, show no diff, and can never be allowlisted, because allowing an interpreter means allowing arbitrary code execution. Reserve inline Python for genuinely novel analysis that `jq` cannot express.
+
+- **Never rewrite a file with a Python heredoc** (`pathlib.write_text`, `open(..., 'w')`, regex substitution). Use the Edit or Write tool — that is what they are for, and the diff stays reviewable.
+- **Parse JSON with `jq -r`, not `json.load(sys.stdin)`:**
+
+```sh
+openspec status --change <id> --json | jq -r '.artifacts[] | "\(.id) \(.status) \(.requires)"'
+openspec instructions design --change <id> --json | jq -r '.instruction, "---", .template'
+```
+
+- **Read eval logs with `jq`** (`inspect log dump` emits one JSON object; samples live under `.samples[]`):
+
+```sh
+uv run inspect log dump logs/evals/<run>.eval | jq -r '
+.samples[0] as $s
+| "SCORES: " + ($s.scores | to_entries | map("\(.key)=\(.value.value)") | join(", ")),
+  "EXPL:   " + (($s.scores | to_entries[0].value.explanation // "") | .[0:180]),
+  "MSGS:   " + ($s.messages | length | tostring)'
+```
+
+Message content is sometimes a string and sometimes a content-block array; normalize with `if type == "array" then map(.text // "") | join("") else . end`.
+
 ## Editing guidance content
 
 `shared/structure.json` holds only the mechanically checkable skeleton (canonical titles en+de, methodology table, forbidden patterns); semantic rules stay prose in `shared/guidelines/guidelines.md`. Every structured title must appear verbatim in the prose (drift-guarded by an L0 test). The formalization boundary is deliberate — do not encode semantic quality rules as data.

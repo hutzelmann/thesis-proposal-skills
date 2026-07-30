@@ -26,7 +26,18 @@
       "Bash(pdftoppm *)",
       "Bash(gunzip -c *)",
       "Bash(kpsewhich *)",
-      "Bash(python3 scripts/sync_shared.py --check)"
+      "Bash(python3 scripts/sync_shared.py --check)",
+      "Bash(uv run inspect log dump *)",
+      "Bash(python3 skills/proposal-lit-search/scripts/search.py *)",
+      "Bash(python3 .claude/skills/proposal-lit-search/scripts/search.py *)",
+      "Bash(python3 .agents/skills/proposal-lit-search/scripts/search.py *)",
+      "Bash(python3 skills/proposal-check/scripts/check.py *)",
+      "Bash(python3 .claude/skills/proposal-check/scripts/check.py *)",
+      "Bash(openspec new *)",
+      "Bash(openspec archive *)",
+      "Bash(python3 skills/proposal-publish/scripts/publish.py *)",
+      "Bash(python3 .claude/skills/proposal-publish/scripts/publish.py *)",
+      "Bash(echo \"check-exit=$?\")"
     ]
   }
 }
