@@ -15,6 +15,10 @@ The skill SHALL report as warnings (never hard failures, false positives acknowl
 - **WHEN** the body cites a reference author-in-text and that reference declares editors but no authors
 - **THEN** no warning is emitted, because the rendered label uses the editor surnames
 
+#### Scenario: Bracketed citation of an authorless reference
+- **WHEN** the body cites a reference in the bracketed form and that reference declares no author
+- **THEN** no warning is emitted, because no author label is rendered
+
 #### Scenario: Metadata block declares an author
 - **WHEN** the metadata block declares `author: Erika Musterfrau` or `author: [TODO: add author]`
 - **THEN** the check emits a warning to remove it unless the program requires a named cover page, and the run does not fail

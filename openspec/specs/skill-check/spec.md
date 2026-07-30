@@ -15,7 +15,7 @@ The skill SHALL verify deterministically, driven by the structured guidance data
 - **THEN** the check reports the missing cross-reference
 
 ### Requirement: Warning-class pattern checks
-The skill SHALL report as warnings (never hard failures, false positives acknowledged): first-person pronouns; three consecutive sentences starting with the same word; personal-data patterns (emails, matriculation numbers); confidentiality markers in English and German ("confidential", "internal use only", "do not distribute", "NDA", "vertraulich", "nur für den internen Gebrauch"), because theses get published; and author-in-text citations of references that declare neither an author nor an editor, because those render as a quoted title inside the sentence.
+The skill SHALL report as warnings (never hard failures, false positives acknowledged): first-person pronouns; three consecutive sentences starting with the same word; personal-data patterns (emails, matriculation numbers); an `author` key in the metadata block, since proposals are anonymous by default and the key is rendered verbatim on the title page; confidentiality markers in English and German ("confidential", "internal use only", "do not distribute", "NDA", "vertraulich", "nur für den internen Gebrauch"), because theses get published; and author-in-text citations of references that declare neither an author nor an editor, because those render as a quoted title inside the sentence. The metadata `author` warning SHALL name the legitimate exception — a program that requires a named title page — because that exception is declared in workspace guidance prose and is therefore not machine-detectable. The skill SHALL NOT attempt to detect writer names in body prose.
 
 #### Scenario: Confidentiality stamp
 - **WHEN** the body contains "vertraulich" as a document marker
@@ -32,6 +32,14 @@ The skill SHALL report as warnings (never hard failures, false positives acknowl
 #### Scenario: Bracketed citation of an authorless reference
 - **WHEN** the body cites a reference in the bracketed form and that reference declares no author
 - **THEN** no warning is emitted, because no author label is rendered
+
+#### Scenario: Metadata block declares an author
+- **WHEN** the metadata block declares `author: Erika Musterfrau` or `author: [TODO: add author]`
+- **THEN** the check emits a warning to remove it unless the program requires a named cover page, and the run does not fail
+
+#### Scenario: Anonymous proposal
+- **WHEN** the metadata block declares no `author` key
+- **THEN** no author-key warning is emitted
 
 ### Requirement: Two-bucket honest reporting
 Results SHALL be presented in chat only (no file), split into "verified mechanically" and "flagged for the agent pass". The skill SHALL never claim semantic rules passed.
