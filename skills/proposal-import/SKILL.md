@@ -61,11 +61,10 @@ references:
 
 Non-negotiable in that shape, because a source will not supply them and the check cannot catch them:
 
-- Reference keys are `AuthorYearFirstWord` with a real year: `Rivera23Survey`, never `RiveraYearSurvey`. If the year is unknown, keep the key and add `[TODO: recover year for Rivera…]`.
 - An author entry holds **one** person: `- family: Rivera`. "et al." is never part of a name — list the authors the source names and stop.
 - A `[TODO: …]` marker inside the metadata block must be **the value of a key**, quoted: `title: "[TODO: recover the title]"`. A marker on a line of its own has no key, so pandoc rejects the entire block and the file stops building. Prefer keeping the marker in the body beside the reference's first citation.
 
-The rest of the shape — closed metadata block, `references` as a list, one methodology from the closed set with its subsections, research questions as an ordered list referenced as `(RQn)` — is enforced by the check you run before reporting. Follow the example; the check will tell you what you missed.
+The rest of the shape — closed metadata block, `references` as a list, reference-key form, one methodology from the closed set with its subsections, research questions as an ordered list referenced as `(RQn)` — is enforced by the check you run before reporting. Follow the example; the check will tell you what you missed.
 
 ## Reading the source
 

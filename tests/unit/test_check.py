@@ -216,3 +216,55 @@ def test_first_person_capitalized_caught(tmp_path):
     ))
     result = run_check(victim)
     assert "first-person pronouns" in result.stdout
+
+
+@pytest.mark.parametrize("key,reason", [
+    ("RiveraYearSurvey", "literal 'Year' where the year belongs — produced by a real import eval"),
+    ("TanakaYearLoRA", "same shape, second key from that run"),
+    ("SmithDeep", "no year at all"),
+    ("2023Survey", "starts with the year"),
+])
+def test_malformed_reference_key_warns(tmp_path, key, reason):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "keys.md"
+    victim.write_text(source.replace("- id: Chen25Learning", f"- id: {key}")
+                            .replace("@Chen25Learning", f"@{key}"))
+    result = run_check(victim)
+    assert f"reference id `{key}` does not follow" in result.stdout, reason
+    assert result.returncode == 0, "key shape is advisory, never a failure"
+
+
+def test_overlong_reference_key_warns(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    long_key = "Bacchelli13Expectations"
+    victim = tmp_path / "long.md"
+    victim.write_text(source.replace("- id: Chen25Learning", f"- id: {long_key}")
+                            .replace("@Chen25Learning", f"@{long_key}"))
+    out = run_check(victim).stdout
+    assert f"`{long_key}` is 23 characters" in out
+    assert "does not follow" not in out, "well-formed but long: one complaint, not two"
+
+
+@pytest.mark.parametrize("key", [
+    "Smith26Deep",          # the documented example
+    "ENISA24Threat",        # institutional author
+    "vanDerAalst16Mining",  # particle-bearing name, 19 chars
+])
+def test_conforming_reference_keys_stay_silent(tmp_path, key):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "ok.md"
+    victim.write_text(source.replace("- id: Chen25Learning", f"- id: {key}")
+                            .replace("@Chen25Learning", f"@{key}"))
+    out = run_check(victim).stdout
+    assert "does not follow" not in out
+    assert "characters — keep keys" not in out
+
+
+def test_boolean_literal_key_is_not_also_shape_warned(tmp_path):
+    """`on` is already an error; one complaint per key is enough."""
+    source = (FIXTURES / "f15-format-broken" / "broken-format.md").read_text()
+    victim = tmp_path / "bool.md"
+    victim.write_text(source)
+    out = run_check(victim).stdout
+    assert "`on` is a YAML boolean literal" in out
+    assert "reference id `on` does not follow" not in out

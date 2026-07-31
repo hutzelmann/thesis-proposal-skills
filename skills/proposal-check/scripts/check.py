@@ -21,6 +21,7 @@ import tomllib
 from pathlib import Path
 
 BOOLEAN_LITERALS = {"y", "n", "yes", "no", "on", "off", "true", "false"}
+KEY_MAX_LEN = 20  # guidance: reference keys stay shorter than 20 characters
 
 
 # ---------- loading ----------------------------------------------------------
@@ -272,6 +273,22 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
             f"`@{key}` is cited author-in-text but its reference declares no author or editor "
             f"(line {author_in_text[key]}) — it renders as the quoted title; use `[@{key}]` instead"
         )
+    # key shape: AuthorYearFirstWord, e.g. Smith26Deep. An eval produced
+    # `RiveraYearSurvey` — the literal word "Year" where the year belongs —
+    # and nothing caught it. Warning class: an unusual author name can
+    # legitimately produce an unusual key, and the proposal still resolves.
+    for rid in sorted(set(meta.reference_ids)):
+        if rid.lower() in BOOLEAN_LITERALS:
+            continue  # already an error; one complaint per key is enough
+        if not re.fullmatch(r"[A-Za-z][A-Za-z]*\d{2}[A-Za-z]+", rid):
+            warnings.append(
+                f"reference id `{rid}` does not follow `AuthorYearFirstWord` "
+                f"(e.g. `Smith26Deep`) — a two-digit year between name and title word"
+            )
+        elif len(rid) >= KEY_MAX_LEN:
+            warnings.append(
+                f"reference id `{rid}` is {len(rid)} characters — keep keys under {KEY_MAX_LEN}"
+            )
     min_refs = overrides.get("min_references", structure["min_references"])
     if len(defined) < min_refs:
         errors.append(f"only {len(defined)} references — at least {min_refs} required")

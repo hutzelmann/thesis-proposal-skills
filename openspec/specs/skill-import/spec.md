@@ -9,7 +9,7 @@ Given an existing proposal document, the skill SHALL produce one proposal file i
 
 The produced file SHALL satisfy the mechanical check apart from findings that follow from what the source did not carry, such as too few references. The skill SHALL show the target shape rather than only describing it, because a source document rarely resembles it.
 
-The skill's instructions SHALL NOT restate rules the mechanical check enforces. Duplicated guidance is a second source of truth that drifts from the check, and the skill runs the check on every import. Instructions SHALL cover only what the check cannot see — among them the reference-key shape, one person per author entry, and a TODO marker placed as a bare line in the metadata block, which leaves the YAML unparseable while the check reports the file clean.
+The skill's instructions SHALL NOT restate rules the mechanical check enforces. Duplicated guidance is a second source of truth that drifts from the check, and the skill runs the check on every import. Instructions SHALL cover only what the check cannot see — among them one person per author entry and a TODO marker placed as a bare line in the metadata block, which leaves the YAML unparseable while the check reports the file clean.
 
 The skill SHALL verify that conformance itself: before reporting completion it SHALL run the mechanical check over the file it wrote and resolve the errors it reports. Errors that reflect what the source did not carry SHALL be reported to the user instead, never resolved by inventing content. Because verification reads the file back, the skill SHALL NOT report a proposal it did not write.
 

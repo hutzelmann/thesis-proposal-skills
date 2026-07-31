@@ -1,6 +1,6 @@
 # Introduction to the Topic
 
-Modern services depend on cache layers whose parameters are tuned by hand [@Bacchelli13Expectations].
+Modern services depend on cache layers whose parameters are tuned by hand [@Bacchelli13Expect].
 Static cache configurations waste memory under shifting workloads.
 Adaptive tuning promises better hit rates without manual intervention [@Ghost21Vanished].
 
@@ -35,7 +35,7 @@ title: Adaptive Cache Tuning for Multi-Tier Services
 subtitle: "Bachelor's Thesis Proposal"
 lang: en
 references:
-- id: Bacchelli13Expectations
+- id: Bacchelli13Expect
   type: paper-conference
   author:
   - family: Bacchelli
