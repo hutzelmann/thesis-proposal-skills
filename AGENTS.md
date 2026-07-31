@@ -8,7 +8,9 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ## Spec-first workflow (mandatory)
 
-`openspec/specs/` is the source of truth, managed with OpenSpec. Any behavior change runs the loop: `/opsx:propose` (change folder with proposal, spec deltas, tasks) → human review → implement → `openspec archive`. Pure refactors/tooling/docs set `skip_specs: true` in the change's `.openspec.yaml`. Validate with `openspec validate --all --strict`. Agent integration files (`.claude/`) are not committed; regenerate with `openspec init --tools <agent>`.
+`openspec/specs/` is the source of truth, managed with OpenSpec. Any behavior change runs the loop: propose (change folder with proposal, spec deltas, tasks) → human review → implement → archive. Pure refactors/tooling/docs set `skip_specs: true` in the change's `.openspec.yaml`. Validate with `openspec validate --all --strict`. Agent integration files under `.claude/` are regenerated with `openspec init --tools <agent>` and are not committed — except `.claude/settings.json`, which a `.gitignore` exception keeps tracked.
+
+**Use the OpenSpec tooling; never hand-roll it.** Humans enter the loop through the `/opsx:*` slash commands (`/opsx:propose`, `/opsx:apply`, `/opsx:archive`). Agents invoke the matching skills instead — `openspec-propose`, `openspec-apply-change`, `openspec-archive-change`, `openspec-update-change`, `openspec-sync-specs`, `openspec-explore` — which carry their own `allowed-tools: Bash(openspec:*)` grant. Inside them, drive the CLI: `openspec new change`, `openspec instructions <artifact>`, `openspec status --change <id>`, `openspec archive`. Never create, move, or delete a change folder by hand (`mkdir -p openspec/changes/…`, `mv … openspec/changes/archive/…`, `rm -rf …/specs/…`), and never hand-write an artifact the CLI would scaffold.
 
 ## Hard rules
 
@@ -33,9 +35,12 @@ Eval details, task list, and known limitations: `harness/README.md`. Model runs 
 
 ## Inspecting output
 
-Reach for `jq` and the Edit/Write tools before inline Python. `jq` runs without a permission prompt (Claude Code auto-allows it as read-only), and an Edit prompt shows a reviewable diff. Inline `python3 -c` and `python3 - <<'PY'` heredocs prompt every time, show no diff, and can never be allowlisted, because allowing an interpreter means allowing arbitrary code execution. Reserve inline Python for genuinely novel analysis that `jq` cannot express.
+Reach for `jq` and the Edit/Write tools before inline Python. `jq` is allowlisted in `.claude/settings.json`, so it runs without a prompt, and an Edit prompt shows a reviewable diff. Inline `python3 -c` and `python3 - <<'PY'` heredocs prompt every time, show no diff, and can never be allowlisted, because allowing an interpreter means allowing arbitrary code execution. Reserve inline Python for genuinely novel analysis that `jq` cannot express.
 
 - **Never rewrite a file with a Python heredoc** (`pathlib.write_text`, `open(..., 'w')`, regex substitution). Use the Edit or Write tool — that is what they are for, and the diff stays reviewable.
+- **Read line ranges with the Read tool** (`offset`/`limit`), not `sed -n '10,40p'`. `sed` is deliberately not allowlisted — its `w` command can write files even under `-n` — so every `sed` call costs a prompt.
+- **Never prefix a command with `timeout N`.** The Bash tool takes its own `timeout` parameter. The prefix only defeats the allowlist: `timeout 300 uv run pytest` does not match `Bash(uv run rtk pytest *)`, so it prompts.
+- **No shell `for` loops for batch work.** A loop matches no allowlist entry, so it always prompts. Issue the calls separately or add a script. (`until` loops that poll background work are fine.)
 - **Parse JSON with `jq -r`, not `json.load(sys.stdin)`:**
 
 ```sh

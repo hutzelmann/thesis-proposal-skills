@@ -43,7 +43,22 @@
       "Bash(openspec archive *)",
       "Bash(python3 skills/proposal-publish/scripts/publish.py *)",
       "Bash(python3 .claude/skills/proposal-publish/scripts/publish.py *)",
-      "Bash(echo \"check-exit=$?\")"
+      "Bash(echo \"check-exit=$?\")",
+      "Bash(cd *)",
+      "Bash(which *)",
+      "Bash(command -v *)",
+      "Bash(test *)",
+      "Bash(jq *)",
+      "Bash(openspec show *)",
+      "Bash(openspec list *)",
+      "Bash(openspec diff *)",
+      "Bash(openspec --version)",
+      "Edit(openspec/changes/**)",
+      "Write(openspec/changes/**)"
+    ],
+    "deny": [
+      "Edit(openspec/changes/archive/**)",
+      "Write(openspec/changes/archive/**)"
     ]
   }
 }
