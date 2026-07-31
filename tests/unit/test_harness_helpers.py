@@ -11,6 +11,7 @@ from l1_checks import (  # noqa: E402
     disallowed_errors,
     is_enumerated_review,
     parse_grade,
+    verdict_check_report,
     verdict_import,
 )
 
@@ -149,3 +150,36 @@ def test_verdict_import_allows_todo_markers_in_the_body():
     )
     passed, why = verdict_import(with_todo, CLEAN_CHECK, "x.md")
     assert passed, why
+
+
+ORACLE_F15 = REPO / "tests" / "fixtures" / "f15-format-broken" / "expected.json"
+BROKEN_F15 = (REPO / "tests" / "fixtures" / "f15-format-broken" / "broken-format.md").read_text()
+
+
+def test_check_report_counts_a_capitalised_relay():
+    """The skill relays findings as prose, so they arrive sentence-capitalised.
+    Both models tested scored 0-1/5 on correct relays before this."""
+    relay = (
+        "Duplicate reference id `Lee24Index` appears twice.\n"
+        "Cited key `@Ghost99Missing` is not defined.\n"
+        "Reference id `on` is a YAML boolean literal.\n"
+    )
+    passed, why = verdict_check_report(ORACLE_F15, BROKEN_F15, BROKEN_F15, relay)
+    assert passed, why
+
+
+def test_check_report_still_fails_an_incomplete_relay():
+    relay = "Reference id `on` is a YAML boolean literal. Nothing else to report."
+    passed, why = verdict_check_report(ORACLE_F15, BROKEN_F15, BROKEN_F15, relay)
+    assert not passed
+    assert "1/5" in why
+
+
+def test_check_report_still_requires_the_proposal_untouched():
+    relay = (
+        "Duplicate reference id `Lee24Index`. Cited key `@Ghost99Missing` missing. "
+        "Reference id `on` is a YAML boolean literal."
+    )
+    passed, why = verdict_check_report(ORACLE_F15, BROKEN_F15, BROKEN_F15 + "\nedited", relay)
+    assert not passed
+    assert "modified the proposal" in why

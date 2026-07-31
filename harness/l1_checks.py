@@ -62,7 +62,11 @@ def verdict_check_report(oracle_path: Path, original: str, current: str | None,
     if current != original:
         return False, "check modified the proposal — advisory skill must only report"
     needles = oracle["check"]["errors_contain"]
-    hits = sum(1 for n in needles if n.split("`")[0].strip() in chat_text)
+    # case-insensitive: the skill relays findings as prose, so a finding that
+    # opens a sentence arrives capitalised ("Duplicate reference id …"). Case is
+    # a property of the sentence, not of the finding.
+    lowered = chat_text.lower()
+    hits = sum(1 for n in needles if n.split("`")[0].strip().lower() in lowered)
     if hits >= 3:
         return True, f"{hits}/{len(needles)} oracle errors surfaced, file untouched"
     return False, f"only {hits}/{len(needles)} oracle errors surfaced"
