@@ -83,7 +83,10 @@ def stage(scenario: dict, ws: Path) -> None:
 def run_claude(ws: Path, request: str, model: str, timeout: int) -> str:
     result = subprocess.run(
         ["claude", "-p", request, "--model", model, "--dangerously-skip-permissions"],
-        cwd=ws, capture_output=True, text=True, timeout=timeout,
+        # stdin must be closed: with an inherited non-tty stdin (backgrounded or
+        # redirected runs) claude blocks waiting for piped input, warns, and can
+        # exit non-zero — a runner failure that looks like a skill failure
+        cwd=ws, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
     )
     if result.returncode != 0:
         sys.exit(f"claude failed: {result.stderr.strip()[-800:]}")
