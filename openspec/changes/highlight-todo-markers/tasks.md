@@ -43,5 +43,5 @@
 - [x] 5.4 `openspec validate --all --strict` passes
 - [x] 5.5 Build `tests/fixtures/f19-drift-alert-validity/drift-alert-validity.md` through `publish.py` on the typst tier and read the PDF: four numbered callouts, prose continuity across each split, no unwanted indent
 - [x] 5.6 Build `tests/fixtures/w01-ideate-seed/data-drift-detection.md` and confirm the `subtitle` marker renders as number one in the title block
-- [ ] 5.7 Build one fixture through the LaTeX tier and confirm the same numbers, no `soul` reconstruction error in the log, and correct wrapping of the longest hint
+- [x] 5.7 Build one fixture through the LaTeX tier and confirm the same numbers, no `soul` reconstruction error in the log, and correct wrapping of the longest hint
 - [x] 5.8 Convert one built PDF to grayscale and confirm every annotation stays distinguishable from prose

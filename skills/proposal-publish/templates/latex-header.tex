@@ -6,7 +6,9 @@
 \usepackage{enumitem}
 \setlist{nosep}
 \setlist[itemize]{label=--}
-\hypersetup{hidelinks}
+% No \hypersetup here: this header is emitted BEFORE pandoc's template loads
+% hyperref, so configuring it aborts the build. Pandoc's template already sets
+% hidelinks itself once hyperref is loaded, which is what the legacy look wanted.
 
 % TODO markers, used by todo-filter.lua. Approximates the typst tier: fill plus
 % a small-caps navy label. No underline here — soul cannot nest \ul inside \hl.

@@ -23,3 +23,37 @@ jobs:
         run: uv run python scripts/sync_shared.py --check
       - name: Spec validation
         run: npx -y @fission-ai/openspec@latest validate --all --strict
+
+  # Export tiers are verified by building real documents. The l0 job has no
+  # document toolchain, so those tests skip there; these two jobs supply it from
+  # pre-built published images, installing nothing into them.
+  #
+  # Tags are pinned on purpose: a red run must mean this repository changed, not
+  # that an image was rebuilt overnight. Bump deliberately and re-run the corpus.
+  # pandoc/extra 3.9.0.2 carries pandoc, a full TeX Live, and Python; pandoc/typst
+  # 3.10.0.0 carries pandoc and typst but no Python, hence the shell script. The
+  # pandoc versions differ between them, which widens coverage rather than
+  # narrowing it.
+  #
+  # The -ubuntu tags are deliberate: these images also ship Alpine variants, and
+  # the runner mounts a glibc-built node into a job container to execute actions,
+  # which cannot run under musl — actions/checkout fails there before any build.
+  build-latex:
+    runs-on: ubuntu-latest
+    container: pandoc/extra:3.9.0.2-ubuntu
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the test runner
+        # Ubuntu 24.04 marks its Python environment externally managed; this
+        # container is discarded after the job, so overriding is safe here.
+        run: pip3 install --break-system-packages --quiet pytest
+      - name: Build every fixture on the LaTeX and word-processor tiers
+        run: python3 -m pytest tests/unit/test_export_matrix.py -q
+
+  build-typst:
+    runs-on: ubuntu-latest
+    container: pandoc/typst:3.10.0.0-ubuntu
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build every fixture on the typst tier
+        run: sh scripts/ci_typst_build.sh

@@ -87,8 +87,12 @@ def run(cmd: list[str]) -> None:
         sys.exit(f"build failed: {' '.join(cmd[:2])} …\n{result.stderr.strip()[-2000:]}")
 
 
-def build(proposal: Path, kind: str, tool: str) -> list[Path]:
-    stem = proposal.with_suffix("")
+def pandoc_command(proposal: Path, kind: str) -> list[str]:
+    """Converter invocation for one tier, minus its output and engine flags.
+
+    Pure and side-effect free: the export tests and the typst CI script's drift
+    guard read exactly what the shipped build path runs, instead of restating it.
+    """
     base = [
         "pandoc", str(proposal),
         # order matters: author-intext expands "@key [see @other]" into a name
@@ -104,22 +108,31 @@ def build(proposal: Path, kind: str, tool: str) -> list[Path]:
         "--lua-filter", str(TEMPLATES / "todo-filter.lua"),
     ]
     if kind == "typst":
-        typ, pdf = stem.with_suffix(".typ"), stem.with_suffix(".pdf")
-        run(base + ["--template", str(TEMPLATES / "proposal.typ"), "-o", str(typ)])
-        run(["typst", "compile", str(typ), str(pdf)])
-        return [pdf, typ]
+        return base + ["--template", str(TEMPLATES / "proposal.typ")]
     if kind == "latex":
-        latex_opts = [
+        return base + [
             "--number-sections",
             "--include-in-header", str(TEMPLATES / "latex-header.tex"),
             "-V", "papersize=a4", "-V", "geometry:margin=1in", "-V", "fontsize=11pt",
         ]
+    return base
+
+
+def build(proposal: Path, kind: str, tool: str) -> list[Path]:
+    stem = proposal.with_suffix("")
+    cmd = pandoc_command(proposal, kind)
+    if kind == "typst":
+        typ, pdf = stem.with_suffix(".typ"), stem.with_suffix(".pdf")
+        run(cmd + ["-o", str(typ)])
+        run(["typst", "compile", str(typ), str(pdf)])
+        return [pdf, typ]
+    if kind == "latex":
         tex, pdf = stem.with_suffix(".tex"), stem.with_suffix(".pdf")
-        run(base + latex_opts + ["-s", "-o", str(tex)])
-        run(base + latex_opts + [f"--pdf-engine={tool}", "-o", str(pdf)])
+        run(cmd + ["-s", "-o", str(tex)])
+        run(cmd + [f"--pdf-engine={tool}", "-o", str(pdf)])
         return [pdf, tex]
     docx = stem.with_suffix(".docx")
-    run(base + ["-o", str(docx)])
+    run(cmd + ["-o", str(docx)])
     return [docx]
 
 
