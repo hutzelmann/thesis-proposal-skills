@@ -13,8 +13,8 @@
   },
   "semantic": [
     "session-derived fixture: skills-generated MSc/EN proposal, curated from the real demo session in docs/demo/harvest.log — structure complete, all four canonical sections present",
-    "the open TODOs are deliberate undecided items (library, detector sample, dataset, decay metric, author metadata), not defects to fix",
+    "the open TODOs are deliberate undecided items (library, detector sample, dataset, decay metric), not defects to fix",
     "RQ2 contains an in-text citation ([@Tan25Flexibl]) — regression material for the publish rq-filter (citations inside RQ list items must survive the typst pipeline)",
-    "author metadata is a [TODO: add author] placeholder by design; reference author names are public bibliographic data"
+    "the metadata block carries no author key by design — proposals are anonymous; the author names under references are public bibliographic data"
   ]
 }
