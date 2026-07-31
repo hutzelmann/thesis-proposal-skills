@@ -72,11 +72,19 @@ Each proposal SHALL declare its language via `lang: en` or `lang: de` in the met
 - **THEN** generated text, section titles, and citation locale follow German conventions
 
 ### Requirement: Visible TODO markers
-Placeholders for missing information SHALL use the visible form `[TODO: <3–10 word hint>]` in the body text.
+Placeholders for missing information SHALL use the visible form `[TODO: <3–10 word hint>]` in the body text. The `title` and `subtitle` metadata MAY carry a marker in the same form; no other metadata key SHALL carry one, and a marker inside the `references` block is not a placeholder and carries no meaning. A marker SHALL be rendered by the build as a distinguishable annotation rather than as prose, so that the promise of visibility holds in the compiled document and not only in the source file.
 
 #### Scenario: Missing reference
 - **WHEN** a writing step lacks a needed source
 - **THEN** it inserts `[TODO: add key reference for X]` instead of fabricating one
+
+#### Scenario: Undecided degree level
+- **WHEN** a proposal is created before the degree level is settled
+- **THEN** the `subtitle` may hold a marker, and the built document shows it as an annotation in the title block
+
+#### Scenario: Marker survives the build as a marker
+- **WHEN** a proposal containing markers is built into a document
+- **THEN** each marker is visually distinguishable from the surrounding prose rather than typeset as an ordinary sentence
 
 ### Requirement: Skill prose must not drift from the format contract
 Every skill whose instructions describe the single-file format SHALL state the canonical contract consistently: the metadata block keys (`title`, `subtitle`, `lang`, `references`), the trailing position of the block, and the blank-line rule. No skill's format prose SHALL name `author` as a metadata key. Automated verification SHALL fail when any skill's format prose diverges from the canonical contract.
