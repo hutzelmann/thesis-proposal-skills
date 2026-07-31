@@ -59,16 +59,13 @@ references:
 ---
 ```
 
-Non-negotiable in that shape, because a source will not supply them:
+Non-negotiable in that shape, because a source will not supply them and the check cannot catch them:
 
-- The metadata block is **closed** by a second `---` at the very end of the file, and preceded by a blank line.
-- `references` is a **list** — each entry starts with `- id:`. A mapping (`Rivera23Survey:` as a key) does not resolve and is not CSL-YAML.
-- The methodology heading names **one methodology from the closed set**: Prototype Implementation, Theoretical Analysis, Systematic Literature Review, or User Study, each with its own required subsections. Map the source's own wording onto the nearest one — "implementation and field validation" is Prototype Implementation. Never invent a methodology name.
-- Research questions are an **ordered list**, and the methodology section references each as `(RQn)`.
 - Reference keys are `AuthorYearFirstWord` with a real year: `Rivera23Survey`, never `RiveraYearSurvey`. If the year is unknown, keep the key and add `[TODO: recover year for Rivera…]`.
 - An author entry holds **one** person: `- family: Rivera`. "et al." is never part of a name — list the authors the source names and stop.
 - A `[TODO: …]` marker inside the metadata block must be **the value of a key**, quoted: `title: "[TODO: recover the title]"`. A marker on a line of its own has no key, so pandoc rejects the entire block and the file stops building. Prefer keeping the marker in the body beside the reference's first citation.
-- Every research question is referenced from the methodology section as `(RQ1)`, `(RQ2)`, … — one question per statement, never `(RQ1 and RQ2)`. A source that never links its approach to its questions still needs these added; that is part of mapping it onto the canonical structure.
+
+The rest of the shape — closed metadata block, `references` as a list, one methodology from the closed set with its subsections, research questions as an ordered list referenced as `(RQn)` — is enforced by the check you run before reporting. Follow the example; the check will tell you what you missed.
 
 ## Reading the source
 
