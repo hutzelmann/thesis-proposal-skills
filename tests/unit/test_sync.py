@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[2]
 SYNC = REPO / "scripts" / "sync_shared.py"
 
@@ -19,8 +21,12 @@ def test_copies_in_sync():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_check_detects_tampering(tmp_path):
-    victim = REPO / "skills" / "proposal-write" / "references" / "guidelines.md"
+@pytest.mark.parametrize("victim_rel", [
+    "skills/proposal-write/references/guidelines.md",
+    "skills/proposal-write/scripts/check.py",
+])
+def test_check_detects_tampering(victim_rel):
+    victim = REPO / victim_rel
     original = victim.read_text(encoding="utf-8")
     try:
         victim.write_text(original + "\ntampered\n", encoding="utf-8")

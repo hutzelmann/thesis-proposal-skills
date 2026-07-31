@@ -27,7 +27,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from l1_checks import verdict_check_report, verdict_draft, verdict_import, verdict_review
+from l1_checks import (
+    select_draft,
+    verdict_check_report,
+    verdict_draft,
+    verdict_import,
+    verdict_review,
+)
 from sources import MESSY_REQUEST
 
 HARNESS = Path(__file__).resolve().parent
@@ -104,22 +110,16 @@ def read(path: Path) -> str | None:
     return path.read_text(encoding="utf-8") if path.exists() else None
 
 
-def produced_proposal(ws: Path) -> Path | None:
-    """The file the skill created: any workspace markdown that is not a
-    workspace override or an artifact the skill writes alongside it."""
-    candidates = [
-        f for f in sorted(ws.glob("*.md"))
-        if f.name != "guidelines.md" and not f.name.endswith(("-review.md", "-handout.md"))
-    ]
-    return candidates[0] if candidates else None
+def workspace_markdown(ws: Path) -> dict[str, str]:
+    return {f.name: f.read_text(encoding="utf-8") for f in sorted(ws.glob("*.md"))}
 
 
 def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
     if scenario.get("produces"):
-        produced = produced_proposal(ws)
+        produced, _ = select_draft(workspace_markdown(ws))
         if not produced:
             return verdict_import(None)
-        return verdict_import(read(produced), run_check(ws, produced.name), produced.name)
+        return verdict_import(read(ws / produced), run_check(ws, produced), produced)
     fixture = FIXTURES / scenario["fixture"]
     original = (fixture / scenario["proposal"]).read_text(encoding="utf-8")
     current = read(ws / scenario["proposal"])
@@ -129,7 +129,12 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
         review_name = scenario["proposal"].replace(".md", "-review.md")
         return verdict_review(original, current, read(ws / review_name), review_name)
     if name == "write_from_seed":
-        return verdict_draft(current, run_check(ws, scenario["proposal"]) if current else "")
+        # the skill may draft into a fresh <slug>.md instead of the seed
+        chosen, where = select_draft(workspace_markdown(ws), scenario["proposal"], original)
+        if not chosen:
+            return False, where
+        passed, why = verdict_draft(read(ws / chosen), run_check(ws, chosen))
+        return passed, f"{why} ({where})"
     raise ValueError(name)
 
 

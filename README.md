@@ -48,7 +48,7 @@ The skills encode conservative academic guidance: analytical research questions 
 This repo is **only** for developing and testing the skills. User proposals never live here.
 
 - Specs are the source of truth: `openspec/specs/`, managed with [OpenSpec](https://github.com/Fission-AI/OpenSpec). Every change runs propose, review, apply, archive. Agent integration files are not committed; run `openspec init --tools <your-agent>` once locally (and `openspec update` after CLI upgrades).
-- `shared/` holds the single-source guidance; `scripts/sync_shared.py` materializes it into the skills. Activate the pre-commit hook once per clone with `git config core.hooksPath .githooks` — it re-materializes and stages the copies on every commit; CI's `--check` catches bypassed hooks.
+- `shared/` holds the single-source guidance; `scripts/sync_shared.py` materializes it — and the cross-skill script copies — into the skills. Activate the pre-commit hook once per clone with `git config core.hooksPath .githooks` — it re-materializes and stages the copies on every commit; CI's `--check` catches bypassed hooks.
 - Tests: `uv run pytest` runs L0 without model calls; `harness/` holds the L1/L2 model evals (see `harness/README.md`).
 - Fixtures in `tests/fixtures/` are synthetic: no real proposals, no personal data.
 

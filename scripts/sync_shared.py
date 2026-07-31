@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Materialize shared/ sources into self-contained skill copies.
+"""Materialize shared/ sources and designated cross-skill scripts into
+self-contained skill copies.
 
-One-way, deterministic: shared/ is the only place devs edit; committed copies
-inside skills are what skills.sh installs. Run with --check (CI/L0) to fail on
-drift instead of writing.
+One-way, deterministic: the mapped sources are the only place devs edit;
+committed copies inside skills are what skills.sh installs. Run with --check
+(CI/L0) to fail on drift instead of writing.
 """
 
 from __future__ import annotations
@@ -29,14 +30,19 @@ SYNC_MAP: dict[str, list[str]] = {
     ],
     "shared/structure.json": [
         "skills/proposal-check/references",
-        # import verifies its own output; check.py resolves the skeleton
-        # relative to its own location, so the copy travels with the script
+        # import and write verify their own output; check.py resolves the
+        # skeleton relative to its own location, so the copy travels with
+        # the script
         "skills/proposal-import/references",
+        "skills/proposal-write/references",
     ],
-    # import runs the check over the file it just wrote before reporting, so
-    # the script is core to its function and ships as a synchronized copy
-    # rather than a sibling fallback (packaging spec)
-    "skills/proposal-check/scripts/check.py": ["skills/proposal-import/scripts"],
+    # import and write run the check over the file they just wrote before
+    # reporting, so the script is core to their function and ships as a
+    # synchronized copy rather than a sibling fallback (packaging spec)
+    "skills/proposal-check/scripts/check.py": [
+        "skills/proposal-import/scripts",
+        "skills/proposal-write/scripts",
+    ],
     # common+crossref vendored into import: validate_refs.py imports them as
     # Python modules, so a missing sibling would crash rather than degrade.
     # Ideate instead uses the sibling-fallback path (packaging spec).
@@ -80,7 +86,7 @@ def sync(check: bool) -> int:
         print("OUT OF SYNC (run scripts/sync_shared.py):", *drift, sep="\n  ")
         return 1
     if check:
-        print("shared/ copies in sync")
+        print("generated copies in sync")
     return 0
 
 

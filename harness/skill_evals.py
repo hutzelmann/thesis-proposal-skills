@@ -32,6 +32,7 @@ from inspect_ai.util import sandbox
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from l1_checks import (  # noqa: E402
     parse_grade,
+    select_draft,
     verdict_check_report,
     verdict_draft,
     verdict_import,
@@ -119,6 +120,17 @@ async def read_ws(path: str) -> str | None:
         return None
 
 
+async def workspace_markdown() -> dict[str, str]:
+    listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
+    files = {}
+    for path in listing.stdout.splitlines():
+        name = path.strip().removeprefix("ws/")
+        text = await read_ws(name) if name else None
+        if text is not None:
+            files[name] = text
+    return files
+
+
 async def run_check(proposal: str) -> str:
     result = await sandbox().exec(
         ["python3", "skill/scripts/check.py", f"ws/{proposal}"], timeout=60
@@ -138,22 +150,31 @@ async def judge(rubric: str, question: str, answer: str, criterion: str) -> tupl
 # ---------- task: write from ideate seed -------------------------------------
 
 W01_PROPOSAL = "data-drift-detection.md"
+W01_SEED = (FIXTURES / "w01-ideate-seed" / W01_PROPOSAL).read_text(encoding="utf-8")
+
+
+async def produced_draft() -> tuple[str | None, str, str]:
+    """(filename, text, where): the skill may draft into a fresh <slug>.md."""
+    files = await workspace_markdown()
+    chosen, where = select_draft(files, W01_PROPOSAL, W01_SEED)
+    return chosen, files.get(chosen, ""), where
 
 
 @scorer(metrics=[accuracy()])
 def write_l1():
     async def score(state: TaskState, target: Target) -> Score:
-        text = await read_ws(W01_PROPOSAL)
-        check_out = await run_check(W01_PROPOSAL) if text else ""
-        ok, why = verdict_draft(text, check_out)
-        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
+        chosen, text, where = await produced_draft()
+        if not chosen:
+            return Score(value=INCORRECT, explanation=where)
+        ok, why = verdict_draft(text, await run_check(chosen))
+        return Score(value=CORRECT if ok else INCORRECT, explanation=f"{why} ({where})")
     return score
 
 
 @scorer(metrics=[accuracy()])
 def write_l2_rq_quality():
     async def score(state: TaskState, target: Target) -> Score:
-        text = await read_ws(W01_PROPOSAL) or ""
+        _, text, _ = await produced_draft()
         passed, why = await judge(
             "rq_quality.txt", state.input_text, text,
             "All research questions analytical, self-contained, non-overlapping, not yes/no.",
@@ -171,11 +192,9 @@ def write_from_seed() -> Task:
                 "Please turn my idea notes into a full proposal draft. The file is "
                 f"ws/{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
             ),
-            files=stage_files(
-                "w01-ideate-seed", "proposal-write",
-                {"skill/scripts/check.py": str(SKILLS / "proposal-check" / "scripts" / "check.py"),
-                 "skill/references/structure.json": str(SKILLS / "proposal-check" / "references" / "structure.json")},
-            ),
+            # the skill ships its own check.py + structure.json (sync copies),
+            # so standard staging serves the model and the scorer alike
+            files=stage_files("w01-ideate-seed", "proposal-write"),
         )],
         solver=agent_solver(),
         scorer=[write_l1(), write_l2_rq_quality()],
@@ -454,17 +473,14 @@ def publish_build() -> Task:
 @scorer(metrics=[accuracy()])
 def import_l1():
     async def score(state: TaskState, target: Target) -> Score:
-        listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
-        produced = [f for f in listing.stdout.split() if f.endswith(".md") and "messy" not in f]
+        files = await workspace_markdown()
+        # same selection as the dev runner (shared verdict module)
+        produced, _ = select_draft(files)
         if not produced:
             passed, why = verdict_import(None)
             return Score(value=INCORRECT, explanation=why)
-        text = await sandbox().read_file(produced[0])
         # the skill ships its own check copy, so the scorer uses that one
-        run = await sandbox().exec(
-            ["python3", "skill/scripts/check.py", produced[0]], timeout=60
-        )
-        passed, why = verdict_import(text, run.stdout, produced[0])
+        passed, why = verdict_import(files[produced], await run_check(produced), produced)
         return Score(value=CORRECT if passed else INCORRECT, explanation=why)
     return score
 

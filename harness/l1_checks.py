@@ -12,6 +12,42 @@ from pathlib import Path
 
 DRAFT_ALLOWED_ERRORS = ("references — at least",)
 
+# workspace markdown that is never the proposal: the guidelines override and
+# the artifacts skills write alongside the proposal
+NON_PROPOSAL_MARKDOWN = ("guidelines.md",)
+ARTIFACT_SUFFIXES = ("-review.md", "-handout.md")
+
+
+def select_draft(files: dict[str, str], seed_name: str = "",
+                 seed_original: str = "") -> tuple[str | None, str]:
+    """Locate the produced proposal in a workspace whose skill may choose the
+    file's name (import creates one; write may draft into a fresh `<slug>.md`
+    instead of the staged seed). Returns (filename, explanation); the filename
+    is None when nothing was produced.
+
+    Preference: a file that was not staged, else the staged seed if its
+    content changed. Ties break lexicographically, with the remaining
+    candidates named so a surprising pick stays visible. The artifact
+    exclusion applies only beside a seed: without one, a content-derived
+    slug is free to end in `-review.md` (a proposal about code review).
+    """
+    candidates = sorted(
+        name for name in files
+        if name != seed_name
+        and name not in NON_PROPOSAL_MARKDOWN
+        and not (seed_name and name.endswith(ARTIFACT_SUFFIXES))
+    )
+    if candidates:
+        why = f"created {candidates[0]}"
+        if len(candidates) > 1:
+            why += " (also new: " + ", ".join(candidates[1:]) + ")"
+        return candidates[0], why
+    if not seed_name or seed_name not in files:
+        return None, "no draft produced" + (f" ({seed_name} gone)" if seed_name else "")
+    if files[seed_name] != seed_original:
+        return seed_name, f"edited {seed_name} in place"
+    return None, f"no draft produced ({seed_name} left untouched)"
+
 
 def disallowed_errors(check_output: str, allowed: tuple[str, ...] = ()) -> list[str]:
     lines = [l for l in check_output.splitlines() if l.startswith("- ERROR:")]
@@ -32,7 +68,7 @@ def parse_grade(completion: str) -> bool:
 def verdict_draft(proposal_text: str | None, check_output: str) -> tuple[bool, str]:
     """write_from_seed: draft survives and check is clean apart from tolerated errors."""
     if not proposal_text:
-        return False, "seed proposal file gone"
+        return False, "draft file missing or empty"
     bad = disallowed_errors(check_output, DRAFT_ALLOWED_ERRORS)
     if bad:
         return False, "check errors: " + "; ".join(bad)

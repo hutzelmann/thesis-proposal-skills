@@ -11,6 +11,7 @@ from l1_checks import (  # noqa: E402
     disallowed_errors,
     is_enumerated_review,
     parse_grade,
+    select_draft,
     verdict_check_report,
     verdict_import,
 )
@@ -150,6 +151,74 @@ def test_verdict_import_allows_todo_markers_in_the_body():
     )
     passed, why = verdict_import(with_todo, CLEAN_CHECK, "x.md")
     assert passed, why
+
+
+SEED = "# Idea Notes\n\nseed content\n"
+
+
+def test_select_draft_grades_an_in_place_edit():
+    chosen, why = select_draft({"seed.md": SEED + "expanded\n"}, "seed.md", SEED)
+    assert chosen == "seed.md"
+    assert "in place" in why
+
+
+def test_select_draft_prefers_a_created_file_over_the_untouched_seed():
+    """The defect that motivated this: a skill-compliant fresh `<slug>.md` was
+    ignored and the untouched seed graded as the produced draft."""
+    files = {"seed.md": SEED, "data-drift.md": "# Introduction to the Topic\n"}
+    chosen, why = select_draft(files, "seed.md", SEED)
+    assert chosen == "data-drift.md"
+    assert "created data-drift.md" in why
+
+
+def test_select_draft_prefers_a_created_file_even_beside_an_edited_seed():
+    files = {"seed.md": SEED + "touched\n", "draft.md": "# Introduction to the Topic\n"}
+    chosen, _ = select_draft(files, "seed.md", SEED)
+    assert chosen == "draft.md"
+
+
+def test_select_draft_reports_an_untouched_workspace():
+    chosen, why = select_draft({"seed.md": SEED}, "seed.md", SEED)
+    assert chosen is None
+    assert "left untouched" in why
+
+
+def test_select_draft_reports_a_missing_seed():
+    chosen, why = select_draft({}, "seed.md", SEED)
+    assert chosen is None
+    assert "seed.md gone" in why
+
+
+def test_select_draft_never_selects_overrides_or_skill_artifacts():
+    files = {
+        "seed.md": SEED,
+        "guidelines.md": "override",
+        "seed-review.md": "1. finding",
+        "seed-handout.md": "handout",
+    }
+    chosen, why = select_draft(files, "seed.md", SEED)
+    assert chosen is None
+    assert "left untouched" in why
+
+
+def test_select_draft_breaks_ties_deterministically_and_names_the_rest():
+    files = {"seed.md": SEED, "b-draft.md": "x", "a-draft.md": "x"}
+    chosen, why = select_draft(files, "seed.md", SEED)
+    assert chosen == "a-draft.md"
+    assert "also new: b-draft.md" in why
+
+
+def test_select_draft_locates_an_import_without_a_seed():
+    chosen, _ = select_draft({"soil-aware-irrigation.md": GOOD_IMPORT})
+    assert chosen == "soil-aware-irrigation.md"
+    assert select_draft({}) == (None, "no draft produced")
+
+
+def test_select_draft_seedless_accepts_a_review_shaped_slug():
+    """A content-derived slug may legitimately end in `-review.md` (a proposal
+    about code review); the artifact exclusion only applies beside a seed."""
+    chosen, _ = select_draft({"ml-code-review.md": GOOD_IMPORT})
+    assert chosen == "ml-code-review.md"
 
 
 ORACLE_F15 = REPO / "tests" / "fixtures" / "f15-format-broken" / "expected.json"
