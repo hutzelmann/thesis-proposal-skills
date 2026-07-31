@@ -20,7 +20,9 @@ Paths are relative to the workspace root for a standard project install; the scr
 
 The script resolves the best pipeline automatically: **typst** (preferred) → **LaTeX engine** → **docx** (last resort, no PDF), using the skill's `templates/` (compact layout, `RQ n:` styling, citeproc). Outputs land next to the proposal; the script also ensures the workspace `.gitignore` covers build artifacts (shared rule: whichever skill first creates an ignorable artifact adds the entry).
 
-Citations render in two forms, both usable in one document: `[@key]` becomes `[1]`, and `@key` becomes `Smith et al. [1]` — the author name derived from the proposal's own reference entry, so it never has to be typed. The filter chain producing this is order-dependent (`author-intext.lua` → `cite-split.lua` → citeproc → `rq-filter.lua`); don't reorder it.
+Citations render in two forms, both usable in one document: `[@key]` becomes `[1]`, and `@key` becomes `Smith et al. [1]` — the author name derived from the proposal's own reference entry, so it never has to be typed. The filter chain producing this is order-dependent (`author-intext.lua` → `cite-split.lua` → citeproc → `rq-filter.lua` → `todo-filter.lua`); don't reorder it.
+
+`[TODO: …]` markers render as numbered annotations rather than prose — a marker alone on its line becomes a callout block, one inside a sentence becomes a highlight, and a marker carried by the title or subtitle is numbered ahead of the body. There is deliberately no option to render them quietly: the way to a marker-free PDF is to resolve the markers, which `proposal-check` already lists.
 
 ## When tools are missing
 

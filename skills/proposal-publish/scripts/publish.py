@@ -98,6 +98,10 @@ def build(proposal: Path, kind: str, tool: str) -> list[Path]:
         "--csl", str(TEMPLATES / "compact-numeric.csl"),
         "--citeproc",
         "--lua-filter", str(TEMPLATES / "rq-filter.lua"),
+        # last: numbers and styles [TODO: …] markers. After citeproc so a hint
+        # never holds an unresolved citation, and after rq-filter because it
+        # must not emit block content inside a research-question item
+        "--lua-filter", str(TEMPLATES / "todo-filter.lua"),
     ]
     if kind == "typst":
         typ, pdf = stem.with_suffix(".typ"), stem.with_suffix(".pdf")

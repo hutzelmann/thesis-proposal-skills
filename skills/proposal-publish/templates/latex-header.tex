@@ -7,3 +7,33 @@
 \setlist{nosep}
 \setlist[itemize]{label=--}
 \hypersetup{hidelinks}
+
+% TODO markers, used by todo-filter.lua. Approximates the typst tier: fill plus
+% a small-caps navy label. No underline here — soul cannot nest \ul inside \hl.
+\usepackage{xcolor}
+\usepackage{soul}
+\definecolor{todorule}{HTML}{2B4C7E}
+\definecolor{todofill}{HTML}{DDE5EF}
+\definecolor{todofield}{HTML}{EDF1F6}
+\sethlcolor{todofill}
+\newcommand{\todolabel}[1]{{\footnotesize\color{todorule}\scshape TODO #1}}
+% The label MUST stay outside \hl: soul re-scans its argument token by token and
+% aborts with "Reconstruction failed" on a macro taking arguments. todo-filter.lua
+% only ever passes plain text as #2, for the same reason.
+\newcommand{\todoinline}[2]{\todolabel{#1}\ \hl{#2}}
+% Guard forms, used when a hint carries markup soul would choke on: no fill,
+% but the label and a bold hint still mark it as an annotation.
+\newcommand{\todoinlineplain}[2]{\todolabel{#1}\ \textbf{#2}}
+\newcommand{\todoblockplain}[2]{%
+  \par\vspace{0.5\baselineskip}\noindent
+  \textcolor{todorule}{\rule[-0.35\baselineskip]{2pt}{1.2\baselineskip}}%
+  \hspace{0.5em}\todolabel{#1}\hspace{0.8em}\textbf{#2}%
+  \par\vspace{0.5\baselineskip}\noindent}
+\newcommand{\todoblock}[2]{%
+  \par\vspace{0.5\baselineskip}\noindent
+  \colorbox{todofield}{%
+    \begin{minipage}{\dimexpr\linewidth-2\fboxsep}%
+      \textcolor{todorule}{\rule[-0.35\baselineskip]{2pt}{1.2\baselineskip}}%
+      \hspace{0.5em}\todolabel{#1}\hspace{0.8em}#2%
+    \end{minipage}}%
+  \par\vspace{0.5\baselineskip}\noindent}
