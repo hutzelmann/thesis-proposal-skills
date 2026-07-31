@@ -12,13 +12,15 @@ Academic literature only. You judge relevance — the scripts only gather candid
 **Keyword search** (topic or full proposal as context):
 
 ```
-python3 scripts/search.py "distributed consensus energy efficiency" --limit 10
+python3 .claude/skills/proposal-lit-search/scripts/search.py "distributed consensus energy efficiency" --limit 10
 ```
+
+Paths are relative to the workspace root for a standard project install; the script really lives in `scripts/` next to this SKILL.md, so use that location if the skill is installed elsewhere. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
 
 **Snowballing** (expand from the proposal's existing references — the systematic way to deepen a literature base; prefer it over keywords once seeds exist):
 
 ```
-python3 scripts/snowball.py 10.1145/3292500.3330919 10.1109/EX.2024.1 --direction both
+python3 .claude/skills/proposal-lit-search/scripts/snowball.py 10.1145/3292500.3330919 10.1109/EX.2024.1 --direction both
 ```
 
 Both emit CSL-YAML candidates on stdout; degradation notes (failed sources, missing keys) arrive on stderr — always relay them to the user in one line.

@@ -12,9 +12,11 @@ Publishing is optional — a proposal markdown file is an acceptable hand-in on 
 Run the build script (stdlib-only, ≥3.11):
 
 ```
-python3 scripts/publish.py <proposal.md>            # PDF via best available engine
-python3 scripts/publish.py <proposal.md> --handout  # stripped markdown export instead
+python3 .claude/skills/proposal-publish/scripts/publish.py <proposal.md>            # PDF via best available engine
+python3 .claude/skills/proposal-publish/scripts/publish.py <proposal.md> --handout  # stripped markdown export instead
 ```
+
+Paths are relative to the workspace root for a standard project install; the script really lives in `scripts/` next to this SKILL.md, so use that location if the skill is installed elsewhere. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
 
 The script resolves the best pipeline automatically: **typst** (preferred) → **LaTeX engine** → **docx** (last resort, no PDF), using the skill's `templates/` (compact layout, `RQ n:` styling, citeproc). Outputs land next to the proposal; the script also ensures the workspace `.gitignore` covers build artifacts (shared rule: whichever skill first creates an ignorable artifact adds the entry).
 

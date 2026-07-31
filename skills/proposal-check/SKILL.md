@@ -20,8 +20,10 @@ Resolve the proposal file: explicit user mention wins; exactly one markdown file
 Run (use `py` instead of `python3` on Windows if needed):
 
 ```
-python3 scripts/check.py <proposal.md>
+python3 .claude/skills/proposal-check/scripts/check.py <proposal.md>
 ```
+
+Paths are relative to the workspace root for a standard project install; the script really lives in `scripts/` next to this SKILL.md, so use that location if the skill is installed elsewhere. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
 
 - Requires Python ≥ 3.11. If Python is missing, tell the user how to install it (python.org, or `winget install Python.Python.3.12` / `brew install python`) and perform the script's checks yourself as well as possible, stating that determinism is reduced.
 - The script reads `references/structure.json` (canonical skeleton) and the workspace `guidelines.md` TOML override automatically.
