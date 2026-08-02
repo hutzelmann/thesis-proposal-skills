@@ -2,7 +2,9 @@
 
 Reference for the synthetic test fixtures in this directory (the "fixture blueprint" the testing-harness spec refers to). The designs were informed by a private corpus of real student proposals (11 documents, mixed quality); nothing here maps to an identifiable original: topics are altered, all names and institutions removed, defect patterns generalized. Each fixture directory holds one proposal file plus an `expected.json` oracle calibrated against the check script.
 
-Fixture topics sit in the HCIS Lab's research area — automated driving, automotive HMI, in-cabin AI, driver state, V2X, and AV safety. The topic is cosmetic: what each fixture actually tests is its seeded defect set, which survived the 2026-08 re-domaining unchanged. Only `f19` retains its original machine-learning-monitoring topic, because it is traceable to a recorded session (see below).
+Fixture topics sit in the HCIS Lab's research area — automated driving, automotive HMI, in-cabin AI, driver state, V2X, and AV safety.
+
+The corpus was restructured a second time when the skills adopted the THI exposé template (<https://github.com/ignacioalvmar/thesis_expose_template>): seven sections instead of four, `min_references = 10`, at most three research questions, and work plans, timelines, and expected results promoted from forbidden content to required sections. Fixtures whose seeded defect *was* a forbidden work-plan heading therefore lost it; each carries a replacement defect (a schedule at month rather than week granularity, which the Gantt renderer cannot draw) recorded in its `semantic` notes. `f19` keeps both its original topic and the old four-section shape, and is now the oracle for detecting a legacy-shape exposé.
 
 ## Corpus-derived failure taxonomy (aggregate, anonymized)
 
@@ -13,7 +15,9 @@ Fixture topics sit in the HCIS Lab's research area — automated driving, automo
 | Bibliography present but never cited in-text | ~6/11 | Check (defined-but-uncited warning) |
 | < 3 scientific references / URL-only bibliographies | ~4/11 | Check (min_references), lit-search |
 | Undeclared mixed methods (a second strand smuggled into another branch's subsections) | ~4/11 | Review rubric (one-declared-methodology rule) |
-| Forbidden content: timelines/Gantt, chapter outlines, expected results | very common | Check (forbidden headings) |
+| More than three research questions | recurring in MSc topics | Check (`max_count`), Review |
+| Schedule present but not at week granularity | very common | Publish (Gantt renderer degrades to a plain table and says so) |
+| Forbidden content: chapter outlines, supervisor sections, deliverable lists | very common | Check (forbidden headings) |
 | Personal data: matriculation numbers, addresses, supervisor names/emails | common | Check (warning regexes), Import (strip on import) |
 | Passive voice pervasive (esp. German), first-person narrative slips | near-universal (de) | Check warnings, Review hint |
 | Confidentiality markers ("confidential", "vertraulich", NDA remarks) in industry-context proposals | recurring in corporate topics | Check warning (theses get published) |
@@ -29,17 +33,17 @@ Each fixture = one proposal file in the single-file format (plus, for Import tes
 
 | id | lang | level | tier | shape | seeded defects |
 |---|---|---|---|---|---|
-| `f01-narrative-sketch` | de | BSc | low | free-form "Goal / Work steps" narrative — in-car voice assistant for older drivers | mech: no RQ section, no in-text citations, forbidden work-plan heading; sem: first-person storytelling, no gap argument, unfalsifiable outcome |
-| `f02-tool-comparison` | de | BSc | mid | Motivation/Objective/Work-steps + Gantt — gaze-tracking toolkit comparison | mech: forbidden timeline heading, 2 URL-only refs (< min), no RQs; sem: evaluative goal never sharpened into questions |
-| `f03-compliance-audit` | en | BSc | mid-high | numbered free-form incl. chapter outline + timetable, personal data on cover — ODD-compliance auditing of drive logs | mech: forbidden chapter-structure + timetable headings, matriculation/address patterns, work-package pseudo-RQs; sem: RQs are work packages, typos |
-| `f04-dsr-vendor-heavy` | de | MSc | mid | TOC/abbreviations, 1 main + 4 sub-RQs, chapter outline — driver-monitoring rollout reference model | mech: forbidden outline, supervisor + matriculation on title page, duplicate reference entry, "vertraulich" title-page stamp; sem: vendor pages ground definitional claims, RQ sub-questions design-phrased |
-| `f05-slr-interviews` | en | MSc | high | canonical 4 sections — trust calibration in partially automated driving | mech: clean (control fixture); sem: undeclared mixed methods (interviews smuggled into the SLR Synthesis instead of declaring Mixed Methods), missing interview-ethics note |
-| `f06-prototype-testbed` | en | BSc | mid-high | canonical 4 sections — driver-monitoring latency testbed | mech: forward-dated reference year; sem: passive-heavy evaluation, 4-campaign scope risk without fallback, no architecture figure despite hardware topic |
-| `f07-network-pathfinding` | en | BSc | mid | custom Scope/Requirements/RQ/Approach/Schedule — V2X collective-perception rate control | mech: forbidden schedule, supervisor named, 2 refs; sem: 3 of 4 RQs implementation-goal, one leading RQ, mid-document first-person switch, typos |
-| `f08-concept-sketch` | de | BSc | low | Abstract/Intro/Objective/Solution/Work-steps — shuttle stop information display | mech: no RQs, no real bibliography (prose URL list), no in-text markers; sem: severe passive, goals as construction aims, unfalsifiable "concept" outcome |
-| `f09-llm-compliance-docs` | en | MSc | high | near-canonical, work-plan table — LLMs for AV safety-case documentation | mech: forbidden work-plan heading, no title/author metadata, refs never cited in-text, swallowed-heading formatting artifact (Import robustness); sem: 3 "which…" RQs lacking degree phrasing, undeclared mixed methods |
-| `f10-risk-scoring` | en | MSc | mid | free-form with supervisor block — fleet driver risk scoring | mech: supervisor names + emails, undated phase table, refs never cited in-text, "confidential — internal use only" footer marker; sem: 2 of 4 RQs implementation-goal, none operationalized, evaluation leans on internal feedback, telematics personal data with no consent route |
-| `f11-migration-architecture` | de | BSc | high | canonical + extra Scope/Summary sections — ECU-to-SDV architecture migration | mech: extra non-canonical sections (warning), vendor-doc references; sem: RQ2 is yes/no, requirements read as spec list — near-target quality, tests that Review stays quiet on structure |
+| `f01-narrative-sketch` | de | BSc | low | free-form "Goal / Work steps" narrative — in-car voice assistant for older drivers | mech: no canonical section present, no in-text citations, 3 refs (< min); sem: first-person storytelling, no gap argument, unfalsifiable outcome |
+| `f02-tool-comparison` | de | BSc | mid | Motivation/Objective/Work-steps + Gantt — gaze-tracking toolkit comparison | mech: no canonical sections except a coincidental Zielsetzung, 2 URL-only refs (< min), no RQs; sem: evaluative goal never sharpened into questions, month-granularity Zeitplan the Gantt renderer cannot draw |
+| `f03-compliance-audit` | en | BSc | mid-high | numbered free-form incl. chapter outline + timetable, personal data on cover — ODD-compliance auditing of drive logs | mech: forbidden chapter-structure heading, matriculation/address patterns, work-package pseudo-RQs, 3 refs (< min); sem: RQs are work packages, typos, month-granularity timetable |
+| `f04-dsr-vendor-heavy` | de | MSc | mid | TOC/abbreviations, 1 main + 4 sub-RQs, chapter outline — driver-monitoring rollout reference model | mech: forbidden outline + Betreuer headings, matriculation, duplicate reference entry, "vertraulich" stamp, 4 RQs over the limit of 3, 5 refs (< min); sem: vendor pages ground definitional claims, RQ sub-questions design-phrased |
+| `f05-slr-interviews` | en | MSc | high | canonical 7 sections — trust calibration in partially automated driving | mech: clean (control fixture); sem: undeclared mixed methods (interviews smuggled into the SLR Synthesis instead of declaring Mixed Methods), missing interview-ethics note |
+| `f06-prototype-testbed` | en | BSc | mid-high | canonical 7 sections — driver-monitoring latency testbed | mech: forward-dated reference year; sem: passive-heavy evaluation, 4-campaign scope risk without fallback, no architecture figure despite hardware topic |
+| `f07-network-pathfinding` | en | BSc | mid | custom Scope/Requirements/RQ/Approach/Schedule — V2X collective-perception rate control | mech: forbidden Supervisor heading, no canonical sections, 2 refs (< min); sem: 3 of 4 RQs implementation-goal, one leading RQ, mid-document first-person switch, typos |
+| `f08-concept-sketch` | de | BSc | low | Abstract/Intro/Objective/Solution/Work-steps — shuttle stop information display | mech: no RQs, no canonical sections, no references block at all; sem: severe passive, goals as construction aims, unfalsifiable "concept" outcome |
+| `f09-llm-compliance-docs` | en | MSc | high | near-canonical, work-plan table — LLMs for AV safety-case documentation | mech: Objectives / Related Work / Expected Contributions absent, a non-canonical "Work Plan" title, no title/author metadata, refs never cited in-text, 3 refs (< min), swallowed-heading formatting artifact (Import robustness); sem: 3 "which…" RQs lacking degree phrasing, undeclared mixed methods |
+| `f10-risk-scoring` | en | MSc | mid | free-form with supervisor block — fleet driver risk scoring | mech: forbidden Supervisors heading with emails, no canonical sections, undated phase table, refs never cited in-text, 3 refs (< min), "confidential — internal use only" marker; sem: 2 of 4 RQs implementation-goal, none operationalized, evaluation leans on internal feedback, telematics personal data with no consent route |
+| `f11-migration-architecture` | de | BSc | high | canonical 7 sections + extra Abgrenzung/Zusammenfassung — ECU-to-SDV architecture migration | mech: clean; sem: vendor-doc references, sem: RQ2 is yes/no, requirements read as spec list — near-target quality, tests that Review stays quiet on structure |
 
 ## Beyond-corpus fixtures (invented — no workspace source)
 
@@ -70,7 +74,8 @@ Workflow-state fixtures (not proposals, but required test states):
 
 - Languages: 8× de, 18× en across the 26 fixture directories; every tier exists in both languages.
 - Every deterministic Check rule has ≥1 fixture that trips it and ≥1 that passes it (f05 = clean control).
-- Every methodology branch has a compliant fixture: Prototype Implementation (f00), Theoretical Analysis (f17, f12), Systematic Literature Review (f13), User Study (f14), Controlled Experiment (w03), Simulation Study (f20), Empirical Model Evaluation (f21), Mixed Methods (f22).
+- Every methodology branch has a compliant fixture: Prototype Implementation (f00), Theoretical Analysis (f17, f12), Systematic Literature Review (f13), User Study (f14), Controlled Experiment (w03), Simulation Study (f20), Empirical Model Evaluation (f21), Mixed Methods (f22). Every branch begins with Use Case Definition.
+- Publish coverage: f00 and every compliant fixture render to a LaTeX project whose work-plan table becomes a Gantt chart; f01, f02, f03, and f10 exercise the degrade-to-plain-table path.
 - Every Review rubric dimension (RQ quality, one declared methodology, gap argument, vendor grounding, structure-silence) has a dedicated fixture.
 - Import robustness: f03 (Word-style, personal data to strip), f09 (LLM artifacts, missing metadata), f11 (LaTeX-clean) get PDF renderings. **These PDFs are stale as of the 2026-08 re-domaining** — they still render the pre-re-domaining prose. Regenerate with `python3 skills/proposal-publish/scripts/publish.py <fixture>.md` once pandoc and typst are installed, then move the output next to the fixture.
 - Ideate personas cross-reference: f01/f08 profiles ("no RQs, narrative idea") mirror the hesitant/over-scoped student personas.
@@ -80,5 +85,6 @@ Workflow-state fixtures (not proposals, but required test states):
 1. Write fixtures from this blueprint only — never translate/copy sentences from the corpus; invent all prose fresh around the seeded defects.
 2. Personal data in fixtures is obviously fake (e.g. `Erika Musterfrau`, matriculation `00000000`).
 3. Reference DOIs are the fake `10.xxxx/…` form, so no fabricated title is ever attached to a real DOI. The two exceptions are deliberate and documented: `f18-broken-refs` and `w03-snowball-seed` carry real, network-verified entries because their tests depend on real resolution behaviour.
-4. Each fixture ships with an `expected.json` (per-fixture ground truth: which mechanical defects Check must report, which semantic defects the rubric expects) — that file is the L1/L2 oracle.
-5. Re-domaining a fixture must preserve its seeded defects exactly; `uv run pytest tests/unit/test_fixture_oracles.py` is the gate. Where a pinned reference id or TODO string changes, update `expected.json` in the same commit.
+4. Compliant fixtures carry at least ten references and cite every one of them. Where a fixture is deliberately under-referenced (`f15`, `f18`, `w01`, `w03`), the resulting `min_references` error is pinned in its oracle and explained in its `semantic` notes.
+5. Each fixture ships with an `expected.json` (per-fixture ground truth: which mechanical defects Check must report, which semantic defects the rubric expects) — that file is the L1/L2 oracle.
+6. Re-domaining a fixture must preserve its seeded defects exactly; `uv run pytest tests/unit/test_fixture_oracles.py` is the gate. Where a pinned reference id or TODO string changes, update `expected.json` in the same commit.

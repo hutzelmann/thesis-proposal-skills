@@ -1,20 +1,25 @@
-# Introduction to the Topic
+
+# Introduction and Motivation
 
 Driver monitoring cameras stream continuously [@on].
 This proposal studies region-of-interest selection [@Ghost99Missing].
 [TODO: sharpen motivation]
 
-# Contribution to the State-of-the-Art
-
-Prior work crops the face region manually [@Lee24Gaze].
-
-# Research Focus and Research Questions
+# Problem Statement and Research Questions
 
 The thesis examines automated region-of-interest selection.
 
 1. To what degree can saliency-driven heuristics match expert region choices?
 
-# Methodology for Research: Prototype Implementation
+# Related Work
+
+Prior work crops the face region manually [@Lee24Gaze].
+
+# Methodology: Prototype Implementation
+
+## Use Case Definition
+
+[[USE_CASE]]
 
 ## Previous Work
 

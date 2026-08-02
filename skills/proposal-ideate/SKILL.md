@@ -36,7 +36,7 @@ Use findings Socratically: "this 2024 paper does almost exactly that — what's 
 
 ## Guidance awareness
 
-`references/guidelines.md` defines where this must land: an analytical research focus, one methodology from the closed set, three-plus scientific references. Steer toward that shape without lecturing about it.
+`references/guidelines.md` defines where this must land: an analytical research focus, one to three analytical research questions, one methodology from the closed set, and ten-plus scientific references in the finished exposé. Steer toward that shape without lecturing about it, and do not raise the reference count during ideation — that is the literature-search skill's job later.
 
 ## Ending — always seed the file
 
@@ -44,5 +44,6 @@ Before the session ends (or when the user says "enough"), create `<slug>.md` (sl
 
 - Body: working title as a note, problem sketch in a few sentences, candidate research-question directions as a bullet list (marked as candidates, not final RQs), what drew interest from the literature, open questions as `[TODO: …]` markers.
 - Trailing metadata block (blank line before `---`): `title`, `author` (if known — else `[TODO: add author]`), `subtitle` ("Bachelor's Thesis Proposal" / "Master's Thesis Proposal" if the level came up, else a TODO), `lang`, and `references:` with any starter entries found during grounding (CSL-YAML) — write `references: []` when none were found; the key must always be present.
+- Leave the title-page fields (`student_id`, `degree_program`, `supervisor`, `submission_date`) out of the seed unless the user volunteered them. Do not ask for them; the write and publish skills prompt for them when they are actually needed.
 
 Tell the user the file exists and that the write skill turns it into a full draft when they are ready.

@@ -29,6 +29,9 @@ SYNC_MAP: dict[str, list[str]] = {
     ],
     "shared/structure.json": [
         "skills/proposal-check/references",
+        # publish needs the canonical titles to find the work-plan section (Gantt
+        # source) and to strip the branch name off the methodology heading.
+        "skills/proposal-publish/references",
     ],
     # common+crossref vendored into import: validate_refs.py imports them as
     # Python modules, so a missing sibling would crash rather than degrade.

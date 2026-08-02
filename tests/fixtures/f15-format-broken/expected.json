@@ -4,11 +4,14 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "no blank line before the trailing",
-      "boolean literal",
+      "no blank line before the trailing `---` block (pandoc will treat it as body text)",
+      "reference id `on` is a YAML boolean literal — rename or quote it",
       "duplicate reference id `Lee24Gaze`",
-      "cited key `@Ghost99Missing` not defined",
-      "only 2 references"
+      "required section missing: `Objectives`",
+      "required section missing: `Expected Contributions and Results`",
+      "required section missing: `Work Plan and Schedule`",
+      "cited key `@Ghost99Missing` not defined in references (line 5)",
+      "only 2 references — at least 10 required"
     ],
     "warnings_contain": [
       "open [TODO: sharpen motivation]",

@@ -477,12 +477,18 @@ def import_l1():
         problems = []
         if "\n---" not in text or "references" not in text:
             problems.append("not in standard format")
-        for leak in ("00000000", "erika@example.org", "prof@example.org", "Prof. Example",
-                     "CONFIDENTIAL", "INTERNAL USE ONLY"):
+        body = text.rsplit("\n---", 1)[0] if "\n---" in text else text
+        for leak in ("erika@example.org", "prof@example.org", "CONFIDENTIAL", "INTERNAL USE ONLY"):
             if leak in text:
                 problems.append(f"personal/confidential data leaked: {leak}")
-        if re.search(r"(?im)^#+.*timeline", text):
-            problems.append("forbidden timeline heading kept")
+        # Title-page data is relocated to the metadata block, not discarded, so the
+        # matriculation number and supervisor may appear there but never in the body.
+        for relocated in ("00000000", "Prof. Example"):
+            if relocated in body:
+                problems.append(f"title-page data left in the body: {relocated}")
+        # The work plan is a required exposé section — it must be mapped, not stripped.
+        if not re.search(r"(?im)^#+.*(work plan|arbeitsplan)", text):
+            problems.append("source timeline was dropped instead of mapped to Work Plan and Schedule")
         if problems:
             return Score(value=INCORRECT, explanation="; ".join(problems[:4]))
         return Score(value=CORRECT, explanation=f"standard file {produced[0]}, stripped clean")

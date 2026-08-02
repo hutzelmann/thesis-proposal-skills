@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""Build a proposal PDF (or fallback format) via pandoc.
+"""Build the exposé deliverable from a proposal markdown file.
 
-Stdlib-only (Python >= 3.11). Engine resolution: typst (preferred) -> LaTeX
-engine -> docx. Outputs (PDF + intermediate source) land next to the proposal;
-build artifacts are added to the workspace .gitignore. --handout writes a
-stripped markdown export (abstracts removed) instead of building.
+Stdlib-only (Python >= 3.11). The default output is an Overleaf-ready LaTeX
+project (expose.tex + literature.bib + images/) rendered from the THI exposé
+template — no pandoc, no typst, no local TeX required.
+
+`--pdf` instead runs the older pandoc pipeline for a quick local preview
+(typst -> LaTeX engine -> docx); `--handout` writes a stripped markdown export.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+import expose as expose_mod
+
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 LATEX_ENGINES = ("tectonic", "xelatex", "lualatex", "pdflatex")
 GITIGNORE_MARKER = "# proposal build artifacts (managed by proposal-publish)"
 GITIGNORE_ENTRIES = ("*.pdf", "*.typ", "*.tex", "*.docx")
+STRUCTURE = Path(__file__).resolve().parent.parent / "references" / "structure.json"
 
 INSTALL_HINT = (
     "For PDF output install pandoc + typst (two single binaries):\n"
@@ -121,8 +127,27 @@ def main() -> int:
     parser.add_argument("proposal", type=Path)
     parser.add_argument("--handout", action="store_true",
                         help="write a stripped markdown export instead of building")
+    parser.add_argument("--pdf", action="store_true",
+                        help="build a quick local PDF via pandoc instead of the LaTeX project")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="directory for the LaTeX project (default: <slug>-expose/)")
     args = parser.parse_args()
     proposal = args.proposal.resolve()
+
+    if not args.handout and not args.pdf:
+        out_dir = (args.out or proposal.with_name(proposal.stem + "-expose")).resolve()
+        structure = json.loads(STRUCTURE.read_text(encoding="utf-8"))
+        try:
+            notes = expose_mod.build(proposal, out_dir, structure)
+        except expose_mod.ExposeError as exc:
+            print(f"cannot build the exposé project: {exc}", file=sys.stderr)
+            return 2
+        print(f"LaTeX project written: {out_dir.name}/ (expose.tex, literature.bib, images/)")
+        for note in notes:
+            print(f"  note: {note}", file=sys.stderr)
+        print("Upload the folder to Overleaf (New Project -> Upload Project) and set "
+              "expose.tex as the main document; Overleaf runs pdflatex/bibtex for you.")
+        return 0
 
     if args.handout:
         target = proposal.with_name(proposal.stem + "-handout.md")

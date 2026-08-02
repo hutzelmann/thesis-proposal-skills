@@ -1,4 +1,5 @@
-# Introduction to the Topic
+
+# Introduction and Motivation
 
 Safety standards such as ISO 26262 and ISO 21448 oblige developers of automated driving functions to maintain extensive safety-argument documentation.
 Producing and maintaining this documentation is laborious, and assessments regularly reveal gaps between the documented argument and the actual system behavior.
@@ -10,7 +11,7 @@ Contribution to the State-of-the-ArtPrior surveys either cover assurance-case to
 A consolidated picture of how language models are applied to safety-case documentation, which tasks they support, and how the resulting tools are evaluated is missing.
 This thesis contributes that picture through a structured survey of the field and derives a research agenda from the identified gaps.
 
-# Research Focus and Research Questions
+# Problem Statement and Research Questions
 
 The thesis maps how current research applies large language models to the creation and assessment of safety-case documentation for automated driving.
 Special attention goes to the supported tasks, the documentation properties analyzed, and the evaluation practices of the field.
@@ -19,7 +20,11 @@ Special attention goes to the supported tasks, the documentation properties anal
 2. Which properties of technical documentation do the surveyed approaches analyze to detect argument gaps?
 3. Which criteria does the literature apply when evaluating language-model-based safety-case tools?
 
-# Methodology for Research: Systematic Literature Review
+# Methodology: Systematic Literature Review
+
+## Use Case Definition
+
+[[USE_CASE]]
 
 ## Search Strategy and Selection Criteria
 

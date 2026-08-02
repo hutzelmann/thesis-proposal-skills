@@ -4,8 +4,11 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "required section missing: `Contribution to the State-of-the-Art`",
-      "forbidden section: `Work Plan` (matches `work plan`)"
+      "required section missing: `Objectives`",
+      "required section missing: `Related Work`",
+      "required section missing: `Expected Contributions and Results`",
+      "required section missing: `Work Plan and Schedule`",
+      "only 3 references — at least 10 required"
     ],
     "warnings_contain": [
       "metadata block has no `title:`",

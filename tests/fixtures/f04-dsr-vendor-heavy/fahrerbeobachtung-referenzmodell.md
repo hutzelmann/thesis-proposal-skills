@@ -24,21 +24,14 @@ Dr. Petra Platzhalter, TelemaOne GmbH
 - DSGVO: Datenschutz-Grundverordnung
 - KMU: kleine und mittlere Unternehmen
 
-# Einführung in das Thema
+# Einführung und Motivation
 
 Ablenkung und Müdigkeit am Steuer bleiben in gewerblichen Fuhrparks eine der häufigsten Unfallursachen.
 Ein Driver Monitoring System (DMS) bezeichnet laut der Produktdokumentation von TelemaOne ein kamerabasiertes System, das Blickrichtung und Lidschlussverhalten kontinuierlich auswertet [@TelemaOne25Zero].
 Gerade kleine und mittlere Unternehmen (KMU) verfügen selten über die personellen Ressourcen, um eine solche Einführung systematisch zu planen [@Schmidt23Fatigue].
 Die vorliegende Arbeit entwickelt deshalb ein Referenzmodell, das die Einführung eines DMS in KMU-Fuhrparks strukturiert.
 
-# Beitrag zum Stand der Technik
-
-Bestehende Reifegradmodelle für Fahrerbeobachtung adressieren überwiegend Großflotten mit eigenen Sicherheitsabteilungen [@Schmidt23Fatigue].
-Herstellerleitfäden wie das Stufenmodell von CabinArc beschreiben zwar konkrete Einführungsschritte, bleiben jedoch an das jeweilige Produktportfolio gebunden [@CabinArc24Zone].
-Wissenschaftliche Arbeiten zur Akzeptanz von Fahrerüberwachung betrachten bislang vor allem einzelne Messgrößen [@Krause22Acceptance].
-Diese Arbeit verbindet beide Perspektiven zu einem herstellerneutralen Referenzmodell und ergänzt einen Kriterienkatalog zur Priorisierung einzelner Einführungsschritte [@Weber24Rollout].
-
-# Forschungsfokus und Forschungsfragen
+# Problemstellung und Forschungsfragen
 
 Der Fokus der Arbeit liegt auf der Frage, wie KMU ein DMS schrittweise und DSGVO-konform einführen können.
 Die übergeordnete Forschungsfrage lautet: Wie kann ein Referenzmodell für die Einführung von Fahrerbeobachtungssystemen in KMU-Fuhrparks gestaltet werden?
@@ -48,6 +41,13 @@ Daraus leiten sich vier Teilfragen ab:
 2. Wie kann die Anbindung bestehender Telematiksysteme in das Referenzmodell integriert werden?
 3. Wie kann eine Priorisierung der Einführungsschritte nach Risiko und Aufwand entworfen werden?
 4. Wie kann das Referenzmodell in einem realen Fuhrparkumfeld umgesetzt werden?
+
+# Verwandte Arbeiten
+
+Bestehende Reifegradmodelle für Fahrerbeobachtung adressieren überwiegend Großflotten mit eigenen Sicherheitsabteilungen [@Schmidt23Fatigue].
+Herstellerleitfäden wie das Stufenmodell von CabinArc beschreiben zwar konkrete Einführungsschritte, bleiben jedoch an das jeweilige Produktportfolio gebunden [@CabinArc24Zone].
+Wissenschaftliche Arbeiten zur Akzeptanz von Fahrerüberwachung betrachten bislang vor allem einzelne Messgrößen [@Krause22Acceptance].
+Diese Arbeit verbindet beide Perspektiven zu einem herstellerneutralen Referenzmodell und ergänzt einen Kriterienkatalog zur Priorisierung einzelner Einführungsschritte [@Weber24Rollout].
 
 # Gliederung der Arbeit
 
@@ -59,7 +59,11 @@ Daraus leiten sich vier Teilfragen ab:
 6. Evaluation
 7. Fazit und Ausblick
 
-# Forschungsmethodik: Prototypimplementierung
+# Methodik: Prototypimplementierung
+
+## Definition des Anwendungsfalls
+
+Als Anwendungsfall dient der Fuhrpark des Praxispartners mit rund achtzig Fahrzeugen im regionalen Verteilerverkehr.
 
 ## Vorarbeiten
 

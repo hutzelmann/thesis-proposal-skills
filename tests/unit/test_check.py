@@ -37,18 +37,21 @@ def test_broken_fixture_trips_guardrails():
 def test_override_workspace_changes_verdicts():
     result = run_check(FIXTURES / "w02-override-workspace" / "llm-scenario-generation.md")
     out = result.stdout
-    # timeline heading is un-forbidden by the workspace TOML override
-    assert "forbidden section" not in out
-    # raised minimum is enforced
-    assert "at least 8 required" in out
+    # the workspace TOML override forbids a heading the default permits
+    assert "forbidden section: `Timeline`" in out
+    # and raises the reference minimum above the default
+    assert "at least 14 required" in out
 
 
-def test_default_forbids_timeline(tmp_path):
+def test_default_permits_timeline(tmp_path):
+    """Same file without the workspace guidelines.md: the exposé template has no
+    prohibition on a Timeline heading, so only the override can introduce one."""
     source = (FIXTURES / "w02-override-workspace" / "llm-scenario-generation.md").read_text()
     victim = tmp_path / "llm-scenario-generation.md"
     victim.write_text(source)  # same file, but no guidelines.md next to it
     result = run_check(victim)
-    assert "forbidden section: `Timeline`" in result.stdout
+    assert "forbidden section" not in result.stdout
+    assert "at least 14 required" not in result.stdout
 
 
 def test_level2_sections_still_checked(tmp_path):

@@ -2,14 +2,17 @@
   "fixture": "f18-broken-refs",
   "lang": "en",
   "check": {
-    "exit_code": 0,
-    "errors_contain": [],
+    "exit_code": 1,
+    "errors_contain": [
+      "only 4 references — at least 10 required"
+    ],
     "warnings_contain": []
   },
   "semantic": [
     "reference Ghost21Vanished carries a DOI that does not resolve (import validation must report UNVERIFIABLE)",
     "reference Lin23Pedestrian lacks a DOI but is a real identifiable paper (import validation should enrich it)",
     "reference Unknown22Mystery is entirely invented (import validation must report UNVERIFIABLE)",
-    "reference Dey19Gaze is real and correct (import validation must report VERIFIED); its title must stay the Crossref short form without the subtitle, otherwise the title match fails"
+    "reference Dey19Gaze is real and correct (import validation must report VERIFIED); its title must stay the Crossref short form without the subtitle, otherwise the title match fails",
+    "deliberately kept at four references so the four resolution outcomes stay isolated; the resulting min_references error is expected, not a defect to fix"
   ]
 }

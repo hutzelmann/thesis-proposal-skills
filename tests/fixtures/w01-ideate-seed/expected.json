@@ -4,15 +4,18 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "required section missing: `Introduction to the Topic`",
-      "required section missing: `Contribution to the State-of-the-Art`",
-      "required section missing: `Research Focus and Research Questions`",
-      "methodology section missing",
-      "only 1 references — at least 3 required"
+      "required section missing: `Introduction and Motivation`",
+      "required section missing: `Problem Statement and Research Questions`",
+      "required section missing: `Objectives`",
+      "required section missing: `Related Work`",
+      "required section missing: `Expected Contributions and Results`",
+      "required section missing: `Work Plan and Schedule`",
+      "methodology section missing (`Methodology: {methodology}`)",
+      "only 1 references — at least 10 required"
     ],
     "warnings_contain": [
-      "open [TODO: decide between prototype implementation",
-      "open [TODO: find a second public dataset with per-rater labels"
+      "open [TODO: decide between prototype implementation and systematic literature review]",
+      "open [TODO: find a second public dataset with per-rater labels]"
     ]
   },
   "semantic": [

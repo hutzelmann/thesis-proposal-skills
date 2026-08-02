@@ -174,6 +174,9 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
     rq_items = re.findall(r"^\d+[.)]\s+", rq_section, re.MULTILINE)
     if rq_section and not rq_items:
         errors.append("no ordered-list research questions found in the research-questions section")
+    rq_max = structure["research_questions"].get("max_count")
+    if rq_max and len(rq_items) > rq_max:
+        errors.append(f"{len(rq_items)} research questions — at most {rq_max} allowed")
     for n in range(1, len(rq_items) + 1):
         if meth_section and f"(RQ{n})" not in meth_section:
             errors.append(f"(RQ{n}) never referenced in the methodology section")
