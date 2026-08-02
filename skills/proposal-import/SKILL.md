@@ -5,6 +5,10 @@ description: Import an existing proposal (usually PDF) into the standard single-
 
 # Proposal Import
 
+Brings a proposal that already exists — PDF, Word, LaTeX — into this workspace as one markdown file, with its references carried across and every gap the source left behind marked rather than silently dropped.
+
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: **proposal-import** (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+
 Convert an existing proposal document into one `<slug>.md` in the standard format: markdown body, trailing `---` metadata block (blank line before it) with `title`, `subtitle`, `lang`, `references` in CSL-YAML. Never carry an `author` key over from the source — proposals are anonymous.
 
 ## The shape you must produce

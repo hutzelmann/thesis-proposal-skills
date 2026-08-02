@@ -1,0 +1,123 @@
+"""L0: every shipped SKILL.md opens with the same three blocks (skill-packaging
+spec: uniform skill opening structure, enforced offline).
+
+Order is title, purpose, workflow line, mandate. The workflow line is
+byte-identical across the set except for which skill name is bolded, and each
+mandate is pinned in `tests/unit/data/skill_mandates/`, so a reword fails here
+instead of passing review silently.
+
+Adjacency ("nothing inserted between a mandate and the paragraph beneath it") is
+enforced structurally rather than by pinning what follows: the only insertable
+header blocks are the purpose and the workflow line, and both are pinned to a
+fixed index above the mandate, with the workflow line required to appear exactly
+once in the whole file.
+
+The title is not required to match the skill name — proposal-lit-search's is
+`# Literature Search`.
+"""
+
+import re
+from pathlib import Path
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[2]
+SKILL_DIRS = sorted(
+    d for d in (REPO / "skills").iterdir() if d.is_dir() and d.name.startswith("proposal-")
+)
+SKILL_MDS = [d / "SKILL.md" for d in SKILL_DIRS]
+MANDATE_DIR = REPO / "tests" / "unit" / "data" / "skill_mandates"
+
+ids = lambda paths: [str(p.relative_to(REPO)) for p in paths]  # noqa: E731
+
+WORKFLOW_LABEL = "**Workflow:**"
+PURPOSE_INDEX = 1
+WORKFLOW_INDEX = 2
+MANDATE_INDEX = 3
+# "one or two sentences" — a bound on padding, not a style rule.
+PURPOSE_MAX_CHARS = 400
+
+FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
+
+
+def header_blocks(skill_md: Path) -> list[str]:
+    """Blank-line-separated blocks from the title up to the first `##` heading."""
+    body = FRONTMATTER.sub("", skill_md.read_text(encoding="utf-8"))
+    region = re.split(r"^## ", body, maxsplit=1, flags=re.MULTILINE)[0]
+    return [b.strip() for b in re.split(r"\n\s*\n", region.strip()) if b.strip()]
+
+
+def workflow_line(skill_md: Path) -> str:
+    return header_blocks(skill_md)[WORKFLOW_INDEX]
+
+
+def test_every_skill_is_discovered():
+    """A glob that silently matches nothing would make every test below vacuous."""
+    assert len(SKILL_MDS) == 8, f"expected 8 skills, found {[p.parent.name for p in SKILL_MDS]}"
+    pinned = {p.stem for p in MANDATE_DIR.glob("*.txt")}
+    assert pinned == {d.name for d in SKILL_DIRS}, (
+        f"pinned mandates do not cover the skill set: {pinned ^ {d.name for d in SKILL_DIRS}}"
+    )
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=ids(SKILL_MDS))
+def test_header_block_order(skill_md):
+    blocks = header_blocks(skill_md)
+    name = skill_md.parent.name
+    assert len(blocks) > MANDATE_INDEX, f"{name}: header has only {len(blocks)} blocks"
+    assert blocks[0].startswith("# "), f"{name}: body does not open with a `# ` title"
+
+    purpose = blocks[PURPOSE_INDEX]
+    assert not purpose.startswith(WORKFLOW_LABEL), (
+        f"{name}: no purpose block — the workflow line follows the title directly"
+    )
+    assert not purpose.startswith("#"), f"{name}: a heading sits where the purpose block belongs"
+    assert len(purpose) <= PURPOSE_MAX_CHARS, (
+        f"{name}: purpose block is {len(purpose)} chars (max {PURPOSE_MAX_CHARS}) — "
+        "one or two sentences, do not pad the top of the file"
+    )
+    assert blocks[WORKFLOW_INDEX].startswith(WORKFLOW_LABEL), (
+        f"{name}: block {WORKFLOW_INDEX} is not the workflow line — exactly one paragraph "
+        "may precede it"
+    )
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=ids(SKILL_MDS))
+def test_workflow_line_appears_once(skill_md):
+    """Pins adjacency: the line cannot also be repeated below a mandate."""
+    text = skill_md.read_text(encoding="utf-8")
+    assert text.count(WORKFLOW_LABEL) == 1, (
+        f"{skill_md.parent.name}: workflow line appears {text.count(WORKFLOW_LABEL)} times"
+    )
+
+
+def test_workflow_line_identical_across_skills():
+    unmarked = {md.parent.name: workflow_line(md).replace("**", "") for md in SKILL_MDS}
+    distinct = set(unmarked.values())
+    assert len(distinct) == 1, "workflow line drifted between skills:\n" + "\n".join(
+        f"  {name}: {line}" for name, line in sorted(unmarked.items())
+    )
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=ids(SKILL_MDS))
+def test_workflow_line_marks_its_own_skill(skill_md):
+    name = skill_md.parent.name
+    roster = workflow_line(skill_md).removeprefix(WORKFLOW_LABEL)
+    marked = re.findall(r"\*\*(.+?)\*\*", roster)
+    assert len(marked) == 1, f"{name}: {len(marked)} bolded names in the workflow line, expected 1"
+    assert re.fullmatch(r"proposal-[a-z-]+", marked[0]), (
+        f"{name}: bolded `{marked[0]}` is not a skill name"
+    )
+    assert marked[0] == name, (
+        f"{name}: workflow line bolds `{marked[0]}` — a sibling's line was copied without re-marking"
+    )
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=ids(SKILL_MDS))
+def test_mandate_matches_pinned_copy(skill_md):
+    name = skill_md.parent.name
+    pinned = (MANDATE_DIR / f"{name}.txt").read_text(encoding="utf-8").strip()
+    assert header_blocks(skill_md)[MANDATE_INDEX] == pinned, (
+        f"{name}: mandate differs from tests/unit/data/skill_mandates/{name}.txt — "
+        "a mandate stays verbatim; revise the pinned copy in the same change to reword it"
+    )

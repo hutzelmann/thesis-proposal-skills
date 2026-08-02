@@ -5,6 +5,10 @@ description: Low-level check of a thesis proposal — required sections, citatio
 
 # Proposal Check
 
+Checks a thesis proposal before hand-in: required sections, citations that do not resolve, content that must not appear, format guardrails, and typos. Findings come back as one list in chat, in time to fix them before a supervisor sees them.
+
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → **proposal-check** → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+
 **Read-only skill: you MUST NOT modify any file during a check run — no fixes, no edits, however obvious. You diagnose and report; nothing else.** Editing happens in a separate step, only after the user explicitly asks, via the write skill.
 
 The script prints a `digest:` line — the SHA-256 of the exact content it checked. If you are running non-interactively (no user watching the conversation), verify the mandate mechanically: re-run the script once more as your very last step and compare the two `digest:` lines. If they differ, the file changed during the check — report that prominently as a violation of the read-only mandate instead of presenting the results as a clean run. Never change file permissions or touch the file in any way to enforce this; the unchanged digest is the proof.

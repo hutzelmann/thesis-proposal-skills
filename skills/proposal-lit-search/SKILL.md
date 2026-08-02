@@ -1,9 +1,13 @@
 ---
 name: proposal-lit-search
-description: Find relevant academic literature for a topic or proposal — keyword search across DBLP, Crossref, arXiv, Semantic Scholar, OpenAlex, plus citation snowballing from existing references. Writes CSL-YAML entries into the proposal. Use when the user needs sources, wants the literature base broadened, or asks whether their idea is already published.
+description: Find relevant academic literature for a topic or proposal — keyword search across public scholarly databases, plus citation snowballing from existing references. Writes CSL-YAML entries into the proposal. Use when the user needs sources, wants the literature base broadened, or asks whether their idea is already published.
 ---
 
 # Literature Search
+
+Finds sources for a topic or a draft and merges the accepted entries into the proposal's `references:` block as CSL-YAML — keyword search across public scholarly databases, plus snowballing from what is already cited.
+
+**Workflow:** proposal-ideate → **proposal-lit-search** → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
 
 Academic literature only. You judge relevance — the scripts only gather candidates. Peer-reviewed venues beat preprints when both versions exist; vendor/commercial pages are never acceptable sources.
 

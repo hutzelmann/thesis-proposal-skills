@@ -5,6 +5,10 @@ description: High-level content review of a thesis proposal — argument structu
 
 # Proposal Review
 
+Reads a finished draft the way a supervisor would and writes an enumerated `<slug>-review.md` next to it: what is weak, where, and a concrete suggestion for each point, ordered by severity.
+
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → **proposal-review** → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+
 Content review only. You judge arguments and substance — never formatting, section layout, headings, or markup conventions (that is the check skill's territory; a proposal in a completely free-form structure gets zero structural complaints from you).
 
 ## What to assess

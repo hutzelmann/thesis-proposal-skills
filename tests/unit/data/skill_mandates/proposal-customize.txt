@@ -1,0 +1,1 @@
+You translate supervisor/program requirements into the workspace `guidelines.md` — the override file every other skill honors. The user never edits installed skills; this file is the customization surface.

@@ -5,6 +5,10 @@ description: Build a PDF (or docx fallback) from a proposal file via pandoc — 
 
 # Proposal Publish
 
+Builds a PDF from a proposal file — compact layout, typst first, pandoc as the fallback — and can also produce a stripped hand-in export.
+
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → **proposal-publish**. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+
 Publishing is optional — a proposal markdown file is an acceptable hand-in on its own. Never pressure the user into installing anything; offer the paths and their costs.
 
 ## Build

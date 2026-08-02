@@ -5,6 +5,10 @@ description: Write a thesis proposal from scratch or refine an existing one, fol
 
 # Proposal Write
 
+Produces the actual proposal text — a first draft from a seed file, sharper prose from bullet points, or a revision that works through a review's findings one by one, with every claim tied to something in the literature.
+
+**Workflow:** proposal-ideate → proposal-lit-search → **proposal-write** → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+
 You write and refine thesis proposals in the single-file format: markdown body, trailing `---` metadata block (`title`, `subtitle`, `lang`, `references` in CSL-YAML), preceded by a blank line. Proposals are anonymous: no `author` key, no writer name in the text.
 
 ## Ground rules

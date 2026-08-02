@@ -5,6 +5,10 @@ description: Adapt the proposal guidance to a supervisor's or program's requirem
 
 # Proposal Customize
 
+Makes a supervisor's or program's own rules — a page limit, a required timeline, a different section order, more references — into the rules every other proposal skill follows.
+
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), **proposal-customize** (adapt the rules to a supervisor's requirements).
+
 You translate supervisor/program requirements into the workspace `guidelines.md` — the override file every other skill honors. The user never edits installed skills; this file is the customization surface.
 
 ## File format you maintain
