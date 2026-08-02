@@ -4,9 +4,53 @@ Write a convincing Bachelor's or Master's thesis proposal with the help of an AI
 
 A real agent session, condensed — a student turns a work anecdote into a proposal:
 
-![A student asks whether their anecdote about a silently degrading churn model could become a thesis; the ideate skill answers with a sharpening Socratic question](docs/demo/shot1.png)
-![The literature-search skill builds a base of 15 verified references and rejects noise instead of force-fitting it](docs/demo/shot2.png)
-![The check skill verifies the written proposal mechanically, then the publish skill builds the PDF](docs/demo/shot3.png)
+<details>
+<summary><b>1 · A vague anecdote becomes a research question</b></summary>
+
+> **Student** — For my Master's thesis I want to do something about ML monitoring. At my student job our churn model quietly got worse for months before anyone noticed — is there a thesis in that?
+>
+> **`proposal-ideate`** — There's likely a thesis in this, but the interesting part isn't "the model got worse" — it's *why nobody noticed*. That's two different failure modes wearing the same costume. Did the *predictions* silently drift — or could nobody even *check* accuracy, because you only find out if someone actually churned weeks or months later?
+>
+> **Student** — Both, but mostly the second — churn labels only arrive weeks later. Our dashboard alerted so often that everyone ignored it, and nobody could say whether a high score actually meant the model was worse.
+>
+> **`proposal-ideate`** — So "detect drift without labels" and "stop crying wolf" are both already being worked on, separately. What none of them do is close the loop back to what actually happened weeks later — whether the drift alerts *would have* predicted the real accuracy drop once the labels finally arrived.
+
+</details>
+
+<details>
+<summary><b>2 · Literature, verified — not invented</b></summary>
+
+> **Student** — The idea file only has five grounding references so far. Build that out into a proper literature base before we draft anything.
+>
+> **`proposal-lit-search`** — Literature base is now 15 references, each individually verified against Crossref or arXiv rather than taken from search-tool output — DOIs resolved, titles cross-checked:
+>
+> - **Sethi & Kantardzic (2015, 2017)** — MD3, an unsupervised drift detector built explicitly to cut false alarms: your alert-fatigue problem
+> - **Zhang, Bui & Apley (2023, *Technometrics*)** — score-vector monitoring, an alternative signal to compare against distance-based drift metrics
+> - **Cerqueira et al. (2026, arXiv)** — benchmarking framework for drift detectors with timing-aware metrics; flagged as a preprint, not yet peer-reviewed
+> - **Krempl et al. (2014), Webb et al. (2018), Gonçalves et al. (2014)** and further background — how the field defines and compares drift, and where it names this gap
+>
+> Keyword searches that mostly returned noise — IoT intrusion detection, materials-science "fatigue" papers — were rejected rather than force-fit, and the file records that the net was cast that wide.
+
+</details>
+
+<details>
+<summary><b>3 · Drafted, checked, published</b></summary>
+
+> **Student** — Write the full proposal draft now — keep my framing and just mark whatever is still open as a TODO.
+>
+> **`proposal-write`** — The full draft is written to `drift-alert-validity.md`: Introduction · Contribution to the State-of-the-Art · Research Focus and Research Questions · Methodology. TODOs left open exactly where things are undecided — dataset choice, drift-detector sample, author name. Nothing was invented to fill them.
+>
+> **Student** — Run the check.
+>
+> **`proposal-check`** — Mechanically clean — no errors. 4 warnings: the intentional `[TODO: …]` markers. No forbidden content: no timelines, no personal data, no results asserted as fact.
+>
+> **Student** — Good enough for a first hand-in. Build the PDF please.
+>
+> **`proposal-publish`** — PDF built successfully via typst: `drift-alert-validity.pdf`
+
+</details>
+
+---
 
 This repository contains a set of **agent skills**: instruction packages that teach an AI coding agent (Claude Code, Cursor, Codex, and many others) how to guide you from a vague idea to a polished, literature-grounded proposal. You install the skills once; afterwards you only ever work on your own proposal files, in your own folder. You never need to touch this repository.
 
