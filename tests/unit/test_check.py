@@ -16,7 +16,7 @@ def run_check(proposal: Path) -> subprocess.CompletedProcess:
 
 
 def test_clean_fixture_passes():
-    result = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md")
+    result = run_check(FIXTURES / "f00-clean-en" / "llm-scenario-generation.md")
     assert result.returncode == 0, result.stdout
     assert "no errors" in result.stdout
     assert "WARNING" not in result.stdout
@@ -28,31 +28,34 @@ def test_broken_fixture_trips_guardrails():
     out = result.stdout
     assert "no blank line before the trailing" in out
     assert "boolean literal" in out
-    assert "duplicate reference id `Lee24Index`" in out
+    assert "duplicate reference id `Lee24Gaze`" in out
     assert "cited key `@Ghost99Missing` not defined" in out
     assert "only 2 references" in out
     assert out.count("open [TODO:") == 2
 
 
 def test_override_workspace_changes_verdicts():
-    result = run_check(FIXTURES / "w02-override-workspace" / "ml-code-review.md")
+    result = run_check(FIXTURES / "w02-override-workspace" / "llm-scenario-generation.md")
     out = result.stdout
-    # timeline heading is un-forbidden by the workspace TOML override
-    assert "forbidden section" not in out
-    # raised minimum is enforced
-    assert "at least 8 required" in out
+    # the workspace TOML override forbids a heading the default permits
+    assert "forbidden section: `Timeline`" in out
+    # and raises the reference minimum above the default
+    assert "at least 14 required" in out
 
 
-def test_default_forbids_timeline(tmp_path):
-    source = (FIXTURES / "w02-override-workspace" / "ml-code-review.md").read_text()
-    victim = tmp_path / "ml-code-review.md"
+def test_default_permits_timeline(tmp_path):
+    """Same file without the workspace guidelines.md: the exposé template has no
+    prohibition on a Timeline heading, so only the override can introduce one."""
+    source = (FIXTURES / "w02-override-workspace" / "llm-scenario-generation.md").read_text()
+    victim = tmp_path / "llm-scenario-generation.md"
     victim.write_text(source)  # same file, but no guidelines.md next to it
     result = run_check(victim)
-    assert "forbidden section: `Timeline`" in result.stdout
+    assert "forbidden section" not in result.stdout
+    assert "at least 14 required" not in result.stdout
 
 
 def test_level2_sections_still_checked(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "llm-scenario-generation.md").read_text()
     demoted = source.replace("\n# ", "\n## ").replace("\n## Previous", "\n### Previous").replace(
         "\n## Requirements", "\n### Requirements").replace("\n## Evaluation", "\n### Evaluation")
     demoted = demoted.replace("(RQ3)", "")  # break one cross-ref
@@ -63,7 +66,7 @@ def test_level2_sections_still_checked(tmp_path):
 
 
 def test_multiple_metadata_blocks_error(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "llm-scenario-generation.md").read_text()
     victim = tmp_path / "double.md"
     victim.write_text("---\ntitle: front\n---\n\n" + source)
     result = run_check(victim)
@@ -71,11 +74,11 @@ def test_multiple_metadata_blocks_error(tmp_path):
 
 
 def test_first_person_capitalized_caught(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "llm-scenario-generation.md").read_text()
     victim = tmp_path / "fp.md"
     victim.write_text(source.replace(
-        "Software quality assurance relies heavily",
-        "We propose a novel approach. Our contribution relies heavily",
+        "Automated driving functions are released only after",
+        "We propose a novel approach. Our contribution is released only after",
     ))
     result = run_check(victim)
     assert "first-person pronouns" in result.stdout

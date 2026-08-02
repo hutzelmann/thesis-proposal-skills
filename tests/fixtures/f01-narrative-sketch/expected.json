@@ -4,22 +4,26 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "required section missing: `Einführung in das Thema`",
-      "required section missing: `Beitrag zum Stand der Technik`",
-      "required section missing: `Forschungsfokus und Forschungsfragen`",
-      "methodology section missing",
-      "forbidden section: `Arbeitsplan` (matches `arbeitsplan`)"
+      "required section missing: `Einführung und Motivation`",
+      "required section missing: `Problemstellung und Forschungsfragen`",
+      "required section missing: `Zielsetzung`",
+      "required section missing: `Verwandte Arbeiten`",
+      "required section missing: `Erwartete Beiträge und Ergebnisse`",
+      "required section missing: `Arbeitsplan und Zeitplan`",
+      "methodology section missing (`Methodik: {methodology}`)",
+      "only 3 references — at least 10 required"
     ],
     "warnings_contain": [
       "reference `Braun22Visual` defined but never cited",
       "reference `Fischer24Feedback` defined but never cited",
       "reference `Weber23Smart` defined but never cited",
-      "first-person pronouns found"
+      "first-person pronouns found (16×) — use third person"
     ]
   },
   "semantic": [
     "First-person storytelling throughout; the proposal narrates personal anecdotes instead of using third person",
     "No gap argument: related work and the delta over the state of the art are never discussed",
-    "Unfalsifiable outcome: success is defined as users liking the dashboard, with no measurable criterion"
+    "Unfalsifiable outcome: success is defined as users liking the assistant, with no measurable criterion",
+    "Its Arbeitsplan heading is no longer a forbidden-content defect — the exposé template requires a work plan — but it is a narrative list of steps rather than a schedule with week ranges, so publish cannot draw a Gantt chart from it"
   ]
 }

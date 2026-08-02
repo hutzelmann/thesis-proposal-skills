@@ -56,7 +56,7 @@ def get_key(name: str) -> str | None:
 
 def user_agent() -> str:
     contact = get_key("CONTACT_EMAIL")
-    base = "thesis-proposal-skills/0.1 (https://github.com/hutzelmann/thesis-proposal-skills)"
+    base = "thesis-proposal-skills/0.1 (https://github.com/ignacioalvmar/thesis-proposal-skills)"
     return f"{base} mailto:{contact}" if contact else base
 
 

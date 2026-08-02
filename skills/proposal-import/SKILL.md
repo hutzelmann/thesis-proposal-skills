@@ -5,7 +5,7 @@ description: Import an existing proposal (usually PDF) into the standard single-
 
 # Proposal Import
 
-Convert an existing proposal document into one `<slug>.md` in the standard format: markdown body, trailing `---` metadata block (blank line before it) with `title`, `author`, `subtitle`, `lang`, `references` in CSL-YAML.
+Convert an existing exposé document into one `<slug>.md` in the standard format: markdown body, trailing `---` metadata block (blank line before it) with `title`, `author`, `student_id`, `degree_program`, `supervisor`, `second_supervisor`, `submission_date`, `subtitle`, `lang`, the optional `abbreviations` mapping, and `references` in CSL-YAML.
 
 ## Reading the source
 
@@ -13,16 +13,23 @@ Read the PDF directly. If you cannot ingest PDFs in this environment, say so pla
 
 ## Mapping content
 
-- Map existing content onto the four canonical sections — titles per the write skill's `../proposal-write/references/guidelines.md`, section "Canonical Section Titles (English / German)"; use the proposal's language. If that file is not installed, use the four canonical English titles named there (Introduction to the Topic; Contribution to the State-of-the-Art; Research Focus and Research Questions; Methodology for Research: <Methodology>). Free-form sources rarely map cleanly — place content where it belongs, and mark unfillable sections with `[TODO: …]`.
+- Map existing content onto the seven canonical sections — titles per the write skill's `../proposal-write/references/guidelines.md`, section "Canonical Section Titles (English / German)"; use the proposal's language. If that file is not installed, use the seven canonical English titles named there (Introduction and Motivation; Problem Statement and Research Questions; Objectives; Related Work; Methodology: <Methodology>; Expected Contributions and Results; Work Plan and Schedule). Free-form sources rarely map cleanly — place content where it belongs, and mark unfillable sections with `[TODO: …]`.
+- A source written against the older four-section shape maps predictably: "Introduction to the Topic" → Introduction and Motivation, "Contribution to the State-of-the-Art" → Related Work, "Research Focus and Research Questions" → Problem Statement and Research Questions. Objectives, Expected Contributions and Results, and Work Plan and Schedule will be absent and become TODO sections.
 - Detect the language and set `lang` accordingly.
 - Convert the bibliography to CSL-YAML entries (`AuthorYearFirstWord` keys, DOI when present, URL only without DOI); convert in-text citations to `[@key]`/`@key`. References that cannot be resolved to a real entry become `[TODO: recover reference …]` — never invent metadata.
 
+## Title-page data: move, do not discard
+
+The exposé template has a title page fed by the metadata block, so cover-page data is relocated rather than stripped. Move student name, student ID, degree program, supervisor names, and submission date out of the body and into the matching metadata fields. Drop the contact details that have no field — postal addresses, phone numbers, and email addresses are not part of the title page.
+
 ## Strip on import (always report what was removed)
 
-- Personal data: matriculation numbers, postal addresses, emails, study program, supervisor names and contacts.
-- Forbidden content: timelines/work plans, preliminary chapter outlines, expected-results sections, deliverables lists, confidentiality markers.
+- Personal data left in the **body**: matriculation numbers, postal addresses, emails, study program, supervisor mentions in prose.
+- Forbidden content: preliminary chapter outlines, deliverables lists, confidentiality markers.
 
-End the import with a removal note listing every stripped item class — the user may need some of it elsewhere, but it does not belong in the proposal.
+Work plans, timelines, and expected results are **not** stripped — they are required sections of the exposé. Map a Gantt chart or phase table onto Work Plan and Schedule as a table with a week range per row, and map an expected-results section onto Expected Contributions and Results.
+
+End the import with a note listing every stripped item class and every field moved to the metadata block — the user may need some of it elsewhere, but it does not belong in the body.
 
 ## Figures
 

@@ -1,36 +1,53 @@
 {
-  "_comment": "Single source of truth for the mechanically checkable proposal skeleton. Semantic rules live in shared/guidelines/guidelines.md. Synced into skills by scripts/sync_shared.py.",
-  "min_references": 3,
+  "_comment": "Single source of truth for the mechanically checkable exposé skeleton. Mirrors the section order of the THI Faculty of Computer Science exposé template (https://github.com/ignacioalvmar/thesis_expose_template). Semantic rules live in shared/guidelines/guidelines.md. Synced into skills by scripts/sync_shared.py.",
+  "min_references": 10,
   "sections": {
     "order": [
       "introduction",
-      "contribution",
       "research_questions",
-      "methodology"
+      "objectives",
+      "related_work",
+      "methodology",
+      "contributions",
+      "work_plan"
     ],
     "titles": {
       "introduction": {
-        "en": "Introduction to the Topic",
-        "de": "Einführung in das Thema"
-      },
-      "contribution": {
-        "en": "Contribution to the State-of-the-Art",
-        "de": "Beitrag zum Stand der Technik"
+        "en": "Introduction and Motivation",
+        "de": "Einführung und Motivation"
       },
       "research_questions": {
-        "en": "Research Focus and Research Questions",
-        "de": "Forschungsfokus und Forschungsfragen"
+        "en": "Problem Statement and Research Questions",
+        "de": "Problemstellung und Forschungsfragen"
+      },
+      "objectives": {
+        "en": "Objectives",
+        "de": "Zielsetzung"
+      },
+      "related_work": {
+        "en": "Related Work",
+        "de": "Verwandte Arbeiten"
       },
       "methodology": {
-        "en": "Methodology for Research: {methodology}",
-        "de": "Forschungsmethodik: {methodology}"
+        "en": "Methodology: {methodology}",
+        "de": "Methodik: {methodology}"
+      },
+      "contributions": {
+        "en": "Expected Contributions and Results",
+        "de": "Erwartete Beiträge und Ergebnisse"
+      },
+      "work_plan": {
+        "en": "Work Plan and Schedule",
+        "de": "Arbeitsplan und Zeitplan"
       }
     }
   },
+  "_methodology_comment": "Every branch opens with Use Case Definition, matching the template's first Methodology subsection. The remaining subsections are branch-specific: the template's Independent Variables / Dependent Variables / Procedure set is the Controlled Experiment branch, and the other branches substitute the subsections their design actually needs.",
   "methodologies": {
     "prototype": {
       "title": {"en": "Prototype Implementation", "de": "Prototypimplementierung"},
       "subsections": [
+        {"en": "Use Case Definition", "de": "Definition des Anwendungsfalls"},
         {"en": "Previous Work", "de": "Vorarbeiten"},
         {"en": "Requirements", "de": "Anforderungen"},
         {"en": "Evaluation", "de": "Evaluation"}
@@ -39,6 +56,7 @@
     "theoretical": {
       "title": {"en": "Theoretical Analysis", "de": "Theoretische Analyse"},
       "subsections": [
+        {"en": "Use Case Definition", "de": "Definition des Anwendungsfalls"},
         {"en": "Formalization", "de": "Formalisierung"},
         {"en": "Requirements", "de": "Anforderungen"},
         {"en": "Example", "de": "Beispiel"}
@@ -47,6 +65,7 @@
     "slr": {
       "title": {"en": "Systematic Literature Review", "de": "Systematische Literaturrecherche"},
       "subsections": [
+        {"en": "Use Case Definition", "de": "Definition des Anwendungsfalls"},
         {"en": "Search Strategy and Selection Criteria", "de": "Suchstrategie und Auswahlkriterien"},
         {"en": "Extracted Information", "de": "Extrahierte Informationen"},
         {"en": "Synthesis", "de": "Synthese"}
@@ -55,16 +74,52 @@
     "user_study": {
       "title": {"en": "User Study", "de": "Nutzerstudie"},
       "subsections": [
+        {"en": "Use Case Definition", "de": "Definition des Anwendungsfalls"},
         {"en": "Preparation", "de": "Vorbereitung"},
         {"en": "Procedure", "de": "Durchführung"},
         {"en": "Analysis", "de": "Analyse"}
       ]
+    },
+    "controlled_experiment": {
+      "title": {"en": "Controlled Experiment", "de": "Kontrolliertes Experiment"},
+      "subsections": [
+        {"en": "Use Case Definition", "de": "Definition des Anwendungsfalls"},
+        {"en": "Independent Variables", "de": "Unabhängige Variablen"},
+        {"en": "Dependent Variables", "de": "Abhängige Variablen"},
+        {"en": "Procedure", "de": "Durchführung"},
+        {"en": "Statistical Analysis", "de": "Statistische Auswertung"}
+      ]
+    },
+    "simulation_study": {
+      "title": {"en": "Simulation Study", "de": "Simulationsstudie"},
+      "subsections": [
+        {"en": "Use Case Definition", "de": "Definition des Anwendungsfalls"},
+        {"en": "Scenario Design", "de": "Szenariendesign"},
+        {"en": "Execution", "de": "Durchführung"},
+        {"en": "Analysis", "de": "Analyse"}
+      ]
+    },
+    "empirical_evaluation": {
+      "title": {"en": "Empirical Model Evaluation", "de": "Empirische Modellevaluation"},
+      "subsections": [
+        {"en": "Use Case Definition", "de": "Definition des Anwendungsfalls"},
+        {"en": "Data and Baselines", "de": "Daten und Baselines"},
+        {"en": "Experimental Setup", "de": "Versuchsaufbau"},
+        {"en": "Analysis", "de": "Analyse"}
+      ]
+    },
+    "mixed_methods": {
+      "title": {"en": "Mixed Methods", "de": "Mixed Methods"},
+      "subsections": [
+        {"en": "Use Case Definition", "de": "Definition des Anwendungsfalls"},
+        {"en": "Qualitative Strand", "de": "Qualitativer Strang"},
+        {"en": "Quantitative Strand", "de": "Quantitativer Strang"},
+        {"en": "Integration", "de": "Integration"}
+      ]
     }
   },
+  "_forbidden_comment": "Work plans, timelines, and expected results are REQUIRED sections of the exposé template and are therefore absent from this list. What remains forbidden is content the template places elsewhere (supervisors belong on the title page, i.e. in the metadata block) or not at all (chapter outlines, deliverable lists, confidentiality markers).",
   "forbidden_heading_patterns": [
-    "timeline", "time plan", "schedule", "workplan", "work plan", "milestones",
-    "zeitplan", "arbeitsplan", "meilensteine",
-    "expected results", "erwartete ergebnisse",
     "thesis structure", "preliminary structure", "chapter structure", "gliederung",
     "supervisor", "betreuer",
     "deliverables"
@@ -77,6 +132,7 @@
     "format": "ordered list under the research_questions section",
     "label": "RQ",
     "min_count": 1,
+    "max_count": 3,
     "methodology_reference_pattern": "\\(RQ\\d+\\)"
   },
   "todo_marker": "\\[TODO:[^\\]]*\\]"

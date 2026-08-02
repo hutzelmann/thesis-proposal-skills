@@ -12,11 +12,13 @@ You translate supervisor/program requirements into the workspace `guidelines.md`
 `guidelines.md` in the workspace root: freeform prose (agent-level guidance: tone wishes, focus areas, supervisor quirks) plus one fenced TOML block for the machine-readable part:
 
 ```toml
-min_references = 8
-page_limit = 3
+min_references = 12
+page_limit = 8
 required_sections = ["..."]     # replaces the default required list entirely
 forbidden_sections = ["..."]    # replaces the default forbidden list entirely
 ```
+
+The defaults come from the THI exposé template: seven required sections, `min_references = 10`. Overriding `required_sections` decouples the workspace from the template, so the publish skill will emit sections the template's guidance never described — say so before applying such an override.
 
 Merge semantics (fixed, explain them when relevant): a user key wins over the default per key; list values **replace** the default list entirely (they do not append); removing an entry from `forbidden_sections` un-forbids it.
 

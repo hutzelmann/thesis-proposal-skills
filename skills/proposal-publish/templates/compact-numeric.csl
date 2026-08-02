@@ -2,8 +2,8 @@
 <style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" demote-non-dropping-particle="sort-only" default-locale="en-US">
   <info>
     <title>Compact Numeric (thesis-proposal-skills)</title>
-    <id>https://github.com/hutzelmann/thesis-proposal-skills/compact-numeric</id>
-    <link href="https://github.com/hutzelmann/thesis-proposal-skills" rel="self"/>
+    <id>https://github.com/ignacioalvmar/thesis-proposal-skills/compact-numeric</id>
+    <link href="https://github.com/ignacioalvmar/thesis-proposal-skills" rel="self"/>
     <summary>Numeric style approximating the legacy compactarticle biblatex look: bracketed numbers, initials, up to five names in the bibliography, DOI shown.</summary>
     <updated>2026-07-29T00:00:00+00:00</updated>
     <rights license="http://creativecommons.org/licenses/by-sa/3.0/">MIT-compatible use within this project</rights>

@@ -2,11 +2,15 @@
   "fixture": "w03-snowball-seed",
   "lang": "en",
   "check": {
-    "exit_code": 0,
-    "errors_contain": [],
+    "exit_code": 1,
+    "errors_contain": [
+      "only 3 references — at least 10 required"
+    ],
     "warnings_contain": []
   },
   "semantic": [
-    "clean seed with exactly three solid references — oracle for lit-search snowballing expansion, not a defect fixture"
+    "clean seed with exactly three solid references, all carrying real resolvable DOIs — oracle for lit-search snowballing expansion",
+    "the min_references error is the point: this is the pre-expansion state a student reaches before running the literature search",
+    "also the corpus's compliant Controlled Experiment fixture (use case / independent variables / dependent variables / procedure / statistical analysis), including the advisory ethics and consent sentences"
   ]
 }

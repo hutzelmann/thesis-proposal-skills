@@ -4,19 +4,25 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "duplicate reference id `NetSentio25Zero`",
-      "forbidden section: `Betreuer`",
-      "forbidden section: `Gliederung der Arbeit`"
+      "duplicate reference id `TelemaOne25Zero`",
+      "required section missing: `Zielsetzung`",
+      "required section missing: `Erwartete Beiträge und Ergebnisse`",
+      "required section missing: `Arbeitsplan und Zeitplan`",
+      "forbidden section: `Betreuer` (matches `betreuer`)",
+      "forbidden section: `Gliederung der Arbeit` (matches `gliederung`)",
+      "4 research questions — at most 3 allowed",
+      "only 5 references — at least 10 required"
     ],
     "warnings_contain": [
       "three consecutive sentences start with `Wie`",
-      "email address found",
-      "possible matriculation number",
-      "confidentiality marker `vertraulich`"
+      "email address found — personal data is forbidden",
+      "possible matriculation number / personal data",
+      "confidentiality marker `vertraulich` — theses get published, remove it"
     ]
   },
   "semantic": [
-    "Definitional Zero-Trust claims are grounded in vendor product documentation (NetSentio, CloudArc) instead of scientific literature",
-    "The main research question and all four sub-questions are design-phrased (Wie kann ... gestaltet/aufgebaut/umgesetzt werden) instead of analytical"
+    "Definitional driver-monitoring claims are grounded in vendor product documentation (TelemaOne, CabinArc) instead of scientific literature",
+    "The main research question and all four sub-questions are design-phrased (Wie kann ... gestaltet/aufgebaut/umgesetzt werden) instead of analytical",
+    "Four sub-questions exceed the template's limit of three, which is the fixture that trips the max-count rule"
   ]
 }

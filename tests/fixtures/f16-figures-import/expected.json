@@ -7,6 +7,6 @@
     "warnings_contain": []
   },
   "semantic": [
-    "two figure links (img/sensor-anomaly-triage-a.png, img/sensor-anomaly-triage-b.png) must survive import with slug-prefixed img/ paths — check treats them as body text and ignores them"
+    "two figure links (img/perception-alarm-triage-a.png, img/perception-alarm-triage-b.png) must survive import with slug-prefixed img/ paths — check treats them as body text and ignores them"
   ]
 }

@@ -4,11 +4,13 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "at least 8 required"
+      "forbidden section: `Timeline` (matches `timeline`)",
+      "only 10 references — at least 14 required"
     ],
     "warnings_contain": []
   },
   "semantic": [
-    "workspace override makes the timeline section legitimate — no tool may flag it here"
+    "workspace override inverts two defaults at once: it raises min_references above the template's ten and forbids a Timeline heading the default permits",
+    "body is f00 plus a Timeline section, kept in sync with f00 by construction"
   ]
 }

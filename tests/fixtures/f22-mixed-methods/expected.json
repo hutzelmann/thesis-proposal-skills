@@ -1,0 +1,14 @@
+{
+  "fixture": "f22-mixed-methods",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "compliant Mixed Methods control (qualitative strand / quantitative strand / integration) — the branch that replaced the former blanket single-methodology prohibition",
+    "the Integration subsection names which research question each strand answers and how the results combine, so a review must not reduce it to two unrelated small studies",
+    "carries the advisory ethics, consent, and pseudonymization sentences for its human strand"
+  ]
+}

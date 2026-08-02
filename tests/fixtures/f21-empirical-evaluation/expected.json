@@ -1,0 +1,13 @@
+{
+  "fixture": "f21-empirical-evaluation",
+  "lang": "de",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "compliant German Empirical Model Evaluation control (data and baselines / experimental setup / analysis) — exercises that branch plus the German titles Daten und Baselines and Versuchsaufbau",
+    "reports baselines, seeds/repetitions, and an ablation, so a review must not raise the single-number-without-variance objection here"
+  ]
+}

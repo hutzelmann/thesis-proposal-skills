@@ -1,15 +1,15 @@
 # Workspace Guidelines
 
-My supervisor requires a timeline section and a broader literature base.
+My supervisor wants a broader literature base than the default, and does not want a separate Timeline section — Work Plan and Schedule already carries the schedule.
 
 ```toml
-min_references = 8
+min_references = 14
 forbidden_sections = [
-  "expected results", "erwartete ergebnisse",
   "thesis structure", "preliminary structure", "chapter structure", "gliederung",
   "supervisor", "betreuer",
   "deliverables",
+  "timeline", "zeitplan",
 ]
 ```
 
-The timeline should cover the full processing period at month granularity.
+Keep the Gantt chart in Work Plan and Schedule at week granularity.

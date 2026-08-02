@@ -4,11 +4,13 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "required section missing: `Einführung in das Thema`",
-      "required section missing: `Beitrag zum Stand der Technik`",
-      "required section missing: `Forschungsfokus und Forschungsfragen`",
-      "methodology section missing",
-      "only 0 references — at least 3 required"
+      "required section missing: `Einführung und Motivation`",
+      "required section missing: `Problemstellung und Forschungsfragen`",
+      "required section missing: `Verwandte Arbeiten`",
+      "required section missing: `Erwartete Beiträge und Ergebnisse`",
+      "required section missing: `Arbeitsplan und Zeitplan`",
+      "methodology section missing (`Methodik: {methodology}`)",
+      "only 0 references — at least 10 required"
     ],
     "warnings_contain": []
   },

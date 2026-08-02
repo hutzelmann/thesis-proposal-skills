@@ -44,14 +44,14 @@ SCENARIOS = {
     "review_fixture": {
         "fixture": "f05-slr-interviews",
         "skill": "proposal-review",
-        "proposal": "microservice-technical-debt.md",
-        "request": "Please review my proposal microservice-technical-debt.md — is it ready for my supervisor?",
+        "proposal": "trust-calibration-automated-driving.md",
+        "request": "Please review my proposal trust-calibration-automated-driving.md — is it ready for my supervisor?",
     },
     "write_from_seed": {
         "fixture": "w01-ideate-seed",
         "skill": "proposal-write",
-        "proposal": "data-drift-detection.md",
-        "request": "Please turn my idea notes in data-drift-detection.md into a full proposal draft. Keep my idea, mark anything missing as TODO.",
+        "proposal": "drowsiness-label-reliability.md",
+        "request": "Please turn my idea notes in drowsiness-label-reliability.md into a full proposal draft. Keep my idea, mark anything missing as TODO.",
     },
 }
 

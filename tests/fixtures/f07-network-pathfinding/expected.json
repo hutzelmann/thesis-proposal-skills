@@ -4,24 +4,27 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "required section missing: `Introduction to the Topic`",
-      "required section missing: `Contribution to the State-of-the-Art`",
-      "required section missing: `Research Focus and Research Questions`",
-      "methodology section missing",
-      "forbidden section: `Schedule`",
-      "forbidden section: `Supervisor`",
-      "only 2 references"
+      "required section missing: `Introduction and Motivation`",
+      "required section missing: `Problem Statement and Research Questions`",
+      "required section missing: `Objectives`",
+      "required section missing: `Related Work`",
+      "required section missing: `Expected Contributions and Results`",
+      "required section missing: `Work Plan and Schedule`",
+      "methodology section missing (`Methodology: {methodology}`)",
+      "forbidden section: `Supervisor` (matches `supervisor`)",
+      "only 2 references — at least 10 required"
     ],
     "warnings_contain": [
-      "first-person pronouns found",
+      "first-person pronouns found (3×) — use third person",
       "three consecutive sentences start with `How`",
-      "email address found"
+      "email address found — personal data is forbidden"
     ]
   },
   "semantic": [
     "RQ1-RQ3 are implementation goals ('How can X be implemented/built/designed')",
-    "RQ4 is a leading question presupposing that adaptive routing outperforms the static baseline",
+    "RQ4 is a leading question presupposing that adaptive rate control outperforms the fixed-rate baseline",
     "mid-document switch to first person in the Approach section after a third-person start",
-    "typos in the prose: 'recieve', 'seperate'"
+    "typos in the prose: 'recieve', 'seperate'",
+    "the Schedule section is legitimate under the template, but the Supervisor section is not — supervisors belong in the title-page metadata"
   ]
 }

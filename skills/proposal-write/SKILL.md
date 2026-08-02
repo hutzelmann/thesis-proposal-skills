@@ -5,7 +5,9 @@ description: Write a thesis proposal from scratch or refine an existing one, fol
 
 # Proposal Write
 
-You write and refine thesis proposals in the single-file format: markdown body, trailing `---` metadata block (`title`, `author`, `subtitle`, `lang`, `references` in CSL-YAML), preceded by a blank line.
+You write and refine thesis exposés in the single-file format: markdown body, trailing `---` metadata block preceded by a blank line.
+
+The metadata block carries `title`, `author`, `student_id`, `degree_program`, `supervisor`, `second_supervisor`, `submission_date`, `subtitle`, `lang`, the optional `abbreviations` mapping, and `references` in CSL-YAML. The title-page fields feed the exposé template's cover page and the abbreviations feed its List of Abbreviations — they are the only place personal data belongs, and the body must stay free of it. Unknown fields get a `[TODO: …]` placeholder, never an invention.
 
 ## Ground rules
 
@@ -19,14 +21,15 @@ Non-negotiable regardless of overrides:
 Strong defaults (workspace `guidelines.md` may override them):
 
 - One sentence per line in the source file.
-- Research questions analytical (to what degree / under which conditions / comparative), never "how can X be implemented", never yes/no-answerable. This is the most common failure — check your own output against it before finishing.
+- Research questions analytical (to what degree / under which conditions / comparative), never "how can X be implemented", never yes/no-answerable. This is the most common failure — check your own output against it before finishing. One to three questions; construction goals belong in Objectives, not here.
+- The work-plan table needs a week range per row (`| Task | 5-8 |`), because publish renders it as the template's Gantt chart. A row without one cannot be drawn.
 
 ## From scratch
 
 1. Collect what exists (idea notes from ideate, user's description, any seed references). Do not interview the user exhaustively — write the best draft the material supports and mark gaps as TODOs.
-2. Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) with the four canonical sections in order and the methodology matching the user's method — exactly one from the closed set.
+2. Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) with the seven canonical sections in order and the methodology matching the user's method — exactly one from the closed set.
 3. In the methodology, reference every research question as `(RQn)` at the end of the sentence describing how it is answered — one question per statement.
-4. If fewer than three references exist, say so and suggest running the literature-search skill (ideally snowballing) before polishing further.
+4. If fewer than ten references exist, say so and suggest running the literature-search skill (ideally snowballing) before polishing further. Ten is the mechanical minimum, not a target.
 
 ## Refining
 

@@ -4,24 +4,29 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "required section missing: `Introduction to the Topic`",
-      "required section missing: `Contribution to the State-of-the-Art`",
-      "required section missing: `Research Focus and Research Questions`",
-      "methodology section missing",
-      "forbidden section: `Work Plan and Phases`",
-      "forbidden section: `Supervisors`"
+      "required section missing: `Introduction and Motivation`",
+      "required section missing: `Problem Statement and Research Questions`",
+      "required section missing: `Objectives`",
+      "required section missing: `Related Work`",
+      "required section missing: `Expected Contributions and Results`",
+      "required section missing: `Work Plan and Schedule`",
+      "methodology section missing (`Methodology: {methodology}`)",
+      "forbidden section: `Supervisors` (matches `supervisor`)",
+      "only 3 references — at least 10 required"
     ],
     "warnings_contain": [
       "reference `Berg25Scoring` defined but never cited",
-      "reference `Novak23Supply` defined but never cited",
+      "reference `Novak23Telematics` defined but never cited",
       "reference `Silva24Early` defined but never cited",
-      "email address found",
-      "confidentiality marker `confidential`"
+      "email address found — personal data is forbidden",
+      "confidentiality marker `confidential` — theses get published, remove it"
     ]
   },
   "semantic": [
     "RQ1 and RQ2 are implementation goals rather than analytical questions",
     "no research question is operationalized with measurable criteria or thresholds",
-    "evaluation relies on internal stakeholder feedback instead of objective metrics"
+    "evaluation relies on internal stakeholder feedback instead of objective metrics",
+    "driver telematics records are personal data, yet the proposal names no consent or data-handling route",
+    "the phase table is undated, so it satisfies neither the work-plan section nor the Gantt renderer"
   ]
 }

@@ -22,10 +22,10 @@ This repository contains a set of **agent skills**: instruction packages that te
 | `proposal-import` | Converts an existing proposal (usually a PDF) into the workable format and strips personal data. |
 | `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs. |
 | `proposal-review` | Supervisor-style content review with numbered, actionable suggestions. |
-| `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. A plain markdown hand-in is fine too. |
-| `proposal-customize` | Adapts everything to your supervisor's requirements ("timeline required", "max 3 pages"). |
+| `proposal-publish` | Builds the exposé: an Overleaf-ready LaTeX project from the THI template — `expose.tex`, `literature.bib`, `images/` — with your work plan drawn as a Gantt chart. Needs nothing installed. |
+| `proposal-customize` | Adapts everything to your supervisor's requirements ("at least 15 sources", "no separate Timeline section", "max 8 pages"). |
 
-Your whole proposal lives in **one file**: readable text on top, literature entries at the bottom. Many proposals can sit side by side in one folder.
+Your whole exposé lives in **one file** while you work on it: readable text on top, title-page details and literature entries at the bottom. Many exposés can sit side by side in one folder. When you are ready, `proposal-publish` turns that file into the [THI exposé template](https://github.com/ignacioalvmar/thesis_expose_template) as a folder you upload to Overleaf — you never edit LaTeX by hand.
 
 ## Quick start
 
@@ -33,15 +33,19 @@ Your whole proposal lives in **one file**: readable text on top, literature entr
 2. Create a folder for your proposals and open your agent in it.
 3. Install the skills:
    ```sh
-   npx skills add hutzelmann/thesis-proposal-skills
+   npx skills add ignacioalvmar/thesis-proposal-skills
    ```
 4. Tell your agent: *"Help me develop a thesis idea"*, or *"Import my existing proposal from proposal.pdf"*.
 
-The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own. PDF building is optional; install `pandoc` and `typst` only when you want it (the publish skill tells you how).
+The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own. Publishing needs nothing installed: it writes a LaTeX project you upload to Overleaf, which compiles it for you.
 
 ## For supervisors
 
-The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. Students can adapt the rules to your requirements with `proposal-customize`. The defaults forbid timelines, personal data, and expected-results sections.
+The skills produce an exposé in the structure of the [THI exposé template](https://github.com/ignacioalvmar/thesis_expose_template): Introduction and Motivation, Problem Statement and Research Questions, Objectives, Related Work, Methodology, Expected Contributions and Results, Work Plan and Schedule. Publishing emits that template as an Overleaf project, so what you receive is the document you already expect.
+
+The guidance is conservative where it matters: one to three analytical research questions (construction goals belong in Objectives), exactly one declared methodology, an explicit gap statement in Related Work, at least ten sources, no fabricated references, and a visible TODO marker for every gap. Personal data stays in the title-page metadata and out of the body. Students can adapt the rules to your requirements with `proposal-customize`.
+
+The methodology set covers Prototype Implementation, Theoretical Analysis, Systematic Literature Review, User Study, Controlled Experiment, Simulation Study, Empirical Model Evaluation, and Mixed Methods. Work combining a qualitative and a quantitative strand declares Mixed Methods, whose Integration subsection must say which research questions each strand answers — stacking two methodology sections is still flagged. For studies with human participants the guidance asks for ethics route, informed consent, and GDPR handling in a couple of sentences; this is advisory prose, not an enforced section.
 
 ## For contributors (this repository)
 
@@ -53,3 +57,7 @@ This repo is **only** for developing and testing the skills. User proposals neve
 - Fixtures in `tests/fixtures/` are synthetic: no real proposals, no personal data.
 
 MIT licensed. Issues and PRs welcome; please open an issue first.
+
+## Credits
+
+Originally created by **Thomas Hutzelmann** (Technische Hochschule Ingolstadt) for computer-science thesis supervision. This fork is maintained by the **[Human-Centered Intelligent Systems (HCIS) Lab](https://ignacioalvmar.com)** at THI / AImotion Bavaria, which retargets the guidance and the test corpus to research at the intersection of applied AI, intelligent systems engineering, and human-computer interaction — adding controlled-experiment, simulation-study, empirical-model-evaluation, and mixed-methods branches to the methodology set.

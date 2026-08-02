@@ -2,19 +2,27 @@
   "fixture": "f19-drift-alert-validity",
   "lang": "en",
   "check": {
-    "exit_code": 0,
-    "errors_contain": [],
+    "exit_code": 1,
+    "errors_contain": [
+      "required section missing: `Introduction and Motivation`",
+      "required section missing: `Problem Statement and Research Questions`",
+      "required section missing: `Objectives`",
+      "required section missing: `Related Work`",
+      "required section missing: `Expected Contributions and Results`",
+      "required section missing: `Work Plan and Schedule`",
+      "methodology section missing (`Methodology: {methodology}`)"
+    ],
     "warnings_contain": [
-      "open [TODO: name the specific streaming ML library",
-      "open [TODO: finalize which drift-detection methods",
-      "open [TODO: select specific dataset(s)",
-      "open [TODO: define the precise operationalization of \"performance decay\""
+      "open [TODO: name the specific streaming ML library/libraries chosen, e.g. River]",
+      "open [TODO: finalize which drift-detection methods form the representative sample]",
+      "open [TODO: select specific dataset(s), e.g. streaming concept-drift benchmarks or a public churn-style tabular dataset replayed as a stream]",
+      "open [TODO: define the precise operationalization of \"performance decay\" — accuracy, calibration error, or a business-relevant metric]"
     ]
   },
   "semantic": [
-    "session-derived fixture: skills-generated MSc/EN proposal, curated from the real demo session in docs/demo/harvest.log — structure complete, all four canonical sections present",
-    "the open TODOs are deliberate undecided items (library, detector sample, dataset, decay metric, author metadata), not defects to fix",
-    "RQ2 contains an in-text citation ([@Tan25Flexibl]) — regression material for the publish rq-filter (citations inside RQ list items must survive the typst pipeline)",
-    "author metadata is a [TODO: add author] placeholder by design; reference author names are public bibliographic data"
+    "session-derived (see docs/demo/harvest.log): the only fixture whose every sentence and reference traces to a recorded real session",
+    "deliberately left in the pre-template four-section shape, so it is now the oracle for detecting a legacy-shape exposé: every missing-section error is expected",
+    "RQ2 contains an in-text citation ([@Tan25Flexibl]) — regression material for the publish rq-filter",
+    "re-domaining or restructuring it requires recording a new session; the demo-recording spec forbids invented output"
   ]
 }

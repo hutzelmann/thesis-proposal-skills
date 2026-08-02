@@ -16,7 +16,7 @@ Terminal-based agent by Anthropic. Paid subscription or API billing.
    Follow the login prompt on first start.
 4. Install the skills (new terminal, same folder):
    ```sh
-   npx skills add hutzelmann/thesis-proposal-skills
+   npx skills add ignacioalvmar/thesis-proposal-skills
    ```
 5. In the agent chat: *"Help me develop a thesis idea."*
 
@@ -33,20 +33,22 @@ Terminal-based agent by Anthropic. Paid subscription or API billing.
    mkdir my-proposals && cd my-proposals
    copilot
    ```
-3. Install the skills: `npx skills add hutzelmann/thesis-proposal-skills`
+3. Install the skills: `npx skills add ignacioalvmar/thesis-proposal-skills`
 4. Ask: *"Help me develop a thesis idea."*
 
 ## What you get in the folder
 
-- `your-topic-name.md` is the proposal: text on top, literature at the bottom. This is the only file you edit (or let the agent edit).
+- `your-topic-name.md` is the exposé: text on top, title-page details and literature at the bottom. This is the only file you edit (or let the agent edit).
 - `your-topic-name-review.md` appears when you ask for a review.
 - `guidelines.md` appears if you customize the rules for your supervisor.
+- `your-topic-name-expose/` appears when you publish: the LaTeX project (`expose.tex`, `literature.bib`, `images/`) you upload to Overleaf.
 - `img/` appears only if your proposal uses figures.
 
-Useful prompts: *"Find literature for my proposal"*, *"Check my proposal"*, *"Review it like a supervisor would"*, *"My supervisor wants a timeline, adjust the rules"*, *"Build a PDF"* (the agent tells you what to install, if anything).
+Useful prompts: *"Find literature for my proposal"*, *"Check my proposal"*, *"Review it like a supervisor would"*, *"My supervisor wants at least 15 sources, adjust the rules"*, *"Build my exposé"*.
 
 ## Notes
 
 - Your proposals stay on your machine; literature search talks to public academic APIs (DBLP, Crossref, arXiv, and others). Optional free API keys improve abstract coverage; the agent offers to walk you through the signup and stores the key in a small `api-keys.env` file in your folder (kept out of version control).
 - English is the default; say *"auf Deutsch"* and the whole proposal switches to German conventions.
-- Writing needs no extra software. PDF export needs `pandoc` plus one engine: `typst` (recommended, small and fast) or an existing LaTeX installation (TeX Live, MiKTeX) if you already have one. The publish skill detects what is available and guides the installation when you first ask for a PDF.
+- Writing and publishing need no extra software. The publish skill writes a LaTeX project folder; you upload it to [Overleaf](https://www.overleaf.com) (New Project → Upload Project) and Overleaf compiles the PDF. If you already have TeX Live or MiKTeX you can compile locally instead with `pdflatex → bibtex → pdflatex → pdflatex`.
+- The exposé follows the [THI exposé template](https://github.com/ignacioalvmar/thesis_expose_template). Its title page needs your student ID, degree program, supervisor, and submission date — tell the agent and it stores them in the file's metadata, never in the body text.

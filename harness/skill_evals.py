@@ -135,7 +135,7 @@ async def judge(rubric: str, question: str, answer: str, criterion: str) -> tupl
 
 # ---------- task: write from ideate seed -------------------------------------
 
-W01_PROPOSAL = "data-drift-detection.md"
+W01_PROPOSAL = "drowsiness-label-reliability.md"
 
 
 @scorer(metrics=[accuracy()])
@@ -183,8 +183,8 @@ def write_from_seed() -> Task:
 
 # ---------- task: review a fixture -------------------------------------------
 
-F05_PROPOSAL = "microservice-technical-debt.md"
-F05_REVIEW = "microservice-technical-debt-review.md"
+F05_PROPOSAL = "trust-calibration-automated-driving.md"
+F05_REVIEW = "trust-calibration-automated-driving-review.md"
 
 
 @scorer(metrics=[accuracy()])
@@ -381,8 +381,8 @@ def check_report() -> Task:
 def customize_l1():
     async def score(state: TaskState, target: Target) -> Score:
         import tomllib
-        original = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-        if await read_ws("ml-code-review.md") != original:
+        original = (FIXTURES / "f00-clean-en" / "llm-scenario-generation.md").read_text(encoding="utf-8")
+        if await read_ws("llm-scenario-generation.md") != original:
             return Score(value=INCORRECT, explanation="customize modified the proposal")
         guidelines = await read_ws("guidelines.md")
         if not guidelines:
@@ -454,12 +454,12 @@ Student: Erika Musterfrau, Matriculation 00000000, erika@example.org
 Supervisor: Prof. Example (prof@example.org)
 
 1 Motivation
-Smart irrigation wastes water because schedules ignore soil data. Our project
-will build a better controller. We reference the survey by Rivera et al. 2023
-(doi:10.5555/fake.survey) and the LoRa study of Tanaka 2024.
+Parking assistants frustrate drivers because prompts ignore mirror glances. Our project
+will build a better prompt scheduler. We reference the survey by Rivera et al. 2023
+(doi:10.5555/fake.survey) and the glance study of Tanaka 2024.
 
 2 Goals and Approach
-We will implement the controller and test it on a farm.
+We will implement the scheduler and test it in a simulator.
 
 3 Timeline
 Month 1-2 literature, month 3-5 implementation, month 6 writing.
@@ -477,12 +477,18 @@ def import_l1():
         problems = []
         if "\n---" not in text or "references" not in text:
             problems.append("not in standard format")
-        for leak in ("00000000", "erika@example.org", "prof@example.org", "Prof. Example",
-                     "CONFIDENTIAL", "INTERNAL USE ONLY"):
+        body = text.rsplit("\n---", 1)[0] if "\n---" in text else text
+        for leak in ("erika@example.org", "prof@example.org", "CONFIDENTIAL", "INTERNAL USE ONLY"):
             if leak in text:
                 problems.append(f"personal/confidential data leaked: {leak}")
-        if re.search(r"(?im)^#+.*timeline", text):
-            problems.append("forbidden timeline heading kept")
+        # Title-page data is relocated to the metadata block, not discarded, so the
+        # matriculation number and supervisor may appear there but never in the body.
+        for relocated in ("00000000", "Prof. Example"):
+            if relocated in body:
+                problems.append(f"title-page data left in the body: {relocated}")
+        # The work plan is a required exposé section — it must be mapped, not stripped.
+        if not re.search(r"(?im)^#+.*(work plan|arbeitsplan)", text):
+            problems.append("source timeline was dropped instead of mapped to Work Plan and Schedule")
         if problems:
             return Score(value=INCORRECT, explanation="; ".join(problems[:4]))
         return Score(value=CORRECT, explanation=f"standard file {produced[0]}, stripped clean")
@@ -508,7 +514,7 @@ def import_messy() -> Task:
 
 # ---------- task: literature search expands references (live network) ---------
 
-W03_PROPOSAL = "serverless-energy-scheduling.md"
+W03_PROPOSAL = "takeover-request-lead-time.md"
 
 
 @scorer(metrics=[accuracy()])
@@ -545,8 +551,8 @@ def litsearch_expand() -> Task:
 
 # ---------- task: German review ------------------------------------------------
 
-F04_PROPOSAL = "zero-trust-referenzmodell.md"
-F04_REVIEW = "zero-trust-referenzmodell-review.md"
+F04_PROPOSAL = "fahrerbeobachtung-referenzmodell.md"
+F04_REVIEW = "fahrerbeobachtung-referenzmodell-review.md"
 
 
 @scorer(metrics=[accuracy()])
