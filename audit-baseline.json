@@ -1,0 +1,114 @@
+{
+  "proposal-check": {
+    "Gen Agent Trust Hub": {
+      "riskLevel": "MEDIUM",
+      "status": "warn"
+    },
+    "Snyk": {
+      "riskLevel": "MEDIUM",
+      "status": "warn"
+    },
+    "Socket": {
+      "riskLevel": null,
+      "status": "pass"
+    }
+  },
+  "proposal-customize": {
+    "Gen Agent Trust Hub": {
+      "riskLevel": "SAFE",
+      "status": "pass"
+    },
+    "Snyk": {
+      "riskLevel": "LOW",
+      "status": "pass"
+    },
+    "Socket": {
+      "riskLevel": null,
+      "status": "pass"
+    }
+  },
+  "proposal-ideate": {
+    "Gen Agent Trust Hub": {
+      "riskLevel": "MEDIUM",
+      "status": "warn"
+    },
+    "Snyk": {
+      "riskLevel": "MEDIUM",
+      "status": "warn"
+    },
+    "Socket": {
+      "riskLevel": null,
+      "status": "pass"
+    }
+  },
+  "proposal-import": {
+    "Gen Agent Trust Hub": {
+      "riskLevel": "SAFE",
+      "status": "pass"
+    },
+    "Snyk": {
+      "riskLevel": "MEDIUM",
+      "status": "warn"
+    },
+    "Socket": {
+      "riskLevel": null,
+      "status": "pass"
+    }
+  },
+  "proposal-lit-search": {
+    "Gen Agent Trust Hub": {
+      "riskLevel": "SAFE",
+      "status": "pass"
+    },
+    "Snyk": {
+      "riskLevel": "HIGH",
+      "status": "fail"
+    },
+    "Socket": {
+      "riskLevel": null,
+      "status": "pass"
+    }
+  },
+  "proposal-publish": {
+    "Gen Agent Trust Hub": {
+      "riskLevel": "SAFE",
+      "status": "pass"
+    },
+    "Snyk": {
+      "riskLevel": "LOW",
+      "status": "pass"
+    },
+    "Socket": {
+      "riskLevel": null,
+      "status": "pass"
+    }
+  },
+  "proposal-review": {
+    "Gen Agent Trust Hub": {
+      "riskLevel": "SAFE",
+      "status": "pass"
+    },
+    "Snyk": {
+      "riskLevel": "LOW",
+      "status": "pass"
+    },
+    "Socket": {
+      "riskLevel": null,
+      "status": "pass"
+    }
+  },
+  "proposal-write": {
+    "Gen Agent Trust Hub": {
+      "riskLevel": "SAFE",
+      "status": "pass"
+    },
+    "Snyk": {
+      "riskLevel": "LOW",
+      "status": "pass"
+    },
+    "Socket": {
+      "riskLevel": null,
+      "status": "pass"
+    }
+  }
+}

@@ -29,7 +29,11 @@ python3 scripts/sync_shared.py --check   # generated-copy drift check
 openspec validate --all --strict   # spec validity
 uv run inspect eval harness/skill_evals.py@<task> --model openrouter/...   # L1/L2, metered
 uv run python harness/claude_runner.py <scenario> --model haiku            # dev loop, subscription
+uv run python scripts/audit_scan.py       # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
+uv run python scripts/audit_status.py     # post-publish: skills.sh verdicts vs audit-baseline.json
 ```
+
+Publish pipeline (publishing itself stays explicit-request only): L0 suite (includes the audit-invariant tests) → `scripts/audit_scan.py` gate → publish → `scripts/audit_status.py` confirmation, then `--update` the baseline once the new verdicts are reviewed. `harness/audit_llm_preflight.py` approximates the Gen Agent Trust Hub categories via headless `claude -p` and is advisory only.
 
 Eval details, task list, and known limitations: `harness/README.md`. Model runs cost money or quota — run them deliberately, never in loops.
 

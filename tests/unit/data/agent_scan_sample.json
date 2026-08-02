@@ -1,0 +1,43 @@
+{
+  "/tmp/audit-scan-sample123/.claude": {
+    "client": "/tmp/audit-scan-sample123/.claude",
+    "path": "/tmp/audit-scan-sample123/.claude",
+    "servers": [
+      {"name": "proposal-check"},
+      {"name": "proposal-customize"},
+      {"name": "proposal-ideate"},
+      {"name": "proposal-lit-search"}
+    ],
+    "issues": [
+      {
+        "code": "W011",
+        "message": "Third-party content exposure detected (low risk: 0.10).",
+        "reference": [2, null],
+        "extra_data": {"risk_score": 0.1, "reason": "read-only GET fallback ingests titles"}
+      },
+      {
+        "code": "W007",
+        "message": "Insecure credential handling detected (high risk: 1.00).",
+        "reference": [3, null],
+        "extra_data": {"risk_score": 1.0, "reason": "agent writes the secret value"}
+      }
+    ],
+    "labels": [],
+    "error": null
+  },
+  "/home/someone/.config/otheragent": {
+    "client": "/home/someone/.config/otheragent",
+    "path": "/home/someone/.config/otheragent",
+    "servers": [{"name": "unrelated-skill"}],
+    "issues": [
+      {
+        "code": "W001",
+        "message": "Should never be picked up: belongs to a foreign entry.",
+        "reference": [0, null],
+        "extra_data": {"risk_score": 0.9, "reason": "foreign finding"}
+      }
+    ],
+    "labels": [],
+    "error": null
+  }
+}

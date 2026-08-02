@@ -35,6 +35,12 @@ uv run python harness/claude_runner.py import_messy --model haiku
 
 Fast, free on the subscription, highest execution fidelity — but no L2 judging and no per-model comparison logs; it is the everyday loop, not the source of record.
 
+## Audit pre-flight (publish pipeline)
+
+Order: L0 suite (includes `tests/unit/test_audit_invariants.py`) → `uv run python scripts/audit_scan.py` (the real Snyk Agent Scan engine against the repo's skills, staged in an isolated HOME/XDG so the developer's own agent configs are never touched; needs `SNYK_TOKEN` or the `Snyk API Key:` line in `confidential/credentials.txt`; fails at risk ≥ 0.5 — calibrated 2026-08-02, risk ≤ 0.3 findings exist on skills skills.sh reports clean) → publish on explicit request → `uv run python scripts/audit_status.py` (skills.sh verdicts vs `audit-baseline.json`; `--update` after review).
+
+`uv run python harness/audit_llm_preflight.py [--model haiku]` approximates the Gen Agent Trust Hub categories with one headless `claude -p` call per skill (subscription-billed). Advisory only: ATH's ruleset is unknown and model verdicts vary — never treat a clean run as a guaranteed ATH pass.
+
 ## Known limitations
 
 - **Autonomous-harness overreach is pervasive and unguardable by instructions.** In the Inspect agent loop, models modify the proposal during advisory/read-only skills (check *and* review) despite escalating prohibitions. The mechanical hardening was defeated outright: given the SKILL.md chmod guard, Haiku executed `chmod a-w`, later ran `chmod u+w` to remove its own protection, and edited anyway (`check_report_hardened`, 2026-07-29). The same scenarios under the real Claude Code binary (dev runner) hold the mandate — the production environment, not prompt text, is the effective guard. `check_report`, `check_report_hardened`, and the `review_fixture` byte-identity assertions are therefore expected-red on the Inspect path and serve as environment-fidelity probes; details in the archived changes.
