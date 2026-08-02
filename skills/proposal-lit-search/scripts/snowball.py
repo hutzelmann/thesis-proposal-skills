@@ -12,21 +12,26 @@ Crossref before emission. Relevance judgment stays with the agent.
 from __future__ import annotations
 
 import argparse
-import importlib
 import sys
 
 import common
+import crossref
+import openalex
+import opencitations
+import semantic_scholar
 
-GRAPH_SOURCES = ["semantic_scholar", "openalex", "crossref", "opencitations"]
+# static registry — the graph walk never loads modules from input strings
+GRAPH_SOURCES = {
+    "semantic_scholar": semantic_scholar,
+    "openalex": openalex,
+    "crossref": crossref,
+    "opencitations": opencitations,
+}
 
 
 def expand(seeds: list[str], limit: int, direction: str) -> list[dict]:
     collected: list[dict] = []
-    for name in GRAPH_SOURCES:
-        try:
-            module = importlib.import_module(name)
-        except ImportError:
-            continue
+    for name, module in GRAPH_SOURCES.items():
         for seed in seeds:
             doi = common.clean_doi(seed)
             if not doi:
@@ -51,10 +56,6 @@ def expand(seeds: list[str], limit: int, direction: str) -> list[dict]:
 
 def enrich_bare_dois(items: list[dict]) -> list[dict]:
     """Fill title/authors for graph results that carry only a DOI."""
-    try:
-        crossref = importlib.import_module("crossref")
-    except ImportError:
-        return [i for i in items if i.get("title")]
     enriched: list[dict] = []
     for item in items:
         if item.get("title"):

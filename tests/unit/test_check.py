@@ -24,6 +24,23 @@ def test_clean_fixture_passes():
     assert "WARNING" not in result.stdout
 
 
+def test_digest_line_identifies_checked_content(tmp_path):
+    """Read-only tripwire (skill-check spec): digest present, stable, content-bound."""
+    import hashlib
+
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_bytes()
+    proposal = tmp_path / "ml-code-review.md"
+    proposal.write_bytes(source)
+    first = run_check(proposal).stdout
+    expected = hashlib.sha256(source).hexdigest()
+    assert f"digest: sha256:{expected}" in first
+    # unchanged file -> identical digest line
+    assert f"digest: sha256:{expected}" in run_check(proposal).stdout
+    # changed file -> digest line differs
+    proposal.write_bytes(source + b"\n<!-- drift -->\n")
+    assert f"digest: sha256:{expected}" not in run_check(proposal).stdout
+
+
 def test_broken_fixture_trips_guardrails():
     result = run_check(FIXTURES / "f15-format-broken" / "broken-format.md")
     assert result.returncode == 1

@@ -18,7 +18,7 @@ Instructions for AI agents working **on this repository** (skill development and
 - **Never edit generated copies.** Files marked GENERATED (skill `references/`, vendored scripts in `skills/proposal-import/scripts/` and `skills/proposal-write/scripts/`) come from `shared/` or sibling skills; edit the source, then run `python3 scripts/sync_shared.py`. CI fails on drift.
 - **Fixtures are synthetic.** Nothing derived verbatim from real proposals; personal data obviously fake (`Erika Musterfrau`, matriculation `00000000`). Every fixture carries an `expected.json` oracle calibrated against `skills/proposal-check/scripts/check.py`.
 - **Git**: work directly on `main`, no branches or worktrees; commit per completed OpenSpec change. Do not push and do not publish to skills.sh — both happen only on explicit request.
-- **Credentials**: read from environment or `confidential/credentials.txt` locally; never hardcode, log, or commit them. User-side scripts resolve keys via environment, then `$THESIS_PROPOSAL_KEYS`, then `api-keys.env` in the working directory or any parent up to `$HOME`, then `~/.config/thesis-proposal/api-keys.env`.
+- **Credentials**: read from environment or `confidential/credentials.txt` locally; never hardcode, log, or commit them. User-side scripts resolve keys via environment, then `$THESIS_PROPOSAL_KEYS`, then `api-keys.env` in the working directory, then `~/.config/thesis-proposal/api-keys.env` — never by searching ancestor directories.
 
 ## Commands
 

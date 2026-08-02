@@ -35,7 +35,7 @@ KEY_FILE_ENV = "THESIS_PROPOSAL_KEYS"
 GLOBAL_KEY_FILE = Path.home() / ".config" / "thesis-proposal" / KEY_FILE
 KEY_LOCATIONS = (
     f"the {KEY_FILE_ENV} path, "
-    f"{KEY_FILE} in the working directory or any parent, "
+    f"{KEY_FILE} in the working directory, "
     f"or ~/.config/thesis-proposal/{KEY_FILE}"
 )
 
@@ -43,20 +43,16 @@ KEY_LOCATIONS = (
 def key_file_candidates() -> list[Path]:
     """Key files to consult, most specific first.
 
-    Explicit `THESIS_PROPOSAL_KEYS` override, then `api-keys.env` in the working
-    directory and its ancestors — so a script works from anywhere inside the
-    user's proposal workspace, not only its root — then a user-global file for
-    keys shared across workspaces. Ancestor walking stops at the home directory.
+    Explicit `THESIS_PROPOSAL_KEYS` override, then `api-keys.env` in the
+    working directory (the workspace root in the standard agent setup), then a
+    user-global file for keys shared across workspaces. Deliberately no
+    ancestor-directory search: credential lookup never reads files outside the
+    directory the script was invoked in.
     """
     candidates: list[Path] = []
     if override := os.environ.get(KEY_FILE_ENV):
         candidates.append(Path(override).expanduser())
-    home = Path.home()
-    cwd = Path.cwd()
-    for directory in (cwd, *cwd.parents):
-        candidates.append(directory / KEY_FILE)
-        if directory == home:
-            break
+    candidates.append(Path.cwd() / KEY_FILE)
     if GLOBAL_KEY_FILE not in candidates:
         candidates.append(GLOBAL_KEY_FILE)
     return candidates

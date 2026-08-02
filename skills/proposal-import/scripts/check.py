@@ -15,6 +15,7 @@ errors — the check is advisory, warnings never fail the run.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -376,6 +377,9 @@ def main() -> int:
     errors, warnings = check(args.proposal, structure, overrides)
 
     print(f"# Check: {args.proposal.name}")
+    # identifies the exact content checked; a re-run with a differing digest
+    # means the file changed between the runs (read-only mandate tripwire)
+    print(f"digest: sha256:{hashlib.sha256(args.proposal.read_bytes()).hexdigest()}")
     print("\n## Verified mechanically — errors" if errors else "\n## Verified mechanically — no errors")
     for e in errors:
         print(f"- ERROR: {e}")

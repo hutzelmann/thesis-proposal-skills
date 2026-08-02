@@ -7,7 +7,7 @@ description: Low-level check of a thesis proposal — required sections, citatio
 
 **Read-only skill: you MUST NOT modify any file during a check run — no fixes, no edits, however obvious. You diagnose and report; nothing else.** Editing happens in a separate step, only after the user explicitly asks, via the write skill.
 
-If you are running non-interactively (no user watching the conversation), enforce this mechanically before diagnosing: make the proposal read-only (`chmod a-w <file>` on Unix, `attrib +R <file>` on Windows), run all steps, then restore write permission at the very end. A failed write attempt is your signal that you drifted from the mandate — report instead.
+The script prints a `digest:` line — the SHA-256 of the exact content it checked. If you are running non-interactively (no user watching the conversation), verify the mandate mechanically: re-run the script once more as your very last step and compare the two `digest:` lines. If they differ, the file changed during the check — report that prominently as a violation of the read-only mandate instead of presenting the results as a clean run. Never change file permissions or touch the file in any way to enforce this; the unchanged digest is the proof.
 
 Deterministic low-level checks plus a language pass for one proposal file. Results go to chat only — never write a report file. This check is advisory: it gates nothing; other skills may run it first but proceed on user confirmation.
 

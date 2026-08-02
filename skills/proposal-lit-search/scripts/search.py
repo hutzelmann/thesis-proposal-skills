@@ -11,20 +11,31 @@ relevance and writes accepted entries into the proposal (see SKILL.md).
 from __future__ import annotations
 
 import argparse
-import importlib
 import sys
 
+import arxiv
 import common
+import crossref
+import dblp
+import openalex
+import semantic_scholar
 
-SEARCH_SOURCES = ["dblp", "crossref", "arxiv", "semantic_scholar", "openalex"]
+# static registry — source selection never loads modules from input strings
+SEARCH_SOURCES = {
+    "dblp": dblp,
+    "crossref": crossref,
+    "arxiv": arxiv,
+    "semantic_scholar": semantic_scholar,
+    "openalex": openalex,
+}
 
 
 def federate(query: str, limit: int, sources: list[str]) -> list[dict]:
     collected: list[dict] = []
     contributed: list[str] = []
     for name in sources:
+        module = SEARCH_SOURCES[name]
         try:
-            module = importlib.import_module(name)
             results = module.search(query, limit=limit)
             collected.extend(results)
             contributed.append(f"{name}({len(results)})")
@@ -43,7 +54,12 @@ def main() -> int:
     parser.add_argument("--sources", default=",".join(SEARCH_SOURCES))
     args = parser.parse_args()
 
-    merged = federate(args.query, args.limit, args.sources.split(","))
+    requested = [s.strip() for s in args.sources.split(",") if s.strip()]
+    if unknown := [s for s in requested if s not in SEARCH_SOURCES]:
+        parser.error(
+            f"unknown source(s): {', '.join(unknown)} — valid: {', '.join(SEARCH_SOURCES)}"
+        )
+    merged = federate(args.query, args.limit, requested)
     if not merged:
         print("no results from any source", file=sys.stderr)
         return 1

@@ -75,14 +75,15 @@ def stage_files(fixture: str, skill: str, extra_skill_files: dict[str, str] | No
 
 
 def lit_search_sibling() -> dict[str, str]:
-    """Stage lit-search's scripts as an installed sibling skill: ideate's
-    grounding path ../proposal-lit-search/scripts/ resolves there from skill/."""
-    scripts = SKILLS / "proposal-lit-search" / "scripts"
-    return {
-        f"proposal-lit-search/scripts/{f.name}": str(f)
-        for f in scripts.iterdir()
-        if f.is_file() and f.suffix == ".py"
-    }
+    """Stage lit-search as an installed sibling skill: ideate's grounding
+    reference ../proposal-lit-search/SKILL.md resolves there from skill/,
+    and the scripts that SKILL.md documents resolve next to it."""
+    root = SKILLS / "proposal-lit-search"
+    files = {"proposal-lit-search/SKILL.md": str(root / "SKILL.md")}
+    for f in (root / "scripts").iterdir():
+        if f.is_file() and f.suffix == ".py":
+            files[f"proposal-lit-search/scripts/{f.name}"] = str(f)
+    return files
 
 
 def skill_prompt(skill: str, request: str) -> str:
@@ -599,8 +600,8 @@ def review_fixture_de() -> Task:
 
 @task
 def check_report_hardened() -> Task:
-    """Non-interactive framing: the SKILL.md read-only guard (chmod before
-    diagnosing) must keep the proposal byte-identical even in an autonomous run."""
+    """Non-interactive framing: the SKILL.md read-only guard (digest re-run
+    comparison) must keep the proposal byte-identical even in an autonomous run."""
     return Task(
         dataset=[Sample(
             input=skill_prompt(

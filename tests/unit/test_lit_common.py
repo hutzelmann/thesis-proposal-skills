@@ -76,15 +76,37 @@ def test_get_key_env_then_file(tmp_path, monkeypatch):
     assert common.get_key("MISSING_KEY") is None
 
 
-def test_get_key_found_from_workspace_subdirectory(tmp_path, monkeypatch):
-    """Running a script from a subdirectory must still see the workspace key file."""
-    (tmp_path / "api-keys.env").write_text("OPENALEX_API_KEY=from-workspace-root\n")
-    deep = tmp_path / "skills" / "proposal-lit-search" / "scripts"
+def test_get_key_never_reads_ancestor_directories(tmp_path, monkeypatch):
+    """No directory traversal: a key file above the working directory is not consulted."""
+    (tmp_path / "api-keys.env").write_text("OPENALEX_API_KEY=from-ancestor\n")
+    deep = tmp_path / "sub" / "dir"
     deep.mkdir(parents=True)
     monkeypatch.chdir(deep)
     monkeypatch.delenv(common.KEY_FILE_ENV, raising=False)
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
-    assert common.get_key("OPENALEX_API_KEY") == "from-workspace-root"
+    assert common.get_key("OPENALEX_API_KEY") is None
+    candidates = common.key_file_candidates()
+    assert tmp_path / "api-keys.env" not in candidates
+    assert deep / "api-keys.env" in candidates
+
+
+def test_search_rejects_unknown_source(tmp_path):
+    """Static registry: an unknown --sources name aborts before any work (no dynamic import)."""
+    import subprocess
+    import sys as _sys
+
+    evil = tmp_path / "evilmodule.py"
+    evil.write_text("raise SystemExit('must never be imported')\n")
+    result = subprocess.run(
+        [_sys.executable, str(REPO / "skills" / "proposal-lit-search" / "scripts" / "search.py"),
+         "query", "--sources", "dblp,evilmodule"],
+        capture_output=True, text=True, cwd=tmp_path,
+    )
+    assert result.returncode == 2
+    assert "unknown source" in result.stderr
+    assert "evilmodule" in result.stderr
+    assert "dblp" in result.stderr  # valid names are listed
+    assert "must never be imported" not in result.stderr + result.stdout
 
 
 def test_get_key_explicit_path_overrides_and_resolves_per_key(tmp_path, monkeypatch):
