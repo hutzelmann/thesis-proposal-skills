@@ -4,10 +4,10 @@ L1/L2 skill evals over the fixture corpus (see `openspec/specs/testing-harness/s
 
 ## Authoritative runs (Inspect + OpenRouter, metered)
 
-Export `OPENROUTER_API_KEY` first.
+Credentials setup (once): `cp .env.example .env`, fill in `OPENROUTER_API_KEY`. Pass the file with `--env-file .env` (uv-native; nothing breaks when `.env` is absent because the flag is per-command).
 
 ```sh
-uv run inspect eval harness/skill_evals.py@check_report \
+uv run --env-file .env inspect eval harness/skill_evals.py@check_report \
     --model openrouter/anthropic/claude-haiku-4.5 --log-dir logs/evals
 
 # model matrix in one invocation (one log per model):
@@ -37,7 +37,7 @@ Fast, free on the subscription, highest execution fidelity — but no L2 judging
 
 ## Audit pre-flight (publish pipeline)
 
-Order: L0 suite (includes `tests/unit/test_audit_invariants.py`) → `uv run python scripts/audit_scan.py` (the real Snyk Agent Scan engine against the repo's skills, staged in an isolated HOME/XDG so the developer's own agent configs are never touched; needs `SNYK_TOKEN` or the `Snyk API Key:` line in `confidential/credentials.txt`; fails at risk ≥ 0.5 — calibrated 2026-08-02, risk ≤ 0.3 findings exist on skills skills.sh reports clean) → publish on explicit request → `uv run python scripts/audit_status.py` (skills.sh verdicts vs `audit-baseline.json`; `--update` after review).
+Order: L0 suite (includes `tests/unit/test_audit_invariants.py`) → `uv run python scripts/audit_scan.py` (the real Snyk Agent Scan engine against the repo's skills, staged in an isolated HOME/XDG so the developer's own agent configs are never touched; needs `SNYK_TOKEN` in the environment or in the repo-root `.env`; fails at risk ≥ 0.5 — calibrated 2026-08-02, risk ≤ 0.3 findings exist on skills skills.sh reports clean) → publish on explicit request → `uv run python scripts/audit_status.py` (skills.sh verdicts vs `audit-baseline.json`; `--update` after review).
 
 `uv run python harness/audit_llm_preflight.py [--model haiku]` approximates the Gen Agent Trust Hub categories with one headless `claude -p` call per skill (subscription-billed). Advisory only: ATH's ruleset is unknown and model verdicts vary — never treat a clean run as a guaranteed ATH pass.
 

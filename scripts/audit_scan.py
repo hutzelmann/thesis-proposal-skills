@@ -10,7 +10,7 @@ connecting to MCP servers can execute their commands), then runs
 `uvx snyk-agent-scan@latest scan --skills --json` and gates on the findings.
 
 Dev-side tooling: Linux/macOS, needs `uv` and a Snyk token (free account) in
-`SNYK_TOKEN` or on the `Snyk API Key:` line of confidential/credentials.txt.
+`SNYK_TOKEN` or in the repo-root `.env` (template: `.env.example`).
 
 Usage: uv run python scripts/audit_scan.py [--threshold 0.5] [--keep]
 Exit codes: 0 = clean, 1 = findings at/above threshold, 2 = runtime failure.
@@ -37,14 +37,19 @@ THRESHOLD = 0.5
 SCAN_TIMEOUT = 900  # LLM-judge analysis of eight skills takes a few minutes
 
 
-def snyk_token(credentials: Path = REPO / "confidential" / "credentials.txt") -> str | None:
-    """SNYK_TOKEN env first, then the credentials file — value is never printed."""
+def snyk_token(env_file: Path = REPO / ".env") -> str | None:
+    """SNYK_TOKEN from the environment first, then the repo-root .env
+    (KEY=VALUE, `#` comments; template: .env.example) — value is never printed."""
     if token := os.environ.get("SNYK_TOKEN"):
         return token
     try:
-        for line in credentials.read_text(encoding="utf-8").splitlines():
-            if line.startswith("Snyk API Key:"):
-                return line.split(":", 1)[1].strip() or None
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            if key.strip() == "SNYK_TOKEN" and value.strip():
+                return value.strip().strip("'\"")
     except OSError:
         return None
     return None
@@ -94,8 +99,8 @@ def main() -> int:
 
     token = snyk_token()
     if not token:
-        print("no Snyk token: set SNYK_TOKEN or add `Snyk API Key: ...` to "
-              "confidential/credentials.txt (free account: app.snyk.io)", file=sys.stderr)
+        print("no Snyk token: set SNYK_TOKEN or fill it in .env "
+              "(cp .env.example .env; free account: app.snyk.io)", file=sys.stderr)
         return 2
 
     workspace = Path(tempfile.mkdtemp(prefix="audit-scan-"))

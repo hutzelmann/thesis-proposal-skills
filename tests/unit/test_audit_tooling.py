@@ -35,14 +35,17 @@ def test_threshold_separates_noise_from_blockers():
     assert [f["code"] for f in blocking] == ["W007"]
 
 
-def test_snyk_token_env_wins_then_file(tmp_path, monkeypatch):
-    credentials = tmp_path / "credentials.txt"
-    credentials.write_text("Email: x@y.z\nSnyk API Key: from-file\n")
+def test_snyk_token_env_wins_then_env_file(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("# comment\nCONTACT_EMAIL=x@y.z\nSNYK_TOKEN='from-file'\n")
     monkeypatch.setenv("SNYK_TOKEN", "from-env")
-    assert audit_scan.snyk_token(credentials) == "from-env"
+    assert audit_scan.snyk_token(env_file) == "from-env"
     monkeypatch.delenv("SNYK_TOKEN")
-    assert audit_scan.snyk_token(credentials) == "from-file"
-    assert audit_scan.snyk_token(tmp_path / "missing.txt") is None
+    assert audit_scan.snyk_token(env_file) == "from-file"
+    empty = tmp_path / "empty.env"
+    empty.write_text("SNYK_TOKEN=\n")  # template copied but not filled in
+    assert audit_scan.snyk_token(empty) is None
+    assert audit_scan.snyk_token(tmp_path / "missing.env") is None
 
 
 # ---------- audit_status -----------------------------------------------------
