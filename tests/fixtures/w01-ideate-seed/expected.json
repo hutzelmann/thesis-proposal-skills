@@ -12,7 +12,7 @@
     ],
     "warnings_contain": [
       "open [TODO: decide between prototype implementation",
-      "open [TODO: find a second production-trace dataset"
+      "open [TODO: find a second public dataset with per-rater labels"
     ]
   },
   "semantic": [

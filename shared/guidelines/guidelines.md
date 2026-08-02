@@ -1,6 +1,7 @@
 # Proposal Guidelines
 
 Default guidance for writing Bachelor's and Master's thesis proposals in computer science, in English (default) or German.
+The defaults are tuned for research at the intersection of applied AI, intelligent systems engineering, and human-computer interaction — the empirical, human-subjects, and simulation-based work typical of the HCIS Lab — but nothing here is domain-specific: a purely theoretical or systems thesis follows the same rules.
 A workspace `guidelines.md` may override or extend these defaults; its TOML block wins per key, its lists replace the defaults, and it may un-forbid sections listed as forbidden here.
 The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, research-question conventions) is defined in `structure.json`; this document is the authority for everything semantic.
 
@@ -11,7 +12,11 @@ A proposal consists of exactly the four canonical sections, in order (titles per
 1. **Introduction to the Topic** — Introduce the topic and explain why it is important and relevant. Stay on a high level: no deep background, no technical details. Refer to the thesis itself only at the end of the section.
 2. **Contribution to the State-of-the-Art** — Explain the relevant current approaches without repeating the introduction. State explicitly and precisely how the thesis extends previous work; this delta is the heart of the proposal.
 3. **Research Focus and Research Questions** — State the high-level research focus in a single paragraph that adds precision beyond the introduction, then list each research question as an item of an ordered list.
-4. **Methodology for Research: \<Methodology\>** — One methodology from the closed set (Prototype Implementation, Theoretical Analysis, Systematic Literature Review, User Study) with its required subsections per `structure.json`. Never combine methodologies — decide for one and stick to it.
+4. **Methodology for Research: \<Methodology\>** — One methodology from the closed set (Prototype Implementation, Theoretical Analysis, Systematic Literature Review, User Study, Controlled Experiment, Simulation Study, Empirical Model Evaluation, Mixed Methods) with its required subsections per `structure.json`.
+
+A proposal declares exactly one methodology heading.
+Research combining a qualitative and a quantitative strand declares **Mixed Methods** and uses that branch's subsections — it does not stack two methodology sections.
+Choosing Mixed Methods to avoid deciding what the thesis actually measures is the failure mode this branch invites; take it only when the two strands genuinely answer different research questions and the Integration subsection can say how their results are combined.
 
 The following must NOT appear in a proposal: work plans, timelines or milestones; supervisor names; expected results; deliverables or code fragments; personal data (matriculation number, address, email, study program); a preliminary thesis chapter structure; confidentiality markers of any kind (theses get published).
 
@@ -43,6 +48,19 @@ Methodology names and their required subsections:
 | Preparation | Vorbereitung |
 | Procedure | Durchführung |
 | Analysis | Analyse |
+| Controlled Experiment | Kontrolliertes Experiment |
+| Design and Hypotheses | Design und Hypothesen |
+| Statistical Analysis | Statistische Auswertung |
+| Simulation Study | Simulationsstudie |
+| Scenario Design | Szenariendesign |
+| Execution | Durchführung |
+| Empirical Model Evaluation | Empirische Modellevaluation |
+| Data and Baselines | Daten und Baselines |
+| Experimental Setup | Versuchsaufbau |
+| Mixed Methods | Mixed Methods |
+| Qualitative Strand | Qualitativer Strang |
+| Quantitative Strand | Quantitativer Strang |
+| Integration | Integration |
 
 ## Research Questions
 
@@ -62,6 +80,30 @@ The methodology section must reference every research question explicitly with `
 - **Theoretical Analysis** — Formalization: the mathematical model, logic, or type system. Requirements: expressiveness/soundness expectations, and what is neglectable. Example: the case study or running example illustrating the formalization.
 - **Systematic Literature Review** — Search Strategy and Selection Criteria: what literature is included and excluded. Extracted Information: what is extracted (taxonomy, classification) and how deeply sources are analyzed. Synthesis: how extracted information is synthesized into answers.
 - **User Study** — Preparation: study design, recruitment, and (if prototype-based) the prototype's scope with explicitly excluded properties. Procedure: tasks performed and data collected. Analysis: how collected data is analyzed to answer the research questions.
+- **Controlled Experiment** — Design and Hypotheses: the independent and dependent variables, the within- or between-subjects design, the falsifiable hypotheses, and the target sample size with its justification. Procedure: what each participant does, in what order, with what counterbalancing, and which instruments capture which measure. Statistical Analysis: the tests chosen per hypothesis, the significance level, and the handling of multiple comparisons — decided before data collection, not after.
+- **Simulation Study** — Scenario Design: the scenario space, its parameters, and how coverage of that space is argued. Execution: the simulator or testbed, the fidelity level, the number of runs, and what is deliberately abstracted away. Analysis: the metrics computed over the runs and how they answer the research questions. State the validity limits of simulated evidence explicitly; a simulation answers a question about the model unless the transfer to reality is argued.
+- **Empirical Model Evaluation** — Data and Baselines: the datasets with their provenance and splits, and the baselines the contribution is measured against. Experimental Setup: training or inference configuration, hyperparameters, hardware, and the seeds or repetitions behind reported numbers. Analysis: the metrics per research question, the ablations that isolate the contribution, and how variance is reported. A single number without a baseline and without variance answers nothing.
+- **Mixed Methods** — Qualitative Strand: its design, participants or artifacts, and analysis procedure (e.g. thematic analysis, coding scheme, inter-rater agreement). Quantitative Strand: its design, measures, and analysis, following the Controlled Experiment or Empirical Model Evaluation rules as applicable. Integration: which research questions each strand answers, whether the strands run sequentially or in parallel, and how their results are combined into one answer — this subsection is what distinguishes mixed methods from two unrelated small studies.
+
+### Choosing between the branches
+
+- The contribution is an artifact and the evaluation exists to show the artifact works → **Prototype Implementation**.
+- The contribution is a measured comparison between models, configurations, or algorithms → **Empirical Model Evaluation**.
+- The contribution is a hypothesis-driven measurement involving human participants → **Controlled Experiment**.
+- The interest is in how people experience, interpret, or appropriate a system, without a hypothesis to falsify → **User Study**.
+- The evidence comes from executing a model of the world rather than the world → **Simulation Study**.
+
+### Research involving human participants
+
+This applies to User Study, Controlled Experiment, and any Mixed Methods proposal with a human strand. It is guidance, not a structural requirement — no separate section is expected, and the mechanical check does not enforce it — but a proposal that stays silent on all of it invites the first question a supervisor will ask.
+
+- Name the ethics route the study will follow and the approval that is required before data collection starts.
+- Describe informed consent: what participants are told, when, and how consent is recorded.
+- State what personal data is collected, how it is pseudonymized or anonymized, how long it is retained, and on what legal basis (GDPR).
+- Where a study exposes participants to risk — driving simulators, safety-critical interfaces, sustained attention tasks — say how that risk is bounded and how participants can stop.
+- Where participants are compensated, say how, since it affects recruitment bias.
+
+Do not turn this into a compliance appendix. Two or three precise sentences inside Preparation or Design and Hypotheses are enough.
 
 ## Literature and Citations
 
@@ -72,6 +114,8 @@ The methodology section must reference every research question explicitly with `
 - Avoid citing the same publication in consecutive sentences; use author-in-text form first, then stop repeating the citation.
 - At least three relevant scientific publications must be cited (workspace overrides may raise this). Especially the introduction and the contribution section must ground their claims in the literature.
 - Prefer peer-reviewed publications over preprints and over vendor or commercial web sources; vendor pages must never carry definitional or scientific claims.
+- Published standards and regulations (ISO, IEEE, ETSI, SAE, UNECE, EU regulations) are legitimate — and often the only correct — sources for normative definitions, required behavior, and terminology. Cite the standard by its designation and year, never a vendor's summary of it. A standard establishes what is required; it never establishes that an approach works. Empirical claims still need peer-reviewed evidence.
+- Judge relevance by venue as well as by keyword. In this field the substantive work sits in venues such as CHI, CSCW, UIST, IUI, AutomotiveUI, and TOCHI on the human-computer interaction side; NeurIPS, ICML, ICLR, CVPR, ICCV, and ECCV on the machine-learning side; and IEEE T-ITS, IEEE IV, ITSC, ICRA, and IROS on the intelligent-systems side. A hit from outside these families is not disqualified, but it earns its place by content rather than by matching the search terms.
 
 ## Writing Rules
 

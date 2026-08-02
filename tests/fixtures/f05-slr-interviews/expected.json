@@ -7,7 +7,7 @@
     "warnings_contain": []
   },
   "semantic": [
-    "Mixed methodology: the Systematic Literature Review is combined with semi-structured practitioner interviews in the Synthesis subsection, violating the single-method rule",
+    "Undeclared mixed methods: the Systematic Literature Review smuggles semi-structured practitioner interviews into the Synthesis subsection instead of declaring the Mixed Methods branch with its Qualitative Strand, Quantitative Strand, and Integration subsections",
     "Interviews with industry practitioners are planned without any ethics, consent, or data-handling note"
   ]
 }

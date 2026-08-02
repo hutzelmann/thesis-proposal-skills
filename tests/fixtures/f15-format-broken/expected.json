@@ -6,13 +6,13 @@
     "errors_contain": [
       "no blank line before the trailing",
       "boolean literal",
-      "duplicate reference id `Lee24Index`",
+      "duplicate reference id `Lee24Gaze`",
       "cited key `@Ghost99Missing` not defined",
       "only 2 references"
     ],
     "warnings_contain": [
       "open [TODO: sharpen motivation]",
-      "open [TODO: name the workload dataset]"
+      "open [TODO: name the driving dataset]"
     ]
   },
   "semantic": []

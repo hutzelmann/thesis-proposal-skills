@@ -33,7 +33,7 @@ Your whole proposal lives in **one file**: readable text on top, literature entr
 2. Create a folder for your proposals and open your agent in it.
 3. Install the skills:
    ```sh
-   npx skills add hutzelmann/thesis-proposal-skills
+   npx skills add ignacioalvmar/thesis-proposal-skills
    ```
 4. Tell your agent: *"Help me develop a thesis idea"*, or *"Import my existing proposal from proposal.pdf"*.
 
@@ -41,7 +41,9 @@ The typical flow is ideate, then literature search, then write, check, review, a
 
 ## For supervisors
 
-The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. Students can adapt the rules to your requirements with `proposal-customize`. The defaults forbid timelines, personal data, and expected-results sections.
+The skills encode conservative academic guidance: analytical research questions (not implementation goals), exactly one declared methodology, explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. Students can adapt the rules to your requirements with `proposal-customize`. The defaults forbid timelines, personal data, and expected-results sections.
+
+The methodology set covers Prototype Implementation, Theoretical Analysis, Systematic Literature Review, User Study, Controlled Experiment, Simulation Study, Empirical Model Evaluation, and Mixed Methods. Work combining a qualitative and a quantitative strand declares Mixed Methods, whose Integration subsection must say which research questions each strand answers — stacking two methodology sections is still flagged. For studies with human participants the guidance asks for ethics route, informed consent, and GDPR handling in a couple of sentences; this is advisory prose, not an enforced section.
 
 ## For contributors (this repository)
 
@@ -53,3 +55,7 @@ This repo is **only** for developing and testing the skills. User proposals neve
 - Fixtures in `tests/fixtures/` are synthetic: no real proposals, no personal data.
 
 MIT licensed. Issues and PRs welcome; please open an issue first.
+
+## Credits
+
+Originally created by **Thomas Hutzelmann** (Technische Hochschule Ingolstadt) for computer-science thesis supervision. This fork is maintained by the **[Human-Centered Intelligent Systems (HCIS) Lab](https://ignacioalvmar.com)** at THI / AImotion Bavaria, which retargets the guidance and the test corpus to research at the intersection of applied AI, intelligent systems engineering, and human-computer interaction — adding controlled-experiment, simulation-study, empirical-model-evaluation, and mixed-methods branches to the methodology set.

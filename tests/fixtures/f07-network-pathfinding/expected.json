@@ -20,7 +20,7 @@
   },
   "semantic": [
     "RQ1-RQ3 are implementation goals ('How can X be implemented/built/designed')",
-    "RQ4 is a leading question presupposing that adaptive routing outperforms the static baseline",
+    "RQ4 is a leading question presupposing that adaptive rate control outperforms the fixed-rate baseline",
     "mid-document switch to first person in the Approach section after a third-person start",
     "typos in the prose: 'recieve', 'seperate'"
   ]

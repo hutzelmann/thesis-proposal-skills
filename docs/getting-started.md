@@ -16,7 +16,7 @@ Terminal-based agent by Anthropic. Paid subscription or API billing.
    Follow the login prompt on first start.
 4. Install the skills (new terminal, same folder):
    ```sh
-   npx skills add hutzelmann/thesis-proposal-skills
+   npx skills add ignacioalvmar/thesis-proposal-skills
    ```
 5. In the agent chat: *"Help me develop a thesis idea."*
 
@@ -33,7 +33,7 @@ Terminal-based agent by Anthropic. Paid subscription or API billing.
    mkdir my-proposals && cd my-proposals
    copilot
    ```
-3. Install the skills: `npx skills add hutzelmann/thesis-proposal-skills`
+3. Install the skills: `npx skills add ignacioalvmar/thesis-proposal-skills`
 4. Ask: *"Help me develop a thesis idea."*
 
 ## What you get in the folder

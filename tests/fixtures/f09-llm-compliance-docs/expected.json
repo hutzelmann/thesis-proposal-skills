@@ -17,7 +17,7 @@
   },
   "semantic": [
     "All three research questions are phrased as bare 'Which ...' questions without analytical degree phrasing (to what degree, under which conditions)",
-    "Mixed methodology: a prototype extraction pipeline is implemented inside the Systematic Literature Review",
+    "Undeclared mixed methods: a prototype extraction pipeline is implemented inside the Systematic Literature Review instead of declaring the Mixed Methods branch",
     "Author metadata is missing (import artifact; check.py only flags the missing title)"
   ]
 }

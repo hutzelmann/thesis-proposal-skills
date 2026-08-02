@@ -47,7 +47,8 @@ def render(source: Path) -> str:
         stamped = {JSON_HEADER_KEY: JSON_HEADER_VALUE, **data}
         return json.dumps(stamped, ensure_ascii=False, indent=2) + "\n"
     if source.suffix == ".py":
-        header = f"# GENERATED from {source.relative_to(REPO)} — edit there, then run scripts/sync_shared.py\n"
+        rel = source.relative_to(REPO).as_posix()  # POSIX separators: header must not vary by host OS
+        header = f"# GENERATED from {rel} — edit there, then run scripts/sync_shared.py\n"
         lines = text.split("\n", 1)
         if lines[0].startswith("#!"):
             return lines[0] + "\n" + header + (lines[1] if len(lines) > 1 else "")

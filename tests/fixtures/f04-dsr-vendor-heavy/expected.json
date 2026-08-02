@@ -4,7 +4,7 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
-      "duplicate reference id `NetSentio25Zero`",
+      "duplicate reference id `TelemaOne25Zero`",
       "forbidden section: `Betreuer`",
       "forbidden section: `Gliederung der Arbeit`"
     ],
@@ -16,7 +16,7 @@
     ]
   },
   "semantic": [
-    "Definitional Zero-Trust claims are grounded in vendor product documentation (NetSentio, CloudArc) instead of scientific literature",
+    "Definitional driver-monitoring claims are grounded in vendor product documentation (TelemaOne, CabinArc) instead of scientific literature",
     "The main research question and all four sub-questions are design-phrased (Wie kann ... gestaltet/aufgebaut/umgesetzt werden) instead of analytical"
   ]
 }

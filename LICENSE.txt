@@ -1,6 +1,7 @@
  The MIT License (MIT)
 
-Copyright (c) 2026 Thomas Hutzelmann
+Copyright (c) 2026 Thomas Hutzelmann (original author)
+Copyright (c) 2026 Ignacio J. Alvarez (HCIS Lab fork and subsequent modifications)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

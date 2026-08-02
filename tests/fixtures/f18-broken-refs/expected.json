@@ -8,8 +8,8 @@
   },
   "semantic": [
     "reference Ghost21Vanished carries a DOI that does not resolve (import validation must report UNVERIFIABLE)",
-    "reference Wong10Demystifying lacks a DOI but is a real identifiable paper (import validation should enrich it)",
+    "reference Lin23Pedestrian lacks a DOI but is a real identifiable paper (import validation should enrich it)",
     "reference Unknown22Mystery is entirely invented (import validation must report UNVERIFIABLE)",
-    "reference Bacchelli13Expectations is real and correct (import validation must report VERIFIED)"
+    "reference Dey19Gaze is real and correct (import validation must report VERIFIED); its title must stay the Crossref short form without the subtitle, otherwise the title match fails"
   ]
 }

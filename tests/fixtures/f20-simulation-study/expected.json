@@ -1,0 +1,13 @@
+{
+  "fixture": "f20-simulation-study",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "compliant Simulation Study control (scenario design / execution / analysis) — the only fixture exercising that branch of the methodology-to-subsection table",
+    "the Analysis subsection states the validity limit of simulated evidence explicitly, as the guidance requires; a review must not flag its absence here"
+  ]
+}

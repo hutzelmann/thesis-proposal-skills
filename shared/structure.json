@@ -59,6 +59,38 @@
         {"en": "Procedure", "de": "Durchführung"},
         {"en": "Analysis", "de": "Analyse"}
       ]
+    },
+    "controlled_experiment": {
+      "title": {"en": "Controlled Experiment", "de": "Kontrolliertes Experiment"},
+      "subsections": [
+        {"en": "Design and Hypotheses", "de": "Design und Hypothesen"},
+        {"en": "Procedure", "de": "Durchführung"},
+        {"en": "Statistical Analysis", "de": "Statistische Auswertung"}
+      ]
+    },
+    "simulation_study": {
+      "title": {"en": "Simulation Study", "de": "Simulationsstudie"},
+      "subsections": [
+        {"en": "Scenario Design", "de": "Szenariendesign"},
+        {"en": "Execution", "de": "Durchführung"},
+        {"en": "Analysis", "de": "Analyse"}
+      ]
+    },
+    "empirical_evaluation": {
+      "title": {"en": "Empirical Model Evaluation", "de": "Empirische Modellevaluation"},
+      "subsections": [
+        {"en": "Data and Baselines", "de": "Daten und Baselines"},
+        {"en": "Experimental Setup", "de": "Versuchsaufbau"},
+        {"en": "Analysis", "de": "Analyse"}
+      ]
+    },
+    "mixed_methods": {
+      "title": {"en": "Mixed Methods", "de": "Mixed Methods"},
+      "subsections": [
+        {"en": "Qualitative Strand", "de": "Qualitativer Strang"},
+        {"en": "Quantitative Strand", "de": "Quantitativer Strang"},
+        {"en": "Integration", "de": "Integration"}
+      ]
     }
   },
   "forbidden_heading_patterns": [
