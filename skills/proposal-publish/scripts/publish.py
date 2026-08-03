@@ -42,6 +42,16 @@ def resolve_engine(which=shutil.which) -> tuple[str, str] | None:
     return ("docx", "pandoc")
 
 
+def proposal_lang(text: str) -> str:
+    """Narrow extraction of the metadata `lang` value (not YAML parsing)."""
+    m = re.search(r"^lang:\s*[\"']?([A-Za-z-]+)", text, re.MULTILINE)
+    return m.group(1).lower() if m else "en"
+
+
+def reference_section_title(lang: str) -> str:
+    return "Literatur" if lang.startswith("de") else "References"
+
+
 def strip_abstracts(text: str) -> str:
     """Remove abstract fields (incl. indented continuation lines) from the metadata block."""
     lines = text.split("\n")
@@ -87,7 +97,7 @@ def run(cmd: list[str]) -> None:
         sys.exit(f"build failed: {' '.join(cmd[:2])} …\n{result.stderr.strip()[-2000:]}")
 
 
-def pandoc_command(proposal: Path, kind: str) -> list[str]:
+def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
     """Converter invocation for one tier, minus its output and engine flags.
 
     Pure and side-effect free: the export tests and the typst CI script's drift
@@ -100,6 +110,7 @@ def pandoc_command(proposal: Path, kind: str) -> list[str]:
         "--lua-filter", str(TEMPLATES / "author-intext.lua"),  # before citeproc: @key gets its author name
         "--lua-filter", str(TEMPLATES / "cite-split.lua"),  # before citeproc: one bracket per citation
         "--csl", str(TEMPLATES / "compact-numeric.csl"),
+        "-M", f"reference-section-title={reference_section_title(lang)}",
         "--citeproc",
         "--lua-filter", str(TEMPLATES / "rq-filter.lua"),
         # last: numbers and styles [TODO: …] markers. After citeproc so a hint
@@ -113,14 +124,15 @@ def pandoc_command(proposal: Path, kind: str) -> list[str]:
         return base + [
             "--number-sections",
             "--include-in-header", str(TEMPLATES / "latex-header.tex"),
-            "-V", "papersize=a4", "-V", "geometry:margin=1in", "-V", "fontsize=11pt",
+            "-V", "papersize=a4", "-V", "geometry:margin=2.2cm", "-V", "fontsize=11pt",
         ]
     return base
 
 
 def build(proposal: Path, kind: str, tool: str) -> list[Path]:
     stem = proposal.with_suffix("")
-    cmd = pandoc_command(proposal, kind)
+    lang = proposal_lang(proposal.read_text(encoding="utf-8"))
+    cmd = pandoc_command(proposal, kind, lang)
     if kind == "typst":
         typ, pdf = stem.with_suffix(".typ"), stem.with_suffix(".pdf")
         run(cmd + ["-o", str(typ)])

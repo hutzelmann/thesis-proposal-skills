@@ -21,6 +21,30 @@ def test_engine_resolution_order():
     assert publish.resolve_engine(which_factory(set())) is None
 
 
+def test_proposal_lang_extraction():
+    assert publish.proposal_lang("---\ntitle: T\nlang: de\n---\n") == "de"
+    assert publish.proposal_lang('---\nlang: "de-AT"\n---\n') == "de-at"
+    assert publish.proposal_lang("---\ntitle: T\n---\n") == "en"
+    # a body mention must not match: the pattern is anchored to line starts
+    assert publish.proposal_lang("The word lang: de appears mid-sentence.") == "en"
+
+
+def test_reference_section_title_localized():
+    assert publish.reference_section_title("en") == "References"
+    assert publish.reference_section_title("de") == "Literatur"
+    assert publish.reference_section_title("de-at") == "Literatur"
+
+
+def test_pandoc_command_carries_reference_section_title():
+    for kind in ("typst", "latex", "docx"):
+        cmd = publish.pandoc_command(Path("proposal.md"), kind, "de")
+        flag = cmd[cmd.index("-M") + 1]
+        assert flag == "reference-section-title=Literatur"
+        # the headline must exist before citeproc builds the reference list
+        assert cmd.index("-M") < cmd.index("--citeproc")
+    assert "reference-section-title=References" in publish.pandoc_command(Path("p.md"), "typst")
+
+
 def test_strip_abstracts_removes_continuations():
     text = (
         "Body text.\n\n---\nreferences:\n- id: A1\n  title: T\n"

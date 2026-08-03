@@ -29,6 +29,7 @@ for proposal in tests/fixtures/*/*.md; do
         --lua-filter "$TEMPLATES/author-intext.lua" \
         --lua-filter "$TEMPLATES/cite-split.lua" \
         --csl "$TEMPLATES/compact-numeric.csl" \
+        -M reference-section-title=References \
         --citeproc \
         --lua-filter "$TEMPLATES/rq-filter.lua" \
         --lua-filter "$TEMPLATES/todo-filter.lua" \

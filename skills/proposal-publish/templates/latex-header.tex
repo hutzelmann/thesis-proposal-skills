@@ -6,9 +6,58 @@
 \usepackage{enumitem}
 \setlist{nosep}
 \setlist[itemize]{label=--}
+% Compact title block: article's \maketitle pads the empty date block and ends
+% with \vskip 1.5em. titling's hooks trim the space below the title; the top
+% spacing is left as the class sets it.
+\usepackage{titling}
+\usepackage{etoolbox}
+\usepackage{microtype} % protrusion under xetex; expansion too on pdf/luatex
+% titling's \@maketitle opens with \null\vskip 2em; pull the block back up so
+% the title top lands at the typst tier's measured position (60.6pt from the
+% page top — pdftotext -bbox on both tiers).
+\setlength{\droptitle}{-49.5pt}
+\posttitle{\par\end{center}\vskip 0.4em}
+% An author keeps titling's default hooks — its \postauthor closes the tabular
+% that \preauthor opened, so a static override breaks the brace balance. But
+% pandoc emits \author{} even when the proposal has no author, and the empty
+% block still renders a blank line; drop its hooks only in that case. Same for
+% the (always empty) date.
+\makeatletter
+\AtBeginDocument{%
+  \ifdefempty{\@author}{\preauthor{}\postauthor{}}{}%
+  \ifdefempty{\@date}{\predate{}\postdate{}}{}%
+}
+% titling's \@maketitle still closes with \vskip 1.5em; bring it in line with
+% the typst tier's 0.6em. Silently a no-op if titling ever changes the token.
+\patchcmd{\@maketitle}{\vskip 1.5em}{\vskip 0.6em}{}{}
+\makeatother
+% Research-question item, used by rq-filter.lua — mirrors the typst template's
+% rq(): indented block leading with a bold "RQn:" label.
+% The -4pt cancels most of pandoc's ~6pt \parskip between the item paragraphs,
+% landing on the typst tier's measured 16.4pt item pitch.
+\newcommand{\rqblock}[2]{\par\vspace{-4pt}{\leftskip 1.2em \noindent \textbf{RQ#1:} #2 \par}}
 % No \hypersetup here: this header is emitted BEFORE pandoc's template loads
 % hyperref, so configuring it aborts the build. Pandoc's template already sets
 % hidelinks itself once hyperref is loaded, which is what the legacy look wanted.
+
+% Reference list, approximating the typst tier: one step below body size, 2em
+% label column with wrapped lines aligned (pandoc's CSLLeftMargin/CSLRightInline
+% boxes), 0.35em between entries. Pandoc defines the CSL macros before
+% header-includes, so they can be adjusted here; the guard keeps a proposal
+% without references building (pandoc omits the CSL block entirely then).
+\ifdefined\cslhangindent
+  \setlength{\csllabelwidth}{2em}
+  % Our CSL always yields {0}{0} (flush labels, no extra spacing), so the two
+  % arguments carry no information and the compact look is set directly.
+  \renewenvironment{CSLReferences}[2]{%
+    \small
+    \begin{list}{}{%
+      \setlength{\itemindent}{0pt}%
+      \setlength{\leftmargin}{0pt}%
+      \setlength{\parsep}{0pt}%
+      \setlength{\itemsep}{0.35em}}}%
+    {\end{list}}
+\fi
 
 % TODO markers, used by todo-filter.lua. Approximates the typst tier: fill plus
 % a small-caps navy label. No underline here — soul cannot nest \ul inside \hl.
@@ -18,24 +67,34 @@
 \definecolor{todofill}{HTML}{DDE5EF}
 \definecolor{todofield}{HTML}{EDF1F6}
 \sethlcolor{todofill}
-\newcommand{\todolabel}[1]{{\footnotesize\color{todorule}\scshape TODO #1}}
-% The label MUST stay outside \hl: soul re-scans its argument token by token and
-% aborts with "Reconstruction failed" on a macro taking arguments. todo-filter.lua
-% only ever passes plain text as #2, for the same reason.
-\newcommand{\todoinline}[2]{\todolabel{#1}\ \hl{#2}}
+\newcommand{\todolabel}[1]{{\color{todorule}\scshape TODO #1}}
+% The label MUST stay outside \hl: soul re-scans its argument token by token
+% and aborts with "Reconstruction failed" on any macro taking arguments —
+% including \color, so the label cannot ride inside the highlight. It gets its
+% own \colorbox instead: fboxsep 0 plus \strut makes that box the same height
+% as soul's strut-based band, so label and hint read as one bar.
+% todo-filter.lua only ever passes plain text as #2, for the same reason.
+% The 2.5ex rule strut reproduces soul's band exactly (soul-ori.sty: \setul{}
+% {2.5ex} with the strike raise puts the band from -0.75ex to +1.75ex), so the
+% label box and the \hl band have identical height.
+\newcommand{\todoinline}[2]{%
+  {\setlength{\fboxsep}{0pt}\colorbox{todofill}{\rule[-0.75ex]{0pt}{2.5ex}\todolabel{#1}\ }}\hl{#2}}
 % Guard forms, used when a hint carries markup soul would choke on: no fill,
 % but the label and a bold hint still mark it as an annotation.
 \newcommand{\todoinlineplain}[2]{\todolabel{#1}\ \textbf{#2}}
+% The bar stays within the text's vertical extent (cap height to just below
+% the baseline) so it cannot inflate the field's top padding — a taller rule
+% made the box visibly top-heavy.
 \newcommand{\todoblockplain}[2]{%
   \par\vspace{0.5\baselineskip}\noindent
-  \textcolor{todorule}{\rule[-0.35\baselineskip]{2pt}{1.2\baselineskip}}%
+  \textcolor{todorule}{\rule[-0.5ex]{2pt}{2ex}}%
   \hspace{0.5em}\todolabel{#1}\hspace{0.8em}\textbf{#2}%
   \par\vspace{0.5\baselineskip}\noindent}
 \newcommand{\todoblock}[2]{%
   \par\vspace{0.5\baselineskip}\noindent
   \colorbox{todofield}{%
     \begin{minipage}{\dimexpr\linewidth-2\fboxsep}%
-      \textcolor{todorule}{\rule[-0.35\baselineskip]{2pt}{1.2\baselineskip}}%
+      \textcolor{todorule}{\rule[-0.5ex]{2pt}{2ex}}%
       \hspace{0.5em}\todolabel{#1}\hspace{0.8em}#2%
     \end{minipage}}%
   \par\vspace{0.5\baselineskip}\noindent}
