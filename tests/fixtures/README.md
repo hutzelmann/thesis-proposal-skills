@@ -1,6 +1,6 @@
 # Fixture Corpus
 
-Reference for the synthetic test fixtures in this directory (the "fixture blueprint" the testing-harness spec refers to). The designs were informed by a private corpus of real student proposals (11 documents, mixed quality); nothing here maps to an identifiable original: topics are altered, all names and institutions removed, defect patterns generalized. Each fixture directory holds one proposal file plus an `expected.json` oracle calibrated against the check script.
+Reference for the synthetic test fixtures in this directory (the "fixture blueprint" the testing-harness spec refers to). The designs were informed by a private corpus of real student proposals (11 documents, mixed quality); nothing here maps to an identifiable original: topics are altered, all names and institutions removed, defect patterns generalized. Each proposal-fixture directory holds one proposal file plus an `expected.json` oracle calibrated against the check script; `g`-prefix web fixtures hold served web assets instead and carry no oracle.
 
 ## Corpus-derived failure taxonomy (aggregate, anonymized)
 
@@ -59,6 +59,7 @@ Workflow-state fixtures (not proposals, but required test states):
 - `w01-ideate-seed` — an Ideate-produced skeleton (idea notes, candidate RQ bullets, empty `references:`) as Write's starting state.
 - `w02-override-workspace` — a workspace with `guidelines.md` whose TOML block sets `timeline_detail = "detailed"` and `min_references = 8`; oracle for override precedence in Write/Check/Customize, with one key relaxing (the phase table passes) and one tightening (3 references still fail) in the same file.
 - `w03-snowball-seed` — a proposal with three solid references; oracle for lit-search snowballing expansion.
+- `g01-research-group` — not a workspace state but a synthetic *web* fixture (`g` prefix): a fictional research-group homepage (`group.html`) plus a canned DBLP-shaped `dblp.json`, served over localhost for the ideate scoping preamble. Not a proposal, so no `expected.json`. The page carries a deliberate prompt-injection canary (`CANARY-B715`) that the scoped-ideation verdict asserts never reaches produced files.
 
 ## Coverage checks
 
@@ -73,4 +74,4 @@ Workflow-state fixtures (not proposals, but required test states):
 
 1. Write fixtures from this blueprint only — never translate/copy sentences from the corpus; invent all prose fresh around the seeded defects.
 2. Personal data in fixtures is obviously fake (e.g. `Erika Musterfrau`, matriculation `00000000`).
-3. Each fixture ships with an `expected.json` (per-fixture ground truth: which mechanical defects Check must report, which semantic defects the rubric expects) — that file is the L1/L2 oracle.
+3. Each proposal fixture ships with an `expected.json` (per-fixture ground truth: which mechanical defects Check must report, which semantic defects the rubric expects) — that file is the L1/L2 oracle. `g`-prefix web fixtures carry none.

@@ -12,6 +12,7 @@ Usage:
   uv run python harness/claude_runner.py review_fixture --model sonnet
   uv run python harness/claude_runner.py write_from_seed
   uv run python harness/claude_runner.py import_messy
+  uv run python harness/claude_runner.py ideate_scoped
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
 workspace so file edits and script calls work headlessly.
@@ -25,12 +26,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+from functools import partial
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 from l1_checks import (
     select_draft,
     verdict_check_report,
     verdict_draft,
+    verdict_ideate_scoped,
     verdict_import,
     verdict_review,
 )
@@ -68,7 +73,38 @@ SCENARIOS = {
         "request": MESSY_REQUEST,
         "produces": True,
     },
+    # nothing staged: the group page is served over localhost ({url} filled at
+    # runtime) and the single-turn request pre-answers the scoping preamble,
+    # declining the guidelines.md note so the run needs no second turn
+    "ideate_scoped": {
+        "skill": "proposal-ideate",
+        "serve": "g01-research-group",
+        "produces": True,
+        # the closing sentences are the session-termination cue: without them
+        # the model ends turn one mid-Socratic-dialogue and never seeds (the
+        # skill seeds "before the session ends", and a one-shot run has no
+        # second turn to end on)
+        "request": (
+            "I want to develop a thesis idea. I'm in the M.Sc. Embedded Systems "
+            "Engineering program at Musterstadt University. The research group I "
+            "hope will supervise me has its page at {url} — please take a look at "
+            "what they do. My rough idea: energy-efficient scheduling of "
+            "containerized workloads on edge devices. This message is our whole "
+            "session — I cannot reply again, so develop the idea as far as you "
+            "can without asking me anything, then treat this as me saying "
+            "'enough' and create the seed proposal file now. My thesis starts in "
+            "April 2027 and is due in September 2027. Don't keep any scoping "
+            "notes for later sessions."
+        ),
+    },
 }
+
+
+class QuietHandler(SimpleHTTPRequestHandler):
+    """Serve the fixture page without request logging on stderr."""
+
+    def log_message(self, *_args) -> None:
+        pass
 
 
 def stage(scenario: dict, ws: Path) -> None:
@@ -115,6 +151,13 @@ def workspace_markdown(ws: Path) -> dict[str, str]:
 
 
 def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
+    if name == "ideate_scoped":
+        files = workspace_markdown(ws)
+        produced, where = select_draft(files)
+        if not produced:
+            return False, where
+        passed, why = verdict_ideate_scoped(files, produced, chat)
+        return passed, f"{why} ({where})"
     if scenario.get("produces"):
         produced, _ = select_draft(workspace_markdown(ws))
         if not produced:
@@ -148,9 +191,16 @@ def main() -> int:
     scenario = SCENARIOS[args.scenario]
 
     ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
+    server = None
     try:
         stage(scenario, ws)
-        chat = run_claude(ws, scenario["request"], args.model, args.timeout)
+        request = scenario["request"]
+        if scenario.get("serve"):
+            handler = partial(QuietHandler, directory=str(FIXTURES / scenario["serve"]))
+            server = HTTPServer(("127.0.0.1", 0), handler)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            request = request.format(url=f"http://127.0.0.1:{server.server_port}/group.html")
+        chat = run_claude(ws, request, args.model, args.timeout)
         passed, why = verdict(args.scenario, scenario, ws, chat)
         print(json.dumps({
             "scenario": args.scenario, "model": args.model,
@@ -159,6 +209,8 @@ def main() -> int:
         print("\n--- chat tail ---\n" + chat[-1200:])
         return 0 if passed else 1
     finally:
+        if server:
+            server.shutdown()
         if args.keep:
             print(f"\nworkspace kept: {ws}")
         else:

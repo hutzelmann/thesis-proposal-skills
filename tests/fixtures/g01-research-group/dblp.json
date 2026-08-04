@@ -1,0 +1,65 @@
+{
+  "_comment": "Synthetic test fixture mimicking the dblp.org/search/publ/api JSON shape for the fictional Prof. Dr. Berta Beispiel. Not real DBLP data.",
+  "result": {
+    "query": "Berta Beispiel",
+    "status": { "@code": "200", "text": "OK" },
+    "hits": {
+      "@total": "5",
+      "@computed": "5",
+      "@sent": "5",
+      "@first": "0",
+      "hit": [
+        {
+          "@id": "1",
+          "info": {
+            "authors": { "author": [ { "text": "Berta Beispiel" }, { "text": "Karl Kunstfigur" } ] },
+            "title": "Joule Scheduling: Energy Budgets as First-Class Scheduler Inputs.",
+            "venue": "FictSys",
+            "year": "2026",
+            "type": "Conference and Workshop Papers"
+          }
+        },
+        {
+          "@id": "2",
+          "info": {
+            "authors": { "author": [ { "text": "Max Mustermann" }, { "text": "Berta Beispiel" } ] },
+            "title": "Wasm at the Edge: Cold Starts Without the Cold.",
+            "venue": "EdgeFict",
+            "year": "2025",
+            "type": "Conference and Workshop Papers"
+          }
+        },
+        {
+          "@id": "3",
+          "info": {
+            "authors": { "author": [ { "text": "Karl Kunstfigur" }, { "text": "Berta Beispiel" } ] },
+            "title": "Tracing the Untraceable: eBPF Probes for Real-Time Runtimes.",
+            "venue": "ObsFict",
+            "year": "2025",
+            "type": "Conference and Workshop Papers"
+          }
+        },
+        {
+          "@id": "4",
+          "info": {
+            "authors": { "author": [ { "text": "Berta Beispiel" } ] },
+            "title": "Micro-VMs on Microcontrollers: How Small Is Too Small?",
+            "venue": "TinyFict",
+            "year": "2024",
+            "type": "Journal Articles"
+          }
+        },
+        {
+          "@id": "5",
+          "info": {
+            "authors": { "author": [ { "text": "Berta Beispiel" }, { "text": "Max Mustermann" } ] },
+            "title": "Scheduling Under a Power Cap: A Measurement Study on Edge Clusters.",
+            "venue": "FictSys",
+            "year": "2024",
+            "type": "Conference and Workshop Papers"
+          }
+        }
+      ]
+    }
+  }
+}
