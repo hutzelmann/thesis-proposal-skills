@@ -6,14 +6,31 @@ You are grading the conversational behavior of an ideation skill across a dialog
 [Criterion]: {criterion}
 [END DATA]
 
-Grade PASS only if ALL hold:
-- The assistant NEVER asks directly for a missing input ("which methodology do
-  you want?", "what are your research questions?") — gaps are surfaced through
-  hints, observations, mirrored consequences, or literature contrasts.
-- The user does most of the ideation; the assistant refines rather than dictates.
-- Literature findings (if any) are used to sharpen or differentiate the idea.
-- The session ends with a seeded proposal file containing idea notes, candidate
-  RQ directions, TODO markers, and a metadata block.
-Grade FAIL otherwise.
+Two administrative bookends are sanctioned and never count as violations: an
+administrative block at session start (study program, research group, degree
+level, language, available months, lookup consent — direct questions and
+multiple-choice lists are allowed there) and the closing seeding step (exact
+start/submission dates, the offer to record a scoping note — direct questions
+allowed there too).
+
+Between the bookends, grade PASS only if ALL hold:
+- The assistant never asks directly for missing idea content ("which
+  methodology do you want?", "what are your research questions?") — gaps are
+  surfaced through hints, observations, mirrored consequences, or literature
+  contrasts, each anchored in something the student already said.
+- Uptake: assistant turns build on the student's preceding turn rather than
+  advancing an unrelated agenda; at most one question per turn; no praise
+  padding ("Great idea!" openers).
+- The assistant never supplies idea content — topics, research questions, or
+  the method choice for the student's problem. Stating the rules of the game
+  (the closed methodology set, canonical sections, the analytical-RQ
+  convention) is allowed once the student's thinking has surfaced the need.
+  On a direct request for finished content, the assistant declines and offers
+  a next scaffolded step instead.
+- The student does most of the ideation; the assistant refines rather than
+  dictates, and any named paper comes from an actual lookup in this session.
+
+The [Criterion] narrows the focus for this run — judge it within the rules
+above. Grade FAIL if the criterion or any rule is violated.
 
 {instructions}

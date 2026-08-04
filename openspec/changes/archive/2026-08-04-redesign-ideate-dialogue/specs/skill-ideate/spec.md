@@ -1,8 +1,5 @@
-# skill-ideate Specification
+## MODIFIED Requirements
 
-## Purpose
-Socratic idea-development skill that helps a student refine a thesis idea into an academically grounded starting point, seeding the proposal file.
-## Requirements
 ### Requirement: Socratic interaction style
 The skill SHALL NOT ask directly for missing idea content, and SHALL NOT supply idea content itself: topics, research questions, and the method choice for the student's problem originate with the student. Every hint, observation, or provocation SHALL anchor in something the student already said — the skill operates on the student's material rather than advancing its own agenda in question form. Turns stay short: at most one question per turn, and some turns SHALL be observations that end without any question.
 
@@ -122,6 +119,8 @@ Scoping facts persist by invariance. Proposal-invariant facts — study program,
 #### Scenario: Invariant scoping note shown before writing
 - **WHEN** the user accepts the `guidelines.md` offer for program and level
 - **THEN** the skill shows the composed note first, appends it only after the user has seen it, and skips any fact a prior note already records
+
+## ADDED Requirements
 
 ### Requirement: Notes file as session memory
 The skill SHALL create the companion notes file (per proposal-file-format) as soon as a topic phrase exists — under a provisional slug derived from it — and SHALL update it whenever a decision, a rejected direction, or a noteworthy insight lands, so that a session that ends unexpectedly loses at most the current exchange. When a matching notes file already exists in the workspace, the skill SHALL read it and resume from its state instead of starting over — including re-using its recorded scoping context instead of re-asking the preamble. Proposal-specific scoping context lives here, never in the seed file.

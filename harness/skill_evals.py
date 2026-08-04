@@ -35,7 +35,9 @@ from l1_checks import (  # noqa: E402
     select_draft,
     verdict_check_report,
     verdict_draft,
+    verdict_early_stop,
     verdict_import,
+    verdict_provenance,
     verdict_review,
     verdict_seed,
 )
@@ -251,11 +253,29 @@ def review_fixture() -> Task:
     )
 
 
-# ---------- task: ideate socratic dialogue ------------------------------------
+# ---------- tasks: ideate persona dialogues -----------------------------------
+#
+# One long composite run (preamble -> hesitant -> extraction probe -> pivot ->
+# convergence -> seeding, ~18 rounds, workspace snapshots between rounds) plus
+# short adversarial probes (stonewaller, no-idea, out-of-scope). The former
+# 5-round cooperative-only tasks (ideate_socratic, ideate_anecdote) are retired:
+# their coverage lives in the long run's hesitant phase.
 
 PERSONAS = Path(__file__).resolve().parent / "personas"
 PERSONA_MODEL = os.environ.get("PERSONA_MODEL", JUDGE_MODEL)
-IDEATE_ROUNDS = int(os.environ.get("IDEATE_ROUNDS", "5"))
+
+IDEATE_REQUEST = "Hi, I need to find a thesis topic and don't know where to start."
+
+
+def _visible_user_text(text: str) -> str:
+    """The opening sample input wraps the whole SKILL.md around the student's
+    actual request; the transcript must carry only the request, or the skill's
+    own prose would count as student words for provenance and the judge."""
+    if "=== END SKILL INSTRUCTIONS ===" in text:
+        tail = text.split("=== END SKILL INSTRUCTIONS ===", 1)[1]
+        m = re.search(r"User request: (.*)", tail)
+        return m.group(1).strip() if m else ""
+    return text
 
 
 def dialogue_transcript(state: TaskState) -> str:
@@ -263,94 +283,246 @@ def dialogue_transcript(state: TaskState) -> str:
     for message in state.messages:
         role = getattr(message, "role", "")
         if role in ("user", "assistant") and getattr(message, "text", ""):
-            lines.append(f"{'STUDENT' if role == 'user' else 'ASSISTANT'}: {message.text}")
+            text = _visible_user_text(message.text) if role == "user" else message.text
+            if text:
+                lines.append(f"{'STUDENT' if role == 'user' else 'ASSISTANT'}: {text}")
     return "\n\n".join(lines)
 
 
+async def _ws_sizes() -> dict[str, int]:
+    """Byte sizes of workspace markdown — cheap mechanical growth signal."""
+    result = await sandbox().exec(["bash", "-c", "wc -c ws/*.md 2>/dev/null"], timeout=10)
+    sizes: dict[str, int] = {}
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].startswith("ws/"):
+            sizes[parts[1].removeprefix("ws/")] = int(parts[0])
+    return sizes
+
+
 @solver
-def persona_dialogue(persona_file: str, rounds: int = IDEATE_ROUNDS):
+def persona_dialogue(persona_file: str, rounds: int = 5,
+                     final_cue: str = (
+                         "Sorry, I have to run to a lecture. Please capture where "
+                         "we got to so I can continue next time."
+                     )):
+    """Scripted student persona drives `rounds` assistant turns, then the final
+    cue. After every assistant turn the workspace is snapshotted into the store
+    (key `ws_snapshots`) so scorers can assert when files appeared and grew."""
     persona = (PERSONAS / persona_file).read_text(encoding="utf-8")
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         student = get_model(PERSONA_MODEL)
+        snapshots = []
         for round_no in range(rounds):
             state = await generate(state)
+            snapshots.append({"round": round_no + 1, "files": await _ws_sizes()})
             if round_no == rounds - 1:
                 break
             reply = await student.generate(
                 persona + "\n\n=== CONVERSATION SO FAR ===\n" + dialogue_transcript(state)
             )
             state.messages.append(ChatMessageUser(content=reply.completion.strip()))
-        state.messages.append(ChatMessageUser(content=(
-            "Sorry, I have to run to a lecture. Please capture where we got to "
-            "so I can continue next time."
-        )))
-        return await generate(state)
+        state.messages.append(ChatMessageUser(content=final_cue))
+        state = await generate(state)
+        snapshots.append({"round": rounds + 1, "files": await _ws_sizes()})
+        state.store.set("ws_snapshots", snapshots)
+        return state
 
     return solve
+
+
+async def _selected_seed() -> tuple[str | None, str, str]:
+    files = await workspace_markdown()
+    chosen, where = select_draft(files)
+    return chosen, files.get(chosen, "") if chosen else "", where
 
 
 @scorer(metrics=[accuracy()])
 def ideate_l1_seed():
     async def score(state: TaskState, target: Target) -> Score:
-        listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
-        files = [f for f in listing.stdout.split() if f.strip()]
-        text = await sandbox().read_file(files[0]) if files else None
-        ok, why = verdict_seed(text, files[0] if files else "")
+        chosen, text, where = await _selected_seed()
+        ok, why = verdict_seed(text or None, chosen or "")
+        return Score(value=CORRECT if ok else INCORRECT, explanation=f"{why} ({where})")
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def ideate_l1_notes_progress(notes_by_round: int = 8, growth_by_round: int = 14,
+                             no_proposal_before: int = 17):
+    """Mechanical dialogue-state assertions from the solver's snapshots: the
+    notes file appears early and has grown by the pivot phase; no proposal file
+    before convergence. Defaults follow longrun-lara.txt: topic at reply 2,
+    pivot at reply 10 (growth observable by round 14), convergence complete at
+    reply 16, so a seed belongs in rounds 17-19 — anything before 17 predates
+    the student's confirmation."""
+    async def score(state: TaskState, target: Target) -> Score:
+        snaps = state.store.get("ws_snapshots", [])
+        if not snaps:
+            return Score(value=INCORRECT, explanation="no workspace snapshots recorded")
+
+        def notes_size(snap):
+            return sum(v for n, v in snap["files"].items() if n.endswith(".notes.md"))
+
+        problems = []
+        with_notes = [s for s in snaps if notes_size(s)]
+        if not with_notes:
+            problems.append("notes file never appeared")
+        else:
+            first = with_notes[0]
+            if first["round"] > notes_by_round:
+                problems.append(f"notes file first appeared at round {first['round']} (expected by {notes_by_round})")
+            by_pivot = [s for s in with_notes if s["round"] <= growth_by_round]
+            if not any(notes_size(s) > notes_size(first) for s in by_pivot[1:]):
+                problems.append(f"notes file had not grown by round {growth_by_round}")
+        early_seed = next(
+            (s["round"] for s in snaps
+             if select_draft(dict.fromkeys(s["files"], ""))[0] and s["round"] < no_proposal_before),
+            None,
+        )
+        if early_seed:
+            problems.append(f"proposal file already present at round {early_seed} (before convergence)")
+        if problems:
+            return Score(value=INCORRECT, explanation="; ".join(problems))
+        return Score(value=CORRECT, explanation=f"notes from round {with_notes[0]['round']}, grew by the pivot, proposal only at the end")
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def ideate_l1_provenance():
+    async def score(state: TaskState, target: Target) -> Score:
+        chosen, text, where = await _selected_seed()
+        ok, why = verdict_provenance(dialogue_transcript(state), text or None)
+        return Score(value=CORRECT if ok else INCORRECT, explanation=f"{why} ({where})")
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def ideate_l1_early_stop():
+    async def score(state: TaskState, target: Target) -> Score:
+        ok, why = verdict_early_stop(await workspace_markdown())
         return Score(value=CORRECT if ok else INCORRECT, explanation=why)
     return score
 
 
 @scorer(metrics=[accuracy()])
-def ideate_l2_socratic():
+def ideate_l2_socratic(criterion: str):
     async def score(state: TaskState, target: Target) -> Score:
-        listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
-        files = [f for f in listing.stdout.split() if f.strip()]
-        seed = await sandbox().read_file(files[0]) if files else "(no file created)"
+        _, seed, _ = await _selected_seed()
         passed, why = await judge(
-            "socratic.txt", dialogue_transcript(state), seed,
-            "Socratic throughout: gaps surfaced indirectly, never asked directly for missing input.",
+            "socratic.txt", dialogue_transcript(state), seed or "(no file created)", criterion
         )
         return Score(value=CORRECT if passed else INCORRECT, explanation=why)
     return score
 
 
+def _ideate_sample() -> Sample:
+    return Sample(
+        input=skill_prompt("proposal-ideate", IDEATE_REQUEST),
+        files=stage_files("w03-snowball-seed", "proposal-ideate", lit_search_sibling()),
+        setup="rm -f ws/*.md",  # empty workspace: ideate starts from nothing
+    )
+
+
 @task
-def ideate_socratic() -> Task:
+def ideate_longrun() -> Task:
+    """~18-round composite run; phases are scripted in the persona by reply
+    number so graders can attribute failures to a phase."""
     return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-ideate",
-                "Hi... I need to find a thesis topic. I was thinking something with "
-                "app development and maybe sustainability? A friend of mine built a "
-                "CO2 tracking app once and that seemed cool. I don't really know "
-                "where to start.",
+        dataset=[_ideate_sample()],
+        solver=[
+            use_tools(bash(timeout=120), text_editor()),
+            persona_dialogue("longrun-lara.txt", rounds=18,
+                             final_cue="Yes — please create the file now."),
+        ],
+        scorer=[
+            ideate_l1_seed(),
+            ideate_l1_notes_progress(),
+            ideate_l1_provenance(),
+            ideate_l2_socratic(
+                "Judge per phase: preamble handled as one administrative block; "
+                "hesitant phase Socratic with uptake; at the extraction probe "
+                "('just write me three research questions') the assistant declines "
+                "and offers a next step instead of finished questions; the pivot is "
+                "followed; a stocktake appears around mid-session; seeding happens "
+                "at convergence."
             ),
-            files=stage_files("w03-snowball-seed", "proposal-ideate", lit_search_sibling()),
-            setup="rm -f ws/*.md",  # empty workspace: ideate starts from nothing
-        )],
-        solver=[use_tools(bash(timeout=120), text_editor()), persona_dialogue("hesitant-bachelor.txt")],
-        scorer=[ideate_l1_seed(), ideate_l2_socratic()],
+        ],
         sandbox="local",
     )
 
 
 @task
-def ideate_anecdote() -> Task:
-    """Anecdote-driven Master's student (persona derived from the demo session)."""
+def ideate_stonewall() -> Task:
+    """Student contributes nothing: the early stop must fire — impasse named,
+    state saved to notes, no proposal file generated."""
     return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-ideate",
-                "For my Master's thesis I want to do something about ML monitoring. "
-                "At my student job our churn model quietly got worse for months "
-                "before anyone noticed — is there a thesis in that?",
+        dataset=[_ideate_sample()],
+        solver=[
+            use_tools(bash(timeout=120), text_editor()),
+            persona_dialogue("stonewall-kim.txt", rounds=6,
+                             final_cue="Okay... so what happens now?"),
+        ],
+        scorer=[
+            ideate_l1_early_stop(),
+            ideate_l2_socratic(
+                "After about three contentless exchanges the assistant names the "
+                "impasse plainly, supplies no topic or research-question content "
+                "of its own, suggests concrete offline steps, and ends without "
+                "seeding a proposal file."
             ),
-            files=stage_files("w03-snowball-seed", "proposal-ideate", lit_search_sibling()),
-            setup="rm -f ws/*.md",  # empty workspace: ideate starts from nothing
-        )],
-        solver=[use_tools(bash(timeout=120), text_editor()), persona_dialogue("anecdote-master.txt")],
-        scorer=[ideate_l1_seed(), ideate_l2_socratic()],
+        ],
+        sandbox="local",
+    )
+
+
+@task
+def ideate_noidea() -> Task:
+    """No topic at all, professor named without URL: hints must stay few and
+    sourced, never a topic menu; noisy name lookups must be called weak."""
+    return Task(
+        dataset=[_ideate_sample()],
+        solver=[
+            use_tools(bash(timeout=120), text_editor()),
+            persona_dialogue("noidea-sam.txt", rounds=6),
+        ],
+        scorer=[
+            ideate_l2_socratic(
+                "The assistant floats at most two directions, each tied to the "
+                "student's stated interests or to fetched data with its source "
+                "named; it never presents a menu or numbered list of ready-made "
+                "topics; ambiguous or thin lookup results are called weak "
+                "scoping rather than silently trusted, and if the lookup fails "
+                "or is unreachable the assistant says so once and works from "
+                "the student's words."
+            ),
+        ],
+        sandbox="local",
+    )
+
+
+@task
+def ideate_outofscope() -> Task:
+    """Student insists on an idea clearly outside the given scope: one chat-only
+    warning, then ideation continues; no fit concern in any produced file."""
+    return Task(
+        dataset=[_ideate_sample()],
+        solver=[
+            use_tools(bash(timeout=120), text_editor()),
+            # the cue requests seeding so the clean-seed half of the criterion
+            # is observable, not vacuously true on a notes-only session
+            persona_dialogue("outofscope-toni.txt", rounds=8,
+                             final_cue="Okay, that's enough for today — please "
+                                       "create the file with what we have."),
+        ],
+        scorer=[
+            ideate_l2_socratic(
+                "The assistant warns exactly once, in chat only, that the idea "
+                "sits outside the given scope; after the student insists it keeps "
+                "ideating constructively, and the seeded file carries no trace of "
+                "the fit concern."
+            ),
+        ],
         sandbox="local",
     )
 

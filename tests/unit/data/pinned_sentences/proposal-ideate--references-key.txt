@@ -1,0 +1,1 @@
+write `references: []` when none were found; the key must always be present

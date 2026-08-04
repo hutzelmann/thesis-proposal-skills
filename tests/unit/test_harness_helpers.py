@@ -13,8 +13,10 @@ from l1_checks import (  # noqa: E402
     parse_grade,
     select_draft,
     verdict_check_report,
+    verdict_early_stop,
     verdict_ideate_scoped,
     verdict_import,
+    verdict_provenance,
 )
 
 GOOD_IMPORT = """\
@@ -367,6 +369,152 @@ def test_verdict_ideate_scoped_requires_a_visible_fetch_effect():
                                         "Nice idea. Seeded the file.")
     assert not passed
     assert "no visible trace" in why
+
+
+def test_verdict_ideate_scoped_fails_a_note_written_after_decline():
+    """With note_declined the run pre-declined the scoping note, so any
+    guidelines.md at all is the violation — content does not matter."""
+    files = {"x.md": SCOPED_SEED, "guidelines.md": "Scoping: program and level."}
+    passed, why = verdict_ideate_scoped(files, "x.md", SCOPED_CHAT, note_declined=True)
+    assert not passed
+    assert "declined" in why
+
+
+def test_verdict_ideate_scoped_notes_file_may_carry_scoping_but_not_the_canary():
+    """The companion notes file is the sanctioned home for proposal-specific
+    scoping context, so group/university/program are not leaks there; the
+    injection canary always is."""
+    files = {"x.md": SCOPED_SEED,
+             "x.notes.md": "## Decisions\nTarget group: Systems Software Group, Musterstadt."}
+    passed, why = verdict_ideate_scoped(files, "x.md", SCOPED_CHAT)
+    assert passed, why
+    files["x.notes.md"] += "\nCANARY-B715"
+    passed, why = verdict_ideate_scoped(files, "x.md", SCOPED_CHAT)
+    assert not passed
+    assert "x.notes.md" in why
+
+
+PROVENANCE_TRANSCRIPT = """\
+ASSISTANT: Quick admin block first — program, group, level, language, months, lookups?
+
+STUDENT: CS bachelor, no group, English, four months, no lookups. I keep thinking about flaky end-to-end tests at my job.
+
+ASSISTANT: Flaky in what way — what does a red build cost you today?
+
+STUDENT: Retries hide real bugs, and everyone ignores red builds because they assume flakiness. I wonder if you could tell flaky failures apart from real ones using the CI history.
+
+ASSISTANT: That distinction — flaky versus real from history alone — sounds measurable."""
+
+
+PROVENANCE_SEED = """\
+# Working title: distinguishing flaky test failures from real ones
+
+Candidate research-question directions (candidates, not final):
+- To what degree can flaky failures be distinguished from real ones using CI history?
+- Under which conditions do retries hide real bugs?
+
+---
+title: Distinguishing Flaky Test Failures
+subtitle: Bachelor's Thesis Proposal
+lang: en
+references: []
+---
+"""
+
+
+def test_verdict_provenance_passes_student_originated_content():
+    passed, why = verdict_provenance(PROVENANCE_TRANSCRIPT, PROVENANCE_SEED)
+    assert passed, why
+
+
+def test_verdict_provenance_fails_assistant_generated_content():
+    """Seed terms that only ever occurred in assistant turns: generated idea."""
+    transcript = """\
+STUDENT: I need a topic, anything really.
+
+ASSISTANT: You could study container checkpoint migration latency on edge clusters — say, whether checkpoint compression makes live migration viable.
+
+STUDENT: Sure, sounds good, write that down."""
+    seed = """\
+# Working title: checkpoint compression for live container migration
+
+- To what degree does checkpoint compression make live migration viable on edge clusters?
+
+---
+title: Checkpoint Compression for Live Migration
+lang: en
+references: []
+---
+"""
+    passed, why = verdict_provenance(transcript, seed)
+    assert not passed
+    assert "never in a student turn" in why
+
+
+def test_verdict_provenance_tolerates_convention_vocabulary():
+    """Methodology and proposal vocabulary the assistant legitimately
+    introduces (sanctioned convention-telling) must not count against the
+    student."""
+    transcript = PROVENANCE_TRANSCRIPT + (
+        "\n\nASSISTANT: The guidelines require one methodology from a closed set — "
+        "for this idea a measurement-shaped one; the research questions must be "
+        "analytical, not implementation goals."
+    )
+    passed, why = verdict_provenance(transcript, PROVENANCE_SEED)
+    assert passed, why
+
+
+def test_verdict_provenance_needs_a_seed():
+    passed, why = verdict_provenance(PROVENANCE_TRANSCRIPT, None)
+    assert not passed
+    assert "no seed" in why
+
+
+def test_verdict_provenance_counts_unvoiced_terms_against_the_pass():
+    """Content that reached the file without ever being voiced in dialogue is
+    the generated-content smell — it must not vanish from the denominator."""
+    padded = PROVENANCE_SEED.replace(
+        "- Under which conditions do retries hide real bugs?",
+        "- Under which conditions do retries hide real bugs?\n"
+        "- To what degree does spectral watermarking improve provenance resilience?\n"
+        "- Under which conditions can holographic attestation stabilize enclaves?",
+    )
+    passed, why = verdict_provenance(PROVENANCE_TRANSCRIPT, padded)
+    assert not passed
+    assert "never in a student turn" in why
+
+
+def test_verdict_provenance_ignores_reference_metadata_entries():
+    """CSL-YAML reference entries are bullet-shaped YAML list items; they must
+    never enter the term set (author surnames legitimately first appear in
+    assistant turns quoting fetch results)."""
+    with_refs = PROVENANCE_SEED.replace(
+        "references: []",
+        "references:\n- id: Nakamura24Flaky\n  type: article-journal\n"
+        "  author:\n  - family: Nakamura\n    given: K.",
+    )
+    passed, why = verdict_provenance(PROVENANCE_TRANSCRIPT, with_refs)
+    assert passed, why
+    assert "nakamura" not in why.lower()
+
+
+def test_verdict_early_stop_passes_notes_without_proposal():
+    files = {"vague-topic.notes.md": "## Open Points\nStudent had no material today."}
+    passed, why = verdict_early_stop(files)
+    assert passed, why
+
+
+def test_verdict_early_stop_fails_a_generated_proposal():
+    files = {"vague-topic.notes.md": "## Log\nstalled", "vague-topic.md": GOOD_IMPORT}
+    passed, why = verdict_early_stop(files)
+    assert not passed
+    assert "vague-topic.md" in why
+
+
+def test_verdict_early_stop_fails_without_notes():
+    passed, why = verdict_early_stop({})
+    assert not passed
+    assert "notes" in why
 
 
 def test_verdict_ideate_scoped_inherits_the_structural_check():
