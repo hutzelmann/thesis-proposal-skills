@@ -91,9 +91,13 @@ Read the PDF directly. If you cannot ingest PDFs in this environment, say so pla
 - Personal data: the proposal author's own name (cover page, header, metadata block), matriculation numbers, postal addresses, emails, study program, supervisor names and contacts.
 - Forbidden content: work plans, phase breakdowns, milestone tables and Gantt charts, preliminary chapter outlines, expected-results sections, deliverables lists, confidentiality markers.
 
-A work plan is not simply deleted. Read the first and the last month out of it, write them into the Timeline section as one sentence, then drop the phase detail and report both facts — what went and what was kept. When the source states no months anywhere, the Timeline section gets `[TODO: state start month and submission month, or "as soon as possible"]`; never write "as soon as possible" on the source's behalf, because the source did not say it.
+A work plan is not simply deleted. Read the first and the last month out of it, write them into the Timeline section as one sentence, then move the phase detail into the notes file (next section) and report both facts — what went and what was kept. When the source states no months anywhere, the Timeline section gets `[TODO: state start month and submission month, or "as soon as possible"]`; never write "as soon as possible" on the source's behalf, because the source did not say it.
 
 End the import with a removal note listing every stripped item class — the user may need some of it elsewhere, but it does not belong in the proposal.
+
+## Seed the notes file
+
+Create `<slug>.notes.md` beside the proposal — five sections: Decisions, Open Points, Next Focus, Excluded Literature, Log — and put into it what the import produced but the proposal cannot carry: source content that did not map into the canonical sections (the dropped work-plan phase detail, for example), a short summary of the gaps the source left, and an initial Next Focus naming the most important gaps to close first. The `[TODO: …]` markers stay in the proposal — the notes file prioritizes them, it does not replace them. The personal-data rules above apply to the notes file exactly as to the proposal. The file is workspace-internal: never built, never submitted, not a proposal.
 
 ## Figures
 
@@ -132,4 +136,4 @@ If the script cannot read the file, the import did not happen — say so plainly
 
 ## Wrap-up
 
-Report: sections mapped, references verified/enriched/unverifiable (per reference), items stripped, figures marked, and what the check still reports after your fixes.
+Report: sections mapped, references verified/enriched/unverifiable (per reference), items stripped, what went into the notes file, figures marked, and what the check still reports after your fixes.

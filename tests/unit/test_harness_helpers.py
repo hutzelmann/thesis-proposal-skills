@@ -202,6 +202,26 @@ def test_select_draft_never_selects_overrides_or_skill_artifacts():
     assert "left untouched" in why
 
 
+def test_select_draft_never_selects_a_notes_file_even_when_it_sorts_first():
+    """`aa-topic.notes.md` sorts before `zz-topic.md`; the notes companion must
+    still never be graded as the produced proposal."""
+    files = {"aa-topic.notes.md": "## Decisions\n", "zz-topic.md": GOOD_IMPORT}
+    chosen, _ = select_draft(files)
+    assert chosen == "zz-topic.md"
+
+
+def test_select_draft_notes_file_alone_is_no_draft():
+    chosen, why = select_draft({"topic.notes.md": "## Decisions\n"})
+    assert chosen is None
+    assert "no draft produced" in why
+
+
+def test_select_draft_excludes_notes_files_beside_a_seed():
+    files = {"seed.md": SEED, "seed.notes.md": "## Log\n"}
+    chosen, _ = select_draft(files, "seed.md", SEED)
+    assert chosen is None
+
+
 def test_select_draft_breaks_ties_deterministically_and_names_the_rest():
     files = {"seed.md": SEED, "b-draft.md": "x", "a-draft.md": "x"}
     chosen, why = select_draft(files, "seed.md", SEED)

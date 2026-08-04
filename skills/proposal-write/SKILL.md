@@ -26,9 +26,17 @@ Strong defaults (workspace `guidelines.md` may override them):
 - One sentence per line in the source file.
 - Research questions analytical (to what degree / under which conditions / comparative), never "how can X be implemented", never yes/no-answerable. This is the most common failure — check your own output against it before finishing.
 
+## The notes file
+
+A proposal may have a companion working file, `<slug>.notes.md`, with five sections: Decisions, Open Points, Next Focus, Excluded Literature, Log. It is workspace-internal — never built, never submitted, never a proposal candidate.
+
+If the target proposal has one, read it before drafting. Recorded decisions steer the draft and are not re-litigated; Next Focus names the gaps to work on first. Decisions this session produces go into its Decisions section. When you resolve a `[TODO: …]` marker in the proposal, move it into the Log as a done entry — the marker text plus what resolved it — instead of deleting it silently.
+
+Proposal TODOs are for submission-blocking gaps only. Working knowledge that does not block submission — rationale, rejected alternatives, non-blocking open points, next steps — belongs in the notes file, not the proposal. Without a notes file, work as before; create one only when you have decisions to record, never as an empty skeleton.
+
 ## From scratch
 
-1. Collect what exists (idea notes from ideate, user's description, any seed references). Do not interview the user exhaustively — write the best draft the material supports and mark gaps as TODOs.
+1. Collect what exists (idea notes from ideate, the companion notes file if present, user's description, any seed references). Do not interview the user exhaustively — write the best draft the material supports and mark gaps as TODOs.
 2. Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) with the five canonical sections in order and the methodology matching the user's method — exactly one from the closed set. The order is checked, not just the presence of each section. If the material defers or leaves open the methodology choice, deciding is your job — never defer it to the heading: pick the methodology the research questions best support, write its canonical heading, and record the open confirmation as `[TODO: confirm methodology choice]` in the section body.
 3. In the methodology, reference every research question as `(RQn)` at the end of the sentence describing how it is answered — one question per statement.
 4. Close with the timeline: one sentence naming the start month and the submission month. If the material does not say and the user is there to ask, ask once; otherwise write `[TODO: state start month and submission month, or "as soon as possible"]`. Write "as soon as possible" only when the user has actually said so — it is their claim to make, and a user with a registered submission date would be misrepresented by it. Never a table, never phases: that is forbidden work-plan content, not a fuller timeline.

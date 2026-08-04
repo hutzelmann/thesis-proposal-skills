@@ -12,9 +12,10 @@ from pathlib import Path
 
 DRAFT_ALLOWED_ERRORS = ("references — at least",)
 
-# workspace markdown that is never the proposal: the guidelines override and
-# the artifacts skills write alongside the proposal
+# workspace markdown that is never the proposal: the guidelines override, the
+# companion notes files, and the artifacts skills write alongside the proposal
 NON_PROPOSAL_MARKDOWN = ("guidelines.md",)
+NOTES_SUFFIX = ".notes.md"
 ARTIFACT_SUFFIXES = ("-review.md", "-handout.md")
 
 
@@ -30,11 +31,13 @@ def select_draft(files: dict[str, str], seed_name: str = "",
     candidates named so a surprising pick stays visible. The artifact
     exclusion applies only beside a seed: without one, a content-derived
     slug is free to end in `-review.md` (a proposal about code review).
+    Companion `*.notes.md` files are never candidates, seed or no seed.
     """
     candidates = sorted(
         name for name in files
         if name != seed_name
         and name not in NON_PROPOSAL_MARKDOWN
+        and not name.endswith(NOTES_SUFFIX)
         and not (seed_name and name.endswith(ARTIFACT_SUFFIXES))
     )
     if candidates:
