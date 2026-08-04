@@ -418,10 +418,16 @@ def customize_l1():
             return Score(value=INCORRECT, explanation=f"TOML does not parse: {exc}")
         if data.get("min_references") != 8:
             return Score(value=INCORRECT, explanation=f"min_references is {data.get('min_references')!r}, not 8")
-        forbidden = [str(x).lower() for x in data.get("forbidden_sections", ["<absent>"])]
-        if any("timeline" in f or "zeitplan" in f or "schedule" in f for f in forbidden):
-            return Score(value=INCORRECT, explanation="timeline still forbidden")
-        return Score(value=CORRECT, explanation="valid TOML: min_references=8, timeline un-forbidden")
+        detail = str(data.get("timeline_detail", "<absent>")).lower()
+        if detail != "detailed":
+            return Score(
+                value=INCORRECT,
+                explanation=f"timeline_detail is {detail!r}, not 'detailed' — the work plan stays blocked",
+            )
+        return Score(
+            value=CORRECT,
+            explanation='valid TOML: min_references=8, timeline_detail="detailed"',
+        )
     return score
 
 
@@ -431,8 +437,9 @@ def customize_override() -> Task:
         dataset=[Sample(
             input=skill_prompt(
                 "proposal-customize",
-                "My supervisor requires a timeline section in the proposal and at "
-                "least 8 references. Please adjust the rules for this workspace.",
+                "My supervisor requires a detailed work plan with milestones in the "
+                "proposal, not just a one-line timeline, and at least 8 references. "
+                "Please adjust the rules for this workspace.",
             ),
             files=stage_files("f00-clean-en", "proposal-customize"),
         )],

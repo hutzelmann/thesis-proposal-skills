@@ -4,18 +4,22 @@
 
 Default guidance for writing Bachelor's and Master's thesis proposals in computer science, in English (default) or German.
 A workspace `guidelines.md` may override or extend these defaults; its TOML block wins per key, its lists replace the defaults, and it may un-forbid sections listed as forbidden here.
-The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, research-question conventions) is defined in `structure.json`; this document is the authority for everything semantic.
+Set `timeline_detail = "detailed"` there when a program demands a full work plan: the timeline then accepts tables, lists and subsections, and work-plan headings stop being forbidden. The default is `"simple"`.
+The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, the timeline size limit, research-question conventions) is defined in `structure.json`; this document is the authority for everything semantic.
 
 ## Proposal Structure
 
-A proposal consists of exactly the four canonical sections, in order (titles per `structure.json`):
+A proposal consists of exactly the five canonical sections, in this order (titles per `structure.json`). The order is checked, not only the presence of each section.
 
 1. **Introduction to the Topic** — Introduce the topic and explain why it is important and relevant. Stay on a high level: no deep background, no technical details. Refer to the thesis itself only at the end of the section.
 2. **Contribution to the State-of-the-Art** — Explain the relevant current approaches without repeating the introduction. State explicitly and precisely how the thesis extends previous work; this delta is the heart of the proposal.
 3. **Research Focus and Research Questions** — State the high-level research focus in a single paragraph that adds precision beyond the introduction, then list each research question as an item of an ordered list.
 4. **Methodology for Research: \<Methodology\>** — One methodology from the closed set (Prototype Implementation, Theoretical Analysis, Systematic Literature Review, User Study) with its required subsections per `structure.json`. Never combine methodologies — decide for one and stick to it.
+5. **Timeline** — One short sentence naming the month the thesis starts and the month it is submitted, or stating that it begins as soon as possible. Nothing else belongs here.
 
-The following must NOT appear in a proposal: work plans, timelines or milestones; supervisor names; the author's own name; expected results; deliverables or code fragments; personal data (matriculation number, address, email, study program); a preliminary thesis chapter structure; confidentiality markers of any kind (theses get published).
+The timeline stays coarse: no table, no list, no subsections, at most three lines. Anything richer — a phase breakdown, a milestone table, a Gantt chart, whether written as markup or pasted in as an image — is forbidden content, not a fuller timeline. Never invent a timeframe the writer has not given you: an unknown one gets `[TODO: state start month and submission month, or "as soon as possible"]`, and "as soon as possible" is written only when the writer has actually said so, because a writer with a registered submission date would be misrepresented by it.
+
+The following must NOT appear in a proposal: work plans, phase breakdowns or milestone tables; supervisor names; the author's own name; expected results; deliverables or code fragments; personal data (matriculation number, address, email, study program); a preliminary thesis chapter structure; confidentiality markers of any kind (theses get published).
 
 A proposal is anonymous: it carries no author name, neither in the text nor in the metadata block, and the rendered title page shows title and subtitle only. You are identified by the channel you hand the proposal in through — the email, the upload form, the filename — not by the document. If your program insists on a named title page, say so in your workspace `guidelines.md` and set `author` in the metadata block yourself; the check will still flag the key, which is expected in that case.
 
@@ -27,6 +31,7 @@ A proposal is anonymous: it carries no author name, neither in the text nor in t
 | Contribution to the State-of-the-Art | Beitrag zum Stand der Technik |
 | Research Focus and Research Questions | Forschungsfokus und Forschungsfragen |
 | Methodology for Research: {methodology} | Forschungsmethodik: {methodology} |
+| Timeline | Zeitplan |
 
 Methodology names and their required subsections:
 

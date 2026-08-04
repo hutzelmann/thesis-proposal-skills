@@ -7,7 +7,8 @@
       "introduction",
       "contribution",
       "research_questions",
-      "methodology"
+      "methodology",
+      "timeline"
     ],
     "titles": {
       "introduction": {
@@ -25,6 +26,10 @@
       "methodology": {
         "en": "Methodology for Research: {methodology}",
         "de": "Forschungsmethodik: {methodology}"
+      },
+      "timeline": {
+        "en": "Timeline",
+        "de": "Zeitplan"
       }
     }
   },
@@ -111,15 +116,17 @@
     }
   },
   "forbidden_heading_patterns": [
-    "timeline",
     "time plan",
     "schedule",
     "workplan",
     "work plan",
     "milestones",
-    "zeitplan",
+    "gantt",
+    "work package",
+    "workpackage",
     "arbeitsplan",
     "meilensteine",
+    "arbeitspaket",
     "expected results",
     "erwartete ergebnisse",
     "thesis structure",
@@ -130,6 +137,26 @@
     "betreuer",
     "deliverables"
   ],
+  "_work_plan_comment": "Subset of forbidden_heading_patterns dropped when timeline_detail = detailed. `time plan` and `schedule` stay forbidden even then: they are rival names for the canonical timeline section, not work-plan markers.",
+  "work_plan_heading_patterns": [
+    "workplan",
+    "work plan",
+    "milestones",
+    "gantt",
+    "work package",
+    "workpackage",
+    "arbeitsplan",
+    "meilensteine",
+    "arbeitspaket"
+  ],
+  "timeline": {
+    "max_body_lines": 3,
+    "detail_modes": [
+      "simple",
+      "detailed"
+    ],
+    "default_detail": "simple"
+  },
   "confidentiality_patterns": [
     "confidential",
     "internal use only",

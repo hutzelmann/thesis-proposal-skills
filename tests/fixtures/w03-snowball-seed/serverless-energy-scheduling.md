@@ -41,6 +41,10 @@ A trace-driven experiment compares idle energy under co-location against a utili
 Synthetic bursty and diurnal load patterns expose how energy-aware admission affects the cold-start rate (RQ2).
 A scalability benchmark with a growing number of registered functions measures placement overhead (RQ3).
 
+# Timeline
+
+The thesis starts in October 2027 and is submitted in March 2028.
+
 ---
 title: Energy-Aware Scheduling for Serverless Functions
 subtitle: "Bachelor's Thesis Proposal"

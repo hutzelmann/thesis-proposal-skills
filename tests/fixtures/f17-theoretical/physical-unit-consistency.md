@@ -42,6 +42,10 @@ Applying the type discipline to seeded unit faults in the example shows to what 
 A variant of the example that combines derived and scaled units probes the conditions under which inference stays sound and decidable (RQ2).
 Counting the annotations the example needs under boundary-only inference against a fully annotated version quantifies the reduction in annotation effort (RQ3).
 
+# Timeline
+
+The thesis starts in May 2027 and is submitted in October 2027.
+
 ---
 title: A Type System for Physical Unit Consistency in Numerical Code
 subtitle: "Bachelor's Thesis Proposal"

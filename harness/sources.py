@@ -19,7 +19,8 @@ will build a better controller. We reference the survey by Rivera et al. 2023
 2 Goals and Approach
 We will implement the controller and test it on a farm.
 
-3 Timeline
+3 Work Plan and Milestones
+Start October 2026, submission March 2027.
 Month 1-2 literature, month 3-5 implementation, month 6 writing.
 """
 

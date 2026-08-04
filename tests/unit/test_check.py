@@ -63,12 +63,42 @@ def test_override_workspace_changes_verdicts():
     assert "at least 8 required" in out
 
 
-def test_default_forbids_timeline(tmp_path):
+def test_detailed_timeline_needs_the_override(tmp_path):
+    """Same file, without the guidelines.md that selects the detailed mode:
+    the phase table under `# Timeline` is then a size-guard error."""
     source = (FIXTURES / "w02-override-workspace" / "ml-code-review.md").read_text()
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source)  # same file, but no guidelines.md next to it
+    victim.write_text(source)  # no guidelines.md next to it -> timeline_detail defaults to simple
     result = run_check(victim)
-    assert "forbidden section: `Timeline`" in result.stdout
+    assert "table in `Timeline`" in result.stdout
+    assert "forbidden section: `Timeline`" not in result.stdout  # it is a canonical title now
+
+
+def test_detailed_mode_also_unforbids_work_plan_headings(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"))
+    (tmp_path / "guidelines.md").write_text('```toml\ntimeline_detail = "detailed"\n```\n')
+    result = run_check(victim)
+    assert "matches `milestones`" not in result.stdout
+
+
+def test_work_plan_headings_stay_forbidden_by_default(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"))
+    result = run_check(victim)
+    assert "matches `milestones`" in result.stdout
+
+
+def test_unknown_timeline_detail_is_reported(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source)
+    (tmp_path / "guidelines.md").write_text('```toml\ntimeline_detail = "gantt"\n```\n')
+    result = run_check(victim)
+    assert "unknown timeline_detail `gantt`" in result.stdout
+    assert result.returncode == 1
 
 
 def test_level2_sections_still_checked(tmp_path):

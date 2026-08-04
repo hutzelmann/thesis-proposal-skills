@@ -4,6 +4,7 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
+      "required section missing: `Zeitplan`",
       "required section missing: `Einführung in das Thema`",
       "required section missing: `Beitrag zum Stand der Technik`",
       "required section missing: `Forschungsfokus und Forschungsfragen`",

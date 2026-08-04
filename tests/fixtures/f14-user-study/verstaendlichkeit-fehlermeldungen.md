@@ -43,6 +43,10 @@ Ein gepaarter statistischer Test vergleicht die Korrektheit der Ursachenbenennun
 Eine nach Fehlerklassen getrennte Auswertung der Korrekturzeiten zeigt, unter welchen Bedingungen die Umformulierung Zeit einspart (RQ2).
 Die Auswertung der Fragebogendaten stellt die wahrgenommene Verständlichkeit beider Bedingungen gegenüber (RQ3).
 
+# Zeitplan
+
+Die Arbeit beginnt schnellstmöglich.
+
 ---
 title: Verständlichkeit von Compiler-Fehlermeldungen für Programmieranfänger
 subtitle: "Exposé zur Bachelorarbeit"

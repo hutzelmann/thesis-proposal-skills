@@ -4,6 +4,7 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
+      "required section missing: `Timeline`",
       "no blank line before the trailing",
       "boolean literal",
       "duplicate reference id `Lee24Index`",

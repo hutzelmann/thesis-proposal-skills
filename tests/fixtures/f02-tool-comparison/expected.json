@@ -8,12 +8,14 @@
       "required section missing: `Beitrag zum Stand der Technik`",
       "required section missing: `Forschungsfokus und Forschungsfragen`",
       "methodology section missing",
-      "forbidden section: `Zeitplan` (matches `zeitplan`)",
+      "table in `Zeitplan` — the timeline is one short sentence",
+      "`Zeitplan` runs 7 lines — at most 3 allowed",
       "only 2 references — at least 3 required"
     ],
     "warnings_contain": []
   },
   "semantic": [
+    "`Zeitplan` is the canonical German timeline title, so the heading itself is legitimate — what fails is the five-phase Gantt table under it, which the timeline size guard catches instead of the old forbidden-heading rule",
     "The evaluative goal (which tool is best suited) is never sharpened into explicit research questions",
     "The comparison is grounded only in vendor documentation pages; no scientific literature is cited"
   ]

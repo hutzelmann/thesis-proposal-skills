@@ -53,6 +53,10 @@ Konsistenzprüfungen auf replizierten Bestandsdaten unter parallelen Schreibzugr
 Die Arbeit zerlegt eine produktive Lagerverwaltung mustergeleitet in Microservices und quantifiziert die Auswirkungen auf Ausfallzeiten und Datenkonsistenz.
 Das Vorgehen liefert Handelsunternehmen eine belastbare Entscheidungsgrundlage für vergleichbare Migrationen.
 
+# Zeitplan
+
+Die Arbeit beginnt im Oktober 2026 und wird im März 2027 eingereicht.
+
 ---
 title: Architekturgetriebene Migration einer monolithischen Lagerverwaltung zu Microservices
 subtitle: "Exposé zur Bachelorarbeit"

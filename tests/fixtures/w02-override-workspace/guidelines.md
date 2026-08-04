@@ -1,15 +1,10 @@
 # Workspace Guidelines
 
-My supervisor requires a timeline section and a broader literature base.
+My supervisor requires a detailed work plan and a broader literature base.
 
 ```toml
 min_references = 8
-forbidden_sections = [
-  "expected results", "erwartete ergebnisse",
-  "thesis structure", "preliminary structure", "chapter structure", "gliederung",
-  "supervisor", "betreuer",
-  "deliverables",
-]
+timeline_detail = "detailed"
 ```
 
-The timeline should cover the full processing period at month granularity.
+The work plan should break the full processing period into phases at month granularity, as a table under the Timeline heading.

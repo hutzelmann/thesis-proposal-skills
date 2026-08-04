@@ -9,6 +9,7 @@
     "warnings_contain": []
   },
   "semantic": [
-    "workspace override makes the timeline section legitimate — no tool may flag it here"
+    "`timeline_detail = \"detailed\"` makes the six-month phase table legitimate — no tool may flag it here, though the same table is an error under the default `simple` mode",
+    "override precedence oracle: the raised `min_references` still bites (3 < 8) while the timeline size guard is switched off — one key relaxing, one key tightening, in the same workspace"
   ]
 }

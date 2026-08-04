@@ -41,6 +41,10 @@ Feature-importance analysis over the trained models identifies the most predicti
 Metrics include precision, recall, and F1-score for issue detection.
 A cross-language case study compares model performance between Python and Java projects (RQ3).
 
+# Timeline
+
+The thesis starts in October 2026 and is submitted in March 2027.
+
 ---
 title: Machine Learning for Automated Code Review
 subtitle: "Master's Thesis Proposal"

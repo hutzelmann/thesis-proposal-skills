@@ -19,10 +19,6 @@ The focus is on balancing accuracy with false-positive rates to create a practic
 2. Which code features are most predictive of issues that human reviewers identify?
 3. How does model performance vary across different programming languages and project domains?
 
-# Timeline
-
-The work spans six months from data collection to evaluation.
-
 # Methodology for Research: Prototype Implementation
 
 ## Previous Work
@@ -44,6 +40,18 @@ Evaluation uses a dataset of reviewed pull requests from open-source projects to
 Feature-importance analysis over the trained models identifies the most predictive code features (RQ2).
 Metrics include precision, recall, and F1-score for issue detection.
 A cross-language case study compares model performance between Python and Java projects (RQ3).
+
+# Timeline
+
+The work spans six months from data collection to evaluation.
+
+| Phase | Month 1 | Month 2 | Month 3 | Month 4 | Month 5 | Month 6 |
+|---|---|---|---|---|---|---|
+| Corpus collection | X | X | | | | |
+| Model training | | X | X | | | |
+| Feature analysis | | | X | X | | |
+| Cross-language study | | | | X | X | |
+| Write-up | | | | | X | X |
 
 ---
 title: Machine Learning for Automated Code Review

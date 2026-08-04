@@ -54,6 +54,10 @@ A second analysis compares the false-positive alert rate and the missed-degradat
 A third analysis varies the simulated label-delay length and measures how the correlation and calibration results change as the delay grows (RQ3).
 [TODO: define the precise operationalization of "performance decay" — accuracy, calibration error, or a business-relevant metric]
 
+# Timeline
+
+The thesis starts as soon as the supervisor signs off on the proposal, with [TODO: state target submission month] as the submission month.
+
 <!-- markdownlint-disable -->
 
 ---

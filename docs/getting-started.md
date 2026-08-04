@@ -43,7 +43,7 @@ Terminal-based agent by Anthropic. Paid subscription or API billing.
 - `guidelines.md` appears if you customize the rules for your supervisor.
 - `img/` appears only if your proposal uses figures.
 
-Useful prompts: *"Find literature for my proposal"*, *"Check my proposal"*, *"Review it like a supervisor would"*, *"My supervisor wants a timeline, adjust the rules"*, *"Build a PDF"* (the agent tells you what to install, if anything).
+Useful prompts: *"Find literature for my proposal"*, *"Check my proposal"*, *"Review it like a supervisor would"*, *"My supervisor wants a detailed work plan, adjust the rules"*, *"Build a PDF"* (the agent tells you what to install, if anything).
 
 ## Notes
 

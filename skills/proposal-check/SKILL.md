@@ -39,6 +39,8 @@ After the script, check yourself and report findings in the same chat message:
 
 - Typos, grammar, and wording issues (full list — this is the exhaustive pass; the review skill only hints).
 - Content-level forbidden material regexes cannot catch: expected results asserted in prose, personal data in unusual forms, the writer's own name in body text (the script only flags the `author:` metadata key), supervisor references, confidentiality phrasing.
+- Whether the timeline section names a real timeframe. The script only measures its shape — that it holds no table, list or subsection and stays within three lines — so read it and say whether it actually states when the thesis starts and ends. Accept the phrasings students really use: month names in either language, `SoSe 2027`, `WS 2026/27`, `Q3 2027`, "winter semester", or a plain "as soon as possible". Flag it only when no timeframe is stated at all, or when a `[TODO: …]` marker is still standing in for one.
+- Work plans the script cannot see. A Gantt chart or phase table pasted in as an image passes every structural rule, so an image or figure inside the timeline section is a finding, and so is a phase narrative crammed onto one line.
 - Do NOT judge semantic quality here (analytical RQs, argument soundness, literature fit) — point the user to the review skill for that.
 
 ## Reporting

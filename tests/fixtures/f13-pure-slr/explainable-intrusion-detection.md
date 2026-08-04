@@ -42,6 +42,10 @@ Clustering the extracted techniques by scope and mechanism yields a taxonomy of 
 A structured comparison of the reported evaluation methods identifies the conditions under which faithfulness to the classifier is actually demonstrated (RQ2).
 Mapping the extracted audience and deployment attributes against documented analyst constraints reveals to what degree operational needs are addressed (RQ3).
 
+# Timeline
+
+The thesis starts in November 2026 and is submitted in April 2027.
+
 ---
 title: Explainability in Machine-Learning-Based Network Intrusion Detection
 subtitle: "Master's Thesis Proposal"

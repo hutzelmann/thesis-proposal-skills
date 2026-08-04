@@ -4,6 +4,7 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
+      "required section missing: `Zeitplan`",
       "duplicate reference id `NetSentio25Zero`",
       "forbidden section: `Betreuer`",
       "forbidden section: `Gliederung der Arbeit`"

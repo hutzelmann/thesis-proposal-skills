@@ -1,11 +1,11 @@
 ---
 name: proposal-customize
-description: Adapt the proposal guidance to a supervisor's or program's requirements by managing the workspace guidelines.md override file. Use when the user says their supervisor wants something different — a required timeline, page limit, more references, different sections.
+description: Adapt the proposal guidance to a supervisor's or program's requirements by managing the workspace guidelines.md override file. Use when the user says their supervisor wants something different — a detailed work plan, page limit, more references, different sections.
 ---
 
 # Proposal Customize
 
-Makes a supervisor's or program's own rules — a page limit, a required timeline, a different section order, more references — into the rules every other proposal skill follows.
+Makes a supervisor's or program's own rules — a page limit, a required work plan, a different section order, more references — into the rules every other proposal skill follows.
 
 **Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), **proposal-customize** (adapt the rules to a supervisor's requirements).
 
@@ -18,16 +18,17 @@ You translate supervisor/program requirements into the workspace `guidelines.md`
 ```toml
 min_references = 8
 page_limit = 3
-required_sections = ["..."]     # replaces the default required list entirely
+required_sections = ["..."]     # replaces the default required list entirely, and its order is the enforced order
 forbidden_sections = ["..."]    # replaces the default forbidden list entirely
+timeline_detail = "detailed"    # default "simple": one sentence, no table, no phases
 ```
 
-Merge semantics (fixed, explain them when relevant): a user key wins over the default per key; list values **replace** the default list entirely (they do not append); removing an entry from `forbidden_sections` un-forbids it.
+Merge semantics (fixed, explain them when relevant): a user key wins over the default per key; list values **replace** the default list entirely (they do not append); removing an entry from `forbidden_sections` un-forbids it. `timeline_detail = "detailed"` is the one switch that governs the timeline section: it lifts the one-sentence size limit and stops work-plan headings (work plan, milestones, Gantt, work packages) being forbidden. Leave `forbidden_sections` alone for that — the switch does the whole job.
 
 ## Working through a request
 
-1. Hear the requirement ("supervisor wants a timeline", "max 3 pages", "at least 8 sources").
-2. **Check for conflicts with the defaults** (see `references/guidelines.md`): requiring a default-forbidden section, dropping a canonical section, lowering the reference minimum. On conflict: explain what the default is, why it exists, and what the override changes downstream — check will then require/accept it, review will not flag it — and apply only after the user confirms.
+1. Hear the requirement ("supervisor wants a detailed work plan", "max 3 pages", "at least 8 sources").
+2. **Check for conflicts with the defaults** (see `references/guidelines.md`): requiring a default-forbidden section, dropping a canonical section, loosening the timeline to a full work plan, lowering the reference minimum. On conflict: explain what the default is, why it exists, and what the override changes downstream — check will then require/accept it, review will not flag it — and apply only after the user confirms. A program that wants no timeline at all is also a conflict: the timeline is required by default, and dropping it means an explicit `required_sections` list without it.
 3. Edit the TOML block precisely: to un-forbid one section, reproduce the default forbidden list minus that entry (lists replace — a one-entry list would wipe the rest). Put non-mechanical wishes ("more industrial focus") into the prose part instead.
 4. Show the resulting `guidelines.md` and summarize in one sentence per change what now applies in this workspace.
 

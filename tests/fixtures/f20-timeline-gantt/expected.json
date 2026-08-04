@@ -1,0 +1,18 @@
+{
+  "fixture": "f20-timeline-gantt",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "table in `Timeline` — the timeline is one short sentence",
+      "`Timeline` runs 7 lines — at most 3 allowed"
+    ],
+    "warnings_contain": []
+  },
+  "semantic": [
+    "isolates the timeline size guard: everything else is clean, so the only findings are the two the guard produces — this is the mechanism that replaced the deleted `timeline`/`zeitplan` forbidden-heading patterns",
+    "the heading `Timeline` is correct and must not be reported as forbidden content; what fails is the Gantt table beneath it",
+    "under `timeline_detail = \"detailed\"` this same file is clean — see w02-override-workspace for that side of the switch",
+    "the agent pass should additionally note that no start or submission month is stated anywhere, only relative phase columns"
+  ]
+}

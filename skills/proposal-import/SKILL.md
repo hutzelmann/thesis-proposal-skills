@@ -46,6 +46,10 @@ The prototype builds on the sensing approach of @Rivera23Survey.
 A field trial compares water use under soil-moisture-driven scheduling against a fixed timetable (RQ1).
 A season-long measurement records how sensor drift degrades scheduling quality (RQ2).
 
+# Timeline
+
+The thesis starts in April 2026 and is submitted in September 2026.
+
 ---
 title: Soil-Aware Irrigation Control
 subtitle: Bachelor's Thesis Proposal
@@ -76,7 +80,8 @@ Read the PDF directly. If you cannot ingest PDFs in this environment, say so pla
 
 ## Mapping content
 
-- Map existing content onto the four canonical sections — titles per the write skill's `../proposal-write/references/guidelines.md`, section "Canonical Section Titles (English / German)"; use the proposal's language. If that file is not installed, use the four canonical English titles named there (Introduction to the Topic; Contribution to the State-of-the-Art; Research Focus and Research Questions; Methodology for Research: <Methodology>). Free-form sources rarely map cleanly — place content where it belongs, and mark unfillable sections with `[TODO: …]`.
+- Map existing content onto the five canonical sections — titles per the write skill's `../proposal-write/references/guidelines.md`, section "Canonical Section Titles (English / German)"; use the proposal's language. If that file is not installed, use the five canonical English titles named there (Introduction to the Topic; Contribution to the State-of-the-Art; Research Focus and Research Questions; Methodology for Research: <Methodology>; Timeline). Free-form sources rarely map cleanly — place content where it belongs, and mark unfillable sections with `[TODO: …]`.
+- Emit the sections in canonical order whatever order the source used. The check reports an out-of-order section as an error, so a source that puts its methodology before its research questions gets reordered on import, not carried over as-is.
 - Detect the language and set `lang` accordingly.
 - Convert the bibliography to CSL-YAML entries (`AuthorYearFirstWord` keys, DOI when present, URL only without DOI). References that cannot be resolved to a real entry become `[TODO: recover reference …]` — never invent metadata.
 - Convert in-text citations by the role they play in their sentence — full rule in the write skill's `../proposal-write/references/guidelines.md`, section "Literature and Citations". Where the source names the authors as the actor ("Smith et al. [1] propose …", "Smith et al. (2020) propose …"), delete the name and the year from the prose and write `@key` alone: the build renders the name back from the reference entry. Where the citation only backs a claim ("… is widely reported [1]."), write `[@key]`. Never leave a typed author name immediately before a bracketed citation (`Smith et al. [@key]`) — it renders correctly today but stops tracking the entry the moment that entry is corrected. If the write skill is not installed, apply that rule as stated here.
@@ -84,7 +89,9 @@ Read the PDF directly. If you cannot ingest PDFs in this environment, say so pla
 ## Strip on import (always report what was removed)
 
 - Personal data: the proposal author's own name (cover page, header, metadata block), matriculation numbers, postal addresses, emails, study program, supervisor names and contacts.
-- Forbidden content: timelines/work plans, preliminary chapter outlines, expected-results sections, deliverables lists, confidentiality markers.
+- Forbidden content: work plans, phase breakdowns, milestone tables and Gantt charts, preliminary chapter outlines, expected-results sections, deliverables lists, confidentiality markers.
+
+A work plan is not simply deleted. Read the first and the last month out of it, write them into the Timeline section as one sentence, then drop the phase detail and report both facts — what went and what was kept. When the source states no months anywhere, the Timeline section gets `[TODO: state start month and submission month, or "as soon as possible"]`; never write "as soon as possible" on the source's behalf, because the source did not say it.
 
 End the import with a removal note listing every stripped item class — the user may need some of it elsewhere, but it does not belong in the proposal.
 

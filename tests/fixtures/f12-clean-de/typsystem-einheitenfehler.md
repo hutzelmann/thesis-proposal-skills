@@ -39,6 +39,10 @@ Vernachlässigbar sind Nebenläufigkeit, Effekte höherer Ordnung und die Perfor
 Als durchgängiges Beispiel dient ein vereinfachtes Modul zur Bahnberechnung, das Kräfte, Massen und Beschleunigungen kombiniert.
 Eine Abbildung der in der Literatur dokumentierten Fehlerklassen auf dieses Beispiel zeigt, welche Klassen das Typsystem statisch ausschließt (RQ3).
 
+# Zeitplan
+
+Die Arbeit beginnt im April 2027 und wird im September 2027 eingereicht.
+
 ---
 title: Ein Typsystem zur statischen Erkennung von Einheitenfehlern in Simulationssoftware
 subtitle: "Exposé zur Bachelorarbeit"

@@ -46,6 +46,10 @@ A replay experiment on the benchmark dataset counts triage decisions per simulat
 The fraction of injected faults among the top queue positions measures ranking quality across fault types (RQ2).
 Comparing triage outcomes against ground-truth labels quantifies accuracy for grouped versus individual handling (RQ3).
 
+# Timeline
+
+The thesis starts in March 2027 and is submitted in August 2027.
+
 ---
 title: Interactive Visual Triage of Sensor Anomalies in Industrial Monitoring
 subtitle: "Master's Thesis Proposal"

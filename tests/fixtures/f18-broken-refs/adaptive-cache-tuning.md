@@ -30,6 +30,10 @@ Production-grade fault tolerance is not required.
 
 Replayed traces measure hit-rate deltas between adaptive and static configurations (RQ1).
 
+# Timeline
+
+The thesis starts as soon as possible.
+
 ---
 title: Adaptive Cache Tuning for Multi-Tier Services
 subtitle: "Bachelor's Thesis Proposal"

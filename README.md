@@ -38,11 +38,15 @@ A real agent session, condensed — a student turns a work anecdote into a propo
 
 > **Student** — Write the full proposal draft now — keep my framing and just mark whatever is still open as a TODO.
 >
-> **`proposal-write`** — The full draft is written to `drift-alert-validity.md`: Introduction · Contribution to the State-of-the-Art · Research Focus and Research Questions · Methodology. TODOs left open exactly where things are undecided — dataset choice, drift-detector sample, author name. Nothing was invented to fill them.
+> **`proposal-write`** — The full draft is written to `drift-alert-validity.md`: Introduction · Contribution to the State-of-the-Art · Research Focus and Research Questions · Methodology · Timeline. TODOs left open exactly where things are undecided — dataset choice, drift-detector sample. Nothing was invented to fill them.
 >
 > **Student** — Run the check.
 >
-> **`proposal-check`** — Mechanically clean — no errors. 4 warnings: the intentional `[TODO: …]` markers. No forbidden content: no timelines, no personal data, no results asserted as fact.
+> **`proposal-check`** — One error: the `Timeline` section is missing. It needs a real start and end — a month, a semester, or "as soon as possible" — and stays at most three lines, no table. That one is yours to answer, not mine to invent. Otherwise clean: no work plans, no personal data, no results asserted as fact.
+>
+> **Student** — No registered dates yet — I start as soon as my supervisor signs off.
+>
+> **`proposal-check`** — Timeline added and the check is clean. The submission month stayed an open TODO, since you have not been given one.
 >
 > **Student** — Good enough for a first hand-in. Build the PDF please.
 >
@@ -67,7 +71,7 @@ This repository contains a set of **agent skills**: instruction packages that te
 | `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs. |
 | `proposal-review` | Supervisor-style content review with numbered, actionable suggestions. |
 | `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. A plain markdown hand-in is fine too. |
-| `proposal-customize` | Adapts everything to your supervisor's requirements ("timeline required", "max 3 pages"). |
+| `proposal-customize` | Adapts everything to your supervisor's requirements ("detailed work plan required", "max 3 pages"). |
 
 Your whole proposal lives in **one file**: readable text on top, literature entries at the bottom. Many proposals can sit side by side in one folder.
 
@@ -85,7 +89,7 @@ The typical flow is ideate, then literature search, then write, check, review, a
 
 ## For supervisors
 
-The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. Students can adapt the rules to your requirements with `proposal-customize`. The defaults forbid timelines, personal data, and expected-results sections.
+The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. The proposal closes with a one-sentence timeline — the start month and the submission month, or "as soon as possible" — and nothing more: work plans, phase tables and Gantt charts are forbidden, as are personal data and expected-results sections. Students can adapt any of it to your requirements with `proposal-customize`, including switching the timeline to a full work plan if you want one.
 
 ## For contributors (this repository)
 

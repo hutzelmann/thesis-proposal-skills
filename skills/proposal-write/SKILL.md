@@ -29,9 +29,10 @@ Strong defaults (workspace `guidelines.md` may override them):
 ## From scratch
 
 1. Collect what exists (idea notes from ideate, user's description, any seed references). Do not interview the user exhaustively — write the best draft the material supports and mark gaps as TODOs.
-2. Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) with the four canonical sections in order and the methodology matching the user's method — exactly one from the closed set. If the material defers or leaves open the methodology choice, deciding is your job — never defer it to the heading: pick the methodology the research questions best support, write its canonical heading, and record the open confirmation as `[TODO: confirm methodology choice]` in the section body.
+2. Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) with the five canonical sections in order and the methodology matching the user's method — exactly one from the closed set. The order is checked, not just the presence of each section. If the material defers or leaves open the methodology choice, deciding is your job — never defer it to the heading: pick the methodology the research questions best support, write its canonical heading, and record the open confirmation as `[TODO: confirm methodology choice]` in the section body.
 3. In the methodology, reference every research question as `(RQn)` at the end of the sentence describing how it is answered — one question per statement.
-4. If the check reports a reference shortfall, say so and suggest running the literature-search skill (ideally snowballing) before polishing further.
+4. Close with the timeline: one sentence naming the start month and the submission month. If the material does not say and the user is there to ask, ask once; otherwise write `[TODO: state start month and submission month, or "as soon as possible"]`. Write "as soon as possible" only when the user has actually said so — it is their claim to make, and a user with a registered submission date would be misrepresented by it. Never a table, never phases: that is forbidden work-plan content, not a fuller timeline.
+5. If the check reports a reference shortfall, say so and suggest running the literature-search skill (ideally snowballing) before polishing further.
 
 ## Refining
 

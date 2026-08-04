@@ -142,6 +142,30 @@ def headings(body: str) -> list[tuple[int, str]]:
     ]
 
 
+def timeline_body_errors(section: str, title: str, max_lines: int) -> list[str]:
+    """The timeline is one short sentence, not a work plan. Structure only:
+    whether it names a real timeframe is left to the agent pass, which also
+    sees a Gantt chart pasted in as an image."""
+    # a bare `---` is a metadata delimiter or a rule, never timeline prose;
+    # stop there so a malformed metadata block cannot leak reference entries in
+    lines = []
+    for line in section.split("\n"):
+        if re.fullmatch(r"---\s*", line):
+            break
+        if line.strip():
+            lines.append(line)
+    out = []
+    if any(re.match(r"\s*\|", line) for line in lines):
+        out.append(f"table in `{title}` — the timeline is one short sentence")
+    if any(re.match(r"\s*([-*+]|\d+[.)])\s", line) for line in lines):
+        out.append(f"list in `{title}` — the timeline is one short sentence")
+    if any(re.match(r"#{1,6}\s", line) for line in lines):
+        out.append(f"subsection in `{title}` — the timeline takes no work packages")
+    if len(lines) > max_lines:
+        out.append(f"`{title}` runs {len(lines)} lines — at most {max_lines} allowed")
+    return out
+
+
 def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -178,11 +202,22 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
                 )
                 break
 
+    # -- timeline detail mode
+    timeline_cfg = structure["timeline"]
+    detail = overrides.get("timeline_detail", timeline_cfg["default_detail"])
+    if detail not in timeline_cfg["detail_modes"]:
+        errors.append(
+            f"guidelines.md: unknown timeline_detail `{detail}` — must be one of: "
+            f"{', '.join(timeline_cfg['detail_modes'])}"
+        )
+        detail = timeline_cfg["default_detail"]
+
     # -- sections
     heads = headings(body)
     head_texts = [t for _, t in heads]
     titles = structure["sections"]["titles"]
     meth_tpl = titles["methodology"][lang]
+    meth_prefix = meth_tpl.split("{")[0]
     required_default = [
         titles[key][lang] for key in structure["sections"]["order"] if key != "methodology"
     ]
@@ -191,8 +226,43 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
         if not any(h == title for h in head_texts):
             errors.append(f"required section missing: `{title}`")
 
+    # -- section order
+    # An overridden required_sections list carries its own order; otherwise the
+    # canonical order applies, with the methodology matched by title prefix
+    # because its heading is a template.
+    if "required_sections" in overrides:
+        expected = [(t, t, False) for t in required]
+    else:
+        expected = [
+            (titles[key][lang], meth_prefix if key == "methodology" else titles[key][lang],
+             key == "methodology")
+            for key in structure["sections"]["order"]
+        ]
+    positions = []
+    for label, needle, by_prefix in expected:
+        idx = next(
+            (i for i, h in enumerate(head_texts)
+             if (h.startswith(needle) if by_prefix else h == needle)),
+            None,
+        )
+        if idx is not None:
+            # name the heading as written, not the `{methodology}` template
+            positions.append((idx, head_texts[idx] if by_prefix else label))
+    for (prev_i, prev), (cur_i, cur) in zip(positions, positions[1:], strict=False):
+        if cur_i < prev_i:
+            errors.append(f"section out of order: `{cur}` before `{prev}`")
+
+    # -- timeline stays coarse (the detailed mode is the escape hatch for a
+    # program that mandates a work plan)
+    if detail == "simple":
+        tl_title = titles["timeline"][lang]
+        errors.extend(
+            timeline_body_errors(
+                section_text(body, tl_title), tl_title, timeline_cfg["max_body_lines"]
+            )
+        )
+
     # -- methodology (canonical mode only)
-    meth_prefix = meth_tpl.split("{")[0]
     meth_heads = [h for h in head_texts if h.startswith(meth_prefix)]
     methodologies = structure["methodologies"]
     meth_names = {m["title"][lang]: key for key, m in methodologies.items()}
@@ -216,6 +286,9 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
     forbidden = [p.lower() for p in overrides.get(
         "forbidden_sections", structure["forbidden_heading_patterns"]
     )]
+    if detail == "detailed":
+        work_plan = {p.lower() for p in structure["work_plan_heading_patterns"]}
+        forbidden = [p for p in forbidden if p not in work_plan]
     for h in head_texts:
         for pattern in forbidden:
             if pattern in h.lower():
@@ -391,6 +464,8 @@ def main() -> int:
         "\n## Deferred to the agent pass\n"
         "- typos, grammar, and wording\n"
         "- content-level forbidden material (e.g. expected results in prose)\n"
+        "- whether the timeline names a real timeframe, and work plans the "
+        "structure check cannot see (e.g. a Gantt chart pasted in as an image)\n"
         "- all semantic quality rules (analytical RQs, argument soundness) — see review skill\n"
         "\nThis check is advisory: it gates nothing."
     )

@@ -4,6 +4,11 @@
 # Turn 7 was re-run in a fresh session after the first attempt surfaced (and fixed) a bug in
 # proposal-publish's rq-filter.lua; a filename suggestion in it is redacted to [name].
 # Source of truth for docs/demo/transcript.jsonl — audit trail (see openspec demo-recording spec).
+#
+# Turns 8-9 were recorded on 2026-08-04 (claude -p, model sonnet) after the add-proposal-timeline
+# change made the Timeline a required fifth section. The turn-5 proposal was replayed against the
+# new guidance in a fresh workspace with proposal-write and proposal-check installed; the file
+# state at the start of turn 8 is the turn-5 output verbatim.
 
 ===== TURN 1 — USER =====
 For my Master's thesis I want to do something about ML monitoring. At my student job our churn model quietly got worse for months before anyone noticed — is there a thesis in that?
@@ -416,3 +421,38 @@ references:
     title: Monitoring and explainability of models in production
     URL: "http://arxiv.org/abs/2007.06299v1"
 ---
+
+===== TURN 8 — USER =====
+Run the check on drift-alert-validity.md, fix whatever it reports that you can fix, and run the check again to confirm.
+
+===== TURN 8 — AGENT =====
+Fixed the "neglectable" wording issue (not standard English — replaced with "out of scope" in both spots). Digest confirms the file changed and re-check ran clean on that front.
+
+**Remaining — need your input, not mine to invent:**
+- ERROR: `Timeline` section missing entirely. Needs a real start/end timeframe (semester, month, or "ASAP" all accepted) — max 3 lines, no table/list.
+- 4 open TODOs (streaming ML library choice, drift-detection method sample, dataset(s), performance-decay metric) — domain decisions only you can make.
+
+No typos/grammar issues beyond the fixed one. No forbidden content (no results claimed in prose, no author/supervisor refs, no confidentiality language). Citations all resolve.
+
+**Verdict: mechanically 1 error (Timeline missing), 4 warnings (open TODOs), 0 remaining language issues.**
+
+Want me to draft a Timeline section once you give me the actual dates, or resolve any of the TODOs now?
+
+===== TURN 9 — USER =====
+No registered dates yet — I start as soon as my supervisor signs off. Add the timeline to drift-alert-validity.md accordingly and re-run the check.
+
+===== TURN 9 — AGENT =====
+Check clean — no structural errors. Timeline section added: starts on supervisor sign-off, submission month left as open TODO since not registered yet. 5 open TODOs remain (pre-existing 4 + new submission-month one), none new errors introduced.
+
+===== TIMELINE SECTION AS WRITTEN (turn 9) =====
+# Timeline
+
+The thesis starts as soon as the supervisor signs off on the proposal, with [TODO: state target submission month] as the submission month.
+
+===== CHECK OUTPUT AFTER TURN 9 =====
+## Verified mechanically — no errors
+- WARNING: open [TODO: name the specific streaming ML library/libraries chosen, e.g. River]
+- WARNING: open [TODO: finalize which drift-detection methods form the representative sample]
+- WARNING: open [TODO: select specific dataset(s), e.g. streaming concept-drift benchmarks or a public churn-style tabular dataset replayed as a stream]
+- WARNING: open [TODO: define the precise operationalization of "performance decay" — accuracy, calibration error, or a business-relevant metric]
+- WARNING: open [TODO: state target submission month]

@@ -46,6 +46,10 @@ Battery lifetimes are extrapolated from measured duty-cycle profiles and checked
 Four measurement campaigns are planned, one for each combination of node type and antenna placement, before the results are aggregated.
 Measurement uncertainty is estimated by repeating a reference configuration at the start of every campaign.
 
+# Timeline
+
+The thesis starts in April 2027 and is submitted in September 2027.
+
 ---
 title: An Energy Measurement Testbed for LoRaWAN Sensor Nodes
 subtitle: "Bachelor's Thesis Proposal"

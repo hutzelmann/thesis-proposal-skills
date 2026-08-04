@@ -38,9 +38,9 @@ references:
 
 
 def test_disallowed_errors_filters_allowed():
-    out = "- ERROR: only 1 references — at least 3 required\n- ERROR: forbidden section: `Timeline`"
+    out = "- ERROR: only 1 references — at least 3 required\n- ERROR: forbidden section: `Work Plan`"
     assert disallowed_errors(out, ("references — at least",)) == [
-        "- ERROR: forbidden section: `Timeline`"
+        "- ERROR: forbidden section: `Work Plan`"
     ]
     assert disallowed_errors(out) and len(disallowed_errors(out)) == 2
 
@@ -241,7 +241,8 @@ def test_check_report_still_fails_an_incomplete_relay():
     relay = "Reference id `on` is a YAML boolean literal. Nothing else to report."
     passed, why = verdict_check_report(ORACLE_F15, BROKEN_F15, BROKEN_F15, relay)
     assert not passed
-    assert "1/5" in why
+    # count tracks f15's oracle, which gained the missing-Timeline error
+    assert "1/6" in why
 
 
 def test_check_report_still_requires_the_proposal_untouched():

@@ -8,12 +8,14 @@
       "open [TODO: name the specific streaming ML library",
       "open [TODO: finalize which drift-detection methods",
       "open [TODO: select specific dataset(s)",
-      "open [TODO: define the precise operationalization of \"performance decay\""
+      "open [TODO: define the precise operationalization of \"performance decay\"",
+      "open [TODO: state target submission month]"
     ]
   },
   "semantic": [
-    "session-derived fixture: skills-generated MSc/EN proposal, curated from the real demo session in docs/demo/harvest.log — structure complete, all four canonical sections present",
-    "the open TODOs are deliberate undecided items (library, detector sample, dataset, decay metric), not defects to fix",
+    "session-derived fixture: skills-generated MSc/EN proposal, curated from the real demo session in docs/demo/harvest.log — structure complete, all five canonical sections present",
+    "the timeline sentence is verbatim from the session's turn 9: the agent refused to invent a submission month and left it as a TODO, while recording the start condition the student actually stated",
+    "the open TODOs are deliberate undecided items (library, detector sample, dataset, decay metric, submission month), not defects to fix",
     "RQ2 contains an in-text citation ([@Tan25Flexibl]) — regression material for the publish rq-filter (citations inside RQ list items must survive the typst pipeline)",
     "the metadata block carries no author key by design — proposals are anonymous; the author names under references are public bibliographic data"
   ]

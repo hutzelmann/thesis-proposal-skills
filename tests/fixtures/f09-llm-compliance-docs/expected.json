@@ -4,6 +4,7 @@
   "check": {
     "exit_code": 1,
     "errors_contain": [
+      "required section missing: `Timeline`",
       "required section missing: `Contribution to the State-of-the-Art`",
       "forbidden section: `Work Plan` (matches `work plan`)"
     ],

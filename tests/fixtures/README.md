@@ -11,7 +11,7 @@ Reference for the synthetic test fixtures in this directory (the "fixture bluepr
 | Bibliography present but never cited in-text | ~6/11 | Check (defined-but-uncited warning) |
 | < 3 scientific references / URL-only bibliographies | ~4/11 | Check (min_references), lit-search |
 | Mixed methodologies in one proposal | ~4/11 | Review rubric (single-method rule) |
-| Forbidden content: timelines/Gantt, chapter outlines, expected results | very common | Check (forbidden headings) |
+| Forbidden content: work plans/Gantt, chapter outlines, expected results | very common | Check (forbidden headings, timeline size guard) |
 | Personal data: matriculation numbers, addresses, supervisor names/emails | common | Check (warning regexes), Import (strip on import) |
 | Passive voice pervasive (esp. German), first-person narrative slips | near-universal (de) | Check warnings, Review hint |
 | Confidentiality markers ("confidential", "vertraulich", NDA remarks) in industry-context proposals | recurring in corporate topics | Check warning (theses get published) |
@@ -27,7 +27,7 @@ Each fixture = one proposal file in the new single-file format (plus, for Import
 | id | lang | level | tier | shape | seeded defects |
 |---|---|---|---|---|---|
 | `f01-narrative-sketch` | de | BSc | low | free-form "Goal / Work steps" narrative | mech: no RQ section, no in-text citations, forbidden work-plan heading; sem: first-person storytelling, no gap argument, unfalsifiable outcome |
-| `f02-tool-comparison` | de | BSc | mid | Motivation/Objective/Work-steps + Gantt | mech: forbidden timeline heading, 2 URL-only refs (< min), no RQs; sem: evaluative goal never sharpened into questions |
+| `f02-tool-comparison` | de | BSc | mid | Motivation/Objective/Work-steps + Gantt | mech: Gantt table under a legitimate `Zeitplan` heading (size guard, not forbidden heading), 2 URL-only refs (< min), no RQs; sem: evaluative goal never sharpened into questions |
 | `f03-compliance-audit` | en | BSc | mid-high | numbered free-form incl. chapter outline + timetable, personal data on cover | mech: forbidden chapter-structure + timetable headings, matriculation/address patterns, work-package pseudo-RQs; sem: RQs are work packages, typos |
 | `f04-dsr-vendor-heavy` | de | MSc | mid | TOC/abbreviations, 1 main + 4 sub-RQs, chapter outline | mech: forbidden outline, supervisor + matriculation on title page, duplicate reference entry, "vertraulich" title-page stamp; sem: vendor pages ground definitional claims, RQ sub-questions design-phrased |
 | `f05-slr-interviews` | en | MSc | high | canonical 4 sections | mech: clean (control fixture); sem: mixed methodology (SLR + interviews) violating single-method rule, missing interview-ethics note |
@@ -52,11 +52,12 @@ The corpus leaves real coverage holes; these fixtures are designed from the rule
 | `f15-format-broken` | en | BSc | Trailing-YAML guardrail fixture: missing blank line before `---`, boolean-literal citation key (`on`), duplicate metadata block, leftover `[TODO: …]`, exactly 2 references (min_references boundary), and the only fixture keeping an `author:` key — it owns the anonymity tripwire. Tiny file, pure Check-mechanics oracle. |
 | `f16-figures-import` | en | MSc | Invented PDF containing two figures — the corpus is nearly figure-free, so Import's `img/`-TODO path has no ground truth without it. |
 | `f19-drift-alert-validity` | en | MSc | Session-derived (see `docs/demo/harvest.log`): skills-generated clean-with-TODOs proposal, 15 verified references, citation inside RQ2 — the pattern that broke the publish rq-filter; no other fixture covers either trait. |
+| `f20-timeline-gantt` | en | MSc | Isolates the timeline size guard: a Gantt table under an otherwise-correct `Timeline` heading, with nothing else wrong. The guard replaced the deleted `timeline`/`zeitplan` forbidden-heading patterns, and f02 only exercises it amid five other defects. |
 
 Workflow-state fixtures (not proposals, but required test states):
 
 - `w01-ideate-seed` — an Ideate-produced skeleton (idea notes, candidate RQ bullets, empty `references:`) as Write's starting state.
-- `w02-override-workspace` — a workspace with `guidelines.md` whose TOML block un-forbids the timeline and sets `min_references = 8`; oracle for override precedence in Write/Check/Customize.
+- `w02-override-workspace` — a workspace with `guidelines.md` whose TOML block sets `timeline_detail = "detailed"` and `min_references = 8`; oracle for override precedence in Write/Check/Customize, with one key relaxing (the phase table passes) and one tightening (3 references still fail) in the same file.
 - `w03-snowball-seed` — a proposal with three solid references; oracle for lit-search snowballing expansion.
 
 ## Coverage checks

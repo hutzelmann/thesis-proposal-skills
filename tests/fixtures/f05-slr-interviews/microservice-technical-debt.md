@@ -44,6 +44,10 @@ The recorded evidence types feed a maturity assessment of the field with respect
 To validate the synthesized catalogue, semi-structured interviews with practitioners from three industry partners complement the review, covering perceived completeness and practical relevance.
 Interview findings are folded back into the final version of the strategy catalogue.
 
+# Timeline
+
+The thesis starts in September 2026 and is submitted in February 2027.
+
 ---
 title: Managing Technical Debt in Microservice Architectures
 subtitle: "Master's Thesis Proposal"
