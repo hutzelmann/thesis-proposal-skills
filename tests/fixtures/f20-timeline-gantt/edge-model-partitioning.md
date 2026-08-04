@@ -31,7 +31,7 @@ Link-quality traces are recorded with existing measurement utilities rather than
 
 The prototype must partition a given model at an arbitrary layer boundary and execute both halves across a real link.
 It must record per-inference energy and latency on the device side.
-Automatic re-partitioning at runtime is neglectable: the study measures where the optimum lies, not how to reach it online.
+Automatic re-partitioning at runtime is out of scope: the study measures where the optimum lies, not how to reach it online.
 
 ## Evaluation
 

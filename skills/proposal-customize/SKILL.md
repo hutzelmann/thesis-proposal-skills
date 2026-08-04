@@ -23,13 +23,13 @@ forbidden_sections = ["..."]    # replaces the default forbidden list entirely
 timeline_detail = "detailed"    # default "simple": one sentence, no table, no phases
 ```
 
-Merge semantics (fixed, explain them when relevant): a user key wins over the default per key; list values **replace** the default list entirely (they do not append); removing an entry from `forbidden_sections` un-forbids it. `timeline_detail = "detailed"` is the one switch that governs the timeline section: it lifts the one-sentence size limit and stops work-plan headings (work plan, milestones, Gantt, work packages) being forbidden. Leave `forbidden_sections` alone for that — the switch does the whole job.
+Merge semantics (fixed, explain them when relevant): a user key wins over the default per key; list values **replace** the default list entirely (they do not append); removing an entry from `forbidden_sections` allows that section again. `timeline_detail = "detailed"` is the one switch that governs the timeline section: it lifts the one-sentence size limit and stops work-plan headings (work plan, milestones, Gantt, work packages) being forbidden. Leave `forbidden_sections` alone for that — the switch does the whole job.
 
 ## Working through a request
 
 1. Hear the requirement ("supervisor wants a detailed work plan", "max 3 pages", "at least 8 sources").
 2. **Check for conflicts with the defaults** (see `references/guidelines.md`): requiring a default-forbidden section, dropping a canonical section, loosening the timeline to a full work plan, lowering the reference minimum. On conflict: explain what the default is, why it exists, and what the override changes downstream — check will then require/accept it, review will not flag it — and apply only after the user confirms. A program that wants no timeline at all is also a conflict: the timeline is required by default, and dropping it means an explicit `required_sections` list without it.
-3. Edit the TOML block precisely: to un-forbid one section, reproduce the default forbidden list minus that entry (lists replace — a one-entry list would wipe the rest). Put non-mechanical wishes ("more industrial focus") into the prose part instead.
+3. Edit the TOML block precisely: to allow one forbidden section again, reproduce the default forbidden list minus that entry (lists replace — a one-entry list would wipe the rest). Put non-mechanical wishes ("more industrial focus") into the prose part instead.
 4. Show the resulting `guidelines.md` and summarize in one sentence per change what now applies in this workspace.
 
 ## Boundaries

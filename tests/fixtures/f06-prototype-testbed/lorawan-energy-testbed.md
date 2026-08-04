@@ -35,7 +35,7 @@ Energy estimation reuses a published analytical model of the LoRaWAN media acces
 The testbed must record per-message energy consumption for configurable spreading factors, payload sizes, and duty cycles.
 It must support at least two different off-the-shelf node types to avoid vendor-specific artifacts.
 Automation of complete measurement runs is required so that configurations can be repeated without manual intervention.
-Portability of the testbed hardware is neglectable; the setup may assume a fixed laboratory bench.
+Portability of the testbed hardware is out of scope; the setup may assume a fixed laboratory bench.
 Sub-millisecond timing precision is likewise not required, since per-message energies aggregate over longer windows.
 
 ## Evaluation

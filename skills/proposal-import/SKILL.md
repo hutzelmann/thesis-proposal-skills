@@ -39,7 +39,7 @@ The prototype builds on the sensing approach of @Rivera23Survey.
 
 ## Requirements
 
-[TODO: state what the prototype must do, and which requirements are neglectable]
+[TODO: state what the prototype must do, and which requirements are out of scope]
 
 ## Evaluation
 

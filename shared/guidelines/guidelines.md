@@ -1,7 +1,7 @@
 # Proposal Guidelines
 
 Default guidance for writing Bachelor's and Master's thesis proposals in computer science, in English (default) or German.
-A workspace `guidelines.md` may override or extend these defaults; its TOML block wins per key, its lists replace the defaults, and it may un-forbid sections listed as forbidden here.
+A workspace `guidelines.md` may override or extend these defaults; its TOML block wins per key, its lists replace the defaults, and it may allow sections again that are forbidden here.
 Set `timeline_detail = "detailed"` there when a program demands a full work plan: the timeline then accepts tables, lists and subsections, and work-plan headings stop being forbidden. The default is `"simple"`.
 The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, the timeline size limit, research-question conventions) is defined in `structure.json`; this document is the authority for everything semantic.
 
@@ -12,14 +12,14 @@ A proposal consists of exactly the five canonical sections, in this order (title
 1. **Introduction to the Topic** — Introduce the topic and explain why it is important and relevant. Stay on a high level: no deep background, no technical details. Refer to the thesis itself only at the end of the section.
 2. **Contribution to the State-of-the-Art** — Explain the relevant current approaches without repeating the introduction. State explicitly and precisely how the thesis extends previous work; this delta is the heart of the proposal.
 3. **Research Focus and Research Questions** — State the high-level research focus in a single paragraph that adds precision beyond the introduction, then list each research question as an item of an ordered list.
-4. **Methodology for Research: \<Methodology\>** — One methodology from the closed set (Prototype Implementation, Theoretical Analysis, Systematic Literature Review, User Study) with its required subsections per `structure.json`. Never combine methodologies — decide for one and stick to it.
+4. **Methodology for Research: \<Methodology\>** — One methodology from the closed set (Prototype Implementation, Theoretical Analysis, Systematic Literature Review, User Study) with its required subsections per `structure.json`. Never combine methodologies — decide on one and stick to it.
 5. **Timeline** — One short sentence naming the month the thesis starts and the month it is submitted, or stating that it begins as soon as possible. Nothing else belongs here.
 
 The timeline stays coarse: no table, no list, no subsections, at most three lines. Anything richer — a phase breakdown, a milestone table, a Gantt chart, whether written as markup or pasted in as an image — is forbidden content, not a fuller timeline. Never invent a timeframe the writer has not given you: an unknown one gets `[TODO: state start month and submission month, or "as soon as possible"]`, and "as soon as possible" is written only when the writer has actually said so, because a writer with a registered submission date would be misrepresented by it.
 
 The following must NOT appear in a proposal: work plans, phase breakdowns or milestone tables; supervisor names; the author's own name; expected results; deliverables or code fragments; personal data (matriculation number, address, email, study program); a preliminary thesis chapter structure; confidentiality markers of any kind (theses get published).
 
-A proposal is anonymous: it carries no author name, neither in the text nor in the metadata block, and the rendered title page shows title and subtitle only. You are identified by the channel you hand the proposal in through — the email, the upload form, the filename — not by the document. If your program insists on a named title page, say so in your workspace `guidelines.md` and set `author` in the metadata block yourself; the check will still flag the key, which is expected in that case.
+A proposal is anonymous: it carries no author name, neither in the text nor in the metadata block, and the rendered title page shows title and subtitle only. You are identified by the channel you submit it through — the email, the upload form, the filename — not by the document. If your program insists on a named title page, say so in your workspace `guidelines.md` and set `author` in the metadata block yourself; the check will still flag the key, which is expected in that case.
 
 ### Canonical Section Titles (English / German)
 
@@ -65,8 +65,8 @@ The methodology section must reference every research question explicitly with `
 
 ## Methodology Content
 
-- **Prototype Implementation** — Previous Work: key tools and libraries supporting the prototype and how they are used. Requirements: what the prototype must do, and explicitly which requirements are neglectable. Evaluation: not correctness verification, but how the prototype answers the research questions (dataset, benchmark, metrics).
-- **Theoretical Analysis** — Formalization: the mathematical model, logic, or type system. Requirements: expressiveness/soundness expectations, and what is neglectable. Example: the case study or running example illustrating the formalization.
+- **Prototype Implementation** — Previous Work: key tools and libraries supporting the prototype and how they are used. Requirements: what the prototype must do, and explicitly which requirements are out of scope. Evaluation: not correctness verification, but how the prototype answers the research questions (dataset, benchmark, metrics).
+- **Theoretical Analysis** — Formalization: the mathematical model, logic, or type system. Requirements: expressiveness/soundness expectations, and what is out of scope. Example: the case study or running example illustrating the formalization.
 - **Systematic Literature Review** — Search Strategy and Selection Criteria: what literature is included and excluded. Extracted Information: what is extracted (taxonomy, classification) and how deeply sources are analyzed. Synthesis: how extracted information is synthesized into answers.
 - **User Study** — Preparation: study design, recruitment, and (if prototype-based) the prototype's scope with explicitly excluded properties. Procedure: tasks performed and data collected. Analysis: how collected data is analyzed to answer the research questions.
 
@@ -79,7 +79,7 @@ The methodology section must reference every research question explicitly with `
 - Every entry carries a DOI when one exists; add a URL only when there is no DOI. Include the abstract when available. Do not add volume, series, address, or page fields.
 - Cite only keys that exist in the proposal's `references` block. Never fabricate publications. When a supporting source is missing, write `[TODO: add key reference for …]`.
 - Avoid citing the same publication in consecutive sentences; cite it once and then stop repeating the citation.
-- At least three relevant scientific publications must be cited (workspace overrides may raise this). Especially the introduction and the contribution section must ground their claims in the literature.
+- At least three relevant scientific publications must be cited (workspace overrides may raise this). The introduction and the contribution section in particular must ground their claims in the literature.
 - Prefer peer-reviewed publications over preprints and over vendor or commercial web sources; vendor pages must never carry definitional or scientific claims.
 
 ## Writing Rules
@@ -95,7 +95,7 @@ The methodology section must reference every research question explicitly with `
 - No redundancy: never repeat the same information across sections.
 - Missing information gets a visible `[TODO: 3–10 word hint]` marker — never invented content, never an unmarked gap. If unsure whether a statement is correct, mark it: `[TODO: verify this claim]`.
 
-## Quality Checklist Before Handover
+## Quality Checklist Before Hand-In
 
 - Structure and content comply with all rules above (or the workspace overrides).
 - Text is fluent, non-repetitive, free of grammar and spelling errors.

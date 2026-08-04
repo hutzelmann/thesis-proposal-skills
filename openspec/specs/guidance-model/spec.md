@@ -61,7 +61,7 @@ The default guidance SHALL forbid: work plans, phase breakdowns and milestone ta
 - **THEN** it states that proposals stay anonymous and identification happens through the hand-in channel, not the document
 
 ### Requirement: Workspace override file
-A user-owned `guidelines.md` in the workspace SHALL override/extend defaults. It consists of a machine-readable fenced TOML block (keys include `required_sections`, `forbidden_sections`, `page_limit`, `min_references`, `timeline_detail`) plus freeform prose. Merge semantics: a user key wins over the default per key; list values replace defaults entirely; un-forbidding a default-forbidden section is allowed. Absent file means pure defaults.
+A user-owned `guidelines.md` in the workspace SHALL override/extend defaults. It consists of a machine-readable fenced TOML block (keys include `required_sections`, `forbidden_sections`, `page_limit`, `min_references`, `timeline_detail`) plus freeform prose. Merge semantics: a user key wins over the default per key; list values replace defaults entirely; a default-forbidden section may be allowed again. Absent file means pure defaults.
 
 `timeline_detail` SHALL accept `simple` (the default) or `detailed`. Under `detailed` the timeline size constraint SHALL NOT apply and the work-plan heading patterns SHALL NOT be forbidden, so a program that mandates a phase table can have one without abandoning the rest of the defaults.
 

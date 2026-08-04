@@ -38,7 +38,7 @@ Figure 2 sketches how the grouped queue view extends a standard alarm list.
 
 The prototype must ingest recorded sensor streams and update the ranked queue within seconds.
 It must group alarms by explanation similarity and expose the grouping threshold as a user-facing control.
-Visual polish and multi-user support are explicitly neglectable.
+Visual polish and multi-user support are explicitly out of scope.
 
 ## Evaluation
 

@@ -13,7 +13,7 @@ You write and refine thesis proposals in the single-file format: markdown body, 
 
 ## Ground rules
 
-Read `references/guidelines.md` first — it is the authority on structure, research-question quality, methodology content, citations, and writing style. If the workspace contains a `guidelines.md`, its TOML block and prose override the defaults (per-key wins, lists replace, un-forbidding allowed).
+Read `references/guidelines.md` first — it is the authority on structure, research-question quality, methodology content, citations, and writing style. If the workspace contains a `guidelines.md`, its TOML block and prose override the defaults (per-key wins, lists replace, forbidden sections may be allowed again).
 
 Non-negotiable regardless of overrides:
 
@@ -59,7 +59,7 @@ Fix every error it reports — except the two findings below, the first of which
 Two findings you must **not** "fix":
 
 - **Too few references.** Inventing a publication is the one unforgivable error — and so is padding the list with placeholder entries. Report the shortfall and suggest the literature-search skill.
-- **Open `[TODO: …]` markers.** They are the honest record of what the material did not supply. The guidelines' handover checklist ("no TODO markers remain") is satisfied by obtaining the missing material, never by deleting a marker.
+- **Open `[TODO: …]` markers.** They are the honest record of what the material did not supply. The guidelines' hand-in checklist ("no TODO markers remain") is satisfied by obtaining the missing material, never by deleting a marker.
 
 ## Finishing a pass
 

@@ -10,7 +10,7 @@ The scope covers simulated networks of up to 500 nodes; physical hardware testbe
 The routing layer must recieve link-quality updates from neighbouring nodes and recompute paths without global knowledge.
 Path recomputation should complete within one beacon interval.
 Memory usage per node must stay below the limits of common embedded platforms.
-Energy consumption is treated as neglectable for this thesis.
+Energy consumption is treated as out of scope for this thesis.
 
 # Research Questions
 

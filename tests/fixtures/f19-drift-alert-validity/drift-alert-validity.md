@@ -41,8 +41,8 @@ The prototype must compute a representative set of unsupervised drift-detection 
 It must simulate a configurable label delay, releasing the true label for each prediction only after a fixed or distributed number of subsequent time steps.
 Once labels are released, the prototype must compute the realized performance decay of the underlying classifier, to serve as ground truth against which the drift signals are evaluated.
 The prototype must also support threshold calibration against historical delayed-label outcomes, to compare a calibrated policy against an uncalibrated baseline and against existing label-less false-positive-controlled detectors [@Tan25Flexibl].
-Real-time or production-grade deployment of the prototype is neglectable, since the goal is retrospective evaluation rather than a deployable monitoring system.
-Exhaustive coverage of every published drift-detection method is neglectable as well; the prototype instead implements a representative sample spanning distributional-distance-based, margin-density-based, and score-based signal families.
+Real-time or production-grade deployment of the prototype is out of scope, since the goal is retrospective evaluation rather than a deployable monitoring system.
+Exhaustive coverage of every published drift-detection method is out of scope as well; the prototype instead implements a representative sample spanning distributional-distance-based, margin-density-based, and score-based signal families.
 [TODO: finalize which drift-detection methods form the representative sample]
 
 ## Evaluation

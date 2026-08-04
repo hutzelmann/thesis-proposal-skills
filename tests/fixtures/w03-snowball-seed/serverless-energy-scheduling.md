@@ -33,7 +33,7 @@ Load generation replays publicly available invocation traces with an established
 
 The scheduler must reach each placement decision within a budget of a few milliseconds.
 It must encapsulate the energy model as an exchangeable module so alternative power profiles can be compared.
-Multi-tenant isolation and billing integration are explicitly neglectable for the prototype.
+Multi-tenant isolation and billing integration are explicitly out of scope for the prototype.
 
 ## Evaluation
 
