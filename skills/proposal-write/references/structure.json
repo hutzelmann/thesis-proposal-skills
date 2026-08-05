@@ -157,6 +157,48 @@
     ],
     "default_detail": "simple"
   },
+  "_title_comment": "Mechanically matchable tells for the thesis title only. Openers match at the start of the title, buzzwords anywhere, both case-insensitively and regardless of the proposal's lang. min_words is per lang because German compounds one noun where English needs three. Tool, product and vendor names are deliberately absent: the set is unbounded and stays agent judgement per guidelines.md.",
+  "title": {
+    "min_words": {
+      "en": 4,
+      "de": 3
+    },
+    "max_words": 20,
+    "implementation_openers": [
+      "implementing",
+      "implementation of",
+      "development of",
+      "developing",
+      "building a",
+      "building an",
+      "design and implementation of",
+      "entwicklung von",
+      "entwicklung einer",
+      "entwicklung eines",
+      "implementierung von",
+      "implementierung einer",
+      "umsetzung von",
+      "umsetzung einer",
+      "konzeption und umsetzung",
+      "konzept für",
+      "realisierung",
+      "erstellung von",
+      "erstellung einer"
+    ],
+    "buzzwords": [
+      "revolutioniz",
+      "next-gen",
+      "cutting-edge",
+      "ai-powered",
+      "game-chang",
+      "seamless",
+      "disruptive",
+      "bahnbrechend",
+      "revolutionär",
+      "zukunftsweisend",
+      "wegweisend"
+    ]
+  },
   "confidentiality_patterns": [
     "confidential",
     "internal use only",

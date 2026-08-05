@@ -42,6 +42,16 @@ Proposal TODOs are for submission-blocking gaps only. Working knowledge that doe
 4. Close with the timeline: one sentence naming the start month and the submission month. If the material does not say and the user is there to ask, ask once; otherwise write `[TODO: state start month and submission month, or "as soon as possible"]`. Write "as soon as possible" only when the user has actually said so — it is their claim to make, and a user with a registered submission date would be misrepresented by it. Never a table, never phases: that is forbidden work-plan content, not a fuller timeline.
 5. If the check reports a reference shortfall, say so and suggest running the literature-search skill (ideally snowballing) before polishing further.
 
+## The title
+
+The title is printed on the student's study certificate, so it outlives the proposal, the thesis, and the tools used for both. Once the research questions are on the page, read the title against them — including a title carried over unchanged from an ideation seed, which is a working title and never a settled one.
+
+Raise it when it names a tool, product, platform, vendor or company as the instrument; when it frames implementation work ("Development of …", "Konzept für ein …") instead of a contribution; when it names a whole research field; or when it carries marketing tone. Say that it reaches the certificate, and offer one to three alternatives that name the contribution and its object at an abstraction that survives the tool being replaced.
+
+Write the title the student chooses — never a silent replacement. When they take one of the alternatives, the metadata `title:` carries it and the filename stays as it is: the slug is a workspace handle, not the title, and renaming it breaks every path the student already has. Rename only when they ask.
+
+A named technology stays only when the student can say it is the object of study rather than the instrument: a literature review of one platform, a user study of one specific environment. Once they have said it, the matter is settled for the session — the check script keeps emitting its title warning on every self-check pass, and you do not relay a settled one back to them again. If the title already names a contribution and its object, say nothing and spend no turn on it.
+
 ## Refining
 
 - Minimal, surgical edits: preserve the author's substance and voice; touch only what the request or the review finding requires.

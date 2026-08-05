@@ -40,6 +40,7 @@ from l1_checks import (  # noqa: E402
     verdict_provenance,
     verdict_review,
     verdict_seed,
+    verdict_title_alarm,
 )
 from sources import MESSY_REQUEST  # noqa: E402
 
@@ -249,6 +250,59 @@ def review_fixture() -> Task:
         )],
         solver=agent_solver(),
         scorer=[review_l1(), review_l2_quality()],
+        sandbox="local",
+    )
+
+
+# ---------- task: title alarm on a tool-shaped title -------------------------
+#
+# The half of the title rule no offline test can reach: the deterministic script
+# matches openers, buzzwords, question form and length, but cannot know that
+# `Kubernetes` is the instrument of this prototype rather than its object.
+
+F21_PROPOSAL = "kubernetes-build-dashboard.md"
+F21_REVIEW = "kubernetes-build-dashboard-review.md"
+
+
+@scorer(metrics=[accuracy()])
+def title_l1():
+    async def score(state: TaskState, target: Target) -> Score:
+        original = (FIXTURES / "f21-bad-title" / F21_PROPOSAL).read_text(encoding="utf-8")
+        ok, why = verdict_title_alarm(
+            original, await read_ws(F21_PROPOSAL), await read_ws(F21_REVIEW), F21_REVIEW
+        )
+        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
+    return score
+
+
+@scorer(metrics=[accuracy()])
+def title_l2_alarm():
+    async def score(state: TaskState, target: Target) -> Score:
+        review = await read_ws(F21_REVIEW) or ""
+        oracle = json.loads(
+            (FIXTURES / "f21-bad-title" / "expected.json").read_text(encoding="utf-8")
+        )
+        passed, why = await judge(
+            "title_alarm.txt", "; ".join(oracle["semantic"]), review,
+            "Title raised as its own finding, certificate consequence named, one to "
+            "three abstracted alternatives offered, decision left with the student.",
+        )
+        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
+    return score
+
+
+@task
+def title_alarm() -> Task:
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(
+                "proposal-review",
+                f"Please review my proposal ws/{F21_PROPOSAL} — is it ready for my supervisor?",
+            ),
+            files=stage_files("f21-bad-title", "proposal-review"),
+        )],
+        solver=agent_solver(),
+        scorer=[title_l1(), title_l2_alarm()],
         sandbox="local",
     )
 

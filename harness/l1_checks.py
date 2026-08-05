@@ -94,6 +94,42 @@ def verdict_review(original: str, current: str | None, review: str | None,
     return True, "review file present, proposal untouched"
 
 
+def title_line(text: str | None) -> str | None:
+    """The metadata `title:` value — the line that reaches the study certificate."""
+    if not text:
+        return None
+    m = re.search(r"^title:\s*(.+)$", text, re.MULTILINE)
+    return m.group(1).strip() if m else None
+
+
+def verdict_title_alarm(original: str, current: str | None, review: str | None,
+                        review_name: str) -> tuple[bool, str]:
+    """title_alarm: the title was raised in writing and never silently rewritten.
+
+    Deliberately narrower than verdict_review's byte identity: the property under
+    test is that the alarm reaches the student, not that the whole file is
+    untouched (which the Inspect agent loop is known to violate anyway)."""
+    if not review:
+        return False, f"{review_name} not written"
+    if not is_enumerated_review(review):
+        return False, "review not enumerated"
+    before, after = title_line(original), title_line(current)
+    # a bare "title" match is not enough — a review that merely quotes the file's
+    # own heading, or a cited work's title, would pass it. The guidance tells the
+    # skill to name the certificate consequence whenever it raises the title, so
+    # that word is the cheap deterministic proof the rule was actually applied.
+    raised = re.search(r"\btitles?\b|\btitels?\b", review, re.IGNORECASE) and re.search(
+        r"certificate|zeugnis", review, re.IGNORECASE
+    )
+    if not raised:
+        return False, "review never raises the title as a finding of its own"
+    if after is None:
+        return False, "proposal lost its `title:` line"
+    if after != before:
+        return False, f"title rewritten in the proposal: `{before}` -> `{after}`"
+    return True, "title raised in the review, proposal title left to the student"
+
+
 def verdict_check_report(oracle_path: Path, original: str, current: str | None,
                          chat_text: str) -> tuple[bool, str]:
     """check_report: >=3 oracle errors relayed in chat AND proposal byte-identical."""

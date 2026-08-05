@@ -3,7 +3,24 @@
 Default guidance for writing Bachelor's and Master's thesis proposals in computer science, in English (default) or German.
 A workspace `guidelines.md` may override or extend these defaults; its TOML block wins per key, its lists replace the defaults, and it may allow sections again that are forbidden here.
 Set `timeline_detail = "detailed"` there when a program demands a full work plan: the timeline then accepts tables, lists and subsections, and work-plan headings stop being forbidden. The default is `"simple"`.
-The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, the timeline size limit, research-question conventions) is defined in `structure.json`; this document is the authority for everything semantic.
+The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, the timeline size limit, research-question conventions, the mechanically matchable title tells) is defined in `structure.json`; this document is the authority for everything semantic.
+
+## The Thesis Title
+
+The title is printed on your final study certificate. It outlives the proposal, the thesis, and the tools you used to write both, and it is read by people who will never see the document — so it carries more weight than any other line you write here.
+
+A title names **what you contribute** and **what you contribute it about**, at a level of abstraction that stays true when the tool you happened to use is replaced by its successor. It stands on its own: the rendered title page shows title and subtitle, but the certificate shows the title alone, so a title that makes sense only next to the subtitle or your study program does not carry enough on its own. It states its subject rather than asking a question, and it stays inside the word bounds in `structure.json` — long enough to name a contribution, short enough to be read as one line.
+
+Four kinds of title are problematic, and an agent working with you will raise every one of them:
+
+- **A tool, product, vendor, or company name carried as the instrument.** The framework you build in, the platform you deploy to, the company you write the thesis at — none of them is your contribution. Name the problem class and the approach class instead.
+- **Implementation framing.** "Development of …", "Implementierung einer …", "Konzept für ein …" reads as a work order, not as research. A thesis contributes an insight; state the insight.
+- **Vagueness or grandiosity.** A whole research field ("Artificial Intelligence in Medicine") is not a thesis. On a certificate it reads as though nothing specific was done.
+- **Marketing tone.** Promotional vocabulary borrowed from blog posts and vendor pages does not survive an academic reading.
+
+A concrete technology may appear — but only as a scope qualifier, and only once you can say why that technology is the **object** of the study rather than the instrument of it. A systematic literature review of one platform's deployment patterns, or a user study of one specific development environment, genuinely is about that technology; a prototype that merely happens to be written in it is not.
+
+The alarm is raised, never enforced: an agent tells you which class your title falls into, says that the title reaches your certificate, and offers one to three abstracted alternatives. It never rewrites your title silently and never refuses to continue. The decision stays yours — but if you keep a named technology, keep it because it is the object of study, not because changing the title is inconvenient.
 
 ## Proposal Structure
 

@@ -19,6 +19,7 @@ import json
 import re
 import sys
 import tomllib
+import unicodedata
 from pathlib import Path
 
 BOOLEAN_LITERALS = {"y", "n", "yes", "no", "on", "off", "true", "false"}
@@ -165,6 +166,60 @@ def timeline_body_errors(section: str, title: str, max_lines: int) -> list[str]:
     return out
 
 
+# a `title:` whose value is only a YAML block-scalar indicator continues on the
+# following lines, which the narrow one-line extraction never sees
+BLOCK_SCALAR = re.compile(r"^[|>][+-]?\d*$")
+
+
+def title_warnings(title: str, cfg: dict, lang: str = "en") -> list[str]:
+    """The thesis title is printed on the study certificate — every finding says
+    so, because that rationale is what makes a heuristic warning worth acting on.
+    Only the mechanical tells live here: whether a proper noun in the title names
+    a tool, a product or a vendor is agent judgement, never data."""
+    certificate = "the title is printed on the study certificate"
+    stripped = unicodedata.normalize("NFC", title.strip())
+    if not stripped or BLOCK_SCALAR.fullmatch(stripped):
+        return []  # folded/literal block: the value is on lines we did not read
+    low = stripped.lower()
+    out = []
+
+    opener = next((o for o in cfg["implementation_openers"] if low.startswith(o)), None)
+    if opener:
+        out.append(
+            f"title opens with `{opener}` — implementation framing states building "
+            f"work, not a contribution; {certificate}"
+        )
+
+    hits = [w for w in cfg["buzzwords"] if w in low]
+    if hits:
+        out.append(
+            f"title carries {', '.join(f'`{w}`' for w in hits)} — marketing tone; "
+            f"{certificate}"
+        )
+
+    if stripped.endswith("?"):
+        out.append(
+            "title is phrased as a question — an academic title states its subject; "
+            f"{certificate}"
+        )
+
+    min_words = cfg["min_words"].get(lang, cfg["min_words"]["en"])
+    words = len(stripped.split())
+    if words < min_words:
+        out.append(
+            f"title runs {words} words — at least {min_words} expected; it has to name "
+            f"a contribution and its object standing alone, without the subtitle, and "
+            f"{certificate}"
+        )
+    elif words > cfg["max_words"]:
+        out.append(
+            f"title runs {words} words — at most {cfg['max_words']} expected; "
+            f"{certificate}"
+        )
+
+    return out
+
+
 def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -190,6 +245,8 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
             errors.append(f"duplicate reference id `{rid}`")
         if meta.title is None:
             warnings.append("metadata block has no `title:`")
+        else:
+            warnings.extend(title_warnings(meta.title, structure["title"], lang))
         body_lines = body.split("\n")
         delims = [i for i, l in enumerate(body_lines) if re.fullmatch(r"---\s*", l)]
         for a, b in zip(delims, delims[1:], strict=False):

@@ -9,12 +9,13 @@ Reads a finished draft the way a supervisor would and writes an enumerated `<slu
 
 **Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → **proposal-review** → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
 
-Content review only. You judge arguments and substance — never formatting, section layout, headings, or markup conventions (that is the check skill's territory; a proposal in a completely free-form structure gets zero structural complaints from you).
+Content review only. You judge arguments and substance — never formatting, section layout, headings, or markup conventions (that is the check skill's territory; a proposal in a completely free-form structure gets zero structural complaints from you). The thesis title is the one thing in the metadata block you do judge: it is content, and it is printed on the student's study certificate.
 
 ## What to assess
 
 Read `references/guidelines.md` (plus any workspace `guidelines.md` overrides) for the semantic rules, then review:
 
+- **The title** — does it name a contribution and its object, or does it carry a tool, product, vendor or company name as the instrument, frame implementation work, name a whole field, or borrow marketing tone? Does it still describe what the research questions actually ask? Flag it as an enumerated item like any other finding, say that it reaches the study certificate, and suggest one to three abstracted alternatives. A named technology that is the object of the proposal's own research questions — an SLR of one platform, a study of one specific environment — is not a finding.
 - **Research questions** — analytical rather than implementation goals ("how can X be built" is the classic failure), self-contained, answerable by the chosen methodology, non-overlapping, not yes/no.
 - **Contribution delta** — is the difference to prior work stated explicitly and precisely, or does the section read as a feature list? Are claims grounded in cited literature, or do vendor/commercial sources carry scientific weight?
 - **Argument soundness** — introduction motivates without overreaching; no repetition between sections; the methodology actually answers each research question; evaluation measures what the RQs ask.

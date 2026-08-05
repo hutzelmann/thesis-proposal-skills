@@ -1,0 +1,19 @@
+{
+  "fixture": "f21-bad-title",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [
+      "title opens with `implementing` — implementation framing",
+      "title carries `ai-powered` — marketing tone",
+      "the title is printed on the study certificate"
+    ]
+  },
+  "semantic": [
+    "Title names a platform (Kubernetes) that is the instrument of the prototype, not the object of study — the research questions are about failure-classification accuracy, not about the platform",
+    "Title names the company the thesis is written at, which reaches the study certificate and dates the degree to an employer",
+    "Title promises a dashboard, an artefact, where the proposal contributes an accuracy evaluation",
+    "An abstracted title naming the contribution and its object would be closer to 'Accuracy of Automated Build-Failure Classification Under Live Pipeline Telemetry'"
+  ]
+}

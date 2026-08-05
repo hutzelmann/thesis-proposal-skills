@@ -12,6 +12,7 @@
       "only 2 references"
     ],
     "warnings_contain": [
+      "title runs 3 words — at least 4 expected",
       "open [TODO: sharpen motivation]",
       "open [TODO: name the workload dataset]",
       "`author:` found — proposals are anonymous by default"

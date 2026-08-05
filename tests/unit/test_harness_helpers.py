@@ -17,6 +17,7 @@ from l1_checks import (  # noqa: E402
     verdict_ideate_scoped,
     verdict_import,
     verdict_provenance,
+    verdict_title_alarm,
 )
 
 GOOD_IMPORT = """\
@@ -521,3 +522,54 @@ def test_verdict_ideate_scoped_inherits_the_structural_check():
     passed, why = verdict_ideate_scoped({"x.md": "# just notes\n"}, "x.md", SCOPED_CHAT)
     assert not passed
     assert "no metadata block" in why
+
+
+# ---- verdict_title_alarm: the title was raised, and left to the student ------
+
+TITLED = GOOD_IMPORT
+GOOD_TITLE_REVIEW = (
+    "1. The title names the platform used to build the prototype. It is printed on "
+    "your study certificate, so consider: 'Accuracy of Soil-Aware Irrigation Control'.\n"
+    "2. RQ2 overlaps RQ1 — merge them.\n"
+)
+
+
+def test_verdict_title_alarm_accepts_a_raised_title():
+    passed, why = verdict_title_alarm(TITLED, TITLED, GOOD_TITLE_REVIEW, "r.md")
+    assert passed, why
+
+
+def test_verdict_title_alarm_rejects_a_rewritten_title():
+    rewritten = TITLED.replace("title: Soil-Aware Irrigation Control", "title: Something Else")
+    passed, why = verdict_title_alarm(TITLED, rewritten, GOOD_TITLE_REVIEW, "r.md")
+    assert not passed
+    assert "rewritten" in why
+
+
+def test_verdict_title_alarm_rejects_a_lost_title_line():
+    passed, why = verdict_title_alarm(TITLED, "# body only\n", GOOD_TITLE_REVIEW, "r.md")
+    assert not passed
+    assert "`title:`" in why
+
+
+def test_verdict_title_alarm_rejects_a_review_that_never_raises_the_title():
+    review = "1. RQ2 overlaps RQ1 — merge them.\n2. The contribution delta is implicit.\n"
+    passed, why = verdict_title_alarm(TITLED, TITLED, review, "r.md")
+    assert not passed
+    assert "never raises the title" in why
+
+
+def test_verdict_title_alarm_rejects_a_title_mentioned_without_the_rule():
+    """A quoted heading is not a finding — the certificate rationale is the proof."""
+    review = "1. Title: Soil-Aware Irrigation Control\n2. RQ2 overlaps RQ1 — merge them.\n"
+    passed, why = verdict_title_alarm(TITLED, TITLED, review, "r.md")
+    assert not passed
+    assert "never raises the title" in why
+
+
+def test_verdict_title_alarm_rejects_a_missing_or_unenumerated_review():
+    assert not verdict_title_alarm(TITLED, TITLED, None, "r.md")[0]
+    prose = "The title reaches your certificate and should be abstracted.\n"
+    passed, why = verdict_title_alarm(TITLED, TITLED, prose, "r.md")
+    assert not passed
+    assert "enumerated" in why

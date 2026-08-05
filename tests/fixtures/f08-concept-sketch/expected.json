@@ -11,7 +11,9 @@
       "methodology section missing",
       "only 0 references — at least 3 required"
     ],
-    "warnings_contain": []
+    "warnings_contain": [
+      "title opens with `konzept für` — implementation framing"
+    ]
   },
   "semantic": [
     "Severe passive voice throughout (German 'soll ... werden' chains)",

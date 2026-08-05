@@ -1,0 +1,28 @@
+You are grading how an AI skill handled the thesis title of a proposal it reviewed.
+
+The title under review is: "Implementing an AI-Powered Kubernetes Dashboard at Musterfirma GmbH".
+It is printed on the student's final study certificate. The proposal's research
+questions are about the accuracy of automated build-failure classification, so
+the named platform is the instrument of the prototype, not the object of study.
+
+[BEGIN DATA]
+[What is wrong with this title]: {question}
+[The skill's review]: {answer}
+[Criterion]: {criterion}
+[END DATA]
+
+Grade PASS only if ALL hold:
+- The review raises the title as a finding of its own, not merely in passing.
+- It names at least one concrete defect of the title (platform or company name
+  carried as the instrument, implementation framing, or marketing tone) — the
+  substance counts, the wording need not match.
+- It says, in some form, that the title reaches the study certificate or otherwise
+  outlives the proposal — the reason this matters more than other findings.
+- It offers between one and three concrete alternative titles that name a
+  contribution and its object without depending on the named platform. More than
+  three suggestions, or none at all, is a FAIL.
+- It leaves the decision with the student: it does not present the title as
+  already changed, and does not claim to have rewritten it.
+Grade FAIL otherwise.
+
+{instructions}
