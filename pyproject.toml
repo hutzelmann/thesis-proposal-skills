@@ -9,9 +9,19 @@ dependencies = []
 dev = [
     "inspect-ai>=0.3",
     "openai>=2.50.0",
+    "poethepoet>=0.48.0",
     "pytest>=8",
     "ruff>=0.16.0",
 ]
+
+[tool.poe.tasks]
+test = ["_pytest", "_lint", "_drift"]
+_pytest = "pytest"
+_lint = "ruff check ."
+_drift = "python3 scripts/sync_shared.py --check"
+dev = "python harness/claude_runner.py"
+audit = "python scripts/audit_scan.py"
+audit-status = "python scripts/audit_status.py"
 
 [tool.ruff]
 line-length = 100

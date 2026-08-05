@@ -22,15 +22,23 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ## Commands
 
+Registered poe tasks (`[tool.poe.tasks]` in `pyproject.toml`) are the canonical entry points:
+
 ```sh
-uv run pytest                      # L0: all tests, no model calls — must stay green
-uv run ruff check .                # lint — must stay clean
+uv run poe test                    # L0 chain: pytest + ruff + generated-copy drift check — must stay green
+uv run poe dev <scenario> --model haiku   # dev loop, subscription (claude_runner passthrough)
+uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
+uv run poe audit-status            # post-publish: skills.sh verdicts vs audit-baseline.json
+```
+
+Raw invocations behind them, plus commands without a poe task:
+
+```sh
+uv run pytest                      # L0: all tests, no model calls
+uv run ruff check .                # lint
 python3 scripts/sync_shared.py --check   # generated-copy drift check
 openspec validate --all --strict   # spec validity
 uv run inspect eval harness/skill_evals.py@<task> --model openrouter/...   # L1/L2, metered
-uv run python harness/claude_runner.py <scenario> --model haiku            # dev loop, subscription
-uv run python scripts/audit_scan.py       # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
-uv run python scripts/audit_status.py     # post-publish: skills.sh verdicts vs audit-baseline.json
 ```
 
 Publish pipeline (publishing itself stays explicit-request only): L0 suite (includes the audit-invariant tests) → `scripts/audit_scan.py` gate → publish → `scripts/audit_status.py` confirmation, then `--update` the baseline once the new verdicts are reviewed. `harness/audit_llm_preflight.py` approximates the Gen Agent Trust Hub categories via headless `claude -p` and is advisory only.

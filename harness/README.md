@@ -25,12 +25,14 @@ Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `rev
 Stages a fixture into a temp workspace, installs the skill into `.claude/skills/` (real skill discovery), runs headless `claude -p`, applies the same L1 verdicts:
 
 ```sh
-uv run python harness/claude_runner.py check_report --model haiku
-uv run python harness/claude_runner.py review_fixture --model sonnet
-uv run python harness/claude_runner.py write_from_seed
-uv run python harness/claude_runner.py import_messy --model haiku
-uv run python harness/claude_runner.py ideate_scoped --model sonnet
+uv run poe dev check_report --model haiku
+uv run poe dev review_fixture --model sonnet
+uv run poe dev write_from_seed
+uv run poe dev import_messy --model haiku
+uv run poe dev ideate_scoped --model sonnet
 ```
+
+(`poe dev` is the registered passthrough for `uv run python harness/claude_runner.py`.)
 
 `import_messy` stages no fixture: the source document is pasted into the request and the verdict is applied to whatever proposal file the skill creates. Both runners reach that verdict through `verdict_import()` in `l1_checks.py`, so the two paths cannot drift apart.
 
