@@ -2,78 +2,91 @@
 
 Write a convincing Bachelor's or Master's thesis proposal with the help of an AI agent, in English or German.
 
-A real agent session, condensed — a student turns a work anecdote into a proposal:
+**The idea stays yours.** The agent does not invent your topic, and it does not steer you toward one it happens to like. It works on the idea you bring: it asks the questions your supervisor would ask, checks whether the field has already answered them, and condenses your own answers into a clean, professional proposal. Keeping you focused and on track is its job; every decision that shapes the thesis stays yours.
+
+The following shows three steps from a real session, condensed, in which a student turns a work anecdote into a finished proposal.
 
 <details>
 <summary><b>1 · A vague anecdote becomes a research question</b></summary>
 
-> **Student** — For my Master's thesis I want to do something about ML monitoring. At my student job our churn model quietly got worse for months before anyone noticed — is there a thesis in that?
+> **Student**: For my Master's thesis I want to do something about ML monitoring. At my student job our churn model quietly got worse for months before anyone noticed. Is there a thesis in that?
 >
-> **`proposal-ideate`** — There's likely a thesis in this, but the interesting part isn't "the model got worse" — it's *why nobody noticed*. That's two different failure modes wearing the same costume. Did the *predictions* silently drift — or could nobody even *check* accuracy, because you only find out if someone actually churned weeks or months later?
+> **`proposal-ideate`**: There's likely a thesis in this, but the interesting part isn't "the model got worse", it's *why nobody noticed*. That's two different failure modes wearing the same costume. Did the *predictions* silently drift, or could nobody even *check* accuracy, because you only find out if someone actually churned weeks or months later?
 >
-> **Student** — Both, but mostly the second — churn labels only arrive weeks later. Our dashboard alerted so often that everyone ignored it, and nobody could say whether a high score actually meant the model was worse.
+> **Student**: Both, but mostly the second: churn labels only arrive weeks later. Our dashboard alerted so often that everyone ignored it, and nobody could say whether a high score actually meant the model was worse.
 >
-> **`proposal-ideate`** — So "detect drift without labels" and "stop crying wolf" are both already being worked on, separately. What none of them do is close the loop back to what actually happened weeks later — whether the drift alerts *would have* predicted the real accuracy drop once the labels finally arrived.
+> **`proposal-ideate`**: So "detect drift without labels" and "stop crying wolf" are both already being worked on, separately. What none of them do is close the loop back to what actually happened weeks later: whether the drift alerts *would have* predicted the real accuracy drop once the labels finally arrived.
 
 </details>
 
 <details>
-<summary><b>2 · Literature, verified — not invented</b></summary>
+<summary><b>2 · Verified literature, not invented literature</b></summary>
 
-> **Student** — The idea file only has five grounding references so far. Build that out into a proper literature base before we draft anything.
+> **Student**: The idea file only has five grounding references so far. Build that out into a proper literature base before we draft anything.
 >
-> **`proposal-lit-search`** — Literature base is now 15 references, each individually verified against Crossref or arXiv rather than taken from search-tool output — DOIs resolved, titles cross-checked:
+> **`proposal-lit-search`**: Literature base is now 15 references, each individually verified against Crossref or arXiv rather than taken from search-tool output, with DOIs resolved and titles cross-checked:
 >
-> - **Sethi & Kantardzic (2015, 2017)** — MD3, an unsupervised drift detector built explicitly to cut false alarms: your alert-fatigue problem
-> - **Zhang, Bui & Apley (2023, *Technometrics*)** — score-vector monitoring, an alternative signal to compare against distance-based drift metrics
-> - **Cerqueira et al. (2026, arXiv)** — benchmarking framework for drift detectors with timing-aware metrics; flagged as a preprint, not yet peer-reviewed
-> - **Krempl et al. (2014), Webb et al. (2018), Gonçalves et al. (2014)** and further background — how the field defines and compares drift, and where it names this gap
+> - **Sethi & Kantardzic (2015, 2017)**: MD3, an unsupervised drift detector built explicitly to cut false alarms, which is your alert-fatigue problem
+> - **Zhang, Bui & Apley (2023, *Technometrics*)**: score-vector monitoring, an alternative signal to compare against distance-based drift metrics
+> - **Cerqueira et al. (2026, arXiv)**: benchmarking framework for drift detectors with timing-aware metrics; flagged as a preprint, not yet peer-reviewed
+> - **Krempl et al. (2014), Webb et al. (2018), Gonçalves et al. (2014)** and further background on how the field defines and compares drift, and where it names this gap
 >
-> Keyword searches that mostly returned noise — IoT intrusion detection, materials-science "fatigue" papers — were rejected rather than force-fit, and the file records that the net was cast that wide.
+> Keyword searches that mostly returned noise (IoT intrusion detection, materials-science "fatigue" papers) were rejected rather than force-fit, and the file records that the net was cast that wide.
 
 </details>
 
 <details>
 <summary><b>3 · Drafted, checked, published</b></summary>
 
-> **Student** — Write the full proposal draft now — keep my framing and just mark whatever is still open as a TODO.
+> **Student**: Write the full proposal draft now. Keep my framing and just mark whatever is still open as a TODO.
 >
-> **`proposal-write`** — The full draft is written to `drift-alert-validity.md`: Introduction · Contribution to the State-of-the-Art · Research Focus and Research Questions · Methodology · Timeline. TODOs left open exactly where things are undecided — dataset choice, drift-detector sample. Nothing was invented to fill them.
+> **`proposal-write`**: The full draft is written to `drift-alert-validity.md`: Introduction · Contribution to the State-of-the-Art · Research Focus and Research Questions · Methodology · Timeline. TODOs are left open exactly where things are undecided, namely the dataset choice and the drift-detector sample. Nothing was invented to fill them.
 >
-> **Student** — Run the check.
+> **Student**: Run the check.
 >
-> **`proposal-check`** — One error: the `Timeline` section is missing. It needs a real start and end — a month, a semester, or "as soon as possible" — and stays at most three lines, no table. That one is yours to answer, not mine to invent. Otherwise clean: no work plans, no personal data, no results asserted as fact.
+> **`proposal-check`**: One error: the `Timeline` section is missing. It needs a real start and end (a month, a semester, or "as soon as possible") and stays at most three lines, no table. That one is yours to answer, not mine to invent. Otherwise clean: no work plans, no personal data, no results asserted as fact.
 >
-> **Student** — No registered dates yet — I start as soon as my supervisor signs off.
+> **Student**: No registered dates yet. I start as soon as my supervisor signs off.
 >
-> **`proposal-check`** — Timeline added and the check is clean. The submission month stayed an open TODO, since you have not been given one.
+> **`proposal-check`**: Timeline added and the check is clean. The submission month stayed an open TODO, since you have not been given one.
 >
-> **Student** — Good enough for a first hand-in. Build the PDF please.
+> **Student**: Good enough for a first hand-in. Build the PDF please.
 >
-> **`proposal-publish`** — PDF built successfully via typst: `drift-alert-validity.pdf`
+> **`proposal-publish`**: PDF built successfully via typst: `drift-alert-validity.pdf`
 
 </details>
 
 ---
 
-This repository contains a set of **agent skills**: instruction packages that teach an AI coding agent (Claude Code, Cursor, Codex, and many others) how to guide you from a vague idea to a polished, literature-grounded proposal. You install the skills once; afterwards you only ever work on your own proposal files, in your own folder. You never need to touch this repository.
+This repository holds a set of **agent skills**: instruction packages that teach an AI coding agent (Claude Code, Cursor, Codex and many others) how to guide you from a vague idea to a polished, literature-grounded proposal. You install them once; after that you only ever work on your own files, in your own folder. You never need to touch this repository again.
 
 **Never used an AI agent before?** Start with [docs/getting-started.md](docs/getting-started.md), which walks you through installing an agent from zero.
+
+## What the skills hold themselves to
+
+Whichever skill is running, six rules apply:
+
+- **You take every key decision**: topic, research question, scope, methodology, timeline. Where something is still open, the agent leaves a visible TODO instead of filling the gap with something plausible.
+- **Nothing is edited behind your back**: checking and reviewing are read-only, so they diagnose and report without touching a line. Your text changes when you ask for a change.
+- **Everything stays advisory**: findings are reported, ordered by severity, and that is where the agent stops. Nothing overrules you and nothing blocks a hand-in.
+- **Pushback comes early**: a vague, generic, or already-solved idea is named as such while changing course is still cheap, not after you have written ten pages.
+- **Nothing is invented**: no fabricated references, no results claimed before you have them. Every literature entry is verified against Crossref, arXiv, or DBLP before it enters your file.
+- **Your supervisor's rules win**: a `guidelines.md` in your folder overrides any default here, from bringing back a section these rules forbid to turning the one-sentence timeline into a full work plan. `proposal-customize` writes that file with you.
 
 ## What the skills do
 
 | Skill | What it does for you |
 |---|---|
-| `proposal-ideate` | Develops your rough idea with you through Socratic questions and early literature checks (is this already solved?), then captures the result in a proposal file. |
-| `proposal-lit-search` | Finds real, relevant academic literature (DBLP, Crossref, arXiv, OpenCitations, Semantic Scholar, OpenAlex), by topic or by snowballing from papers you already have. |
-| `proposal-write` | Writes or refines the proposal following proven structure and writing rules. It never invents facts or references. |
+| `proposal-ideate` | Sharpens the idea you bring through Socratic questions and early literature checks (is this already solved?), then captures the result in a proposal file. It never picks a topic for you. |
+| `proposal-lit-search` | Finds real, relevant literature (DBLP, Crossref, arXiv, OpenCitations, Semantic Scholar, OpenAlex), by topic or by snowballing from papers you already have, and verifies every entry before adding it. |
+| `proposal-write` | Turns your material into proposal prose following proven structure and writing rules. Thin material becomes a TODO, never invented filler. |
 | `proposal-import` | Converts an existing proposal (usually a PDF) into the workable format and strips personal data. |
-| `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs. |
-| `proposal-review` | Supervisor-style content review with numbered, actionable suggestions. |
+| `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs, estimated length. |
+| `proposal-review` | Supervisor-style content review: a verdict on whether there is a thesis here (ready / needs revision / no viable thesis core), then every weak point with a concrete suggestion. |
 | `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. A plain markdown hand-in is fine too. |
 | `proposal-customize` | Adapts everything to your supervisor's requirements ("detailed work plan required", "max 3 pages"). |
 
-Your whole proposal lives in **one file**: readable text on top, literature entries at the bottom. Many proposals can sit side by side in one folder.
+Your proposal itself lives in **one self-contained file**: readable text on top, literature entries at the bottom. A companion `<slug>.notes.md` beside it keeps the working knowledge the hand-in cannot carry, such as decisions, open points and rejected literature. Many proposals can sit side by side in one folder.
 
 ## Quick start
 
@@ -85,7 +98,7 @@ Your whole proposal lives in **one file**: readable text on top, literature entr
    ```
 4. Tell your agent: *"Help me develop a thesis idea"*, or *"Import my existing proposal from proposal.pdf"*.
 
-The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own. PDF building is optional; install `pandoc` and `typst` only when you want it (the publish skill tells you how).
+The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own, in any order, on a proposal that already exists. PDF building is optional; install `pandoc` and `typst` only when you want it (the publish skill tells you how).
 
 ## Model support
 
@@ -107,14 +120,18 @@ Model support, measured by the metered eval matrix on **2026-08-06** (3 epochs p
 
 ## For supervisors
 
-The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. The proposal closes with a one-sentence timeline — the start month and the submission month, or "as soon as possible" — and nothing more: work plans, phase tables and Gantt charts are forbidden, as are personal data and expected-results sections. Students can adapt any of it to your requirements with `proposal-customize`, including switching the timeline to a full work plan if you want one.
+The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, an explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. The proposal closes with a one-sentence timeline (the start month and the submission month, or "as soon as possible") and nothing more: work plans, phase tables and Gantt charts are forbidden, as are personal data and expected-results sections.
+
+Substance is judged, not assumed. The review skill applies five named tests (delta, falsifiability, anti-generic, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. The student decides what to do about it; the tools advise and never block.
+
+Your rules replace these defaults, and you do not have to relay them student by student. Run `proposal-customize` yourself, and it produces a single `guidelines.md` holding your requirements: a page limit, a minimum number of references, a different section list, a full work plan in place of the one-sentence timeline, plus freeform notes such as a required focus or a house style. Hand that file to your students. Once it sits in their proposal folder, every skill follows it, and checks and reviews report against your requirements instead of the defaults. A student who receives your rules as prose can produce the same file with the same skill.
 
 ## For contributors (this repository)
 
 This repo is **only** for developing and testing the skills. User proposals never live here.
 
 - Specs are the source of truth: `openspec/specs/`, managed with [OpenSpec](https://github.com/Fission-AI/OpenSpec). Every change runs propose, review, apply, archive. Agent integration files are not committed; run `openspec init --tools <your-agent>` once locally (and `openspec update` after CLI upgrades).
-- `shared/` holds the single-source guidance; `scripts/sync_shared.py` materializes it — and the cross-skill script copies — into the skills. Activate the pre-commit hook once per clone with `git config core.hooksPath .githooks` — it re-materializes and stages the copies on every commit; CI's `--check` catches bypassed hooks.
+- `shared/` holds the single-source guidance; `scripts/sync_shared.py` materializes it, together with the cross-skill script copies, into the skills. Activate the pre-commit hook once per clone with `git config core.hooksPath .githooks`; it re-materializes and stages the copies on every commit, and CI's `--check` catches bypassed hooks.
 - Tests: `uv run pytest` runs L0 without model calls; `harness/` holds the L1/L2 model evals (see `harness/README.md`).
 - Fixtures in `tests/fixtures/` are synthetic: no real proposals, no personal data.
 
