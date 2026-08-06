@@ -87,6 +87,24 @@ Your whole proposal lives in **one file**: readable text on top, literature entr
 
 The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own. PDF building is optional; install `pandoc` and `typst` only when you want it (the publish skill tells you how).
 
+## Model support
+
+<!-- model-support:start -->
+Model support, measured by the metered eval matrix on **2026-08-06** (3 epochs per cell unless noted; details in docs/model-support.md):
+
+| Model (pinned version) | Verdict | Notes |
+|---|---|---|
+| `anthropic/claude-haiku-4.5` | ❌ not recommended | fails: proposal-customize, proposal-review, proposal-write |
+| `anthropic/claude-sonnet-5` | ❔ untested |  |
+| `anthropic/claude-opus-5` | ❔ untested |  |
+| `openai/gpt-5.6-luna` | ❌ not recommended | fails: proposal-write |
+| `openai/gpt-5.6-terra` | ❔ untested |  |
+| `openai/gpt-5.6-sol` | ❔ untested |  |
+| `deepseek/deepseek-v4-pro` | 🟡 partial | untested on 7 task(s); tested cells solid |
+| `qwen/qwen3.8-max` | ❔ untested |  |
+| `moonshotai/kimi-k3` | 🟡 partial | untested on 7 task(s); tested cells solid |
+<!-- model-support:end -->
+
 ## For supervisors
 
 The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. The proposal closes with a one-sentence timeline — the start month and the submission month, or "as soon as possible" — and nothing more: work plans, phase tables and Gantt charts are forbidden, as are personal data and expected-results sections. Students can adapt any of it to your requirements with `proposal-customize`, including switching the timeline to a full work plan if you want one.

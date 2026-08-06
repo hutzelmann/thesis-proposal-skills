@@ -20,6 +20,22 @@ View transcripts: `uv run inspect view --log-dir logs/evals`.
 
 Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `review_fixture` (f05; L1 review file + untouched proposal, L2 review rubric), `review_fixture_de` (f04; German review), `title_alarm` (f21; the agent-judgment half of the title rule — L1 title raised in writing and never rewritten in the proposal, L2 title rubric: certificate consequence named, one to three abstracted alternatives, decision left with the student), `check_report` (f15; L1 report fidelity + untouched proposal), `ideate_longrun` (~18-round scripted composite dialogue: preamble → hesitant → extraction probe → pivot → convergence → seeding; L1 seed + notes-growth snapshots + provenance, L2 phase-aware Socratic rubric), `ideate_stonewall` (early stop fires: notes saved, no proposal generated), `ideate_noidea` (hints stay few and sourced, never a topic menu; live DBLP noise must read as weak scoping), `ideate_outofscope` (one chat-only warning, ideation continues), `customize_override` (f00; supervisor requirements to valid TOML overrides), `publish_build` (f00; real pandoc/typst pipeline to PDF), `import_messy` (pasted messy text to standard format, personal data stripped), `litsearch_expand` (w03; live academic APIs — network-dependent, expect flakiness). The former 5-round cooperative dialogues (`ideate_socratic`, `ideate_anecdote`) are retired — their coverage lives in `ideate_longrun`'s hesitant phase, and their cooperative-only personas were the blind spot the probes close.
 
+## Model-support matrix (metered, cost-gated)
+
+`harness/models.toml` pins the nine-model roster (exact OpenRouter IDs, family, price tier, cached $/Mtok pricing, enabled flag) plus the task policy: the scorable `matrix` set, the `core` smoke subset, `heavy` tasks (1 epoch on frontier tier), `excluded_l1` tasks whose `*_l1*` scorers are the environment-fidelity probes (structural score ignored, `*_l2*` rubric counts), `excluded` tasks (env probes without a rubric, live-network tasks), per-tier default epochs, and token priors for the estimate.
+
+```sh
+uv run poe smoke                     # haiku × core tasks × 1 epoch (~$1)
+uv run poe matrix --estimate-only    # price a full run without any metered call
+uv run poe matrix --tier cheap      
+uv run poe matrix --models claude-haiku-4.5 gpt-5.6-luna --tasks write_from_seed
+uv run poe report                    # regenerate README summary + docs/model-support.md
+```
+
+Every metered invocation prints a cost estimate (registry pricing × token priors, replaced by measured history from `logs/evals/matrix-usage.json` once it exists) and waits for confirmation; `--yes` skips the prompt. After the run it prints actual spend (recorded token usage × registry pricing), persists a `matrix-cost-*.json` summary next to the logs, and updates the usage history. Per-sample `token_limit` backstops runaway loops.
+
+Classification per model×task cell: 3 epochs (per-tier policy in the registry), all pass = solid, mixed = flaky, none = fail. Per model: any fail → warning naming the affected skills (via the registry's task→skill map), any flaky → "flaky on <skills>", all cells solid → supported, solid-but-incomplete coverage → partial (untested count disclosed), no logs at all → untested. Disabled registry models keep their row, marked as disabled. `poe report` derives both the README summary table (pinned ID, verdict, run date) and the full grid with pass rates and per-model run cost from the newest log per cell — nothing in either artifact is hand-written.
+
 ## Dev runs (real Claude Code binary, Max subscription)
 
 Stages a fixture into a temp workspace, installs the skill into `.claude/skills/` (real skill discovery), runs headless `claude -p`, applies the same L1 verdicts:

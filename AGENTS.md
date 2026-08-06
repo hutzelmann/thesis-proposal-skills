@@ -27,9 +27,14 @@ Registered poe tasks (`[tool.poe.tasks]` in `pyproject.toml`) are the canonical 
 ```sh
 uv run poe test                    # L0 chain: pytest + ruff + generated-copy drift check — must stay green
 uv run poe dev <scenario> --model haiku   # dev loop, subscription (claude_runner passthrough)
+uv run poe smoke                   # metered smoke: 1 cheap model × core tasks × 1 epoch (cost-gated)
+uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # model-support matrix, cost-gated
+uv run poe report                  # regenerate README model-support summary + docs/model-support.md from logs
 uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
 uv run poe audit-status            # post-publish: skills.sh verdicts vs audit-baseline.json
 ```
+
+The model-support matrix (`harness/models.toml` roster, cost gate, classification, report) is documented in `harness/README.md`. Metered matrix runs always show their estimate and wait for confirmation — never bypass the gate with `--yes` on a user's behalf without their explicit cost approval.
 
 Raw invocations behind them, plus commands without a poe task:
 

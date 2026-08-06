@@ -23,6 +23,17 @@ dev = "python harness/claude_runner.py"
 audit = "python scripts/audit_scan.py"
 audit-status = "python scripts/audit_status.py"
 
+[tool.poe.tasks.smoke]
+cmd = "python harness/matrix.py --models claude-haiku-4.5 --core --epochs 1"
+envfile = ".env"
+
+[tool.poe.tasks.matrix]
+cmd = "python harness/matrix.py"
+envfile = ".env"
+
+[tool.poe.tasks.report]
+cmd = "python harness/report.py"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
