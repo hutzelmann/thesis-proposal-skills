@@ -140,6 +140,8 @@ If the script cannot read the file, the import did not happen — say so plainly
 
 Report: sections mapped, references verified/enriched/unverifiable (per reference), items stripped, what went into the notes file, figures marked, and what the check still reports after your fixes.
 
+Then name the next step, because a student who arrived through an import never saw the rest of the workflow. The `[TODO: …]` markers are the work queue and the notes file's Next Focus ranks them; which skill closes a gap depends on the gap — the write skill for prose the source left thin, the literature-search skill for a reference shortfall, the ideation skill where the source supplied no research questions and no method. Name the skill and stop there: import is one pass, and no gap is filled in this run.
+
 ## When this run fails
 
 If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step failed repeatedly with no user edit in between, or the state makes no sense — offer a bug report once, in these words, and do not raise it again in the same session: "Something here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send." Ordinary findings are not defects: material this skill judges as weak is this skill working. Collect nothing unless the user accepts.
