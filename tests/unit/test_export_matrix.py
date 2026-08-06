@@ -12,17 +12,14 @@ the toolchain in container jobs so they run there.
 
 import shutil
 import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
+import publish
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures"
-sys.path.insert(0, str(REPO / "skills" / "proposal-publish" / "scripts"))
-
-import publish  # noqa: E402
 
 # a fixture's proposal is its markdown file; guidelines.md is a workspace
 # override that w02 ships alongside one, and README.md documents the corpus

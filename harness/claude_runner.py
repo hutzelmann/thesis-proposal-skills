@@ -189,13 +189,13 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
     raise ValueError(name)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario", choices=sorted(SCENARIOS))
     parser.add_argument("--model", default="haiku")
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep", action="store_true", help="keep the temp workspace")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     scenario = SCENARIOS[args.scenario]
 
     ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))

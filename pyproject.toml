@@ -23,8 +23,10 @@ _lint = "ruff check ."
 _drift = "python3 scripts/sync_shared.py --check"
 # inner loop: parallel, without the pandoc/typst builds. `test` stays the
 # complete gate — never narrow it to this set.
-test-fast = "pytest -n auto -m 'not slow'"
-cov = "pytest --cov --cov-report=term-missing --cov-fail-under=70"
+# loadgroup honours @pytest.mark.xdist_group, which keeps the tests that edit
+# tracked files in place (test_sync.py) on a single worker instead of racing
+test-fast = "pytest -n auto --dist loadgroup -m 'not slow'"
+cov = "pytest --cov --cov-report=term-missing --cov-fail-under=78"
 dev = "python harness/claude_runner.py"
 audit = "python scripts/audit_scan.py"
 audit-status = "python scripts/audit_status.py"
@@ -44,18 +46,25 @@ cmd = "python harness/report.py"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers --strict-config"
-markers = ["slow: spawns pandoc or typst — excluded from the `test-fast` lane"]
+markers = [
+    "slow: spawns pandoc or typst — excluded from the `test-fast` lane",
+    "xdist_group: pin tests that share mutable state to one worker (pytest-xdist)",
+]
 # A dependency deprecation is a finding, not background noise. If one proves
 # unfixable it gets its own `ignore` entry naming the dependency, never a
 # blanket relaxation.
 filterwarnings = ["error"]
 # Import roots for the tests, so no test file manipulates sys.path itself.
-# proposal-lit-search comes before proposal-import deliberately: both ship
-# `common.py` and `crossref.py`, and the lit-search pair is the sync source
-# while import's is the generated copy.
+# Order matters where a module name exists more than once: `check.py` ships in
+# proposal-check (the sync source) and in the import/write copies, and
+# `common.py`/`crossref.py` ship in proposal-lit-search (source) and in the
+# import copy. The sync sources are listed first so `import check` and
+# `import common` resolve to the file a developer edits.
 pythonpath = [
+    "tests",
     "harness",
     "scripts",
+    "skills/proposal-check/scripts",
     "skills/proposal-lit-search/scripts",
     "skills/proposal-import/scripts",
     "skills/proposal-publish/scripts",
@@ -96,14 +105,8 @@ max-complexity = 12
 # Structural findings this repository has not fixed yet. Each entry names the
 # change that clears it — an ignore without an owner becomes permanent.
 [tool.ruff.lint.per-file-ignores]
-# 33 hits, one cause: Inspect mandates `async def score(state, target)` whether or
-# not a scorer reads both. The scorer factory removes the repetition at its source.
-"harness/skill_evals.py" = ["ARG001"]  # cleared by consolidate-test-scaffolding
 # `check()` is one 250-line procedure; splitting it into rule functions is the
 # whole point of the follow-up change. Edit the proposal-check copy only.
 "skills/proposal-check/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # cleared by structure-check-findings
 "skills/proposal-import/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # generated copy
 "skills/proposal-write/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # generated copy
-"harness/matrix.py" = ["C901", "PLR0912", "PLR0915"]  # cleared by consolidate-test-scaffolding
-"harness/l1_checks.py" = ["C901"]  # cleared by consolidate-test-scaffolding
-"skills/proposal-troubleshoot/scripts/collect.py" = ["C901", "PLR0912", "PLR0915"]  # cleared by consolidate-test-scaffolding

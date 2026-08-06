@@ -1,16 +1,13 @@
 """L0: pure logic of the audit gate tooling — no network, no scanner runs."""
 
 import json
-import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts"))
-sys.path.insert(0, str(REPO / "harness"))
+import audit_llm_preflight
+import audit_scan
+import audit_status
 
-import audit_llm_preflight  # noqa: E402
-import audit_scan  # noqa: E402
-import audit_status  # noqa: E402
+REPO = Path(__file__).resolve().parents[2]
 
 SAMPLE = json.loads((Path(__file__).parent / "data" / "agent_scan_sample.json").read_text())
 

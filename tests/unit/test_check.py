@@ -1,20 +1,7 @@
 """L0: deterministic check script against blueprint fixtures (skill-check spec)."""
 
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
-
-REPO = Path(__file__).resolve().parents[2]
-CHECK = REPO / "skills" / "proposal-check" / "scripts" / "check.py"
-FIXTURES = REPO / "tests" / "fixtures"
-
-
-def run_check(proposal: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(CHECK), str(proposal)], capture_output=True, text=True
-    )
+from helpers import FIXTURES, run_check
 
 
 def test_clean_fixture_passes():

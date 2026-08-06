@@ -46,9 +46,12 @@ or L0 test that enforces it — a convention nothing checks is documentation, no
   `[tool.ruff.lint.per-file-ignores]`, and every entry names the change that removes it.
   Add to that list only with the same annotation; never raise the cap.
 
-Enforcement: `uv run poe test` runs ruff with the full rule set, and `uv run poe cov`
-holds the 70% floor. The `main(argv)` and no-`sys.path` rules get their L0 guard with the
-`consolidate-test-scaffolding` change; until it lands they are convention only.
+Enforcement: `uv run poe test` runs ruff with the full rule set and
+`tests/unit/test_repo_conventions.py`, which fails on a `sys.path` line under `tests/`, on a
+`main` without `argv`, and on a `verdict_*` function with no L0 test. `uv run poe cov` holds
+the coverage floor. `tests/unit/test_eval_wiring.py` pins the scorer names the model-support
+classifier reads, since the scorer factory made those names an argument rather than a
+function name.
 
 ## Commands
 

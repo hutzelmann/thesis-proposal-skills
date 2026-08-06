@@ -103,10 +103,10 @@ def sync(check: bool) -> int:
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="verify copies instead of writing")
-    return sync(parser.parse_args().check)
+    return sync(parser.parse_args(argv).check)
 
 
 if __name__ == "__main__":

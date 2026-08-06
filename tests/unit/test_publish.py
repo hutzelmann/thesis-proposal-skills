@@ -1,12 +1,10 @@
 """L0: publish.py offline logic (skill-publish spec)."""
 
-import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "skills" / "proposal-publish" / "scripts"))
+import publish
 
-import publish  # noqa: E402
+REPO = Path(__file__).resolve().parents[2]
 
 
 def which_factory(available):

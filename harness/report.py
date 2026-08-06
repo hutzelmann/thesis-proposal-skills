@@ -44,10 +44,10 @@ def newest_logs(log_dir: Path, registry: support.Registry) -> dict[tuple[str, st
     return {key: read_eval_log(str(path)) for key, (_, path) in chosen.items()}
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--log-dir", default="logs/evals")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     registry = support.parse_registry(REGISTRY.read_text(encoding="utf-8"))
     models = list(registry.models)  # spec: one row per registry model, disabled included

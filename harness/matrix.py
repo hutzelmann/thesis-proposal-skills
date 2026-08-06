@@ -54,7 +54,7 @@ def print_cost(title: str, report: support.CostReport) -> None:
         print(f"  (unpriced, not in registry: {unknown})")
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--tier", choices=support.TIERS)
     parser.add_argument("--models", nargs="+", help="registry IDs or ID suffixes")
@@ -64,29 +64,29 @@ def main() -> int:
     parser.add_argument("--yes", action="store_true", help="skip the cost confirmation")
     parser.add_argument("--estimate-only", action="store_true", help="print estimate and exit")
     parser.add_argument("--log-dir", default=DEFAULT_LOG_DIR)
-    args = parser.parse_args()
+    return parser
 
-    registry = support.parse_registry(REGISTRY.read_text(encoding="utf-8"))
-    models = support.select_models(registry, tier=args.tier, ids=args.models)
-    if not models:
-        print("no enabled models match the selection", file=sys.stderr)
-        return 2
-    tasks = support.select_tasks(registry, names=args.tasks, core_only=args.core)
-    history = load_history(USAGE_HISTORY)
 
-    estimate = support.estimate_cost(models, tasks, registry, args.epochs, history)
+def print_estimate(estimate: support.CostReport, models, tasks, epochs: int, history) -> None:
+    """Always shown before anything metered runs, `--yes` or not."""
     basis = "history + priors" if history else "priors"
     print(f"models: {', '.join(m.id for m in models)}")
-    print(f"tasks:  {', '.join(tasks)}   epochs: {args.epochs} (heavy tasks 1 on frontier)")
+    print(f"tasks:  {', '.join(tasks)}   epochs: {epochs} (heavy tasks 1 on frontier)")
     print_cost(f"Estimated cost ({basis}) — an estimate, not a cap:", estimate)
-    if args.estimate_only:
-        return 0
-    if not args.yes:
-        answer = input("\nProceed with this metered run? [y/N] ").strip().lower()
-        if answer not in ("y", "yes"):
-            print("aborted before any metered call")
-            return 1
 
+
+def confirm_spend(assume_yes: bool) -> bool:
+    """Explicit approval for a metered run. False aborts before the first call."""
+    if assume_yes:
+        return True
+    if input("\nProceed with this metered run? [y/N] ").strip().lower() in ("y", "yes"):
+        return True
+    print("aborted before any metered call")
+    return False
+
+
+def run_matrix(models, tasks, registry, args) -> list:
+    """Drive Inspect over the selection, grouping models that share an epoch count."""
     from inspect_ai import eval as inspect_eval  # deferred: import cost + telemetry
 
     logs = []
@@ -108,7 +108,11 @@ def main() -> int:
                     retry_on_error=2,
                 )
             )
+    return logs
 
+
+def collect_usage(logs) -> tuple[dict[str, tuple[int, int, int]], dict[str, tuple[int, int]]]:
+    """(billed usage per model, per-epoch observation per task) from finished logs."""
     usage: dict[str, tuple[int, int, int]] = {}
     observed: dict[str, tuple[int, int]] = {}
     for log in logs:
@@ -141,30 +145,58 @@ def main() -> int:
                 max(prev_in, max(p for p, _ in per_epoch)),
                 max(prev_out, max(o for _, o in per_epoch)),
             )
+    return usage, observed
 
+
+def cost_summary(models, tasks, actual: support.CostReport, stamp: str) -> dict:
+    return {
+        "timestamp": stamp,
+        "models": [m.id for m in models],
+        "tasks": tasks,
+        "per_model": {line.model_id: line.usd for line in actual.lines},
+        "total": round(actual.total, 4),
+    }
+
+
+def record_spend(logs, models, tasks, registry, history, log_dir: str) -> None:
+    """Price what was actually consumed, persist it, and fold the observation
+    back into the estimate history for the next run."""
+    usage, observed = collect_usage(logs)
     actual = support.price_usage(usage, registry)
     print_cost("Actual cost (recorded token usage × registry pricing):", actual)
     save_history(USAGE_HISTORY, support.merge_history(history, observed))
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-    summary_path = Path(args.log_dir) / f"matrix-cost-{stamp}.json"
+    summary_path = Path(log_dir) / f"matrix-cost-{stamp}.json"
     summary_path.write_text(
-        json.dumps(
-            {
-                "timestamp": stamp,
-                "models": [m.id for m in models],
-                "tasks": tasks,
-                "per_model": {line.model_id: line.usd for line in actual.lines},
-                "total": round(actual.total, 4),
-            },
-            indent=2,
-        )
-        + "\n",
+        json.dumps(cost_summary(models, tasks, actual, stamp), indent=2) + "\n",
         encoding="utf-8",
     )
     print(f"\ncost summary persisted to {summary_path}")
     errored = sum(1 for log in logs if log.status != "success")
     if errored:
         print(f"warning: {errored} eval run(s) did not finish cleanly — check inspect view")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    registry = support.parse_registry(REGISTRY.read_text(encoding="utf-8"))
+    models = support.select_models(registry, tier=args.tier, ids=args.models)
+    if not models:
+        print("no enabled models match the selection", file=sys.stderr)
+        return 2
+    tasks = support.select_tasks(registry, names=args.tasks, core_only=args.core)
+    history = load_history(USAGE_HISTORY)
+
+    estimate = support.estimate_cost(models, tasks, registry, args.epochs, history)
+    print_estimate(estimate, models, tasks, args.epochs, history)
+    if args.estimate_only:
+        return 0
+    if not confirm_spend(args.yes):
+        return 1
+
+    logs = run_matrix(models, tasks, registry, args)
+    record_spend(logs, models, tasks, registry, history, args.log_dir)
     return 0
 
 

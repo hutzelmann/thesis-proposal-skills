@@ -97,12 +97,12 @@ def audit_skill(skill_dir: Path, model: str, timeout: int) -> tuple[list[str], d
     return flagged, verdicts
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="haiku")
     parser.add_argument("--skill", help="audit one skill instead of all")
     parser.add_argument("--timeout", type=int, default=300)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     skill_dirs = (
         [SKILLS / args.skill] if args.skill

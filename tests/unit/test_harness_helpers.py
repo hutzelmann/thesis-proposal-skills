@@ -1,26 +1,32 @@
 """L0: pure scoring helpers from harness/l1_checks.py (no model calls)."""
 
-import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "harness"))
-
-import pytest  # noqa: E402
-from l1_checks import (  # noqa: E402
+import pytest
+from l1_checks import (
     disallowed_errors,
     is_enumerated_review,
     parse_grade,
     select_draft,
     verdict_check_report,
+    verdict_customize_override,
+    verdict_draft,
     verdict_early_stop,
     verdict_ideate_scoped,
     verdict_import,
+    verdict_litsearch_expanded,
     verdict_no_spurious_offer,
+    verdict_notes_progress,
     verdict_provenance,
+    verdict_publish,
+    verdict_review,
+    verdict_review_localized,
+    verdict_seed,
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
 )
+
+REPO = Path(__file__).resolve().parents[2]
 
 GOOD_IMPORT = """\
 # Introduction to the Topic
@@ -660,3 +666,277 @@ def test_verdict_title_alarm_rejects_a_missing_or_unenumerated_review():
     passed, why = verdict_title_alarm(TITLED, TITLED, prose, "r.md")
     assert not passed
     assert "enumerated" in why
+
+
+# ---- verdict_customize_override: the override file, not the proposal ---------
+#
+# These pin the behaviour the logic had while it still sat inline in
+# `customize_l1`, so relocating it to this module could not change a verdict
+# unnoticed.
+
+PROPOSAL_TEXT = "# Introduction to the Topic\n\nbody\n"
+GOOD_OVERRIDE = (
+    "# Workspace guidelines\n\n"
+    "```toml\nmin_references = 8\ntimeline_detail = \"detailed\"\n```\n"
+)
+
+
+def test_customize_override_accepts_the_requested_settings():
+    passed, why = verdict_customize_override(PROPOSAL_TEXT, PROPOSAL_TEXT, GOOD_OVERRIDE)
+    assert passed, why
+    assert "min_references=8" in why
+
+
+def test_customize_override_rejects_a_modified_proposal():
+    passed, why = verdict_customize_override(
+        PROPOSAL_TEXT, PROPOSAL_TEXT + "edited\n", GOOD_OVERRIDE
+    )
+    assert not passed
+    assert "modified the proposal" in why
+
+
+@pytest.mark.parametrize(("guidelines", "needle"), [
+    (None, "not created"),
+    ("no fenced block here", "no fenced TOML block"),
+    ("```toml\nmin_references = = 8\n```", "does not parse"),
+    ('```toml\nmin_references = 3\ntimeline_detail = "detailed"\n```', "min_references is 3"),
+    ("```toml\nmin_references = 8\n```", "timeline_detail"),
+])
+def test_customize_override_rejects_a_bad_override(guidelines, needle):
+    passed, why = verdict_customize_override(PROPOSAL_TEXT, PROPOSAL_TEXT, guidelines)
+    assert not passed
+    assert needle in why
+
+
+def test_customize_override_accepts_a_case_insensitive_detail_value():
+    """The check script lowercases the mode, so the verdict must not be stricter
+    than the script it is grading."""
+    override = '```toml\nmin_references = 8\ntimeline_detail = "Detailed"\n```'
+    passed, why = verdict_customize_override(PROPOSAL_TEXT, PROPOSAL_TEXT, override)
+    assert passed, why
+
+
+# ---- verdict_publish --------------------------------------------------------
+
+
+def test_publish_accepts_a_built_pdf_with_a_maintained_gitignore():
+    passed, why = verdict_publish("ws/proposal.pdf\n*.pdf\n*.typ\n")
+    assert passed, why
+
+
+def test_publish_fails_without_a_pdf():
+    passed, why = verdict_publish("")
+    assert not passed
+    assert "no PDF produced" in why
+
+
+def test_publish_fails_when_the_gitignore_was_not_maintained():
+    """A built PDF that gets committed is the failure this guards: the skill is
+    told to keep the workspace .gitignore covering its own output."""
+    passed, why = verdict_publish("ws/proposal.pdf\n")
+    assert not passed
+    assert "gitignore not maintained" in why
+
+
+# ---- verdict_draft ----------------------------------------------------------
+
+
+def test_verdict_draft_accepts_a_clean_check():
+    passed, why = verdict_draft(GOOD_IMPORT, CLEAN_CHECK)
+    assert passed, why
+
+
+def test_verdict_draft_tolerates_only_the_reference_shortfall():
+    """A draft from a seed legitimately has too few references; anything else
+    the check reports is a real defect."""
+    assert verdict_draft(GOOD_IMPORT, SHORT_REFS_CHECK)[0]
+    passed, why = verdict_draft(GOOD_IMPORT, BROKEN_CHECK)
+    assert not passed
+    assert "no trailing metadata block" in why
+
+
+def test_verdict_draft_requires_a_draft():
+    passed, why = verdict_draft(None, CLEAN_CHECK)
+    assert not passed
+    assert "missing or empty" in why
+
+
+# ---- verdict_review ---------------------------------------------------------
+
+ORIGINAL_PROPOSAL = "# Introduction to the Topic\n\nbody text\n"
+ENUMERATED_REVIEW = "1. RQ2 overlaps RQ1 — merge them.\n2. The delta is implicit.\n"
+
+
+def test_verdict_review_accepts_an_enumerated_review_beside_an_untouched_proposal():
+    passed, why = verdict_review(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, ENUMERATED_REVIEW, "p-review.md"
+    )
+    assert passed, why
+
+
+def test_verdict_review_reports_where_the_proposal_was_changed():
+    """The review skill is read-only, so the byte offset of the first difference
+    is the fastest way to see what it touched."""
+    passed, why = verdict_review(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL.replace("body", "BODY"),
+        ENUMERATED_REVIEW, "p-review.md",
+    )
+    assert not passed
+    assert "modified the proposal" in why
+    assert "first diff at" in why
+
+
+def test_verdict_review_reports_a_missing_proposal_without_a_diff_offset():
+    passed, why = verdict_review(ORIGINAL_PROPOSAL, None, ENUMERATED_REVIEW, "p-review.md")
+    assert not passed
+    assert "file missing" in why
+
+
+@pytest.mark.parametrize(("review", "needle"), [
+    (None, "not written"),
+    ("The proposal reads well overall, with some issues.", "not enumerated"),
+])
+def test_verdict_review_rejects_a_missing_or_unenumerated_review(review, needle):
+    passed, why = verdict_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review, "p-review.md")
+    assert not passed
+    assert needle in why
+
+
+# ---- verdict_review_localized -----------------------------------------------
+
+GERMAN_REVIEW = (
+    "1. Die Forschungsfragen sind zu breit und werden nicht beantwortet.\n"
+    "2. Der Beitrag ist nicht klar von der Vorarbeit abgegrenzt.\n"
+)
+
+
+def test_verdict_review_localized_accepts_a_german_review():
+    passed, why = verdict_review_localized(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, GERMAN_REVIEW, "p-review.md"
+    )
+    assert passed, why
+    assert "German" in why
+
+
+def test_verdict_review_localized_rejects_an_english_review_of_a_german_proposal():
+    passed, why = verdict_review_localized(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, ENUMERATED_REVIEW, "p-review.md"
+    )
+    assert not passed
+    assert "written in German" in why
+
+
+def test_verdict_review_localized_still_enforces_the_structural_check_first():
+    passed, why = verdict_review_localized(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL + "edited", GERMAN_REVIEW, "p-review.md"
+    )
+    assert not passed
+    assert "modified the proposal" in why
+
+
+# ---- verdict_seed -----------------------------------------------------------
+
+
+def test_verdict_seed_accepts_a_structurally_complete_seed():
+    passed, why = verdict_seed(SCOPED_SEED, "energy-budgets.md")
+    assert passed, why
+
+
+@pytest.mark.parametrize(("text", "needle"), [
+    (None, "no seeded proposal file"),
+    ("# just notes\n", "no metadata block"),
+    ("# notes\n\n---\ntitle: T\nlang: en\n---\n", "no references key"),
+])
+def test_verdict_seed_rejects_an_incomplete_seed(text, needle):
+    passed, why = verdict_seed(text, "x.md")
+    assert not passed
+    assert needle in why
+
+
+# ---- verdict_litsearch_expanded ---------------------------------------------
+
+def refs(*ids: str) -> str:
+    entries = "".join(f"- id: {i}\n  type: article-journal\n" for i in ids)
+    return f"# Topic\n\n---\ntitle: T\nreferences:\n{entries}---\n"
+
+
+def test_litsearch_expanded_accepts_a_grown_unique_list():
+    passed, why = verdict_litsearch_expanded(refs("A24One", "B24Two", "C24Three", "D24Four"))
+    assert passed, why
+    assert "4 references" in why
+
+
+def test_litsearch_expanded_fails_when_nothing_was_added():
+    """Three is what the fixture ships with, so three means the skill did not
+    expand anything."""
+    passed, why = verdict_litsearch_expanded(refs("A24One", "B24Two", "C24Three"))
+    assert not passed
+    assert "still only 3" in why
+
+
+def test_litsearch_expanded_fails_on_duplicate_ids():
+    passed, why = verdict_litsearch_expanded(refs("A24One", "B24Two", "C24Three", "A24One"))
+    assert not passed
+    assert "duplicate reference ids" in why
+
+
+def test_litsearch_expanded_fails_when_the_proposal_is_gone():
+    passed, why = verdict_litsearch_expanded(None)
+    assert not passed
+    assert "proposal file gone" in why
+
+
+# ---- verdict_notes_progress -------------------------------------------------
+
+
+def snaps(*rounds: tuple[int, dict[str, int]]) -> list[dict]:
+    return [{"round": r, "files": files} for r, files in rounds]
+
+
+def test_notes_progress_accepts_early_notes_that_grow_before_the_seed():
+    passed, why = verdict_notes_progress(snaps(
+        (2, {"topic.notes.md": 100}),
+        (14, {"topic.notes.md": 900}),
+        (18, {"topic.notes.md": 900, "topic.md": 400}),
+    ))
+    assert passed, why
+
+
+def test_notes_progress_fails_when_no_notes_file_ever_appeared():
+    passed, why = verdict_notes_progress(snaps((5, {}), (18, {"topic.md": 400})))
+    assert not passed
+    assert "never appeared" in why
+
+
+def test_notes_progress_fails_when_the_notes_file_arrives_too_late():
+    passed, why = verdict_notes_progress(snaps(
+        (12, {"topic.notes.md": 100}), (14, {"topic.notes.md": 900}),
+    ))
+    assert not passed
+    assert "first appeared at round 12" in why
+
+
+def test_notes_progress_fails_when_the_notes_file_never_grows():
+    passed, why = verdict_notes_progress(snaps(
+        (2, {"topic.notes.md": 100}), (14, {"topic.notes.md": 100}),
+    ))
+    assert not passed
+    assert "had not grown" in why
+
+
+def test_notes_progress_fails_when_a_proposal_is_seeded_before_convergence():
+    """The expensive failure for this skill: writing the student's proposal
+    before the student has converged on the idea."""
+    passed, why = verdict_notes_progress(snaps(
+        (2, {"topic.notes.md": 100}),
+        (6, {"topic.notes.md": 900, "topic.md": 400}),
+        (14, {"topic.notes.md": 900, "topic.md": 400}),
+    ))
+    assert not passed
+    assert "already present at round 6" in why
+
+
+def test_notes_progress_fails_without_snapshots():
+    passed, why = verdict_notes_progress([])
+    assert not passed
+    assert "no workspace snapshots" in why

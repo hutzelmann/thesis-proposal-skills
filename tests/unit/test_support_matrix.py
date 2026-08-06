@@ -3,11 +3,10 @@
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "harness"))
+import pytest
+import support
 
-import pytest  # noqa: E402
-import support  # noqa: E402
+REPO = Path(__file__).resolve().parents[2]
 
 REGISTRY_TOML = """
 [[models]]
@@ -387,10 +386,9 @@ def test_select_tasks_allows_extended_by_name_only():
 def test_matrix_gate_declined_makes_no_metered_call(monkeypatch, capsys):
     import matrix
 
-    monkeypatch.setattr("sys.argv", ["matrix.py"])
     monkeypatch.setattr("builtins.input", lambda _: "n")
     monkeypatch.setitem(sys.modules, "inspect_ai", object())  # any import attempt breaks
-    assert matrix.main() == 1
+    assert matrix.main([]) == 1
     out = capsys.readouterr().out
     assert "Estimated cost" in out
     assert "aborted before any metered call" in out
@@ -399,7 +397,6 @@ def test_matrix_gate_declined_makes_no_metered_call(monkeypatch, capsys):
 def test_matrix_estimate_only_exits_clean(monkeypatch, capsys):
     import matrix
 
-    monkeypatch.setattr("sys.argv", ["matrix.py", "--estimate-only", "--tier", "cheap"])
     monkeypatch.setitem(sys.modules, "inspect_ai", object())
-    assert matrix.main() == 0
+    assert matrix.main(["--estimate-only", "--tier", "cheap"]) == 0
     assert "TOTAL" in capsys.readouterr().out

@@ -91,11 +91,11 @@ def extract_findings(scan: dict, staged_marker: str) -> list[dict]:
     return sorted(findings, key=lambda f: -f["risk"])
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--threshold", type=float, default=THRESHOLD)
     parser.add_argument("--keep", action="store_true", help="keep the staging workspace")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     token = snyk_token()
     if not token:

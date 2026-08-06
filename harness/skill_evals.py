@@ -34,12 +34,17 @@ from l1_checks import (
     parse_grade,
     select_draft,
     verdict_check_report,
+    verdict_customize_override,
     verdict_draft,
     verdict_early_stop,
     verdict_import,
+    verdict_litsearch_expanded,
     verdict_no_spurious_offer,
+    verdict_notes_progress,
     verdict_provenance,
+    verdict_publish,
     verdict_review,
+    verdict_review_localized,
     verdict_seed,
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
@@ -145,6 +150,45 @@ async def run_check(proposal: str) -> str:
     return result.stdout
 
 
+def verdict_scorer(name: str):
+    """Turn an async `(state, *args) -> (passed, explanation)` function into an
+    Inspect scorer.
+
+    The adapter owns Inspect's mandatory `(state, target)` signature once, so a
+    scorer body states only its verdict. The name is passed explicitly and MUST
+    keep its `_l1` / `_l2` marker: the matrix classifier decides whether a
+    scorer counts toward a cell by looking for `l1` in the registered name
+    (`harness/support.py` — `scorer_counts`), so a renamed scorer silently
+    changes model-support verdicts.
+    """
+    def decorate(fn):
+        @scorer(metrics=[accuracy()], name=name)
+        def build(*args, **kwargs):
+            async def score(state: TaskState, _target: Target) -> Score:
+                ok, why = await fn(state, *args, **kwargs)
+                return Score(value=CORRECT if ok else INCORRECT, explanation=why)
+            return score
+        return build
+    return decorate
+
+
+def proposal_task(skill: str, fixture: str, request: str, scorers: list,
+                  extra_skill_files: dict[str, str] | None = None,
+                  files: dict[str, str] | None = None) -> Task:
+    """The shape every single-turn skill task shares: one sample built from a
+    fixture workspace and the skill's own assets, the standard agent loop, and a
+    local sandbox. Only `scorers` and the request differ between them."""
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(skill, request),
+            files=files if files is not None else stage_files(fixture, skill, extra_skill_files),
+        )],
+        solver=agent_solver(),
+        scorer=scorers,
+        sandbox="local",
+    )
+
+
 async def judge(rubric: str, question: str, answer: str, criterion: str) -> tuple[bool, str]:
     template = (RUBRICS / rubric).read_text(encoding="utf-8")
     prompt = template.format(
@@ -167,45 +211,33 @@ async def produced_draft() -> tuple[str | None, str, str]:
     return chosen, files.get(chosen, ""), where
 
 
-@scorer(metrics=[accuracy()])
-def write_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        chosen, text, where = await produced_draft()
-        if not chosen:
-            return Score(value=INCORRECT, explanation=where)
-        ok, why = verdict_draft(text, await run_check(chosen))
-        return Score(value=CORRECT if ok else INCORRECT, explanation=f"{why} ({where})")
-    return score
+@verdict_scorer("write_l1")
+async def write_l1(_state: TaskState) -> tuple[bool, str]:
+    chosen, text, where = await produced_draft()
+    if not chosen:
+        return False, where
+    ok, why = verdict_draft(text, await run_check(chosen))
+    return ok, f"{why} ({where})"
 
 
-@scorer(metrics=[accuracy()])
-def write_l2_rq_quality():
-    async def score(state: TaskState, target: Target) -> Score:
-        _, text, _ = await produced_draft()
-        passed, why = await judge(
-            "rq_quality.txt", state.input_text, text,
-            "All research questions analytical, self-contained, non-overlapping, not yes/no.",
-        )
-        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("write_l2_rq_quality")
+async def write_l2_rq_quality(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await produced_draft()
+    return await judge(
+        "rq_quality.txt", state.input_text, text,
+        "All research questions analytical, self-contained, non-overlapping, not yes/no.",
+    )
 
 
 @task
 def write_from_seed() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-write",
-                "Please turn my idea notes into a full proposal draft. The file is "
-                f"ws/{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
-            ),
-            # the skill ships its own check.py + structure.json (sync copies),
-            # so standard staging serves the model and the scorer alike
-            files=stage_files("w01-ideate-seed", "proposal-write"),
-        )],
-        solver=agent_solver(),
-        scorer=[write_l1(), write_l2_rq_quality()],
-        sandbox="local",
+    # the skill ships its own check.py + structure.json (sync copies), so
+    # standard staging serves the model and the scorer alike
+    return proposal_task(
+        "proposal-write", "w01-ideate-seed",
+        "Please turn my idea notes into a full proposal draft. The file is "
+        f"ws/{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
+        [write_l1(), write_l2_rq_quality()],
     )
 
 
@@ -215,59 +247,43 @@ F05_PROPOSAL = "microservice-technical-debt.md"
 F05_REVIEW = "microservice-technical-debt-review.md"
 
 
-@scorer(metrics=[accuracy()])
-def review_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        original = (FIXTURES / "f05-slr-interviews" / F05_PROPOSAL).read_text(encoding="utf-8")
-        current = await read_ws(F05_PROPOSAL)
-        review = await read_ws(F05_REVIEW)
-        ok, why = verdict_review(original, current, review, F05_REVIEW)
-        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("review_l1")
+async def review_l1(_state: TaskState) -> tuple[bool, str]:
+    original = (FIXTURES / "f05-slr-interviews" / F05_PROPOSAL).read_text(encoding="utf-8")
+    return verdict_review(
+        original, await read_ws(F05_PROPOSAL), await read_ws(F05_REVIEW), F05_REVIEW
+    )
 
 
-@scorer(metrics=[accuracy()])
-def review_l2_quality():
-    async def score(state: TaskState, target: Target) -> Score:
-        review = await read_ws(F05_REVIEW) or ""
-        oracle = json.loads(
-            (FIXTURES / "f05-slr-interviews" / "expected.json").read_text(encoding="utf-8")
-        )
-        passed, why = await judge(
-            "review_quality.txt", "; ".join(oracle["semantic"]), review,
-            "Finds the seeded defects, actionable, format-agnostic, grammar only as brief hint.",
-        )
-        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("review_l2_quality")
+async def review_l2_quality(_state: TaskState) -> tuple[bool, str]:
+    review = await read_ws(F05_REVIEW) or ""
+    oracle = json.loads(
+        (FIXTURES / "f05-slr-interviews" / "expected.json").read_text(encoding="utf-8")
+    )
+    return await judge(
+        "review_quality.txt", "; ".join(oracle["semantic"]), review,
+        "Finds the seeded defects, actionable, format-agnostic, grammar only as brief hint.",
+    )
 
 
-@scorer(metrics=[accuracy()])
-def no_spurious_offer():
+@verdict_scorer("no_spurious_offer")
+async def no_spurious_offer(state: TaskState) -> tuple[bool, str]:
     """Negative coverage for the failure-path report offer: this fixture's oracle
     expects findings, so the run succeeded and no offer belongs in the answer.
 
     Rides along on tasks that already run rather than costing its own metered
     task — the behaviour under test is what the model says while doing its job.
     """
-    async def score(state: TaskState, target: Target) -> Score:
-        ok, why = verdict_no_spurious_offer(state.output.completion)
-        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
-    return score
+    return verdict_no_spurious_offer(state.output.completion)
 
 
 @task
 def review_fixture() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-review",
-                f"Please review my proposal ws/{F05_PROPOSAL} — is it ready for my supervisor?",
-            ),
-            files=stage_files("f05-slr-interviews", "proposal-review"),
-        )],
-        solver=agent_solver(),
-        scorer=[review_l1(), review_l2_quality(), no_spurious_offer()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-review", "f05-slr-interviews",
+        f"Please review my proposal ws/{F05_PROPOSAL} — is it ready for my supervisor?",
+        [review_l1(), review_l2_quality(), no_spurious_offer()],
     )
 
 
@@ -281,46 +297,33 @@ F21_PROPOSAL = "kubernetes-build-dashboard.md"
 F21_REVIEW = "kubernetes-build-dashboard-review.md"
 
 
-@scorer(metrics=[accuracy()])
-def title_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        original = (FIXTURES / "f21-bad-title" / F21_PROPOSAL).read_text(encoding="utf-8")
-        ok, why = verdict_title_alarm(
-            original, await read_ws(F21_PROPOSAL), await read_ws(F21_REVIEW), F21_REVIEW
-        )
-        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("title_l1")
+async def title_l1(_state: TaskState) -> tuple[bool, str]:
+    original = (FIXTURES / "f21-bad-title" / F21_PROPOSAL).read_text(encoding="utf-8")
+    return verdict_title_alarm(
+        original, await read_ws(F21_PROPOSAL), await read_ws(F21_REVIEW), F21_REVIEW
+    )
 
 
-@scorer(metrics=[accuracy()])
-def title_l2_alarm():
-    async def score(state: TaskState, target: Target) -> Score:
-        review = await read_ws(F21_REVIEW) or ""
-        oracle = json.loads(
-            (FIXTURES / "f21-bad-title" / "expected.json").read_text(encoding="utf-8")
-        )
-        passed, why = await judge(
-            "title_alarm.txt", "; ".join(oracle["semantic"]), review,
-            "Title raised as its own finding, certificate consequence named, one to "
-            "three abstracted alternatives offered, decision left with the student.",
-        )
-        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("title_l2_alarm")
+async def title_l2_alarm(_state: TaskState) -> tuple[bool, str]:
+    review = await read_ws(F21_REVIEW) or ""
+    oracle = json.loads(
+        (FIXTURES / "f21-bad-title" / "expected.json").read_text(encoding="utf-8")
+    )
+    return await judge(
+        "title_alarm.txt", "; ".join(oracle["semantic"]), review,
+        "Title raised as its own finding, certificate consequence named, one to "
+        "three abstracted alternatives offered, decision left with the student.",
+    )
 
 
 @task
 def title_alarm() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-review",
-                f"Please review my proposal ws/{F21_PROPOSAL} — is it ready for my supervisor?",
-            ),
-            files=stage_files("f21-bad-title", "proposal-review"),
-        )],
-        solver=agent_solver(),
-        scorer=[title_l1(), title_l2_alarm()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-review", "f21-bad-title",
+        f"Please review my proposal ws/{F21_PROPOSAL} — is it ready for my supervisor?",
+        [title_l1(), title_l2_alarm()],
     )
 
 
@@ -409,91 +412,38 @@ async def _selected_seed() -> tuple[str | None, str, str]:
     return chosen, files.get(chosen, "") if chosen else "", where
 
 
-@scorer(metrics=[accuracy()])
-def ideate_l1_seed():
-    async def score(state: TaskState, target: Target) -> Score:
-        chosen, text, where = await _selected_seed()
-        ok, why = verdict_seed(text or None, chosen or "")
-        return Score(value=CORRECT if ok else INCORRECT, explanation=f"{why} ({where})")
-    return score
+@verdict_scorer("ideate_l1_seed")
+async def ideate_l1_seed(_state: TaskState) -> tuple[bool, str]:
+    chosen, text, where = await _selected_seed()
+    ok, why = verdict_seed(text or None, chosen or "")
+    return ok, f"{why} ({where})"
 
 
-@scorer(metrics=[accuracy()])
-def ideate_l1_notes_progress(notes_by_round: int = 8, growth_by_round: int = 14,
-                             no_proposal_before: int = 17):
-    """Mechanical dialogue-state assertions from the solver's snapshots: the
-    notes file appears early and has grown by the pivot phase; no proposal file
-    before convergence. Defaults follow longrun-lara.txt: topic at reply 2,
-    pivot at reply 10 (growth observable by round 14), convergence complete at
-    reply 16, so a seed belongs in rounds 17-19 — anything before 17 predates
-    the student's confirmation."""
-    async def score(state: TaskState, target: Target) -> Score:
-        snaps = state.store.get("ws_snapshots", [])
-        if not snaps:
-            return Score(value=INCORRECT, explanation="no workspace snapshots recorded")
-
-        def notes_size(snap):
-            return sum(v for n, v in snap["files"].items() if n.endswith(".notes.md"))
-
-        problems = []
-        with_notes = [s for s in snaps if notes_size(s)]
-        if not with_notes:
-            problems.append("notes file never appeared")
-        else:
-            first = with_notes[0]
-            if first["round"] > notes_by_round:
-                problems.append(
-                    f"notes file first appeared at round {first['round']} "
-                    f"(expected by {notes_by_round})"
-                )
-            by_pivot = [s for s in with_notes if s["round"] <= growth_by_round]
-            if not any(notes_size(s) > notes_size(first) for s in by_pivot[1:]):
-                problems.append(f"notes file had not grown by round {growth_by_round}")
-        early_seed = next(
-            (s["round"] for s in snaps
-             if select_draft(dict.fromkeys(s["files"], ""))[0] and s["round"] < no_proposal_before),
-            None,
-        )
-        if early_seed:
-            problems.append(
-                f"proposal file already present at round {early_seed} (before convergence)"
-            )
-        if problems:
-            return Score(value=INCORRECT, explanation="; ".join(problems))
-        return Score(
-            value=CORRECT,
-            explanation=f"notes from round {with_notes[0]['round']}, grew by the pivot, "
-                        "proposal only at the end",
-        )
-    return score
+@verdict_scorer("ideate_l1_notes_progress")
+async def ideate_l1_notes_progress(state: TaskState, **thresholds) -> tuple[bool, str]:
+    """Round thresholds are `verdict_notes_progress`'s defaults; pass keyword
+    overrides through the scorer call to retune a persona."""
+    return verdict_notes_progress(state.store.get("ws_snapshots", []), **thresholds)
 
 
-@scorer(metrics=[accuracy()])
-def ideate_l1_provenance():
-    async def score(state: TaskState, target: Target) -> Score:
-        _, text, where = await _selected_seed()
-        ok, why = verdict_provenance(dialogue_transcript(state), text or None)
-        return Score(value=CORRECT if ok else INCORRECT, explanation=f"{why} ({where})")
-    return score
+@verdict_scorer("ideate_l1_provenance")
+async def ideate_l1_provenance(state: TaskState) -> tuple[bool, str]:
+    _, text, where = await _selected_seed()
+    ok, why = verdict_provenance(dialogue_transcript(state), text or None)
+    return ok, f"{why} ({where})"
 
 
-@scorer(metrics=[accuracy()])
-def ideate_l1_early_stop():
-    async def score(state: TaskState, target: Target) -> Score:
-        ok, why = verdict_early_stop(await workspace_markdown())
-        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("ideate_l1_early_stop")
+async def ideate_l1_early_stop(_state: TaskState) -> tuple[bool, str]:
+    return verdict_early_stop(await workspace_markdown())
 
 
-@scorer(metrics=[accuracy()])
-def ideate_l2_socratic(criterion: str):
-    async def score(state: TaskState, target: Target) -> Score:
-        _, seed, _ = await _selected_seed()
-        passed, why = await judge(
-            "socratic.txt", dialogue_transcript(state), seed or "(no file created)", criterion
-        )
-        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("ideate_l2_socratic")
+async def ideate_l2_socratic(state: TaskState, criterion: str) -> tuple[bool, str]:
+    _, seed, _ = await _selected_seed()
+    return await judge(
+        "socratic.txt", dialogue_transcript(state), seed or "(no file created)", criterion
+    )
 
 
 def _ideate_sample() -> Sample:
@@ -621,153 +571,91 @@ def assistant_text(state: TaskState) -> str:
     return "\n".join(parts)
 
 
-@scorer(metrics=[accuracy()])
-def check_report_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        original = (FIXTURES / "f15-format-broken" / F15_PROPOSAL).read_text(encoding="utf-8")
-        current = await read_ws(F15_PROPOSAL)
-        ok, why = verdict_check_report(
-            FIXTURES / "f15-format-broken" / "expected.json", original, current,
-            assistant_text(state),
-        )
-        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("check_report_l1")
+async def check_report_l1(state: TaskState) -> tuple[bool, str]:
+    original = (FIXTURES / "f15-format-broken" / F15_PROPOSAL).read_text(encoding="utf-8")
+    return verdict_check_report(
+        FIXTURES / "f15-format-broken" / "expected.json", original,
+        await read_ws(F15_PROPOSAL), assistant_text(state),
+    )
 
 
 @task
 def check_report() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-check", f"Please check my proposal ws/{F15_PROPOSAL}."
-            ),
-            files=stage_files("f15-format-broken", "proposal-check"),
-        )],
-        solver=agent_solver(),
-        scorer=[check_report_l1()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-check", "f15-format-broken",
+        f"Please check my proposal ws/{F15_PROPOSAL}.",
+        [check_report_l1()],
     )
 
 
 # ---------- task: customize writes the override file --------------------------
 
-@scorer(metrics=[accuracy()])
-def customize_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        import tomllib
-        original = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-        if await read_ws("ml-code-review.md") != original:
-            return Score(value=INCORRECT, explanation="customize modified the proposal")
-        guidelines = await read_ws("guidelines.md")
-        if not guidelines:
-            return Score(value=INCORRECT, explanation="guidelines.md not created")
-        m = re.search(r"```toml\n(.*?)```", guidelines, re.DOTALL)
-        if not m:
-            return Score(value=INCORRECT, explanation="no fenced TOML block")
-        try:
-            data = tomllib.loads(m.group(1))
-        except tomllib.TOMLDecodeError as exc:
-            return Score(value=INCORRECT, explanation=f"TOML does not parse: {exc}")
-        if data.get("min_references") != 8:
-            return Score(
-                value=INCORRECT,
-                explanation=f"min_references is {data.get('min_references')!r}, not 8",
-            )
-        detail = str(data.get("timeline_detail", "<absent>")).lower()
-        if detail != "detailed":
-            return Score(
-                value=INCORRECT,
-                explanation=f"timeline_detail is {detail!r}, not 'detailed' — "
-                            "the work plan stays blocked",
-            )
-        return Score(
-            value=CORRECT,
-            explanation='valid TOML: min_references=8, timeline_detail="detailed"',
-        )
-    return score
+@verdict_scorer("customize_l1")
+async def customize_l1(_state: TaskState) -> tuple[bool, str]:
+    original = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+    return verdict_customize_override(
+        original, await read_ws("ml-code-review.md"), await read_ws("guidelines.md")
+    )
 
 
 @task
 def customize_override() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-customize",
-                "My supervisor requires a detailed work plan with milestones in the "
-                "proposal, not just a one-line timeline, and at least 8 references. "
-                "Please adjust the rules for this workspace.",
-            ),
-            files=stage_files("f00-clean-en", "proposal-customize"),
-        )],
-        solver=agent_solver(),
-        scorer=[customize_l1()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-customize", "f00-clean-en",
+        "My supervisor requires a detailed work plan with milestones in the "
+        "proposal, not just a one-line timeline, and at least 8 references. "
+        "Please adjust the rules for this workspace.",
+        [customize_l1()],
     )
 
 
 # ---------- task: publish builds a PDF ---------------------------------------
 
-@scorer(metrics=[accuracy()])
-def publish_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        listing = await sandbox().exec(
-            ["bash", "-c", "ls -la ws/*.pdf 2>/dev/null; cat ws/.gitignore 2>/dev/null"],
-            timeout=10,
-        )
-        if ".pdf" not in listing.stdout:
-            return Score(value=INCORRECT, explanation="no PDF produced: " + listing.stdout[:200])
-        if "*.pdf" not in listing.stdout:
-            return Score(value=INCORRECT, explanation="workspace .gitignore not maintained")
-        return Score(value=CORRECT, explanation="PDF built, gitignore maintained")
-    return score
+@verdict_scorer("publish_l1")
+async def publish_l1(_state: TaskState) -> tuple[bool, str]:
+    listing = await sandbox().exec(
+        ["bash", "-c", "ls -la ws/*.pdf 2>/dev/null; cat ws/.gitignore 2>/dev/null"],
+        timeout=10,
+    )
+    return verdict_publish(listing.stdout)
 
 
 @task
 def publish_build() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt("proposal-publish", "Please build a PDF of my proposal."),
-            files=stage_files("f00-clean-en", "proposal-publish"),
-        )],
-        solver=agent_solver(),
-        scorer=[publish_l1()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-publish", "f00-clean-en",
+        "Please build a PDF of my proposal.",
+        [publish_l1()],
     )
 
 
 # ---------- task: import from messy pasted text -------------------------------
 
-@scorer(metrics=[accuracy()])
-def import_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        files = await workspace_markdown()
-        # same selection as the dev runner (shared verdict module)
-        produced, _ = select_draft(files)
-        if not produced:
-            passed, why = verdict_import(None)
-            return Score(value=INCORRECT, explanation=why)
-        # the skill ships its own check copy, so the scorer uses that one
-        passed, why = verdict_import(files[produced], await run_check(produced), produced)
-        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("import_l1")
+async def import_l1(_state: TaskState) -> tuple[bool, str]:
+    files = await workspace_markdown()
+    # same selection as the dev runner (shared verdict module)
+    produced, _ = select_draft(files)
+    if not produced:
+        return verdict_import(None)
+    # the skill ships its own check copy, so the scorer uses that one
+    return verdict_import(files[produced], await run_check(produced), produced)
 
 
 @task
 def import_messy() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt("proposal-import", MESSY_REQUEST),
-            files={
-                "ws/README-placeholder.txt": "workspace",
-                "skill/scripts/check.py": str(
-                    SKILLS / "proposal-import" / "scripts" / "check.py"),
-                "skill/references/structure.json": str(
-                    SKILLS / "proposal-import" / "references" / "structure.json"),
-            },
-        )],
-        solver=agent_solver(),
-        scorer=[import_l1()],
-        sandbox="local",
+    # no fixture workspace: the source arrives pasted in the request and the
+    # skill creates the proposal, choosing its own content-derived filename
+    return proposal_task(
+        "proposal-import", "", MESSY_REQUEST, [import_l1()],
+        files={
+            "ws/README-placeholder.txt": "workspace",
+            "skill/scripts/check.py": str(
+                SKILLS / "proposal-import" / "scripts" / "check.py"),
+            "skill/references/structure.json": str(
+                SKILLS / "proposal-import" / "references" / "structure.json"),
+        },
     )
 
 
@@ -776,35 +664,18 @@ def import_messy() -> Task:
 W03_PROPOSAL = "serverless-energy-scheduling.md"
 
 
-@scorer(metrics=[accuracy()])
-def litsearch_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        text = await read_ws(W03_PROPOSAL)
-        if not text:
-            return Score(value=INCORRECT, explanation="proposal file gone")
-        ids = re.findall(r"^\s*-\s+id:\s*(\S+)", text, re.MULTILINE)
-        if len(ids) <= 3:
-            return Score(value=INCORRECT, explanation=f"still only {len(ids)} references")
-        if len(ids) != len(set(ids)):
-            return Score(value=INCORRECT, explanation="duplicate reference ids")
-        return Score(value=CORRECT, explanation=f"{len(ids)} references, ids unique")
-    return score
+@verdict_scorer("litsearch_l1")
+async def litsearch_l1(_state: TaskState) -> tuple[bool, str]:
+    return verdict_litsearch_expanded(await read_ws(W03_PROPOSAL))
 
 
 @task
 def litsearch_expand() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-lit-search",
-                f"Please find about three more relevant sources for ws/{W03_PROPOSAL} "
-                "and add them to my references.",
-            ),
-            files=stage_files("w03-snowball-seed", "proposal-lit-search"),
-        )],
-        solver=agent_solver(),
-        scorer=[litsearch_l1()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-lit-search", "w03-snowball-seed",
+        f"Please find about three more relevant sources for ws/{W03_PROPOSAL} "
+        "and add them to my references.",
+        [litsearch_l1()],
     )
 
 
@@ -814,53 +685,32 @@ F04_PROPOSAL = "zero-trust-referenzmodell.md"
 F04_REVIEW = "zero-trust-referenzmodell-review.md"
 
 
-@scorer(metrics=[accuracy()])
-def review_de_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        original = (FIXTURES / "f04-dsr-vendor-heavy" / F04_PROPOSAL).read_text(encoding="utf-8")
-        current = await read_ws(F04_PROPOSAL)
-        review = await read_ws(F04_REVIEW)
-        ok, why = verdict_review(original, current, review, F04_REVIEW)
-        if not ok:
-            return Score(value=INCORRECT, explanation=why)
-        german_signals = sum(1 for w in (" der ", " die ", " und ", " nicht ", " werden ")
-                             if w in (review or ""))
-        if german_signals < 2:
-            return Score(
-                value=INCORRECT, explanation="review does not appear to be written in German"
-            )
-        return Score(value=CORRECT, explanation="German review file present, proposal untouched")
-    return score
+@verdict_scorer("review_de_l1")
+async def review_de_l1(_state: TaskState) -> tuple[bool, str]:
+    original = (FIXTURES / "f04-dsr-vendor-heavy" / F04_PROPOSAL).read_text(encoding="utf-8")
+    return verdict_review_localized(
+        original, await read_ws(F04_PROPOSAL), await read_ws(F04_REVIEW), F04_REVIEW
+    )
 
 
-@scorer(metrics=[accuracy()])
-def review_de_l2():
-    async def score(state: TaskState, target: Target) -> Score:
-        review = await read_ws(F04_REVIEW) or ""
-        oracle = json.loads(
-            (FIXTURES / "f04-dsr-vendor-heavy" / "expected.json").read_text(encoding="utf-8")
-        )
-        passed, why = await judge(
-            "review_quality.txt", "; ".join(oracle["semantic"]), review,
-            "Finds the seeded defects, actionable, format-agnostic, written in German.",
-        )
-        return Score(value=CORRECT if passed else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("review_de_l2")
+async def review_de_l2(_state: TaskState) -> tuple[bool, str]:
+    review = await read_ws(F04_REVIEW) or ""
+    oracle = json.loads(
+        (FIXTURES / "f04-dsr-vendor-heavy" / "expected.json").read_text(encoding="utf-8")
+    )
+    return await judge(
+        "review_quality.txt", "; ".join(oracle["semantic"]), review,
+        "Finds the seeded defects, actionable, format-agnostic, written in German.",
+    )
 
 
 @task
 def review_fixture_de() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-review",
-                f"Bitte begutachte mein Exposé ws/{F04_PROPOSAL} — ist es bereit für die Abgabe?",
-            ),
-            files=stage_files("f04-dsr-vendor-heavy", "proposal-review"),
-        )],
-        solver=agent_solver(),
-        scorer=[review_de_l1(), review_de_l2()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-review", "f04-dsr-vendor-heavy",
+        f"Bitte begutachte mein Exposé ws/{F04_PROPOSAL} — ist es bereit für die Abgabe?",
+        [review_de_l1(), review_de_l2()],
     )
 
 
@@ -870,18 +720,11 @@ def review_fixture_de() -> Task:
 def check_report_hardened() -> Task:
     """Non-interactive framing: the SKILL.md read-only guard (digest re-run
     comparison) must keep the proposal byte-identical even in an autonomous run."""
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-check",
-                "Automated nightly quality gate — no user is present, this run is "
-                f"non-interactive. Check ws/{F15_PROPOSAL} and output the report.",
-            ),
-            files=stage_files("f15-format-broken", "proposal-check"),
-        )],
-        solver=agent_solver(),
-        scorer=[check_report_l1()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-check", "f15-format-broken",
+        "Automated nightly quality gate — no user is present, this run is "
+        f"non-interactive. Check ws/{F15_PROPOSAL} and output the report.",
+        [check_report_l1()],
     )
 
 
@@ -894,32 +737,23 @@ def check_report_hardened() -> Task:
 # a model that stops at "update first" is not accidentally graded correct.
 
 
-@scorer(metrics=[accuracy()])
-def troubleshoot_model_rung_l1():
-    async def score(state: TaskState, target: Target) -> Score:
-        listing = await sandbox().exec(
-            ["bash", "-c", "test -d ws/bug-report && echo present || echo absent"], timeout=10
-        )
-        bundle_present = "present" in listing.stdout
-        ok, why = verdict_troubleshoot_model_rung(state.output.completion, bundle_present)
-        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
-    return score
+@verdict_scorer("troubleshoot_model_rung_l1")
+async def troubleshoot_model_rung_l1(state: TaskState) -> tuple[bool, str]:
+    listing = await sandbox().exec(
+        ["bash", "-c", "test -d ws/bug-report && echo present || echo absent"], timeout=10
+    )
+    return verdict_troubleshoot_model_rung(
+        state.output.completion, bundle_present="present" in listing.stdout
+    )
 
 
 @task
 def troubleshoot_model_rung() -> Task:
-    return Task(
-        dataset=[Sample(
-            input=skill_prompt(
-                "proposal-troubleshoot",
-                "The write skill produced a draft that ignored half of what I told it. I was "
-                "running claude-haiku-4.5. I have already re-run "
-                "`npx skills add hutzelmann/thesis-proposal-skills` and it still happens. "
-                "Is this a bug I should report?",
-            ),
-            files=stage_files("f05-slr-interviews", "proposal-troubleshoot"),
-        )],
-        solver=agent_solver(),
-        scorer=[troubleshoot_model_rung_l1(), no_spurious_offer()],
-        sandbox="local",
+    return proposal_task(
+        "proposal-troubleshoot", "f05-slr-interviews",
+        "The write skill produced a draft that ignored half of what I told it. I was "
+        "running claude-haiku-4.5. I have already re-run "
+        "`npx skills add hutzelmann/thesis-proposal-skills` and it still happens. "
+        "Is this a bug I should report?",
+        [troubleshoot_model_rung_l1(), no_spurious_offer()],
     )

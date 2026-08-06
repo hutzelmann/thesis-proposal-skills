@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from pathlib import Path
 
 DRAFT_ALLOWED_ERRORS = ("references — at least",)
@@ -413,6 +414,132 @@ def verdict_troubleshoot_model_rung(answer: str, bundle_present: bool) -> tuple[
     if problems:
         return False, "; ".join(problems)
     return True, "model rung resolved without a report"
+
+
+GERMAN_SIGNALS = (" der ", " die ", " und ", " nicht ", " werden ")
+
+
+def verdict_review_localized(original: str, current: str | None, review: str | None,
+                             review_name: str, signals: tuple[str, ...] = GERMAN_SIGNALS,
+                             language: str = "German", minimum: int = 2) -> tuple[bool, str]:
+    """`verdict_review` plus a cheap language check on the review file.
+
+    Function words rather than a language model: the property under test is that
+    the skill answered in the proposal's language, and two common German words
+    in a page of prose settle that without a metered call.
+    """
+    ok, why = verdict_review(original, current, review, review_name)
+    if not ok:
+        return False, why
+    if sum(1 for word in signals if word in (review or "")) < minimum:
+        return False, f"review does not appear to be written in {language}"
+    return True, f"{language} review file present, proposal untouched"
+
+
+def verdict_litsearch_expanded(text: str | None, before: int = 3) -> tuple[bool, str]:
+    """lit-search: the reference list grew and carries no duplicate ids.
+
+    `before` is how many references the staged fixture already had, so the
+    verdict is "more than it started with", not an absolute count.
+    """
+    if not text:
+        return False, "proposal file gone"
+    ids = re.findall(r"^\s*-\s+id:\s*(\S+)", text, re.MULTILINE)
+    if len(ids) <= before:
+        return False, f"still only {len(ids)} references"
+    if len(ids) != len(set(ids)):
+        return False, "duplicate reference ids"
+    return True, f"{len(ids)} references, ids unique"
+
+
+def verdict_notes_progress(snapshots: list[dict], notes_by_round: int = 8,
+                           growth_by_round: int = 14,
+                           no_proposal_before: int = 17) -> tuple[bool, str]:
+    """Mechanical dialogue-state assertions over the solver's workspace
+    snapshots: the notes file appears early and has grown by the pivot phase,
+    and no proposal file exists before convergence.
+
+    Defaults follow `harness/personas/longrun-lara.txt`: topic at reply 2, pivot
+    at reply 10 (growth observable by round 14), convergence complete at reply
+    16, so a seed belongs in rounds 17-19 — anything earlier predates the
+    student's confirmation.
+
+    Each snapshot is `{"round": int, "files": {name: size}}`.
+    """
+    if not snapshots:
+        return False, "no workspace snapshots recorded"
+
+    def notes_size(snap: dict) -> int:
+        return sum(v for n, v in snap["files"].items() if n.endswith(NOTES_SUFFIX))
+
+    problems = []
+    with_notes = [s for s in snapshots if notes_size(s)]
+    if not with_notes:
+        problems.append("notes file never appeared")
+    else:
+        first = with_notes[0]
+        if first["round"] > notes_by_round:
+            problems.append(
+                f"notes file first appeared at round {first['round']} "
+                f"(expected by {notes_by_round})"
+            )
+        by_pivot = [s for s in with_notes if s["round"] <= growth_by_round]
+        if not any(notes_size(s) > notes_size(first) for s in by_pivot[1:]):
+            problems.append(f"notes file had not grown by round {growth_by_round}")
+    early_seed = next(
+        (s["round"] for s in snapshots
+         if select_draft(dict.fromkeys(s["files"], ""))[0] and s["round"] < no_proposal_before),
+        None,
+    )
+    if early_seed:
+        problems.append(f"proposal file already present at round {early_seed} (before convergence)")
+    if problems:
+        return False, "; ".join(problems)
+    return True, (f"notes from round {with_notes[0]['round']}, grew by the pivot, "
+                  "proposal only at the end")
+
+
+def verdict_customize_override(original: str, current: str | None, guidelines: str | None,
+                               min_references: int = 8,
+                               timeline_detail: str = "detailed") -> tuple[bool, str]:
+    """customize_override: the workspace override exists, parses, and carries the
+    two settings the request asked for — with the proposal itself untouched.
+
+    The expected values belong to the fixture scenario, not to the rule, so they
+    are parameters. Defaults are the values the shipped task asserts.
+    """
+    if current != original:
+        return False, "customize modified the proposal"
+    if not guidelines:
+        return False, "guidelines.md not created"
+    match = re.search(r"```toml\n(.*?)```", guidelines, re.DOTALL)
+    if not match:
+        return False, "no fenced TOML block"
+    try:
+        data = tomllib.loads(match.group(1))
+    except tomllib.TOMLDecodeError as exc:
+        return False, f"TOML does not parse: {exc}"
+    if data.get("min_references") != min_references:
+        return False, f"min_references is {data.get('min_references')!r}, not {min_references}"
+    detail = str(data.get("timeline_detail", "<absent>")).lower()
+    if detail != timeline_detail:
+        return False, (f"timeline_detail is {detail!r}, not {timeline_detail!r} — "
+                       "the work plan stays blocked")
+    return True, (f"valid TOML: min_references={min_references}, "
+                  f'timeline_detail="{timeline_detail}"')
+
+
+def verdict_publish(listing: str) -> tuple[bool, str]:
+    """publish_build: a PDF was produced and the workspace .gitignore covers it.
+
+    `listing` is the combined output of listing the workspace PDFs and printing
+    its .gitignore — the caller runs that, since this module reads no sandbox.
+    """
+    if ".pdf" not in listing:
+        return False, "no PDF produced: " + listing[:200]
+    if "*.pdf" not in listing:
+        return False, "workspace .gitignore not maintained"
+    return True, "PDF built, gitignore maintained"
 
 
 def verdict_early_stop(files: dict[str, str]) -> tuple[bool, str]:

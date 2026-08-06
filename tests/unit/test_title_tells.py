@@ -6,24 +6,14 @@ absent from the structured data, so no test can reach it.
 """
 
 import json
-import subprocess
-import sys
 import unicodedata
 from pathlib import Path
 
 import pytest
+from helpers import FIXTURES, REPO, run_check
 
-REPO = Path(__file__).resolve().parents[2]
-CHECK = REPO / "skills" / "proposal-check" / "scripts" / "check.py"
-FIXTURES = REPO / "tests" / "fixtures"
 CLEAN = FIXTURES / "f00-clean-en" / "ml-code-review.md"
 TITLE_CFG = json.loads((REPO / "shared" / "structure.json").read_text())["title"]
-
-
-def run_check(proposal: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(CHECK), str(proposal)], capture_output=True, text=True
-    )
 
 
 def with_title(tmp_path: Path, title: str, name: str = "titled.md") -> Path:

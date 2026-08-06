@@ -7,24 +7,14 @@ barrier against Gantt charts.
 """
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+from helpers import FIXTURES, REPO, run_check
 
-REPO = Path(__file__).resolve().parents[2]
-CHECK = REPO / "skills" / "proposal-check" / "scripts" / "check.py"
 STRUCTURE = REPO / "shared" / "structure.json"
-FIXTURES = REPO / "tests" / "fixtures"
 CLEAN = FIXTURES / "f00-clean-en" / "ml-code-review.md"
 CLEAN_DE = FIXTURES / "f12-clean-de" / "typsystem-einheitenfehler.md"
-
-
-def run_check(proposal: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(CHECK), str(proposal)], capture_output=True, text=True
-    )
 
 
 def with_timeline(tmp_path: Path, body: str, source: Path = CLEAN,

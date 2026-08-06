@@ -74,12 +74,12 @@ def enrich_bare_dois(items: list[dict]) -> list[dict]:
     return enriched
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("seeds", nargs="+", metavar="DOI")
     parser.add_argument("--limit-per-seed", type=int, default=20)
     parser.add_argument("--direction", choices=["both", "backward", "forward"], default="both")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     expanded = expand(args.seeds, args.limit_per_seed, args.direction)
     merged = common.dedupe(enrich_bare_dois(expanded))

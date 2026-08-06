@@ -9,14 +9,12 @@ ordinary CI job alongside the other drift guards.
 
 import itertools
 import re
-import sys
 from pathlib import Path
+
+import publish
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = (REPO / "scripts" / "ci_typst_build.sh").read_text(encoding="utf-8")
-sys.path.insert(0, str(REPO / "skills" / "proposal-publish" / "scripts"))
-
-import publish  # noqa: E402
 
 COMMAND = publish.pandoc_command(Path("proposal.md"), "typst")
 

@@ -14,6 +14,7 @@ Exit codes: 0 = ran (see report), 2 = no references block found.
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -91,8 +92,10 @@ def merge(entry: dict, record: dict) -> dict:
     return merged
 
 
-def main() -> int:
-    proposal = Path(sys.argv[1])
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("proposal", type=Path)
+    proposal = parser.parse_args(argv).proposal
     refs = extract_references(proposal.read_text(encoding="utf-8"))
     if not refs:
         print("no references block found — nothing to validate")

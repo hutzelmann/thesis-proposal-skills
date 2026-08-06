@@ -487,6 +487,104 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+class Plan:
+    """Everything the bundle will contain, computed before anything is written.
+
+    Splitting the plan from the write is what makes `--dry-run` honest: it
+    prints this object, and the write step consumes the same one.
+    """
+
+    def __init__(self, level: str, report: str, hash_lines_: list[str], hash_count: int,
+                 lock: Path | None, notes: tuple[str, str] | None, guidelines: Path | None,
+                 stored_outputs: list[tuple[str, str]]) -> None:
+        self.level = level
+        self.report = report
+        self.hash_lines = hash_lines_
+        self.hash_count = hash_count
+        self.lock = lock
+        self.notes = notes
+        self.guidelines = guidelines
+        self.stored_outputs = stored_outputs
+
+    @property
+    def paths(self) -> list[str]:
+        out = [f"{BUNDLE_DIR}/report.md", f"{BUNDLE_DIR}/hashes.txt"]
+        if self.lock is not None:
+            out.append(f"{BUNDLE_DIR}/skills-lock.json")
+        if self.notes is not None:
+            out.append(f"{BUNDLE_DIR}/artifacts/{self.notes[0]}")
+        if self.guidelines is not None:
+            out.append(f"{BUNDLE_DIR}/artifacts/guidelines.md")
+        out += [f"{BUNDLE_DIR}/artifacts/{name}" for name, _ in self.stored_outputs]
+        return out
+
+
+def read_script_outputs(paths: list[Path]) -> list[tuple[str, str]]:
+    """Raises FileNotFoundError naming the first missing capture."""
+    outputs = []
+    for path in paths:
+        if not path.is_file():
+            raise FileNotFoundError(str(path))
+        outputs.append((path.name, path.read_text(encoding="utf-8", errors="replace")))
+    return outputs
+
+
+def plan_bundle(level: str, proposal: Path | None, script_outputs: list[tuple[str, str]],
+                workspace: Path) -> Plan:
+    lock = find_lock(workspace)
+    lines, hash_count = hash_lines(workspace)
+    report = build_report(level, proposal, script_outputs, hash_count, lock)
+    # the copies in artifacts/ must obey the level exactly as the report does;
+    # writing them verbatim would hand out at minimal what minimal withholds
+    allowed = canonical_titles()
+    proposal_names = {proposal.name, proposal.stem} if proposal else set()
+    stored_outputs = [
+        (name, body if level == "full" else redact_text(body, allowed, proposal_names))
+        for name, body in script_outputs
+    ]
+    guidelines = workspace / "guidelines.md"
+    return Plan(
+        level=level, report=report, hash_lines_=lines, hash_count=hash_count, lock=lock,
+        notes=notes_log(proposal), guidelines=guidelines if guidelines.is_file() else None,
+        stored_outputs=stored_outputs,
+    )
+
+
+def write_bundle(bundle: Path, plan: Plan) -> None:
+    (bundle / "artifacts").mkdir(parents=True, exist_ok=True)
+    (bundle / "report.md").write_text(plan.report, encoding="utf-8")
+    (bundle / "hashes.txt").write_text("\n".join(plan.hash_lines) + "\n", encoding="utf-8")
+    if plan.lock is not None:
+        (bundle / "skills-lock.json").write_text(
+            plan.lock.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    if plan.notes is not None:
+        (bundle / "artifacts" / plan.notes[0]).write_text(plan.notes[1], encoding="utf-8")
+    if plan.guidelines is not None:
+        (bundle / "artifacts" / "guidelines.md").write_text(
+            plan.guidelines.read_text(encoding="utf-8", errors="replace"), encoding="utf-8"
+        )
+    for name, body in plan.stored_outputs:
+        (bundle / "artifacts" / name).write_text(body, encoding="utf-8")
+
+
+def clear_existing(bundle: Path, force: bool) -> int:
+    """0 to proceed, 3 to abort. A half-stale bundle reads as a whole one, so an
+    accepted overwrite replaces rather than merges."""
+    if not bundle.exists():
+        return 0
+    if not force:
+        print(f"error: {bundle} already exists — inspect or move it, or pass --force",
+              file=sys.stderr)
+        return 3
+    if not (bundle / "report.md").is_file():
+        print(f"error: {bundle} exists but is not a bug-report bundle — refusing to "
+              "overwrite it", file=sys.stderr)
+        return 3
+    shutil.rmtree(bundle)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     workspace = Path.cwd()
@@ -495,80 +593,31 @@ def main(argv: list[str] | None = None) -> int:
     if args.proposal is not None and not args.proposal.is_file():
         print(f"error: proposal file not found: {args.proposal}", file=sys.stderr)
         return 2
+    try:
+        script_outputs = read_script_outputs(args.script_output)
+    except FileNotFoundError as exc:
+        print(f"error: captured output not found: {exc}", file=sys.stderr)
+        return 2
 
-    script_outputs: list[tuple[str, str]] = []
-    for path in args.script_output:
-        if not path.is_file():
-            print(f"error: captured output not found: {path}", file=sys.stderr)
-            return 2
-        script_outputs.append((path.name, path.read_text(encoding="utf-8", errors="replace")))
-
-    lock = find_lock(workspace)
-    lines, hash_count = hash_lines(workspace)
-    report = build_report(args.level, args.proposal, script_outputs, hash_count, lock)
-
-    # the copies in artifacts/ must obey the level exactly as the report does;
-    # writing them verbatim would hand out at minimal what minimal withholds
-    allowed = canonical_titles()
-    proposal_names = {args.proposal.name, args.proposal.stem} if args.proposal else set()
-    stored_outputs = [
-        (name, body if args.level == "full" else redact_text(body, allowed, proposal_names))
-        for name, body in script_outputs
-    ]
-
-    planned = [f"{BUNDLE_DIR}/report.md", f"{BUNDLE_DIR}/hashes.txt"]
-    if lock is not None:
-        planned.append(f"{BUNDLE_DIR}/skills-lock.json")
-    notes = notes_log(args.proposal)
-    if notes is not None:
-        planned.append(f"{BUNDLE_DIR}/artifacts/{notes[0]}")
-    guidelines = workspace / "guidelines.md"
-    if guidelines.is_file():
-        planned.append(f"{BUNDLE_DIR}/artifacts/guidelines.md")
-    for name, _ in script_outputs:
-        planned.append(f"{BUNDLE_DIR}/artifacts/{name}")
+    plan = plan_bundle(args.level, args.proposal, script_outputs, workspace)
 
     if args.dry_run:
         print(f"level: {args.level} (of {', '.join(LEVELS)})")
         print(f"would write into {bundle}:")
-        for item in planned:
+        for item in plan.paths:
             print(f"  {item}")
-        print(f"\n{hash_count} installed skill file(s) would be hashed")
+        print(f"\n{plan.hash_count} installed skill file(s) would be hashed")
         print("\n--- report.md as it would be written ---")
-        print(report)
+        print(plan.report)
         return 0
 
-    if bundle.exists():
-        if not args.force:
-            print(f"error: {bundle} already exists — inspect or move it, or pass --force",
-                  file=sys.stderr)
-            return 3
-        if not (bundle / "report.md").is_file():
-            print(f"error: {bundle} exists but is not a bug-report bundle — refusing to "
-                  "overwrite it", file=sys.stderr)
-            return 3
-        # a half-stale bundle reads as a whole one, so replace rather than merge
-        shutil.rmtree(bundle)
-
-    (bundle / "artifacts").mkdir(parents=True, exist_ok=True)
-    (bundle / "report.md").write_text(report, encoding="utf-8")
-    (bundle / "hashes.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    if lock is not None:
-        (bundle / "skills-lock.json").write_text(
-            lock.read_text(encoding="utf-8"), encoding="utf-8"
-        )
-    if notes is not None:
-        (bundle / "artifacts" / notes[0]).write_text(notes[1], encoding="utf-8")
-    if guidelines.is_file():
-        (bundle / "artifacts" / "guidelines.md").write_text(
-            guidelines.read_text(encoding="utf-8", errors="replace"), encoding="utf-8"
-        )
-    for name, body in stored_outputs:
-        (bundle / "artifacts" / name).write_text(body, encoding="utf-8")
+    if (code := clear_existing(bundle, args.force)) != 0:
+        return code
+    write_bundle(bundle, plan)
 
     print(f"bundle written to {bundle} at level {args.level}")
     print("nothing was sent — review it, then deliver it yourself")
-    for item in planned:
+    for item in plan.paths:
         print(f"  {item}")
     return 0
 

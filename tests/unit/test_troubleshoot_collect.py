@@ -9,15 +9,10 @@ computes it differently, every submitted report becomes unidentifiable.
 
 import json
 import subprocess
-import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-SKILL = REPO / "skills" / "proposal-troubleshoot"
-sys.path.insert(0, str(SKILL / "scripts"))
-
-import pytest  # noqa: E402
-from collect import (  # noqa: E402
+import pytest
+from collect import (
     canonical_titles,
     describe_proposal,
     file_hashes,
@@ -28,6 +23,9 @@ from collect import (  # noqa: E402
     resolve_model,
     strip_personal_data,
 )
+
+REPO = Path(__file__).resolve().parents[2]
+SKILL = REPO / "skills" / "proposal-troubleshoot"
 
 PROPOSAL = """# Introduction to the Topic
 

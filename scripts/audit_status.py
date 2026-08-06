@@ -64,10 +64,10 @@ def fetch_all() -> dict:
     return verdicts
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--update", action="store_true", help="rewrite the baseline")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     try:
         current = fetch_all()

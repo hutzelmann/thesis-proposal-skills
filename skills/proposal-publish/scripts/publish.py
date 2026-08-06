@@ -151,12 +151,12 @@ def build(proposal: Path, kind: str, tool: str) -> list[Path]:
     return [docx]
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("proposal", type=Path)
     parser.add_argument("--handout", action="store_true",
                         help="write a stripped markdown export instead of building")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     proposal = args.proposal.resolve()
 
     if args.handout:

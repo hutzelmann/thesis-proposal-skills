@@ -10,14 +10,12 @@ is an install someone edited, and the two must never read alike.
 """
 
 import subprocess
-import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts"))
+import identify_release
+import pytest
 
-import identify_release  # noqa: E402
-import pytest  # noqa: E402
+REPO = Path(__file__).resolve().parents[2]
 
 SKILL_FILE = "skills/proposal-check/SKILL.md"
 OTHER_FILE = "skills/proposal-check/scripts/check.py"

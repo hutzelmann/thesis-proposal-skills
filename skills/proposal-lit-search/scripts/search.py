@@ -47,12 +47,12 @@ def federate(query: str, limit: int, sources: list[str]) -> list[dict]:
     return common.dedupe(collected)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("query")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--sources", default=",".join(SEARCH_SOURCES))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     requested = [s.strip() for s in args.sources.split(",") if s.strip()]
     if unknown := [s for s in requested if s not in SEARCH_SOURCES]:

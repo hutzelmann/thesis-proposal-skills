@@ -1,14 +1,7 @@
 """L0: import reference validation (skill-import spec scenarios), offline."""
 
-import sys
-from pathlib import Path
-
-REPO = Path(__file__).resolve().parents[2]
-SCRIPTS = REPO / "skills" / "proposal-import" / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-
-import common  # noqa: E402
-import validate_refs  # noqa: E402
+import common
+import validate_refs
 
 PROPOSAL = """Body text [@Good25Paper] and [@NoDoi24Entry] and [@Broken23Doi].
 
@@ -42,8 +35,7 @@ def run_main(tmp_path, monkeypatch, capsys, http_json, search):
     monkeypatch.setattr(validate_refs.crossref, "search", search)
     p = tmp_path / "x.md"
     p.write_text(PROPOSAL)
-    monkeypatch.setattr(sys, "argv", ["validate_refs.py", str(p)])
-    assert validate_refs.main() == 0
+    assert validate_refs.main([str(p)]) == 0
     return capsys.readouterr().out
 
 
@@ -82,8 +74,7 @@ def test_offline_path(tmp_path, monkeypatch, capsys):
     assert "UNVERIFIABLE" not in out.split("OFFLINE")[0]  # offline is not misreported
 
 
-def test_no_references_block(tmp_path, monkeypatch):
+def test_no_references_block(tmp_path):
     p = tmp_path / "y.md"
     p.write_text("Just text, no metadata.\n")
-    monkeypatch.setattr(sys, "argv", ["validate_refs.py", str(p)])
-    assert validate_refs.main() == 2
+    assert validate_refs.main([str(p)]) == 2

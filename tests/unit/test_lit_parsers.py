@@ -6,17 +6,13 @@ a silent skill regression.
 """
 
 import json
-import sys
 from pathlib import Path
 
+import common
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-SCRIPTS = REPO / "skills" / "proposal-lit-search" / "scripts"
 DATA = REPO / "tests" / "unit" / "data"
-sys.path.insert(0, str(SCRIPTS))
-
-import common  # noqa: E402
 
 
 def patched(monkeypatch, payload):

@@ -522,12 +522,12 @@ def section_text(body: str, title: str) -> str:
 
 # ---------- report -----------------------------------------------------------
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("proposal", type=Path)
     parser.add_argument("--guidelines", type=Path, default=None)
     parser.add_argument("--structure", type=Path, default=None)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     structure = load_structure(args.structure)
     overrides = load_overrides(args.proposal, args.guidelines)
