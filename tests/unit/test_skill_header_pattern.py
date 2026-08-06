@@ -124,7 +124,8 @@ def test_workflow_line_marks_its_own_skill(skill_md):
         f"{name}: bolded `{marked[0]}` is not a skill name"
     )
     assert marked[0] == name, (
-        f"{name}: workflow line bolds `{marked[0]}` — a sibling's line was copied without re-marking"
+        f"{name}: workflow line bolds `{marked[0]}` — a sibling's line was copied "
+        "without re-marking"
     )
 
 

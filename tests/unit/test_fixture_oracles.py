@@ -37,13 +37,17 @@ def test_oracle_holds(oracle_path: Path):
     expected = oracle["check"]
     assert result.returncode == expected["exit_code"], result.stdout
 
-    error_lines = [l for l in result.stdout.splitlines() if l.startswith("- ERROR:")]
-    warning_lines = [l for l in result.stdout.splitlines() if l.startswith("- WARNING:")]
+    error_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("- ERROR:")]
+    warning_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("- WARNING:")]
 
     for needle in expected["errors_contain"]:
-        assert any(needle in l for l in error_lines), f"missing error `{needle}`\n{result.stdout}"
+        assert any(needle in ln for ln in error_lines), (
+            f"missing error `{needle}`\n{result.stdout}"
+        )
     for needle in expected["warnings_contain"]:
-        assert any(needle in l for l in warning_lines), f"missing warning `{needle}`\n{result.stdout}"
+        assert any(needle in ln for ln in warning_lines), (
+            f"missing warning `{needle}`\n{result.stdout}"
+        )
     # completeness: every actual error must be pinned by the oracle
     for line in error_lines:
         assert any(n in line for n in expected["errors_contain"]), f"unpinned error: {line}"

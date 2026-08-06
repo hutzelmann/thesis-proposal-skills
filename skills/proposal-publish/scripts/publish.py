@@ -80,7 +80,7 @@ def strip_abstracts(text: str) -> str:
 def ensure_gitignore(workspace: Path) -> None:
     gitignore = workspace / ".gitignore"
     existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    present = {l.strip() for l in existing.splitlines()}
+    present = {line.strip() for line in existing.splitlines()}
     missing = [e for e in GITIGNORE_ENTRIES if e not in present]
     if not missing:
         return
@@ -107,8 +107,10 @@ def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
         "pandoc", str(proposal),
         # order matters: author-intext expands "@key [see @other]" into a name
         # plus the intact two-citation group, which cite-split then brackets
-        "--lua-filter", str(TEMPLATES / "author-intext.lua"),  # before citeproc: @key gets its author name
-        "--lua-filter", str(TEMPLATES / "cite-split.lua"),  # before citeproc: one bracket per citation
+        # before citeproc: @key gets its author name
+        "--lua-filter", str(TEMPLATES / "author-intext.lua"),
+        # before citeproc: one bracket per citation
+        "--lua-filter", str(TEMPLATES / "cite-split.lua"),
         "--csl", str(TEMPLATES / "compact-numeric.csl"),
         "-M", f"reference-section-title={reference_section_title(lang)}",
         "--citeproc",
@@ -119,9 +121,10 @@ def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
         "--lua-filter", str(TEMPLATES / "todo-filter.lua"),
     ]
     if kind == "typst":
-        return base + ["--template", str(TEMPLATES / "proposal.typ")]
+        return [*base, "--template", str(TEMPLATES / "proposal.typ")]
     if kind == "latex":
-        return base + [
+        return [
+            *base,
             "--number-sections",
             "--include-in-header", str(TEMPLATES / "latex-header.tex"),
             "-V", "papersize=a4", "-V", "geometry:margin=2.2cm", "-V", "fontsize=11pt",
@@ -135,16 +138,16 @@ def build(proposal: Path, kind: str, tool: str) -> list[Path]:
     cmd = pandoc_command(proposal, kind, lang)
     if kind == "typst":
         typ, pdf = stem.with_suffix(".typ"), stem.with_suffix(".pdf")
-        run(cmd + ["-o", str(typ)])
+        run([*cmd, "-o", str(typ)])
         run(["typst", "compile", str(typ), str(pdf)])
         return [pdf, typ]
     if kind == "latex":
         tex, pdf = stem.with_suffix(".tex"), stem.with_suffix(".pdf")
-        run(cmd + ["-s", "-o", str(tex)])
-        run(cmd + [f"--pdf-engine={tool}", "-o", str(pdf)])
+        run([*cmd, "-s", "-o", str(tex)])
+        run([*cmd, f"--pdf-engine={tool}", "-o", str(pdf)])
         return [pdf, tex]
     docx = stem.with_suffix(".docx")
-    run(cmd + ["-o", str(docx)])
+    run([*cmd, "-o", str(docx)])
     return [docx]
 
 
@@ -159,7 +162,10 @@ def main() -> int:
     if args.handout:
         target = proposal.with_name(proposal.stem + "-handout.md")
         target.write_text(strip_abstracts(proposal.read_text(encoding="utf-8")), encoding="utf-8")
-        print(f"handout written: {target.name} (abstracts stripped — rename to include your name before sending)")
+        print(
+            f"handout written: {target.name} (abstracts stripped — "
+            "rename to include your name before sending)"
+        )
         return 0
 
     resolved = resolve_engine()

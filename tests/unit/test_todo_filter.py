@@ -15,7 +15,10 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 TEMPLATES = REPO / "skills" / "proposal-publish" / "templates"
 
-pytestmark = pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+pytestmark = [
+    pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed"),
+    pytest.mark.slow,
+]
 
 METADATA = textwrap.dedent("""\
 
@@ -82,7 +85,8 @@ def test_own_line_marker_becomes_a_block_and_keeps_surrounding_prose():
 def test_marker_inside_a_sentence_stays_inline():
     out = convert("The evaluation uses [TODO: select the dataset] as its input.\n")
     assert "#todo-inline(1)[select the dataset]" in out
-    assert "The evaluation uses" in out and "as its input." in out
+    assert "The evaluation uses" in out
+    assert "as its input." in out
 
 
 def test_numbering_is_continuous_across_both_forms():
@@ -130,7 +134,8 @@ def test_marker_in_a_research_question_item_degrades_to_inline():
     # a block annotation here would break rq-filter's pandoc.Plain rebuild
     assert "#todo-block" not in out
     assert "#todo-inline(1)[confirm the baseline detector]" in out
-    assert "#rq(1)[" in out and "#rq(2)[" in out
+    assert "#rq(1)[" in out
+    assert "#rq(2)[" in out
     assert "@Tan25Flexibl" not in out  # citation still resolved
 
 
@@ -139,7 +144,10 @@ def test_marker_split_across_source_lines_joins_into_one_annotation():
         The gap is [TODO: decide between a prototype
         implementation and a literature review] and it ends here.
         """))
-    assert "#todo-inline(1)[decide between a prototype implementation and a literature review]" in out
+    assert (
+        "#todo-inline(1)[decide between a prototype implementation and a literature review]"
+        in out
+    )
 
 
 def test_latex_guard_skips_the_fill_when_the_hint_carries_markup():

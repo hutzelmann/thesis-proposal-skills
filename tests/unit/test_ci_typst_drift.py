@@ -7,6 +7,7 @@ that let the LaTeX tier ship broken. Needs no toolchain, so it runs in the
 ordinary CI job alongside the other drift guards.
 """
 
+import itertools
 import re
 import sys
 from pathlib import Path
@@ -24,9 +25,8 @@ def template_assets(flag: str) -> set[str]:
     """Basenames passed to a given pandoc flag by the shipped command."""
     return {
         Path(value).name
-        # pairwise scan: a flag's value is the token after it, so the offset
-        # list is one shorter and the pairing is deliberately not strict
-        for option, value in zip(COMMAND, COMMAND[1:], strict=False)
+        # pairwise scan: a flag's value is the token that follows it
+        for option, value in itertools.pairwise(COMMAND)
         if option == flag
     }
 
@@ -48,9 +48,11 @@ def test_script_uses_the_same_template_and_style():
 
 
 def test_script_keeps_citation_processing():
-    assert "--citeproc" in COMMAND and "--citeproc" in SCRIPT
+    assert "--citeproc" in COMMAND
+    assert "--citeproc" in SCRIPT
 
 
 def test_script_covers_the_same_fixture_corpus():
     # both sides must exclude the non-proposal markdown files
-    assert "README.md" in SCRIPT and "guidelines.md" in SCRIPT
+    assert "README.md" in SCRIPT
+    assert "guidelines.md" in SCRIPT

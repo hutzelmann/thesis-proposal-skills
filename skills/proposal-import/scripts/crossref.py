@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# GENERATED from skills/proposal-lit-search/scripts/crossref.py — edit there, then run scripts/sync_shared.py
+# GENERATED from skills/proposal-lit-search/scripts/crossref.py
+# Edit there, then run scripts/sync_shared.py
 """Crossref source client.
 
 API base: https://api.crossref.org — REST/JSON, keyless. Politeness comes from

@@ -21,7 +21,8 @@ def test_clean_doi_strips_url_form():
 def test_entry_url_only_without_doi():
     with_doi = common.entry(title="T", source="s", doi="10.1/x", url="http://u")
     without = common.entry(title="T", source="s", url="http://u")
-    assert "URL" not in with_doi and with_doi["DOI"] == "10.1/x"
+    assert "URL" not in with_doi
+    assert with_doi["DOI"] == "10.1/x"
     assert without["URL"] == "http://u"
 
 
@@ -52,7 +53,10 @@ def test_make_key_shape():
 
 
 def test_csl_yaml_roundtrip_via_check_regex():
-    items = [make("A: Colon Title", doi="10.1/x", authors=[{"family": "Doe", "given": "J."}], year=2025)]
+    items = [
+        make("A: Colon Title", doi="10.1/x",
+             authors=[{"family": "Doe", "given": "J."}], year=2025)
+    ]
     items[0]["id"] = common.make_key(items[0])
     yaml = common.to_csl_yaml(items)
     assert '- id: Doe25Colon' in yaml
@@ -68,7 +72,9 @@ def test_dedupe_keeps_distinct_bare_doi_items():
 def test_get_key_env_then_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv(common.KEY_FILE_ENV, raising=False)
-    (tmp_path / "api-keys.env").write_text("# keys\nOPENALEX_API_KEY = from-file\nCONTACT_EMAIL=a@b.c\n")
+    (tmp_path / "api-keys.env").write_text(
+        "# keys\nOPENALEX_API_KEY = from-file\nCONTACT_EMAIL=a@b.c\n"
+    )
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
     assert common.get_key("OPENALEX_API_KEY") == "from-file"
     monkeypatch.setenv("OPENALEX_API_KEY", "from-env")
@@ -115,7 +121,9 @@ def test_get_key_explicit_path_overrides_and_resolves_per_key(tmp_path, monkeypa
     override.write_text("OPENALEX_API_KEY=from-override\n")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    (workspace / "api-keys.env").write_text("OPENALEX_API_KEY=from-workspace\nCONTACT_EMAIL=a@b.c\n")
+    (workspace / "api-keys.env").write_text(
+        "OPENALEX_API_KEY=from-workspace\nCONTACT_EMAIL=a@b.c\n"
+    )
     monkeypatch.chdir(workspace)
     monkeypatch.setenv(common.KEY_FILE_ENV, str(override))
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)

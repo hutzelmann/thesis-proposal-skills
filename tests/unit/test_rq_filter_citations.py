@@ -50,21 +50,25 @@ def run_filter_chain(target: str) -> subprocess.CompletedProcess:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
 def test_citation_inside_rq_reaches_typst_resolved():
     result = run_filter_chain("typst")
     out = result.stdout
-    assert "#rq(1)[" in out and "#rq(2)[" in out
+    assert "#rq(1)[" in out
+    assert "#rq(2)[" in out
     # the broken filter re-emitted the citation as a bare typst @key
     # reference with no matching label in the final document
     assert "@Tan25Flexibl" not in out
     assert "not found" not in result.stderr
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
 def test_citation_inside_rq_reaches_latex_resolved():
     result = run_filter_chain("latex")
     out = result.stdout
-    assert "\\rqblock{1}{" in out and "\\rqblock{2}{" in out
+    assert "\\rqblock{1}{" in out
+    assert "\\rqblock{2}{" in out
     assert "@Tan25Flexibl" not in out
     assert "not found" not in result.stderr

@@ -19,14 +19,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import common  # noqa: E402
-import crossref  # noqa: E402
+import common
+import crossref
 
 
 def extract_references(text: str) -> list[dict]:
     """Narrow extraction of reference entries from the trailing metadata block."""
     lines = text.rstrip("\n").split("\n")
-    delim = [i for i, l in enumerate(lines) if re.fullmatch(r"---\s*", l)]
+    delim = [i for i, line in enumerate(lines) if re.fullmatch(r"---\s*", line)]
     if len(delim) < 2 or delim[-1] != len(lines) - 1:
         return []
     block = lines[delim[-2] + 1 : delim[-1]]
@@ -104,18 +104,31 @@ def main() -> int:
             if doi := entry.get("DOI"):
                 record = lookup_doi(doi)
                 if record is None or not record.get("title"):
-                    print(f"UNVERIFIABLE {entry['id']}: DOI {doi} does not resolve — mark [TODO: verify reference {entry['id']}]")
+                    print(
+                        f"UNVERIFIABLE {entry['id']}: DOI {doi} does not resolve — "
+                        f"mark [TODO: verify reference {entry['id']}]"
+                    )
                 elif entry.get("title") and not title_matches(record["title"], entry["title"]):
-                    print(f"UNVERIFIABLE {entry['id']}: DOI resolves to a different title ({record['title'][:60]}…) — mark [TODO: verify reference {entry['id']}]")
+                    print(
+                        f"UNVERIFIABLE {entry['id']}: DOI resolves to a different title "
+                        f"({record['title'][:60]}…) — "
+                        f"mark [TODO: verify reference {entry['id']}]"
+                    )
                 else:
                     print(f"VERIFIED {entry['id']}: DOI resolves and matches")
                     enriched_entries.append(merge(entry, record))
             else:
                 record = identify(entry)
                 if record is None:
-                    print(f"UNVERIFIABLE {entry['id']}: no confident match found — mark [TODO: verify reference {entry['id']}]")
+                    print(
+                        f"UNVERIFIABLE {entry['id']}: no confident match found — "
+                        f"mark [TODO: verify reference {entry['id']}]"
+                    )
                 else:
-                    print(f"ENRICHED {entry['id']}: identified via title match, DOI {record.get('DOI', '—')}")
+                    print(
+                        f"ENRICHED {entry['id']}: identified via title match, "
+                        f"DOI {record.get('DOI', '—')}"
+                    )
                     enriched_entries.append(merge(entry, record))
         except common.SourceError as exc:
             print(f"OFFLINE {entry['id']}: {exc} — validation skipped for this entry")

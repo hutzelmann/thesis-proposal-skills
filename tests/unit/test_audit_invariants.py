@@ -34,7 +34,9 @@ def test_no_dynamic_code_loading(script):
     if str(script.relative_to(REPO / "skills")) not in SUBPROCESS_ALLOWED:
         patterns.append("subprocess")
     for pattern in patterns:
-        assert pattern not in text, f"{script.name}: forbidden dynamic-execution pattern `{pattern}`"
+        assert pattern not in text, (
+            f"{script.name}: forbidden dynamic-execution pattern `{pattern}`"
+        )
 
 
 @pytest.mark.parametrize("script", USER_SCRIPTS, ids=ids(USER_SCRIPTS))

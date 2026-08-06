@@ -20,7 +20,7 @@ import common  # noqa: E402
 
 
 def patched(monkeypatch, payload):
-    monkeypatch.setattr(common, "http_json", lambda *a, **k: payload)
+    monkeypatch.setattr(common, "http_json", lambda *_a, **_k: payload)
 
 
 def load(name):
@@ -66,7 +66,7 @@ def test_crossref_references(monkeypatch):
 def test_arxiv_search(monkeypatch):
     import arxiv
     xml = (DATA / "arxiv_search_sample.xml").read_text(encoding="utf-8")
-    monkeypatch.setattr(common, "http_text", lambda *a, **k: xml)
+    monkeypatch.setattr(common, "http_text", lambda *_a, **_k: xml)
     items = arxiv.search("code review", 3)
     assert_entries(items)
     assert any(i.get("abstract") for i in items)
@@ -110,7 +110,8 @@ def test_snowball_enrichment_uses_public_parser(monkeypatch):
     work = sample["message"]["items"][0]
     patched(monkeypatch, {"message": work})
     enriched = snowball.enrich_bare_dois([{"DOI": "10.1/x", "_source": "opencitations"}])
-    assert enriched and enriched[0]["title"]
+    assert enriched
+    assert enriched[0]["title"]
     assert crossref.parse_work(work)["title"] == enriched[0]["title"]
 
 
@@ -119,4 +120,5 @@ def test_semantic_scholar_recommendations(monkeypatch):
     sample = load("semantic_scholar_search_sample.json")
     patched(monkeypatch, {"recommendedPapers": sample["data"]})
     items = semantic_scholar.recommendations("10.1/x", 3)
-    assert items and all(i["title"] for i in items)
+    assert items
+    assert all(i["title"] for i in items)

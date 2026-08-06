@@ -164,9 +164,7 @@ def epochs_for(task: str, tier: str, cfg: TaskConfig, default: int = DEFAULT_EPO
 
 
 def scorer_counts(scorer_name: str, task: str, cfg: TaskConfig) -> bool:
-    if task in cfg.excluded_l1 and "l1" in scorer_name:
-        return False
-    return True
+    return not (task in cfg.excluded_l1 and "l1" in scorer_name)
 
 
 def epoch_pass(scores: dict[str, object], task: str, cfg: TaskConfig) -> bool | None:
@@ -204,7 +202,9 @@ def model_verdict(cells: dict[str, str]) -> Verdict:
     return Verdict(status, flaky, failing, untested)
 
 
-def _prior(task: str, cfg: TaskConfig, history: dict[str, tuple[int, int]] | None) -> tuple[int, int]:
+def _prior(
+    task: str, cfg: TaskConfig, history: dict[str, tuple[int, int]] | None
+) -> tuple[int, int]:
     if history and task in history:
         return history[task]
     return cfg.priors.get(task, cfg.priors["default"])

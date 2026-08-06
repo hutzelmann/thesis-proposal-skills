@@ -33,7 +33,7 @@ def format_describers():
 
 def test_discovery_finds_known_describers():
     found = {name for name, _, _ in format_describers()}
-    assert EXPECTED_DESCRIBERS <= found, (
+    assert found >= EXPECTED_DESCRIBERS, (
         f"format-describing skills no longer discovered: {EXPECTED_DESCRIBERS - found}"
     )
 

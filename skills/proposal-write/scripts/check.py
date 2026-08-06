@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# GENERATED from skills/proposal-check/scripts/check.py — edit there, then run scripts/sync_shared.py
+# GENERATED from skills/proposal-check/scripts/check.py
+# Edit there, then run scripts/sync_shared.py
 """Deterministic low-level checks for a thesis proposal file.
 
 Stdlib-only (Python >= 3.11). Reads the proposal's markdown, its trailing
@@ -21,6 +22,7 @@ import re
 import sys
 import tomllib
 import unicodedata
+from itertools import pairwise
 from pathlib import Path
 
 BOOLEAN_LITERALS = {"y", "n", "yes", "no", "on", "off", "true", "false"}
@@ -104,7 +106,7 @@ def split_proposal(text: str) -> tuple[str, Metadata]:
     """Split body from the trailing metadata block; extract narrow fields."""
     meta = Metadata()
     lines = text.rstrip("\n").split("\n")
-    delim = [i for i, l in enumerate(lines) if re.fullmatch(r"---\s*", l)]
+    delim = [i for i, line in enumerate(lines) if re.fullmatch(r"---\s*", line)]
     if len(delim) >= 2 and delim[-1] == len(lines) - 1:
         start, end = delim[-2], delim[-1]
         block = "\n".join(lines[start + 1 : end])
@@ -237,10 +239,15 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
         errors.append("no trailing metadata block found (file must end with a `---` YAML block)")
     else:
         if not meta.blank_line_before:
-            errors.append("no blank line before the trailing `---` block (pandoc will treat it as body text)")
+            errors.append(
+                "no blank line before the trailing `---` block "
+                "(pandoc will treat it as body text)"
+            )
         for rid in meta.reference_ids:
             if rid.lower() in BOOLEAN_LITERALS:
-                errors.append(f"reference id `{rid}` is a YAML boolean literal — rename or quote it")
+                errors.append(
+                    f"reference id `{rid}` is a YAML boolean literal — rename or quote it"
+                )
         dupes = {r for r in meta.reference_ids if meta.reference_ids.count(r) > 1}
         for rid in sorted(dupes):
             errors.append(f"duplicate reference id `{rid}`")
@@ -249,8 +256,8 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
         else:
             warnings.extend(title_warnings(meta.title, structure["title"], lang))
         body_lines = body.split("\n")
-        delims = [i for i, l in enumerate(body_lines) if re.fullmatch(r"---\s*", l)]
-        for a, b in zip(delims, delims[1:], strict=False):
+        delims = [i for i, line in enumerate(body_lines) if re.fullmatch(r"---\s*", line)]
+        for a, b in pairwise(delims):
             block = "\n".join(body_lines[a + 1 : b])
             if re.search(r"^\s*\w[\w-]*\s*:", block, re.MULTILINE):
                 errors.append(
@@ -305,7 +312,7 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
         if idx is not None:
             # name the heading as written, not the `{methodology}` template
             positions.append((idx, head_texts[idx] if by_prefix else label))
-    for (prev_i, prev), (cur_i, cur) in zip(positions, positions[1:], strict=False):
+    for (prev_i, prev), (cur_i, cur) in pairwise(positions):
         if cur_i < prev_i:
             errors.append(f"section out of order: `{cur}` before `{prev}`")
 
@@ -332,7 +339,8 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
             chosen = meth_heads[0][len(meth_prefix):].strip()
             if chosen not in meth_names:
                 errors.append(
-                    f"unknown methodology `{chosen}` — must be one of: {', '.join(sorted(meth_names))}"
+                    f"unknown methodology `{chosen}` — must be one of: "
+                    f"{', '.join(sorted(meth_names))}"
                 )
             else:
                 for sub in methodologies[meth_names[chosen]]["subsections"]:
@@ -457,7 +465,9 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
         break
     if re.search(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b", body):
         warnings.append("email address found — personal data is forbidden")
-    if re.search(r"\b(matriculation|matrikel)", body, re.IGNORECASE) or re.search(r"(?<!\d)\d{7,8}(?!\d)", body):
+    if re.search(r"\b(matriculation|matrikel)", body, re.IGNORECASE) or re.search(
+        r"(?<!\d)\d{7,8}(?!\d)", body
+    ):
         warnings.append("possible matriculation number / personal data")
     if meta.has_author_key:
         # the exception (a program requiring a named title page) is declared in
@@ -527,7 +537,10 @@ def main() -> int:
     # identifies the exact content checked; a re-run with a differing digest
     # means the file changed between the runs (read-only mandate tripwire)
     print(f"digest: sha256:{hashlib.sha256(args.proposal.read_bytes()).hexdigest()}")
-    print("\n## Verified mechanically — errors" if errors else "\n## Verified mechanically — no errors")
+    print(
+        "\n## Verified mechanically — errors" if errors
+        else "\n## Verified mechanically — no errors"
+    )
     for e in errors:
         print(f"- ERROR: {e}")
     if warnings:

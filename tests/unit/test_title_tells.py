@@ -75,7 +75,9 @@ def test_german_buzzword_warns(tmp_path):
 
 def test_decomposed_umlaut_matches_too(tmp_path):
     """NFD input ('a' + combining diaeresis) is the same word to the reader."""
-    title = unicodedata.normalize("NFD", "Ein revolutionäres Verfahren zur Erkennung von Data Drift")
+    title = unicodedata.normalize(
+        "NFD", "Ein revolutionäres Verfahren zur Erkennung von Data Drift"
+    )
     assert "marketing tone" in run_check(with_title(tmp_path, title)).stdout
 
 

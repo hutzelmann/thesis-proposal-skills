@@ -265,7 +265,7 @@ def test_first_person_capitalized_caught(tmp_path):
     assert "first-person pronouns" in result.stdout
 
 
-@pytest.mark.parametrize("key,reason", [
+@pytest.mark.parametrize(("key", "reason"), [
     ("RiveraYearSurvey", "literal 'Year' where the year belongs — produced by a real import eval"),
     ("TanakaYearLoRA", "same shape, second key from that run"),
     ("SmithDeep", "no year at all"),

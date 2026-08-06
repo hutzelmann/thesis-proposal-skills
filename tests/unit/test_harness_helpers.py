@@ -44,11 +44,13 @@ references:
 
 
 def test_disallowed_errors_filters_allowed():
-    out = "- ERROR: only 1 references — at least 3 required\n- ERROR: forbidden section: `Work Plan`"
+    out = ("- ERROR: only 1 references — at least 3 required\n"
+           "- ERROR: forbidden section: `Work Plan`")
     assert disallowed_errors(out, ("references — at least",)) == [
         "- ERROR: forbidden section: `Work Plan`"
     ]
-    assert disallowed_errors(out) and len(disallowed_errors(out)) == 2
+    assert disallowed_errors(out)
+    assert len(disallowed_errors(out)) == 2
 
 
 def test_is_enumerated_review():
@@ -82,7 +84,7 @@ def test_verdict_import_requires_a_produced_file():
     assert "no proposal file produced" in why
 
 
-@pytest.mark.parametrize("mutation,needle", [
+@pytest.mark.parametrize(("mutation", "needle"), [
     (lambda t: t.replace("lang: en", "lang: en\nmatriculation: 00000000"), "00000000"),
     (lambda t: "PROPOSAL - CONFIDENTIAL\n\n" + t, "CONFIDENTIAL"),
 ])
@@ -479,11 +481,14 @@ def test_verdict_ideate_scoped_notes_file_may_carry_scoping_but_not_the_canary()
 PROVENANCE_TRANSCRIPT = """\
 ASSISTANT: Quick admin block first — program, group, level, language, months, lookups?
 
-STUDENT: CS bachelor, no group, English, four months, no lookups. I keep thinking about flaky end-to-end tests at my job.
+STUDENT: CS bachelor, no group, English, four months, no lookups. I keep thinking
+about flaky end-to-end tests at my job.
 
 ASSISTANT: Flaky in what way — what does a red build cost you today?
 
-STUDENT: Retries hide real bugs, and everyone ignores red builds because they assume flakiness. I wonder if you could tell flaky failures apart from real ones using the CI history.
+STUDENT: Retries hide real bugs, and everyone ignores red builds because they
+assume flakiness. I wonder if you could tell flaky failures apart from real ones
+using the CI history.
 
 ASSISTANT: That distinction — flaky versus real from history alone — sounds measurable."""
 
@@ -514,7 +519,8 @@ def test_verdict_provenance_fails_assistant_generated_content():
     transcript = """\
 STUDENT: I need a topic, anything really.
 
-ASSISTANT: You could study container checkpoint migration latency on edge clusters — say, whether checkpoint compression makes live migration viable.
+ASSISTANT: You could study container checkpoint migration latency on edge
+clusters — say, whether checkpoint compression makes live migration viable.
 
 STUDENT: Sure, sounds good, write that down."""
     seed = """\

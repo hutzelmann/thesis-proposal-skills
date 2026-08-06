@@ -57,7 +57,7 @@ dialog = "proposal-dialog"
 """
 
 
-@pytest.fixture()
+@pytest.fixture
 def registry():
     return support.parse_registry(REGISTRY_TOML)
 
@@ -135,7 +135,7 @@ def test_epochs_for_tier_policy_and_cli_cap():
     assert support.epochs_for("alpha", "cheap", cfg) == 3
     assert support.epochs_for("alpha", "cheap", cfg, default=1) == 1  # CLI caps
     assert support.epochs_for("alpha", "mid", cfg) == 3  # unlisted tier -> default
-    with pytest.raises(ValueError, match="tasks.epochs"):
+    with pytest.raises(ValueError, match=r"tasks\.epochs"):
         support.parse_registry(REGISTRY_TOML + "\n[tasks.epochs]\nbudget = 2\n")
 
 
@@ -157,7 +157,8 @@ def test_classify_cell_bands():
 def test_model_verdict_priorities():
     v = support.model_verdict({"a": "solid", "b": "flaky", "c": "fail"})
     assert v.status == "failing"
-    assert v.failing_tasks == ("c",) and v.flaky_tasks == ("b",)
+    assert v.failing_tasks == ("c",)
+    assert v.flaky_tasks == ("b",)
     assert support.model_verdict({"a": "solid", "b": "flaky"}).status == "flaky"
     assert support.model_verdict({"a": "solid"}).status == "supported"
     assert support.model_verdict({"a": "untested"}).status == "untested"
@@ -280,8 +281,10 @@ def test_splice_readme_idempotent():
     once = support.splice_readme(README, "| new |")
     twice = support.splice_readme(once, "| new |")
     assert once == twice
-    assert "old" not in once and "| new |" in once
-    assert once.startswith("intro\n") and once.endswith("tail\n")
+    assert "old" not in once
+    assert "| new |" in once
+    assert once.startswith("intro\n")
+    assert once.endswith("tail\n")
 
 
 def test_splice_readme_requires_markers():
@@ -295,15 +298,18 @@ def test_render_summary_shows_untested_and_flaky(registry):
     models = support.select_models(registry)
     verdicts = {"openrouter/lab/cheapo-1": support.Verdict("flaky", flaky_tasks=("beta",))}
     text = support.render_summary(models, verdicts, "2026-08-06", registry.tasks.skills)
-    assert "`lab/cheapo-1`" in text and "flaky on: proposal-beta" in text
+    assert "`lab/cheapo-1`" in text
+    assert "flaky on: proposal-beta" in text
     assert ": beta" not in text  # skill names, not raw task ids (spec scenario)
-    assert "`lab/big-9`" in text and "❔ untested" in text
+    assert "`lab/big-9`" in text
+    assert "❔ untested" in text
     assert "2026-08-06" in text
 
 
 def test_render_summary_keeps_disabled_models_visible(registry):
     text = support.render_summary(list(registry.models), {}, "2026-08-06")
-    assert "`lab/off-2`" in text and "disabled in registry" in text
+    assert "`lab/off-2`" in text
+    assert "disabled in registry" in text
 
 
 def test_render_summary_partial_discloses_untested(registry):
@@ -311,7 +317,8 @@ def test_render_summary_partial_discloses_untested(registry):
         "openrouter/lab/cheapo-1": support.Verdict("partial", untested_tasks=("dialog", "beta"))
     }
     text = support.render_summary(support.select_models(registry), verdicts, "x")
-    assert "🟡 partial" in text and "untested on 2 task(s)" in text
+    assert "🟡 partial" in text
+    assert "untested on 2 task(s)" in text
 
 
 def test_failing_verdict_names_skills_once(registry):
@@ -333,9 +340,14 @@ def test_render_grid_marks_reduced_and_untested(registry):
         ("openrouter/lab/cheapo-1", "alpha"): support.Cell("solid", 3, 3),
         ("openrouter/lab/big-9", "dialog"): support.Cell("flaky", 1, 1, reduced=True),
     }
-    text = support.render_grid(models, ["alpha", "dialog"], cells, {"openrouter/lab/cheapo-1": 1.5}, "2026-08-06")
-    assert "3/3" in text and "1/1*" in text
-    assert "—" in text and "$1.50" in text
+    text = support.render_grid(
+        models, ["alpha", "dialog"], cells,
+        {"openrouter/lab/cheapo-1": 1.5}, "2026-08-06",
+    )
+    assert "3/3" in text
+    assert "1/1*" in text
+    assert "—" in text
+    assert "$1.50" in text
 
 
 # --- shipped registry stays coherent with the real task set -------------------
@@ -380,7 +392,8 @@ def test_matrix_gate_declined_makes_no_metered_call(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "inspect_ai", object())  # any import attempt breaks
     assert matrix.main() == 1
     out = capsys.readouterr().out
-    assert "Estimated cost" in out and "aborted before any metered call" in out
+    assert "Estimated cost" in out
+    assert "aborted before any metered call" in out
 
 
 def test_matrix_estimate_only_exits_clean(monkeypatch, capsys):

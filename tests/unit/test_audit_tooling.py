@@ -20,7 +20,8 @@ SAMPLE = json.loads((Path(__file__).parent / "data" / "agent_scan_sample.json").
 def test_extract_findings_maps_reference_to_skill_and_sorts_by_risk():
     findings = audit_scan.extract_findings(SAMPLE, staged_marker="/tmp/audit-scan-sample123")
     assert [f["skill"] for f in findings] == ["proposal-lit-search", "proposal-ideate"]
-    assert findings[0]["code"] == "W007" and findings[0]["risk"] == 1.0
+    assert findings[0]["code"] == "W007"
+    assert findings[0]["risk"] == 1.0
     assert findings[0]["reason"] == "agent writes the secret value"
 
 
@@ -73,7 +74,8 @@ def test_diff_names_skill_provider_and_both_verdicts():
     lines = audit_status.diff(baseline, current)
     assert len(lines) == 1
     assert "proposal-lit-search / Snyk" in lines[0]
-    assert "fail" in lines[0] and "pass" in lines[0]
+    assert "fail" in lines[0]
+    assert "pass" in lines[0]
 
 
 def test_diff_empty_on_match():

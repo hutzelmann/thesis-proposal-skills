@@ -27,11 +27,12 @@ def run_check(proposal: Path) -> subprocess.CompletedProcess:
     )
 
 
-def with_timeline(tmp_path: Path, body: str, source: Path = CLEAN, heading: str = "Timeline") -> str:
+def with_timeline(tmp_path: Path, body: str, source: Path = CLEAN,
+                  heading: str = "Timeline") -> str:
     """Replace the clean fixture's timeline body with `body`."""
     text = source.read_text(encoding="utf-8")
     head, _, tail = text.partition(f"# {heading}\n")
-    old_body, sep, rest = tail.partition("\n---\n")
+    _, sep, rest = tail.partition("\n---\n")
     assert sep, "fixture layout changed: timeline is no longer the last section"
     victim = tmp_path / source.name
     victim.write_text(f"{head}# {heading}\n\n{body}\n\n---\n{rest}", encoding="utf-8")
@@ -64,7 +65,9 @@ def test_german_proposal_requires_zeitplan(tmp_path):
 # ---------- size guard -------------------------------------------------------
 
 def test_coarse_sentence_passes(tmp_path):
-    out = with_timeline(tmp_path, "The thesis starts in October 2026 and is submitted in March 2027.")
+    out = with_timeline(
+        tmp_path, "The thesis starts in October 2026 and is submitted in March 2027."
+    )
     assert "ERROR" not in out
 
 
@@ -75,13 +78,16 @@ def test_as_soon_as_possible_passes(tmp_path):
 def test_todo_marker_passes_the_size_guard(tmp_path):
     """An unknown timeframe is a TODO, not an invented statement — the script
     warns about the marker but the guard itself must stay silent."""
-    out = with_timeline(tmp_path, '[TODO: state start month and submission month, or "as soon as possible"]')
+    out = with_timeline(
+        tmp_path, '[TODO: state start month and submission month, or "as soon as possible"]'
+    )
     assert "ERROR" not in out
     assert "WARNING" in out
 
 
 def test_three_lines_pass(tmp_path):
-    body = "The thesis starts in October 2026.\nIt is submitted in March 2027.\nRegistration is pending."
+    body = ("The thesis starts in October 2026.\nIt is submitted in March 2027.\n"
+            "Registration is pending.")
     assert "ERROR" not in with_timeline(tmp_path, body)
 
 
@@ -143,7 +149,7 @@ def test_timeline_before_methodology_is_an_error(tmp_path):
 def test_order_error_names_the_methodology_as_written(tmp_path):
     """Not the `{methodology}` template — the heading the author actually wrote."""
     text = CLEAN.read_text(encoding="utf-8")
-    head, sep, tail = text.partition("# Timeline\n")
+    head, _, tail = text.partition("# Timeline\n")
     timeline_body, _, meta = tail.partition("\n---\n")
     victim = tmp_path / "reordered.md"
     victim.write_text(f"# Timeline\n{timeline_body}\n\n{head}\n---\n{meta}", encoding="utf-8")
@@ -164,7 +170,8 @@ def test_override_list_supplies_its_own_order(tmp_path):
     and the canonical default no longer applies."""
     victim = tmp_path / "custom.md"
     victim.write_text(
-        "# Beta\n\nSecond by default, first here.\n\n# Alpha\n\nText.\n\n---\ntitle: t\nlang: en\nreferences: []\n---\n"
+        "# Beta\n\nSecond by default, first here.\n\n# Alpha\n\nText.\n\n"
+        "---\ntitle: t\nlang: en\nreferences: []\n---\n"
     )
     (tmp_path / "guidelines.md").write_text(
         '```toml\nrequired_sections = ["Beta", "Alpha"]\n```\n'

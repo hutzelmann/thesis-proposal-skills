@@ -20,12 +20,44 @@ Instructions for AI agents working **on this repository** (skill development and
 - **Git**: work directly on `main`, no branches or worktrees; commit per completed OpenSpec change. Do not push and do not publish to skills.sh — both happen only on explicit request.
 - **Credentials**: dev-side keys live in the gitignored `.env` at the repo root (`cp .env.example .env`, fill in) or in the environment; never hardcode, log, or commit them, and never store keys in `confidential/` — that directory holds real proposals only. User-side scripts resolve keys via environment, then `$THESIS_PROPOSAL_KEYS`, then `api-keys.env` in the working directory, then `~/.config/thesis-proposal/api-keys.env` — never by searching ancestor directories.
 
+## Python conventions
+
+This code is largely AI-written, and the failure mode is always the same one: the next
+file is written by copying the last, so a preamble nobody wanted appears twelve times and
+one function grows to 250 lines. Every rule below is therefore paired with the linter rule
+or L0 test that enforces it — a convention nothing checks is documentation, not a gate.
+
+- **Scripts expose `main(argv: list[str] | None = None) -> int`** and parse `argv` rather
+  than reading `sys.argv` implicitly, so tests call them in-process instead of spawning a
+  subprocess. Subprocess-only scripts are invisible to `coverage`, which is why `check.py`
+  reports no coverage at all despite being the most-asserted script in the repo.
+- **Verdict functions return `(passed, explanation)` and live in `harness/l1_checks.py`.**
+  Scorers in `harness/skill_evals.py` are adapters over them and hold no logic of their
+  own; logic that sits in a scorer is logic no L0 test can reach.
+- **Tests import through `conftest.py` and the configured `pythonpath`**, never through
+  `sys.path.insert`. A test file that manipulates the import path is also telling every
+  later test file to do the same.
+- **Findings are dataclasses, not prefixed strings.** When two components exchange data,
+  the data shape is the contract; a consumer that greps `- ERROR:` out of stdout is
+  parsing a report meant for humans.
+- **Extract at the third repetition**, and put the shared thing where the next writer will
+  find it — a fixture in `conftest.py`, a helper beside its callers.
+- **Complexity is capped** at `max-complexity = 12`. The exceptions live in
+  `[tool.ruff.lint.per-file-ignores]`, and every entry names the change that removes it.
+  Add to that list only with the same annotation; never raise the cap.
+
+Enforcement: `uv run poe test` runs ruff with the full rule set, and `uv run poe cov`
+holds the 70% floor. The `main(argv)` and no-`sys.path` rules get their L0 guard with the
+`consolidate-test-scaffolding` change; until it lands they are convention only.
+
 ## Commands
 
 Registered poe tasks (`[tool.poe.tasks]` in `pyproject.toml`) are the canonical entry points:
 
 ```sh
 uv run poe test                    # L0 chain: pytest + ruff + generated-copy drift check — must stay green
+uv run poe test-fast               # inner loop: parallel, without the pandoc/typst builds (~3s)
+uv run poe cov                     # coverage with the 70% floor
 uv run poe dev <scenario> --model haiku   # dev loop, subscription (claude_runner passthrough)
 uv run poe smoke                   # metered smoke: 1 cheap model × core tasks × 1 epoch (cost-gated)
 uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # model-support matrix, cost-gated
@@ -40,6 +72,8 @@ hashes for every installed skill file. `poe identify` compares them against the 
 repository and names the revision the report is about — always run it before reproducing, since
 a report against an older published snapshot will not reproduce on `main`. A file it reports as
 matching no revision was edited locally, which answers most "works for me" reports.
+
+`poe test` is the gate and always runs everything; `poe test-fast` is the inner loop and is never the thing you check before claiming green.
 
 The model-support matrix (`harness/models.toml` roster, cost gate, classification, report) is documented in `harness/README.md`. Metered matrix runs always show their estimate and wait for confirmation — never bypass the gate with `--yes` on a user's behalf without their explicit cost approval.
 

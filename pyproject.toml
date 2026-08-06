@@ -11,6 +11,8 @@ dev = [
     "openai>=2.50.0",
     "poethepoet>=0.48.0",
     "pytest>=8",
+    "pytest-cov>=7",
+    "pytest-xdist>=3.8",
     "ruff>=0.16.0",
 ]
 
@@ -19,6 +21,10 @@ test = ["_pytest", "_lint", "_drift"]
 _pytest = "pytest"
 _lint = "ruff check ."
 _drift = "python3 scripts/sync_shared.py --check"
+# inner loop: parallel, without the pandoc/typst builds. `test` stays the
+# complete gate — never narrow it to this set.
+test-fast = "pytest -n auto -m 'not slow'"
+cov = "pytest --cov --cov-report=term-missing --cov-fail-under=70"
 dev = "python harness/claude_runner.py"
 audit = "python scripts/audit_scan.py"
 audit-status = "python scripts/audit_status.py"
@@ -35,11 +41,69 @@ envfile = ".env"
 [tool.poe.tasks.report]
 cmd = "python harness/report.py"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config"
+markers = ["slow: spawns pandoc or typst — excluded from the `test-fast` lane"]
+# A dependency deprecation is a finding, not background noise. If one proves
+# unfixable it gets its own `ignore` entry naming the dependency, never a
+# blanket relaxation.
+filterwarnings = ["error"]
+# Import roots for the tests, so no test file manipulates sys.path itself.
+# proposal-lit-search comes before proposal-import deliberately: both ship
+# `common.py` and `crossref.py`, and the lit-search pair is the sync source
+# while import's is the generated copy.
+pythonpath = [
+    "harness",
+    "scripts",
+    "skills/proposal-lit-search/scripts",
+    "skills/proposal-import/scripts",
+    "skills/proposal-publish/scripts",
+    "skills/proposal-troubleshoot/scripts",
+]
+
+[tool.coverage.run]
+source = ["harness", "scripts", "skills"]
+omit = [
+    # metered-only: these execute under `inspect eval` or a live model run and
+    # never at L0, so counting them measures nothing and only drags the floor
+    "harness/skill_evals.py",
+    "harness/claude_runner.py",
+]
+
+[tool.coverage.report]
+exclude_also = ["if __name__ == .__main__.:"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 extend-exclude = ["skills/proposal-import/scripts/common.py", "skills/proposal-import/scripts/crossref.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B"]
-ignore = ["E501", "E741"]
+select = [
+    "E", "F", "W", "I", "UP", "B",
+    "C90",                      # mccabe complexity
+    "PLR0912", "PLR0915",       # too many branches / statements
+    "SIM", "RET", "C4", "PTH", "ARG", "PT", "RUF",
+]
+# The user-facing report prose deliberately uses em dashes, `×`, and typographic
+# quotes; the ambiguous-unicode rules are correct in general and wrong here.
+ignore = ["RUF001", "RUF002"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+# Structural findings this repository has not fixed yet. Each entry names the
+# change that clears it — an ignore without an owner becomes permanent.
+[tool.ruff.lint.per-file-ignores]
+# 33 hits, one cause: Inspect mandates `async def score(state, target)` whether or
+# not a scorer reads both. The scorer factory removes the repetition at its source.
+"harness/skill_evals.py" = ["ARG001"]  # cleared by consolidate-test-scaffolding
+# `check()` is one 250-line procedure; splitting it into rule functions is the
+# whole point of the follow-up change. Edit the proposal-check copy only.
+"skills/proposal-check/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # cleared by structure-check-findings
+"skills/proposal-import/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # generated copy
+"skills/proposal-write/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # generated copy
+"harness/matrix.py" = ["C901", "PLR0912", "PLR0915"]  # cleared by consolidate-test-scaffolding
+"harness/l1_checks.py" = ["C901"]  # cleared by consolidate-test-scaffolding
+"skills/proposal-troubleshoot/scripts/collect.py" = ["C901", "PLR0912", "PLR0915"]  # cleared by consolidate-test-scaffolding

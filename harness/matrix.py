@@ -39,7 +39,9 @@ def load_history(path: Path) -> dict[str, tuple[int, int]]:
 
 def save_history(path: Path, history: dict[str, tuple[int, int]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {task: {"input": tin, "output": tout} for task, (tin, tout) in sorted(history.items())}
+    payload = {
+        task: {"input": tin, "output": tout} for task, (tin, tout) in sorted(history.items())
+    }
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 

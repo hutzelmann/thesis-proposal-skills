@@ -30,7 +30,7 @@ from inspect_ai.tool import bash, text_editor
 from inspect_ai.util import sandbox
 
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
-from l1_checks import (  # noqa: E402
+from l1_checks import (
     parse_grade,
     select_draft,
     verdict_check_report,
@@ -44,7 +44,7 @@ from l1_checks import (  # noqa: E402
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
 )
-from sources import MESSY_REQUEST  # noqa: E402
+from sources import MESSY_REQUEST
 
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
@@ -58,7 +58,8 @@ JUDGE_INSTRUCTIONS = (
 
 # ---------- staging ----------------------------------------------------------
 
-def stage_files(fixture: str, skill: str, extra_skill_files: dict[str, str] | None = None) -> dict[str, str]:
+def stage_files(fixture: str, skill: str,
+                extra_skill_files: dict[str, str] | None = None) -> dict[str, str]:
     """Map sandbox paths -> host paths: fixture workspace at ws/, skill assets at skill/."""
     files: dict[str, str] = {}
     for f in (FIXTURES / fixture).iterdir():
@@ -441,7 +442,10 @@ def ideate_l1_notes_progress(notes_by_round: int = 8, growth_by_round: int = 14,
         else:
             first = with_notes[0]
             if first["round"] > notes_by_round:
-                problems.append(f"notes file first appeared at round {first['round']} (expected by {notes_by_round})")
+                problems.append(
+                    f"notes file first appeared at round {first['round']} "
+                    f"(expected by {notes_by_round})"
+                )
             by_pivot = [s for s in with_notes if s["round"] <= growth_by_round]
             if not any(notes_size(s) > notes_size(first) for s in by_pivot[1:]):
                 problems.append(f"notes file had not grown by round {growth_by_round}")
@@ -451,17 +455,23 @@ def ideate_l1_notes_progress(notes_by_round: int = 8, growth_by_round: int = 14,
             None,
         )
         if early_seed:
-            problems.append(f"proposal file already present at round {early_seed} (before convergence)")
+            problems.append(
+                f"proposal file already present at round {early_seed} (before convergence)"
+            )
         if problems:
             return Score(value=INCORRECT, explanation="; ".join(problems))
-        return Score(value=CORRECT, explanation=f"notes from round {with_notes[0]['round']}, grew by the pivot, proposal only at the end")
+        return Score(
+            value=CORRECT,
+            explanation=f"notes from round {with_notes[0]['round']}, grew by the pivot, "
+                        "proposal only at the end",
+        )
     return score
 
 
 @scorer(metrics=[accuracy()])
 def ideate_l1_provenance():
     async def score(state: TaskState, target: Target) -> Score:
-        chosen, text, where = await _selected_seed()
+        _, text, where = await _selected_seed()
         ok, why = verdict_provenance(dialogue_transcript(state), text or None)
         return Score(value=CORRECT if ok else INCORRECT, explanation=f"{why} ({where})")
     return score
@@ -659,12 +669,16 @@ def customize_l1():
         except tomllib.TOMLDecodeError as exc:
             return Score(value=INCORRECT, explanation=f"TOML does not parse: {exc}")
         if data.get("min_references") != 8:
-            return Score(value=INCORRECT, explanation=f"min_references is {data.get('min_references')!r}, not 8")
+            return Score(
+                value=INCORRECT,
+                explanation=f"min_references is {data.get('min_references')!r}, not 8",
+            )
         detail = str(data.get("timeline_detail", "<absent>")).lower()
         if detail != "detailed":
             return Score(
                 value=INCORRECT,
-                explanation=f"timeline_detail is {detail!r}, not 'detailed' — the work plan stays blocked",
+                explanation=f"timeline_detail is {detail!r}, not 'detailed' — "
+                            "the work plan stays blocked",
             )
         return Score(
             value=CORRECT,
@@ -696,7 +710,10 @@ def customize_override() -> Task:
 @scorer(metrics=[accuracy()])
 def publish_l1():
     async def score(state: TaskState, target: Target) -> Score:
-        listing = await sandbox().exec(["bash", "-c", "ls -la ws/*.pdf 2>/dev/null; cat ws/.gitignore 2>/dev/null"], timeout=10)
+        listing = await sandbox().exec(
+            ["bash", "-c", "ls -la ws/*.pdf 2>/dev/null; cat ws/.gitignore 2>/dev/null"],
+            timeout=10,
+        )
         if ".pdf" not in listing.stdout:
             return Score(value=INCORRECT, explanation="no PDF produced: " + listing.stdout[:200])
         if "*.pdf" not in listing.stdout:
@@ -809,7 +826,9 @@ def review_de_l1():
         german_signals = sum(1 for w in (" der ", " die ", " und ", " nicht ", " werden ")
                              if w in (review or ""))
         if german_signals < 2:
-            return Score(value=INCORRECT, explanation="review does not appear to be written in German")
+            return Score(
+                value=INCORRECT, explanation="review does not appear to be written in German"
+            )
         return Score(value=CORRECT, explanation="German review file present, proposal untouched")
     return score
 

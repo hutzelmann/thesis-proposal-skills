@@ -30,7 +30,7 @@ references:
 """
 
 
-def test_extract_references(tmp_path):
+def test_extract_references():
     refs = validate_refs.extract_references(PROPOSAL)
     assert [r["id"] for r in refs] == ["Good25Paper", "NoDoi24Entry", "Broken23Doi"]
     assert refs[0]["DOI"] == "10.1/good"
@@ -48,38 +48,41 @@ def run_main(tmp_path, monkeypatch, capsys, http_json, search):
 
 
 def test_scenarios(tmp_path, monkeypatch, capsys):
-    def http_json(url, **kw):
+    # the stubs stand in for network calls, so they take the real signatures and
+    # ignore the arguments they do not need
+    def http_json(url, **_kw):
         if "10.1/good" in url:
             return {"message": {"DOI": "10.1/good", "title": ["A Fine Paper on Testing"],
                                 "issued": {"date-parts": [[2025]]}, "type": "journal-article",
                                 "author": [{"family": "Doe", "given": "J."}]}}
         raise common.SourceError("crossref: HTTP 404")
 
-    def search(query, limit):
+    def search(_query, _limit):
         return [{"id": "x", "title": "Identifiable Work Without Identifier",
                  "DOI": "10.9/found", "_source": "crossref"}]
 
     out = run_main(tmp_path, monkeypatch, capsys, http_json, search)
     assert "VERIFIED Good25Paper" in out
-    assert "ENRICHED NoDoi24Entry" in out and "10.9/found" in out
-    assert "UNVERIFIABLE Broken23Doi" in out and "[TODO: verify reference Broken23Doi]" in out
+    assert "ENRICHED NoDoi24Entry" in out
+    assert "10.9/found" in out
+    assert "UNVERIFIABLE Broken23Doi" in out
+    assert "[TODO: verify reference Broken23Doi]" in out
     assert "completed CSL-YAML" in out
 
 
 def test_offline_path(tmp_path, monkeypatch, capsys):
-    def http_json(url, **kw):
+    def http_json(_url, **_kw):
         raise common.SourceError("crossref: network unreachable")
 
-    def search(query, limit):
+    def search(_query, _limit):
         raise common.SourceError("crossref: network unreachable")
 
-    out = run_main(tmp_path, monkeypatch, capsys, http_json,
-                   lambda q, l: (_ for _ in ()).throw(common.SourceError("offline")))
+    out = run_main(tmp_path, monkeypatch, capsys, http_json, search)
     assert out.count("OFFLINE") >= 1
     assert "UNVERIFIABLE" not in out.split("OFFLINE")[0]  # offline is not misreported
 
 
-def test_no_references_block(tmp_path, monkeypatch, capsys):
+def test_no_references_block(tmp_path, monkeypatch):
     p = tmp_path / "y.md"
     p.write_text("Just text, no metadata.\n")
     monkeypatch.setattr(sys, "argv", ["validate_refs.py", str(p)])

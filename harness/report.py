@@ -86,7 +86,10 @@ def main() -> int:
 
     verdicts = {
         m.id: support.model_verdict(
-            {task: cells.get((m.id, task), support.Cell("untested")).classification for task in tasks}
+            {
+                task: cells.get((m.id, task), support.Cell("untested")).classification
+                for task in tasks
+            }
         )
         for m in models
     }

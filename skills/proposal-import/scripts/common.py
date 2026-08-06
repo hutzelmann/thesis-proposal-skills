@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# GENERATED from skills/proposal-lit-search/scripts/common.py — edit there, then run scripts/sync_shared.py
+# GENERATED from skills/proposal-lit-search/scripts/common.py
+# Edit there, then run scripts/sync_shared.py
 """Shared helpers for the literature-search source clients.
 
 Stdlib-only (Python >= 3.11). Every source module exposes

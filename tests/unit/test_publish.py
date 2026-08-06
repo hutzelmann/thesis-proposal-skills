@@ -14,7 +14,9 @@ def which_factory(available):
 
 
 def test_engine_resolution_order():
-    assert publish.resolve_engine(which_factory({"pandoc", "typst", "xelatex"})) == ("typst", "typst")
+    assert publish.resolve_engine(
+        which_factory({"pandoc", "typst", "xelatex"})
+    ) == ("typst", "typst")
     assert publish.resolve_engine(which_factory({"pandoc", "xelatex"})) == ("latex", "xelatex")
     assert publish.resolve_engine(which_factory({"pandoc", "tectonic"})) == ("latex", "tectonic")
     assert publish.resolve_engine(which_factory({"pandoc"})) == ("docx", "pandoc")
@@ -60,7 +62,8 @@ def test_strip_abstracts_removes_continuations():
 def test_ensure_gitignore_idempotent(tmp_path):
     publish.ensure_gitignore(tmp_path)
     first = (tmp_path / ".gitignore").read_text()
-    assert "*.pdf" in first and publish.GITIGNORE_MARKER in first
+    assert "*.pdf" in first
+    assert publish.GITIGNORE_MARKER in first
     publish.ensure_gitignore(tmp_path)
     assert (tmp_path / ".gitignore").read_text() == first
 
@@ -80,5 +83,6 @@ def test_strip_abstracts_block_scalar_with_blank_lines():
         "  DOI: 10.1/x\n---\n"
     )
     stripped = publish.strip_abstracts(text)
-    assert "Para two" not in stripped and "Para one" not in stripped
+    assert "Para two" not in stripped
+    assert "Para one" not in stripped
     assert "DOI: 10.1/x" in stripped

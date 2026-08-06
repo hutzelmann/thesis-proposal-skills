@@ -61,6 +61,7 @@ def build_in(proposal: Path, tmp_path: Path, tier: str) -> list[Path]:
     return publish.build(staged(proposal, tmp_path), kind, tool)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("tier", sorted(TIERS))
 @pytest.mark.parametrize("proposal", PROPOSALS, ids=lambda p: p.parent.name)
 def test_fixture_builds_on_every_tier(proposal, tier, tmp_path):
@@ -96,22 +97,26 @@ def typst_source(tmp_path_factory):
     proposal = staged(CONTENT_FIXTURE, tmp_path)
     source = proposal.with_suffix(".typ")
     subprocess.run(
-        publish.pandoc_command(proposal, "typst") + ["-o", str(source)],
+        [*publish.pandoc_command(proposal, "typst"), "-o", str(source)],
         capture_output=True, text=True, check=True,
     )
     return source.read_text(encoding="utf-8")
 
 
+@pytest.mark.slow
 def test_citations_resolve_in_the_built_source(typst_source):
     # an unresolved key reaches typst as a bare @key with no matching label
     assert "@Tan25Flexibl" not in typst_source
     assert "@Cerqueira26Framewo" not in typst_source
 
 
+@pytest.mark.slow
 def test_research_question_styling_survives(typst_source):
-    assert "#rq(1)[" in typst_source and "#rq(3)[" in typst_source
+    assert "#rq(1)[" in typst_source
+    assert "#rq(3)[" in typst_source
 
 
+@pytest.mark.slow
 def test_todo_markers_are_annotated_and_numbered(typst_source):
     assert "[TODO:" not in typst_source
     assert "#todo-block(1)[" in typst_source

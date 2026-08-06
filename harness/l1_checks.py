@@ -58,8 +58,8 @@ def select_draft(files: dict[str, str], seed_name: str = "",
 
 
 def disallowed_errors(check_output: str, allowed: tuple[str, ...] = ()) -> list[str]:
-    lines = [l for l in check_output.splitlines() if l.startswith("- ERROR:")]
-    return [l for l in lines if not any(a in l for a in allowed)]
+    lines = [line for line in check_output.splitlines() if line.startswith("- ERROR:")]
+    return [line for line in lines if not any(a in line for a in allowed)]
 
 
 def is_enumerated_review(text: str) -> bool:
@@ -83,13 +83,23 @@ def verdict_draft(proposal_text: str | None, check_output: str) -> tuple[bool, s
     return True, "draft mechanically sound"
 
 
+def first_difference(original: str, current: str) -> int:
+    """Index of the first differing character, else the length of the shorter
+    string — the point a reader should look at when a file was expected to be
+    byte-identical and was not."""
+    for i, (a, b) in enumerate(zip(original, current, strict=False)):
+        if a != b:
+            return i
+    return min(len(original), len(current))
+
+
 def verdict_review(original: str, current: str | None, review: str | None,
                    review_name: str) -> tuple[bool, str]:
     """review_fixture: review file exists, enumerated, proposal untouched."""
     if current != original:
         detail = "file missing" if current is None else (
-            f"len {len(original)} -> {len(current)}, first diff at "
-            f"{next((i for i, (a, b) in enumerate(zip(original, current, strict=False)) if a != b), min(len(original), len(current)))}"
+            f"len {len(original)} -> {len(current)}, "
+            f"first diff at {first_difference(original, current)}"
         )
         return False, f"review modified the proposal ({detail})"
     if not review:
@@ -177,8 +187,8 @@ def verdict_import(proposal_text: str | None, check_output: str = "",
     if not proposal_text:
         return False, "no proposal file produced"
     problems = [
-        l.removeprefix("- ERROR:").strip()
-        for l in disallowed_errors(check_output, IMPORT_ALLOWED_ERRORS)
+        line.removeprefix("- ERROR:").strip()
+        for line in disallowed_errors(check_output, IMPORT_ALLOWED_ERRORS)
     ]
     for leak in IMPORT_LEAKS:
         if leak in proposal_text:
@@ -188,11 +198,13 @@ def verdict_import(proposal_text: str | None, check_output: str = "",
     # shape breaks — `title: [TODO: …]` and `title: "[TODO: …]"` both parse.
     # check.py cannot see it, extracting narrowly rather than parsing YAML.
     lines = proposal_text.rstrip("\n").split("\n")
-    delims = [i for i, l in enumerate(lines) if l.strip() == "---"]
+    delims = [i for i, line in enumerate(lines) if line.strip() == "---"]
     if len(delims) >= 2 and any(
-        l.strip().startswith("[TODO:") for l in lines[delims[-2]:]
+        line.strip().startswith("[TODO:") for line in lines[delims[-2]:]
     ):
-        problems.append("[TODO: …] as a bare line in the metadata block — the YAML does not parse")
+        problems.append(
+            "[TODO: …] as a bare line in the metadata block — the YAML does not parse"
+        )
     body = proposal_text.rsplit("\n---", 1)[0]
     for pattern in (r"et al\.\s*\[@", r"\b(?:Rivera|Tanaka)\b[^.\[\]]*\[@"):
         if m := re.search(pattern, body):
@@ -271,7 +283,9 @@ def verdict_ideate_scoped(files: dict[str, str], seed_name: str | None,
                          for n in SCOPING_LEAKS if n in text]
     lowered = chat_text.lower()
     if not any(s.lower() in lowered for s in SCOPING_SIGNALS):
-        problems.append("chat never references the group page's content — fetch left no visible trace")
+        problems.append(
+            "chat never references the group page's content — fetch left no visible trace"
+        )
     if problems:
         return False, "; ".join(problems[:4])
     return True, f"{why}; scoping honored, no leaks"
@@ -283,7 +297,9 @@ def verdict_ideate_scoped(files: dict[str, str], seed_name: str | None,
 # methodology and proposal vocabulary any assistant legitimately introduces
 # (naming conventions is sanctioned telling, so these terms prove nothing
 # about who originated the idea).
-PROVENANCE_STOPWORDS = frozenset("""
+# kept as prose rather than a list literal: the words are read and amended by
+# hand, and one word per quoted element makes that unreviewable
+_PROVENANCE_STOPWORD_TEXT = """
 about accuracy accurate actually after against algorithm algorithms analysis
 approach aspect aspects bachelor because become before better candidate
 candidates chapter check compare comparative conditions considering could
@@ -299,7 +315,8 @@ several should skill sketch something sometimes sources specific student
 study supervisor survey systematic their there thesis these things think
 timeline title today toward uncertain under university until whether where
 which while without working would write
-""".split())
+"""
+PROVENANCE_STOPWORDS = frozenset(_PROVENANCE_STOPWORD_TEXT.split())
 
 
 def _dialogue_turns(transcript: str) -> list[tuple[str, str]]:
@@ -318,7 +335,7 @@ def _seed_idea_terms(seed_text: str) -> set[str]:
     matters). The trailing metadata block is cut at its opening delimiter so
     CSL-YAML reference entries never enter the term set."""
     body = re.split(r"\n\n---\s*\n", seed_text, maxsplit=1)[0]
-    lines = [l for l in body.splitlines() if l.lstrip().startswith(("- ", "* "))]
+    lines = [line for line in body.splitlines() if line.lstrip().startswith(("- ", "* "))]
     if m := re.search(r"^title:\s*[\"']?(.+?)[\"']?$", seed_text, re.MULTILINE):
         lines.append(m.group(1))
     words = re.findall(r"[a-zA-Zäöüß][a-zA-Zäöüß-]{4,}", " ".join(lines).lower())

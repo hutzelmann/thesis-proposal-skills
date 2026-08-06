@@ -68,7 +68,12 @@ def render(source: Path) -> str:
         stamped = {JSON_HEADER_KEY: header, **data}
         return json.dumps(stamped, ensure_ascii=False, indent=2) + "\n"
     if source.suffix == ".py":
-        header = f"# GENERATED from {source.relative_to(REPO)} — edit there, then run scripts/sync_shared.py\n"
+        # two lines, so the banner stays inside the line-length limit whatever
+        # the source path is
+        header = (
+            f"# GENERATED from {source.relative_to(REPO)}\n"
+            "# Edit there, then run scripts/sync_shared.py\n"
+        )
         lines = text.split("\n", 1)
         if lines[0].startswith("#!"):
             return lines[0] + "\n" + header + (lines[1] if len(lines) > 1 else "")

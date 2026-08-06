@@ -272,7 +272,8 @@ def test_the_proposal_is_never_modified(workspace):
     assert proposal.read_bytes() == before
 
 
-def test_refuses_to_overwrite_an_existing_bundle(workspace, capsys):
+@pytest.mark.usefixtures("workspace")
+def test_refuses_to_overwrite_an_existing_bundle(capsys):
     assert run([]) == 0
     assert run([]) == 3
     assert "already exists" in capsys.readouterr().err
@@ -329,7 +330,8 @@ def test_full_level_keeps_captured_output_verbatim(workspace):
     assert "vendor agreement" in stored
 
 
-def test_missing_proposal_is_reported_rather_than_guessed(workspace, capsys):
+@pytest.mark.usefixtures("workspace")
+def test_missing_proposal_is_reported_rather_than_guessed(capsys):
     assert main(["no-such-file.md"]) == 2
     assert "not found" in capsys.readouterr().err
 

@@ -58,13 +58,15 @@ SCENARIOS = {
         "fixture": "f05-slr-interviews",
         "skill": "proposal-review",
         "proposal": "microservice-technical-debt.md",
-        "request": "Please review my proposal microservice-technical-debt.md — is it ready for my supervisor?",
+        "request": "Please review my proposal microservice-technical-debt.md — "
+                   "is it ready for my supervisor?",
     },
     "write_from_seed": {
         "fixture": "w01-ideate-seed",
         "skill": "proposal-write",
         "proposal": "data-drift-detection.md",
-        "request": "Please turn my idea notes in data-drift-detection.md into a full proposal draft. Keep my idea, mark anything missing as TODO.",
+        "request": "Please turn my idea notes in data-drift-detection.md into a full "
+                   "proposal draft. Keep my idea, mark anything missing as TODO.",
     },
     # no fixture: the source arrives pasted in the request and the skill
     # creates the proposal, choosing its own content-derived filename

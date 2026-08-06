@@ -81,7 +81,8 @@ def main() -> int:
     parser.add_argument("--direction", choices=["both", "backward", "forward"], default="both")
     args = parser.parse_args()
 
-    merged = common.dedupe(enrich_bare_dois(expand(args.seeds, args.limit_per_seed, args.direction)))
+    expanded = expand(args.seeds, args.limit_per_seed, args.direction)
+    merged = common.dedupe(enrich_bare_dois(expanded))
     seed_dois = {common.clean_doi(s) for s in args.seeds}
     merged = [m for m in merged if m.get("DOI") not in seed_dois]
     if not merged:

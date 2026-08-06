@@ -131,10 +131,13 @@ def render(doc: str, to: str = "plain", resolves: bool = True) -> str:
     return result.stdout
 
 
-pytestmark = pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+pytestmark = [
+    pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed"),
+    pytest.mark.slow,
+]
 
 
-@pytest.mark.parametrize("key,expected", [
+@pytest.mark.parametrize(("key", "expected"), [
     ("One", "Weiss"),
     ("Two", "Jones and Klein"),
     ("Three", "Tan et al."),
@@ -149,7 +152,7 @@ def test_author_label_forms_en(key, expected):
     assert f"Body: {expected}{NBSP}[1] reports things." in out
 
 
-@pytest.mark.parametrize("key,expected", [
+@pytest.mark.parametrize(("key", "expected"), [
     ("Two", "Jones und Klein"),
     ("Three", "Tan et al."),
     ("EditorOnly", "Hahn (Hrsg.)"),
@@ -209,7 +212,8 @@ def test_author_in_text_inside_research_question_item():
          "--lua-filter", str(TEMPLATES / "rq-filter.lua")],
         input=doc, capture_output=True, text=True, check=True,
     )
-    assert "#rq(1)[" in result.stdout and "#rq(2)[" in result.stdout
+    assert "#rq(1)[" in result.stdout
+    assert "#rq(2)[" in result.stdout
     assert "Tan et al.~\\[1\\]" in result.stdout
     assert "@Three" not in result.stdout
 
@@ -219,7 +223,7 @@ def test_non_breaking_space_survives_typst_writer():
     assert "Tan et al.~\\[1\\]" in out
 
 
-@pytest.mark.parametrize("fixture,label,sentence_start", [
+@pytest.mark.parametrize(("fixture", "label", "sentence_start"), [
     ("f12-clean-de/typsystem-einheitenfehler.md", "Vogel", "Gegenüber"),
     ("f16-figures-import/sensor-anomaly-triage.md", "Duarte", None),
     ("w03-snowball-seed/serverless-energy-scheduling.md", "Weiss and Lindgren", None),

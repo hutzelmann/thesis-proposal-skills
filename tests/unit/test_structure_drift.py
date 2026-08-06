@@ -27,4 +27,6 @@ def test_titles_present_in_prose():
         for label, title in all_titles()
         if title not in PROSE
     ]
-    assert not missing, "titles in structure.json missing from guidelines.md:\n" + "\n".join(missing)
+    assert not missing, (
+        "titles in structure.json missing from guidelines.md:\n" + "\n".join(missing)
+    )

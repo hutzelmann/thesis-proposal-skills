@@ -10,7 +10,9 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-LUA = (REPO / "skills" / "proposal-publish" / "templates" / "todo-filter.lua").read_text(encoding="utf-8")
+LUA = (
+    REPO / "skills" / "proposal-publish" / "templates" / "todo-filter.lua"
+).read_text(encoding="utf-8")
 STRUCTURE = json.loads((REPO / "shared" / "structure.json").read_text(encoding="utf-8"))
 
 
