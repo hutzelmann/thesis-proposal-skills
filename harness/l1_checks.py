@@ -11,6 +11,13 @@ import re
 import tomllib
 from pathlib import Path
 
+# The reference shortfall is the one check error a produced draft may carry: a
+# seed carries the sources it carries, and neither write nor import may invent
+# them. Expressed as the check script's rule identifier — the identifier is the
+# contract, while the message it renders is free to be reworded.
+ALLOWED_RULES = ("min-references",)
+# The scorers read the check script's stdout from a sandbox, where the JSON mode
+# is not available, so the same tolerance also exists as a message fragment.
 DRAFT_ALLOWED_ERRORS = ("references — at least",)
 
 # workspace markdown that is never the proposal: the guidelines override, the
@@ -59,8 +66,26 @@ def select_draft(files: dict[str, str], seed_name: str = "",
 
 
 def disallowed_errors(check_output: str, allowed: tuple[str, ...] = ()) -> list[str]:
+    """Error lines from the human report, minus the tolerated ones.
+
+    Prefer `disallowed_rules` where the check script's JSON mode is reachable.
+    This text path exists for the eval scorers, which only have the script's
+    stdout from inside a sandbox.
+    """
     lines = [line for line in check_output.splitlines() if line.startswith("- ERROR:")]
     return [line for line in lines if not any(a in line for a in allowed)]
+
+
+def disallowed_rules(findings: list[dict], allowed: tuple[str, ...] = ALLOWED_RULES) -> list[str]:
+    """Error messages from `check.py --json` output, minus the tolerated rules.
+
+    Keyed on the rule identifier rather than on a substring of an English
+    sentence, so rewording a finding cannot silently change what is tolerated.
+    """
+    return [
+        f["message"] for f in findings
+        if f.get("level") == "error" and f.get("rule") not in allowed
+    ]
 
 
 def is_enumerated_review(text: str) -> bool:

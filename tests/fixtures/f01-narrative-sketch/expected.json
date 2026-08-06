@@ -16,7 +16,18 @@
       "reference `Fischer24Feedback` defined but never cited",
       "reference `Weber23Smart` defined but never cited",
       "first-person pronouns found"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "forbidden-section",
+        "methodology-missing",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "first-person-pronoun",
+        "reference-uncited"
+      ]
+    }
   },
   "semantic": [
     "First-person storytelling throughout; the proposal narrates personal anecdotes instead of using third person",

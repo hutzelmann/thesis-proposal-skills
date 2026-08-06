@@ -13,7 +13,17 @@
     ],
     "warnings_contain": [
       "title opens with `konzept für` — implementation framing"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "methodology-missing",
+        "min-references",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "title-implementation-opener"
+      ]
+    }
   },
   "semantic": [
     "Severe passive voice throughout (German 'soll ... werden' chains)",

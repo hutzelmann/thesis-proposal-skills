@@ -14,7 +14,17 @@
     "warnings_contain": [
       "open [TODO: decide between prototype implementation",
       "open [TODO: find a second production-trace dataset"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "methodology-missing",
+        "min-references",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "todo-marker"
+      ]
+    }
   },
   "semantic": [
     "intentionally incomplete ideate seed — the check findings are the expected starting state, not defects to fix mechanically",

@@ -4,7 +4,11 @@
   "check": {
     "exit_code": 0,
     "errors_contain": [],
-    "warnings_contain": []
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
   },
   "semantic": [
     "clean seed with exactly three solid references — oracle for lit-search snowballing expansion, not a defect fixture"

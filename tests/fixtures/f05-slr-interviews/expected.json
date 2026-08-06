@@ -4,7 +4,11 @@
   "check": {
     "exit_code": 0,
     "errors_contain": [],
-    "warnings_contain": []
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
   },
   "semantic": [
     "Mixed methodology: the Systematic Literature Review is combined with semi-structured practitioner interviews in the Synthesis subsection, violating the single-method rule",

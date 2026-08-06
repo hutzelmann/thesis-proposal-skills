@@ -4,7 +4,11 @@
   "check": {
     "exit_code": 0,
     "errors_contain": [],
-    "warnings_contain": []
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
   },
   "semantic": [
     "reference Ghost21Vanished carries a DOI that does not resolve (import validation must report UNVERIFIABLE)",

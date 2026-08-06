@@ -8,7 +8,14 @@
       "title opens with `implementing` — implementation framing",
       "title carries `ai-powered` — marketing tone",
       "the title is printed on the study certificate"
-    ]
+    ],
+    "rules": {
+      "errors": [],
+      "warnings": [
+        "title-buzzword",
+        "title-implementation-opener"
+      ]
+    }
   },
   "semantic": [
     "Title names a platform (Kubernetes) that is the instrument of the prototype, not the object of study — the research questions are about failure-classification accuracy, not about the platform",

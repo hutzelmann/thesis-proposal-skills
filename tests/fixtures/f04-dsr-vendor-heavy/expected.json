@@ -14,7 +14,20 @@
       "email address found",
       "possible matriculation number",
       "confidentiality marker `vertraulich`"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "duplicate-reference-id",
+        "forbidden-section",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "confidentiality-marker",
+        "email-address",
+        "matriculation-number",
+        "repeated-sentence-start"
+      ]
+    }
   },
   "semantic": [
     "Definitional Zero-Trust claims are grounded in vendor product documentation (NetSentio, CloudArc) instead of scientific literature",

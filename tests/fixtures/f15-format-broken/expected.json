@@ -16,7 +16,22 @@
       "open [TODO: sharpen motivation]",
       "open [TODO: name the workload dataset]",
       "`author:` found — proposals are anonymous by default"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "citation-undefined",
+        "duplicate-reference-id",
+        "metadata-block-blank-line",
+        "min-references",
+        "reference-id-boolean-literal",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "metadata-author-key",
+        "title-too-short",
+        "todo-marker"
+      ]
+    }
   },
   "semantic": []
 }

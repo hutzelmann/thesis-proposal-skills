@@ -4,7 +4,11 @@
   "check": {
     "exit_code": 0,
     "errors_contain": [],
-    "warnings_contain": []
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
   },
   "semantic": [
     "Reference Vogel28Edge is forward-dated (issued 2028, after the proposal date) — no mechanical date check exists",

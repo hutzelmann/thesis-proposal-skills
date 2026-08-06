@@ -53,6 +53,37 @@ def test_oracle_holds(oracle_path: Path):
         assert any(n in line for n in expected["errors_contain"]), f"unpinned error: {line}"
 
 
+@pytest.mark.parametrize("oracle_path", ORACLES, ids=fixture_id)
+def test_oracle_rule_identifiers_hold(oracle_path: Path):
+    """The identifiers pin *which* checks fired; `errors_contain` pins *how* the
+    finding reads. Both are needed: a text fragment can match the wrong finding,
+    and an identifier says nothing about the wording a student sees.
+
+    Exact set equality, unlike the fragment assertions above, so a check that
+    stops firing fails here even when its message text still appears somewhere
+    else in the report.
+    """
+    oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
+    expected = oracle["check"].get("rules")
+    assert expected is not None, f"{fixture_id(oracle_path)}: oracle has no `rules` block"
+    proposals = [
+        p for p in oracle_path.parent.glob("*.md")
+        if p.name not in ("guidelines.md",) and not p.name.endswith("-handout.md")
+    ]
+    result = subprocess.run(
+        [sys.executable, str(CHECK), str(proposals[0]), "--json"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == oracle["check"]["exit_code"]
+    data = json.loads(result.stdout)
+    for level in ("error", "warning"):
+        actual = sorted({f["rule"] for f in data["findings"] if f["level"] == level})
+        assert actual == expected[f"{level}s"], (
+            f"{fixture_id(oracle_path)} {level} rules drifted:\n"
+            f"  expected {expected[f'{level}s']}\n  actual   {actual}"
+        )
+
+
 def test_corpus_has_minimum_coverage():
     ids = {fixture_id(p) for p in ORACLES}
     assert len(ids) >= 3  # grows as the corpus lands; hard floor prevents silent emptiness

@@ -10,7 +10,13 @@
       "open [TODO: select specific dataset(s)",
       "open [TODO: define the precise operationalization of \"performance decay\"",
       "open [TODO: state target submission month]"
-    ]
+    ],
+    "rules": {
+      "errors": [],
+      "warnings": [
+        "todo-marker"
+      ]
+    }
   },
   "semantic": [
     "session-derived fixture: skills-generated MSc/EN proposal, curated from the real demo session in docs/demo/harvest.log — structure complete, all five canonical sections present",

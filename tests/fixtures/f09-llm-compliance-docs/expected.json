@@ -14,7 +14,18 @@
       "reference `Iyer25Prompting` defined but never cited",
       "reference `Novak24Auditing` defined but never cited",
       "three consecutive sentences start with `Which`"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "forbidden-section",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "metadata-title-missing",
+        "reference-uncited",
+        "repeated-sentence-start"
+      ]
+    }
   },
   "semantic": [
     "All three research questions are phrased as bare 'Which ...' questions without analytical degree phrasing (to what degree, under which conditions)",

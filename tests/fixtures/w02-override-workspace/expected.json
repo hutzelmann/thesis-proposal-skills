@@ -6,7 +6,13 @@
     "errors_contain": [
       "at least 8 required"
     ],
-    "warnings_contain": []
+    "warnings_contain": [],
+    "rules": {
+      "errors": [
+        "min-references"
+      ],
+      "warnings": []
+    }
   },
   "semantic": [
     "`timeline_detail = \"detailed\"` makes the six-month phase table legitimate — no tool may flag it here, though the same table is an error under the default `simple` mode",

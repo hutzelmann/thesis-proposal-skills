@@ -102,11 +102,6 @@ ignore = ["RUF001", "RUF002"]
 [tool.ruff.lint.mccabe]
 max-complexity = 12
 
-# Structural findings this repository has not fixed yet. Each entry names the
-# change that clears it — an ignore without an owner becomes permanent.
-[tool.ruff.lint.per-file-ignores]
-# `check()` is one 250-line procedure; splitting it into rule functions is the
-# whole point of the follow-up change. Edit the proposal-check copy only.
-"skills/proposal-check/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # cleared by structure-check-findings
-"skills/proposal-import/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # generated copy
-"skills/proposal-write/scripts/check.py" = ["C901", "PLR0912", "PLR0915"]  # generated copy
+# No per-file-ignores. Every exemption this repository once carried has been
+# cleared by the change that owned it; if one has to come back, give it an
+# owner in the same comment.

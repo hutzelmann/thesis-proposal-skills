@@ -22,11 +22,85 @@ import re
 import sys
 import tomllib
 import unicodedata
+from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
 
 BOOLEAN_LITERALS = {"y", "n", "yes", "no", "on", "off", "true", "false"}
 KEY_MAX_LEN = 20  # guidance: reference keys stay shorter than 20 characters
+
+
+# ---------- findings ---------------------------------------------------------
+#
+# A finding is a value, not a sentence. `rule` is the contract a consumer keys
+# on and stays stable when `message` is reworded; `message` is what a student
+# reads and is free to change. The closed set below is the whole vocabulary.
+
+@dataclass(frozen=True)
+class Finding:
+    level: str  # "error" | "warning"
+    rule: str
+    message: str
+
+
+def error(rule: str, message: str) -> Finding:
+    return Finding("error", rule, message)
+
+
+def warn(rule: str, message: str) -> Finding:
+    return Finding("warning", rule, message)
+
+
+RULE_IDS = (
+    # metadata block and reference syntax
+    "guidelines-toml-parse",
+    "metadata-block-missing",
+    "metadata-block-blank-line",
+    "metadata-block-multiple",
+    "reference-id-boolean-literal",
+    "duplicate-reference-id",
+    # title
+    "metadata-title-missing",
+    "title-implementation-opener",
+    "title-buzzword",
+    "title-question-form",
+    "title-too-short",
+    "title-too-long",
+    # structure
+    "timeline-detail-unknown",
+    "required-section-missing",
+    "section-out-of-order",
+    "timeline-table",
+    "timeline-list",
+    "timeline-subsection",
+    "timeline-too-long",
+    "methodology-missing",
+    "methodology-multiple",
+    "methodology-unknown",
+    "methodology-subsection-missing",
+    "forbidden-section",
+    # research questions
+    "research-questions-not-a-list",
+    "research-question-unreferenced",
+    # citations and references
+    "citation-undefined",
+    "reference-uncited",
+    "author-name-typed-bracketed",
+    "author-name-typed-in-text",
+    "author-in-text-without-author",
+    "reference-id-shape",
+    "reference-id-too-long",
+    "min-references",
+    # content
+    "todo-marker",
+    "length-over-limit",
+    "first-person-pronoun",
+    "repeated-sentence-start",
+    "email-address",
+    "matriculation-number",
+    "metadata-author-key",
+    "confidentiality-marker",
+)
 
 
 # ---------- loading ----------------------------------------------------------
@@ -145,7 +219,7 @@ def headings(body: str) -> list[tuple[int, str]]:
     ]
 
 
-def timeline_body_errors(section: str, title: str, max_lines: int) -> list[str]:
+def timeline_body_errors(section: str, title: str, max_lines: int) -> list[Finding]:
     """The timeline is one short sentence, not a work plan. Structure only:
     whether it names a real timeframe is left to the agent pass, which also
     sees a Gantt chart pasted in as an image."""
@@ -159,13 +233,17 @@ def timeline_body_errors(section: str, title: str, max_lines: int) -> list[str]:
             lines.append(line)
     out = []
     if any(re.match(r"\s*\|", line) for line in lines):
-        out.append(f"table in `{title}` — the timeline is one short sentence")
+        out.append(error("timeline-table",
+                         f"table in `{title}` — the timeline is one short sentence"))
     if any(re.match(r"\s*([-*+]|\d+[.)])\s", line) for line in lines):
-        out.append(f"list in `{title}` — the timeline is one short sentence")
+        out.append(error("timeline-list",
+                         f"list in `{title}` — the timeline is one short sentence"))
     if any(re.match(r"#{1,6}\s", line) for line in lines):
-        out.append(f"subsection in `{title}` — the timeline takes no work packages")
+        out.append(error("timeline-subsection",
+                         f"subsection in `{title}` — the timeline takes no work packages"))
     if len(lines) > max_lines:
-        out.append(f"`{title}` runs {len(lines)} lines — at most {max_lines} allowed")
+        out.append(error("timeline-too-long",
+                         f"`{title}` runs {len(lines)} lines — at most {max_lines} allowed"))
     return out
 
 
@@ -174,7 +252,7 @@ def timeline_body_errors(section: str, title: str, max_lines: int) -> list[str]:
 BLOCK_SCALAR = re.compile(r"^[|>][+-]?\d*$")
 
 
-def title_warnings(title: str, cfg: dict, lang: str = "en") -> list[str]:
+def title_warnings(title: str, cfg: dict, lang: str = "en") -> list[Finding]:
     """The thesis title is printed on the study certificate — every finding says
     so, because that rationale is what makes a heuristic warning worth acting on.
     Only the mechanical tells live here: whether a proper noun in the title names
@@ -188,194 +266,247 @@ def title_warnings(title: str, cfg: dict, lang: str = "en") -> list[str]:
 
     opener = next((o for o in cfg["implementation_openers"] if low.startswith(o)), None)
     if opener:
-        out.append(
+        out.append(warn(
+            "title-implementation-opener",
             f"title opens with `{opener}` — implementation framing states building "
-            f"work, not a contribution; {certificate}"
-        )
+            f"work, not a contribution; {certificate}",
+        ))
 
     hits = [w for w in cfg["buzzwords"] if w in low]
     if hits:
-        out.append(
+        out.append(warn(
+            "title-buzzword",
             f"title carries {', '.join(f'`{w}`' for w in hits)} — marketing tone; "
-            f"{certificate}"
-        )
+            f"{certificate}",
+        ))
 
     if stripped.endswith("?"):
-        out.append(
+        out.append(warn(
+            "title-question-form",
             "title is phrased as a question — an academic title states its subject; "
-            f"{certificate}"
-        )
+            f"{certificate}",
+        ))
 
     min_words = cfg["min_words"].get(lang, cfg["min_words"]["en"])
     words = len(stripped.split())
     if words < min_words:
-        out.append(
+        out.append(warn(
+            "title-too-short",
             f"title runs {words} words — at least {min_words} expected; it has to name "
             f"a contribution and its object standing alone, without the subtitle, and "
-            f"{certificate}"
-        )
+            f"{certificate}",
+        ))
     elif words > cfg["max_words"]:
-        out.append(
+        out.append(warn(
+            "title-too-long",
             f"title runs {words} words — at most {cfg['max_words']} expected; "
-            f"{certificate}"
-        )
+            f"{certificate}",
+        ))
 
     return out
 
 
-def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[str], list[str]]:
-    errors: list[str] = []
-    warnings: list[str] = []
-    text = proposal_path.read_text(encoding="utf-8")
-    body, meta = split_proposal(text)
-    lang = meta.lang if meta.lang in ("en", "de") else "en"
+@dataclass(frozen=True)
+class Context:
+    """Everything the rules read, derived once. Rules take this and return
+    findings; none of them reads a file or mutates anything."""
 
-    if "_parse_error" in overrides:
-        errors.append(f"guidelines.md TOML block does not parse: {overrides['_parse_error']}")
-        overrides = {}
+    body: str
+    meta: Metadata
+    lang: str
+    structure: dict
+    overrides: dict
+    detail: str            # effective timeline mode after validation
+    head_texts: list[str]
+    titles: dict
+    meth_tpl: str
+    meth_prefix: str
+    meth_heads: list[str]
+    required: list[str]
 
-    # -- format guardrails
-    if not meta.found:
-        errors.append("no trailing metadata block found (file must end with a `---` YAML block)")
-    else:
-        if not meta.blank_line_before:
-            errors.append(
-                "no blank line before the trailing `---` block "
-                "(pandoc will treat it as body text)"
-            )
-        for rid in meta.reference_ids:
-            if rid.lower() in BOOLEAN_LITERALS:
-                errors.append(
-                    f"reference id `{rid}` is a YAML boolean literal — rename or quote it"
-                )
-        dupes = {r for r in meta.reference_ids if meta.reference_ids.count(r) > 1}
-        for rid in sorted(dupes):
-            errors.append(f"duplicate reference id `{rid}`")
-        if meta.title is None:
-            warnings.append("metadata block has no `title:`")
-        else:
-            warnings.extend(title_warnings(meta.title, structure["title"], lang))
-        body_lines = body.split("\n")
-        delims = [i for i, line in enumerate(body_lines) if re.fullmatch(r"---\s*", line)]
-        for a, b in pairwise(delims):
-            block = "\n".join(body_lines[a + 1 : b])
-            if re.search(r"^\s*\w[\w-]*\s*:", block, re.MULTILINE):
-                errors.append(
-                    "additional metadata block found before the trailing one — "
-                    "exactly one trailing block allowed"
-                )
-                break
 
-    # -- timeline detail mode
-    timeline_cfg = structure["timeline"]
-    detail = overrides.get("timeline_detail", timeline_cfg["default_detail"])
-    if detail not in timeline_cfg["detail_modes"]:
-        errors.append(
-            f"guidelines.md: unknown timeline_detail `{detail}` — must be one of: "
-            f"{', '.join(timeline_cfg['detail_modes'])}"
-        )
-        detail = timeline_cfg["default_detail"]
+# ---------- rules ------------------------------------------------------------
+#
+# One function per rule family, each returning its findings. The registry at the
+# bottom fixes report order, so the order is stated in one readable place rather
+# than implied by where a block happens to sit in a 250-line procedure.
 
-    # -- sections
-    heads = headings(body)
-    head_texts = [t for _, t in heads]
-    titles = structure["sections"]["titles"]
-    meth_tpl = titles["methodology"][lang]
-    meth_prefix = meth_tpl.split("{")[0]
-    required_default = [
-        titles[key][lang] for key in structure["sections"]["order"] if key != "methodology"
+
+def rule_metadata_present(ctx: Context) -> list[Finding]:
+    if not ctx.meta.found:
+        return [error("metadata-block-missing",
+                      "no trailing metadata block found (file must end with a `---` YAML block)")]
+    if not ctx.meta.blank_line_before:
+        return [error("metadata-block-blank-line",
+                      "no blank line before the trailing `---` block "
+                      "(pandoc will treat it as body text)")]
+    return []
+
+
+def rule_reference_id_syntax(ctx: Context) -> list[Finding]:
+    if not ctx.meta.found:
+        return []
+    out = [
+        error("reference-id-boolean-literal",
+              f"reference id `{rid}` is a YAML boolean literal — rename or quote it")
+        for rid in ctx.meta.reference_ids if rid.lower() in BOOLEAN_LITERALS
     ]
-    required = overrides.get("required_sections", required_default)
-    for title in required:
-        if not any(h == title for h in head_texts):
-            errors.append(f"required section missing: `{title}`")
+    dupes = {r for r in ctx.meta.reference_ids if ctx.meta.reference_ids.count(r) > 1}
+    out += [error("duplicate-reference-id", f"duplicate reference id `{rid}`")
+            for rid in sorted(dupes)]
+    return out
 
-    # -- section order
+
+def rule_single_metadata_block(ctx: Context) -> list[Finding]:
+    if not ctx.meta.found:
+        return []
+    body_lines = ctx.body.split("\n")
+    delims = [i for i, line in enumerate(body_lines) if re.fullmatch(r"---\s*", line)]
+    for a, b in pairwise(delims):
+        block = "\n".join(body_lines[a + 1 : b])
+        if re.search(r"^\s*\w[\w-]*\s*:", block, re.MULTILINE):
+            return [error("metadata-block-multiple",
+                          "additional metadata block found before the trailing one — "
+                          "exactly one trailing block allowed")]
+    return []
+
+
+def rule_title(ctx: Context) -> list[Finding]:
+    if not ctx.meta.found:
+        return []
+    if ctx.meta.title is None:
+        return [warn("metadata-title-missing", "metadata block has no `title:`")]
+    return title_warnings(ctx.meta.title, ctx.structure["title"], ctx.lang)
+
+
+def rule_timeline_mode(ctx: Context) -> list[Finding]:
+    """`ctx.detail` has already fallen back to the default; this reports the
+    value that caused the fallback, in its place in the report."""
+    timeline_cfg = ctx.structure["timeline"]
+    declared = ctx.overrides.get("timeline_detail", timeline_cfg["default_detail"])
+    if declared in timeline_cfg["detail_modes"]:
+        return []
+    return [error("timeline-detail-unknown",
+                  f"guidelines.md: unknown timeline_detail `{declared}` — must be one of: "
+                  f"{', '.join(timeline_cfg['detail_modes'])}")]
+
+
+def rule_required_sections(ctx: Context) -> list[Finding]:
+    return [
+        error("required-section-missing", f"required section missing: `{title}`")
+        for title in ctx.required if not any(h == title for h in ctx.head_texts)
+    ]
+
+
+def rule_section_order(ctx: Context) -> list[Finding]:
     # An overridden required_sections list carries its own order; otherwise the
     # canonical order applies, with the methodology matched by title prefix
     # because its heading is a template.
-    if "required_sections" in overrides:
-        expected = [(t, t, False) for t in required]
+    if "required_sections" in ctx.overrides:
+        expected = [(t, t, False) for t in ctx.required]
     else:
         expected = [
-            (titles[key][lang], meth_prefix if key == "methodology" else titles[key][lang],
+            (ctx.titles[key][ctx.lang],
+             ctx.meth_prefix if key == "methodology" else ctx.titles[key][ctx.lang],
              key == "methodology")
-            for key in structure["sections"]["order"]
+            for key in ctx.structure["sections"]["order"]
         ]
     positions = []
     for label, needle, by_prefix in expected:
         idx = next(
-            (i for i, h in enumerate(head_texts)
+            (i for i, h in enumerate(ctx.head_texts)
              if (h.startswith(needle) if by_prefix else h == needle)),
             None,
         )
         if idx is not None:
             # name the heading as written, not the `{methodology}` template
-            positions.append((idx, head_texts[idx] if by_prefix else label))
-    for (prev_i, prev), (cur_i, cur) in pairwise(positions):
-        if cur_i < prev_i:
-            errors.append(f"section out of order: `{cur}` before `{prev}`")
+            positions.append((idx, ctx.head_texts[idx] if by_prefix else label))
+    return [
+        error("section-out-of-order", f"section out of order: `{cur}` before `{prev}`")
+        for (prev_i, prev), (cur_i, cur) in pairwise(positions) if cur_i < prev_i
+    ]
 
-    # -- timeline stays coarse (the detailed mode is the escape hatch for a
-    # program that mandates a work plan)
-    if detail == "simple":
-        tl_title = titles["timeline"][lang]
-        errors.extend(
-            timeline_body_errors(
-                section_text(body, tl_title), tl_title, timeline_cfg["max_body_lines"]
-            )
-        )
 
-    # -- methodology (canonical mode only)
-    meth_heads = [h for h in head_texts if h.startswith(meth_prefix)]
-    methodologies = structure["methodologies"]
-    meth_names = {m["title"][lang]: key for key, m in methodologies.items()}
-    if "required_sections" not in overrides:
-        if not meth_heads:
-            errors.append(f"methodology section missing (`{meth_tpl}`)")
-        elif len(meth_heads) > 1:
-            errors.append("multiple methodology sections — exactly one methodology allowed")
-        else:
-            chosen = meth_heads[0][len(meth_prefix):].strip()
-            if chosen not in meth_names:
-                errors.append(
-                    f"unknown methodology `{chosen}` — must be one of: "
-                    f"{', '.join(sorted(meth_names))}"
-                )
-            else:
-                for sub in methodologies[meth_names[chosen]]["subsections"]:
-                    if sub[lang] not in head_texts:
-                        errors.append(f"methodology subsection missing: `{sub[lang]}`")
+def rule_timeline_size(ctx: Context) -> list[Finding]:
+    """The detailed mode is the escape hatch for a program that mandates a work
+    plan, so the size guard only applies to the simple mode."""
+    if ctx.detail != "simple":
+        return []
+    tl_title = ctx.titles["timeline"][ctx.lang]
+    return timeline_body_errors(
+        section_text(ctx.body, tl_title), tl_title,
+        ctx.structure["timeline"]["max_body_lines"],
+    )
 
-    # -- forbidden headings
-    forbidden = [p.lower() for p in overrides.get(
-        "forbidden_sections", structure["forbidden_heading_patterns"]
+
+def rule_methodology(ctx: Context) -> list[Finding]:
+    """Canonical mode only: an overridden section list replaces the closed set."""
+    if "required_sections" in ctx.overrides:
+        return []
+    methodologies = ctx.structure["methodologies"]
+    meth_names = {m["title"][ctx.lang]: key for key, m in methodologies.items()}
+    if not ctx.meth_heads:
+        return [error("methodology-missing", f"methodology section missing (`{ctx.meth_tpl}`)")]
+    if len(ctx.meth_heads) > 1:
+        return [error("methodology-multiple",
+                      "multiple methodology sections — exactly one methodology allowed")]
+    chosen = ctx.meth_heads[0][len(ctx.meth_prefix):].strip()
+    if chosen not in meth_names:
+        return [error("methodology-unknown",
+                      f"unknown methodology `{chosen}` — must be one of: "
+                      f"{', '.join(sorted(meth_names))}")]
+    return [
+        error("methodology-subsection-missing",
+              f"methodology subsection missing: `{sub[ctx.lang]}`")
+        for sub in methodologies[meth_names[chosen]]["subsections"]
+        if sub[ctx.lang] not in ctx.head_texts
+    ]
+
+
+def rule_forbidden_sections(ctx: Context) -> list[Finding]:
+    forbidden = [p.lower() for p in ctx.overrides.get(
+        "forbidden_sections", ctx.structure["forbidden_heading_patterns"]
     )]
-    if detail == "detailed":
-        work_plan = {p.lower() for p in structure["work_plan_heading_patterns"]}
+    if ctx.detail == "detailed":
+        work_plan = {p.lower() for p in ctx.structure["work_plan_heading_patterns"]}
         forbidden = [p for p in forbidden if p not in work_plan]
-    for h in head_texts:
+    out = []
+    for h in ctx.head_texts:
         for pattern in forbidden:
             if pattern in h.lower():
-                errors.append(f"forbidden section: `{h}` (matches `{pattern}`)")
+                out.append(error("forbidden-section",
+                                 f"forbidden section: `{h}` (matches `{pattern}`)"))
                 break
+    return out
 
-    # -- research questions
-    rq_title = titles["research_questions"][lang]
-    rq_section = section_text(body, rq_title)
-    meth_section = section_text(body, meth_heads[0]) if meth_heads else ""
+
+def rule_research_questions(ctx: Context) -> list[Finding]:
+    rq_title = ctx.titles["research_questions"][ctx.lang]
+    rq_section = section_text(ctx.body, rq_title)
+    meth_section = section_text(ctx.body, ctx.meth_heads[0]) if ctx.meth_heads else ""
     rq_items = re.findall(r"^\d+[.)]\s+", rq_section, re.MULTILINE)
+    out = []
     if rq_section and not rq_items:
-        errors.append("no ordered-list research questions found in the research-questions section")
-    for n in range(1, len(rq_items) + 1):
-        if meth_section and f"(RQ{n})" not in meth_section:
-            errors.append(f"(RQ{n}) never referenced in the methodology section")
+        out.append(error(
+            "research-questions-not-a-list",
+            "no ordered-list research questions found in the research-questions section",
+        ))
+    out += [
+        error("research-question-unreferenced",
+              f"(RQ{n}) never referenced in the methodology section")
+        for n in range(1, len(rq_items) + 1)
+        if meth_section and f"(RQ{n})" not in meth_section
+    ]
+    return out
 
-    # -- citations
+
+def scan_citations(ctx: Context) -> tuple[dict[str, int], dict[str, int],
+                                          list[tuple[str, int, bool]]]:
+    """(cited, author-in-text, typed names) with the line each first occurred on."""
     cited: dict[str, int] = {}
     author_in_text: dict[str, int] = {}
     typed_names: list[tuple[str, int, bool]] = []
-    for lineno, line in enumerate(body.split("\n"), start=1):
+    for lineno, line in enumerate(ctx.body.split("\n"), start=1):
         # a key inside a bracketed group renders as a bare number; one outside
         # is author-in-text and gets an author label prefixed
         depth = 0
@@ -390,100 +521,219 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
                 if depth == 0:
                     author_in_text.setdefault(key, lineno)
                 prefix = line[:m.start()].rstrip().removesuffix("[").rstrip()
-                if name_precedes(prefix, meta.reference_surnames.get(key, set())):
+                if name_precedes(prefix, ctx.meta.reference_surnames.get(key, set())):
                     typed_names.append((key, lineno, depth > 0))
-    defined = set(meta.reference_ids)
-    for key in sorted(set(cited) - defined):
-        errors.append(f"cited key `@{key}` not defined in references (line {cited[key]})")
-    for key in sorted(defined - set(cited)):
-        warnings.append(f"reference `{key}` defined but never cited")
+    return cited, author_in_text, typed_names
+
+
+def rule_citations(ctx: Context) -> list[Finding]:
+    cited, author_in_text, typed_names = scan_citations(ctx)
+    defined = set(ctx.meta.reference_ids)
+    out = [
+        error("citation-undefined",
+              f"cited key `@{key}` not defined in references (line {cited[key]})")
+        for key in sorted(set(cited) - defined)
+    ]
+    out += [
+        warn("reference-uncited", f"reference `{key}` defined but never cited")
+        for key in sorted(defined - set(cited))
+    ]
     for key, lineno, bracketed in typed_names:
         if bracketed:
-            warnings.append(
+            out.append(warn(
+                "author-name-typed-bracketed",
                 f"author name typed before `[@{key}]` (line {lineno}) — the name is a copy "
-                f"that stops tracking the entry; write `@{key}` alone instead"
-            )
+                f"that stops tracking the entry; write `@{key}` alone instead",
+            ))
         else:
-            warnings.append(
+            out.append(warn(
+                "author-name-typed-in-text",
                 f"author name typed before `@{key}` (line {lineno}) — it renders twice "
-                f"(\"Smith et al. Smith et al. [1]\"); write `@{key}` alone"
-            )
-    for key in sorted(set(author_in_text) & meta.reference_ids_without_names):
-        warnings.append(
-            f"`@{key}` is cited author-in-text but its reference declares no author or editor "
-            f"(line {author_in_text[key]}) — it renders as the quoted title; use `[@{key}]` instead"
-        )
-    # key shape: AuthorYearFirstWord, e.g. Smith26Deep. An eval produced
-    # `RiveraYearSurvey` — the literal word "Year" where the year belongs —
-    # and nothing caught it. Warning class: an unusual author name can
-    # legitimately produce an unusual key, and the proposal still resolves.
-    for rid in sorted(set(meta.reference_ids)):
+                f"(\"Smith et al. Smith et al. [1]\"); write `@{key}` alone",
+            ))
+    out += [
+        warn("author-in-text-without-author",
+             f"`@{key}` is cited author-in-text but its reference declares no author or editor "
+             f"(line {author_in_text[key]}) — it renders as the quoted title; "
+             f"use `[@{key}]` instead")
+        for key in sorted(set(author_in_text) & ctx.meta.reference_ids_without_names)
+    ]
+    return out
+
+
+def rule_reference_id_shape(ctx: Context) -> list[Finding]:
+    """Key shape: AuthorYearFirstWord, e.g. Smith26Deep. An eval produced
+    `RiveraYearSurvey` — the literal word "Year" where the year belongs — and
+    nothing caught it. Warning class: an unusual author name can legitimately
+    produce an unusual key, and the proposal still resolves."""
+    out = []
+    for rid in sorted(set(ctx.meta.reference_ids)):
         if rid.lower() in BOOLEAN_LITERALS:
             continue  # already an error; one complaint per key is enough
         if not re.fullmatch(r"[A-Za-z][A-Za-z]*\d{2}[A-Za-z]+", rid):
-            warnings.append(
+            out.append(warn(
+                "reference-id-shape",
                 f"reference id `{rid}` does not follow `AuthorYearFirstWord` "
-                f"(e.g. `Smith26Deep`) — a two-digit year between name and title word"
-            )
+                f"(e.g. `Smith26Deep`) — a two-digit year between name and title word",
+            ))
         elif len(rid) >= KEY_MAX_LEN:
-            warnings.append(
-                f"reference id `{rid}` is {len(rid)} characters — keep keys under {KEY_MAX_LEN}"
-            )
-    min_refs = overrides.get("min_references", structure["min_references"])
+            out.append(warn(
+                "reference-id-too-long",
+                f"reference id `{rid}` is {len(rid)} characters — "
+                f"keep keys under {KEY_MAX_LEN}",
+            ))
+    return out
+
+
+def rule_min_references(ctx: Context) -> list[Finding]:
+    defined = set(ctx.meta.reference_ids)
+    min_refs = ctx.overrides.get("min_references", ctx.structure["min_references"])
     if len(defined) < min_refs:
-        errors.append(f"only {len(defined)} references — at least {min_refs} required")
+        return [error("min-references",
+                      f"only {len(defined)} references — at least {min_refs} required")]
+    return []
 
-    # -- TODO markers
-    todos = re.findall(structure["todo_marker"], body)
-    for todo in todos:
-        warnings.append(f"open {todo}")
 
-    # -- estimated length (estimate from word count: markdown has no pages)
-    if length_cfg := structure.get("length"):
-        page_limit = overrides.get("page_limit", length_cfg["page_limit"])
-        words = sum(
-            len(line.split())
-            for line in body.split("\n")
-            if line.strip() and not line.lstrip().startswith("#")
-        )
-        estimated = words / length_cfg["words_per_page"]
-        if estimated > page_limit:
-            warnings.append(
-                f"estimated length ~{estimated:.1f} pages ({words} words at "
-                f"{length_cfg['words_per_page']} words/page) exceeds the "
-                f"{page_limit}-page limit — an estimate, not a rendered count; "
-                f"delete low-information sentences rather than compressing wording"
-            )
+def rule_todo_markers(ctx: Context) -> list[Finding]:
+    return [warn("todo-marker", f"open {todo}")
+            for todo in re.findall(ctx.structure["todo_marker"], ctx.body)]
 
-    # -- warning-class patterns
-    fp = (r"\b(I|[Ww]e|[Mm]y|[Oo]ur)\b" if lang == "en"
+
+def rule_length(ctx: Context) -> list[Finding]:
+    """Estimated from word count: markdown has no pages."""
+    length_cfg = ctx.structure.get("length")
+    if not length_cfg:
+        return []
+    page_limit = ctx.overrides.get("page_limit", length_cfg["page_limit"])
+    words = sum(
+        len(line.split())
+        for line in ctx.body.split("\n")
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    estimated = words / length_cfg["words_per_page"]
+    if estimated <= page_limit:
+        return []
+    return [warn(
+        "length-over-limit",
+        f"estimated length ~{estimated:.1f} pages ({words} words at "
+        f"{length_cfg['words_per_page']} words/page) exceeds the "
+        f"{page_limit}-page limit — an estimate, not a rendered count; "
+        f"delete low-information sentences rather than compressing wording",
+    )]
+
+
+def rule_prose_patterns(ctx: Context) -> list[Finding]:
+    out = []
+    fp = (r"\b(I|[Ww]e|[Mm]y|[Oo]ur)\b" if ctx.lang == "en"
           else r"\b([Ii]ch|[Ww]ir|[Mm]ein\w*|[Uu]nser\w*)\b")
-    if fps := re.findall(fp, body):
-        warnings.append(f"first-person pronouns found ({len(fps)}×) — use third person")
-    for start_word in repeated_sentence_starts(body):
-        warnings.append(f"three consecutive sentences start with `{start_word}`")
+    if fps := re.findall(fp, ctx.body):
+        out.append(warn("first-person-pronoun",
+                        f"first-person pronouns found ({len(fps)}×) — use third person"))
+    for start_word in repeated_sentence_starts(ctx.body):
+        out.append(warn("repeated-sentence-start",
+                        f"three consecutive sentences start with `{start_word}`"))
         break
-    if re.search(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b", body):
-        warnings.append("email address found — personal data is forbidden")
-    if re.search(r"\b(matriculation|matrikel)", body, re.IGNORECASE) or re.search(
-        r"(?<!\d)\d{7,8}(?!\d)", body
+    if re.search(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b", ctx.body):
+        out.append(warn("email-address", "email address found — personal data is forbidden"))
+    if re.search(r"\b(matriculation|matrikel)", ctx.body, re.IGNORECASE) or re.search(
+        r"(?<!\d)\d{7,8}(?!\d)", ctx.body
     ):
-        warnings.append("possible matriculation number / personal data")
-    if meta.has_author_key:
+        out.append(warn("matriculation-number",
+                        "possible matriculation number / personal data"))
+    if ctx.meta.has_author_key:
         # the exception (a program requiring a named title page) is declared in
         # workspace guidance prose, which is not machine-readable — so warn always
-        warnings.append(
+        out.append(warn(
+            "metadata-author-key",
             "`author:` found — proposals are anonymous by default; remove it "
-            "unless your program requires a named cover page"
-        )
-    for pattern in structure["confidentiality_patterns"]:
-        if re.search(rf"\b{re.escape(pattern)}\b", body, re.IGNORECASE):
-            warnings.append(
-                f"confidentiality marker `{pattern}` — theses get published, remove it"
-            )
+            "unless your program requires a named cover page",
+        ))
+    for pattern in ctx.structure["confidentiality_patterns"]:
+        if re.search(rf"\b{re.escape(pattern)}\b", ctx.body, re.IGNORECASE):
+            out.append(warn(
+                "confidentiality-marker",
+                f"confidentiality marker `{pattern}` — theses get published, remove it",
+            ))
             break
+    return out
 
-    return errors, warnings
+
+# Report order. Errors and warnings are rendered in separate buckets, so what
+# this sequence fixes is the order within each bucket.
+RULES = (
+    rule_metadata_present,
+    rule_reference_id_syntax,
+    rule_single_metadata_block,
+    rule_title,
+    rule_timeline_mode,
+    rule_required_sections,
+    rule_section_order,
+    rule_timeline_size,
+    rule_methodology,
+    rule_forbidden_sections,
+    rule_research_questions,
+    rule_citations,
+    rule_reference_id_shape,
+    rule_min_references,
+    rule_todo_markers,
+    rule_length,
+    rule_prose_patterns,
+)
+
+
+def build_context(body: str, meta: Metadata, structure: dict, overrides: dict) -> Context:
+    """Derive once what every rule reads. An unrecognised timeline mode falls
+    back to the default here silently; `rule_timeline_mode` reports it, so the
+    finding keeps its place in the report rather than jumping to the front."""
+    lang = meta.lang if meta.lang in ("en", "de") else "en"
+
+    timeline_cfg = structure["timeline"]
+    detail = overrides.get("timeline_detail", timeline_cfg["default_detail"])
+    if detail not in timeline_cfg["detail_modes"]:
+        detail = timeline_cfg["default_detail"]
+
+    head_texts = [t for _, t in headings(body)]
+    titles = structure["sections"]["titles"]
+    meth_tpl = titles["methodology"][lang]
+    meth_prefix = meth_tpl.split("{")[0]
+    required_default = [
+        titles[key][lang] for key in structure["sections"]["order"] if key != "methodology"
+    ]
+    return Context(
+        body=body, meta=meta, lang=lang, structure=structure, overrides=overrides,
+        detail=detail, head_texts=head_texts, titles=titles, meth_tpl=meth_tpl,
+        meth_prefix=meth_prefix,
+        meth_heads=[h for h in head_texts if h.startswith(meth_prefix)],
+        required=overrides.get("required_sections", required_default),
+    )
+
+
+def check_findings(proposal_path: Path, structure: dict, overrides: dict) -> list[Finding]:
+    """Every mechanical finding for one proposal, in report order."""
+    body, meta = split_proposal(proposal_path.read_text(encoding="utf-8"))
+
+    findings: list[Finding] = []
+    if "_parse_error" in overrides:
+        findings.append(error(
+            "guidelines-toml-parse",
+            f"guidelines.md TOML block does not parse: {overrides['_parse_error']}",
+        ))
+        overrides = {}
+
+    ctx = build_context(body, meta, structure, overrides)
+    for rule in RULES:
+        findings += rule(ctx)
+    return findings
+
+
+def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[str], list[str]]:
+    """Messages split into the two report buckets — the shape the report and the
+    existing consumers expect."""
+    findings = check_findings(proposal_path, structure, overrides)
+    return (
+        [f.message for f in findings if f.level == "error"],
+        [f.message for f in findings if f.level == "warning"],
+    )
 
 
 def repeated_sentence_starts(body: str):
@@ -522,32 +772,24 @@ def section_text(body: str, title: str) -> str:
 
 # ---------- report -----------------------------------------------------------
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("proposal", type=Path)
-    parser.add_argument("--guidelines", type=Path, default=None)
-    parser.add_argument("--structure", type=Path, default=None)
-    args = parser.parse_args(argv)
-
-    structure = load_structure(args.structure)
-    overrides = load_overrides(args.proposal, args.guidelines)
-    errors, warnings = check(args.proposal, structure, overrides)
-
-    print(f"# Check: {args.proposal.name}")
+def render_report(name: str, digest: str, findings: list[Finding]) -> str:
+    """The human report. Its wording is the skill's user-facing output; the
+    machine-readable mode exists so nothing has to parse it."""
+    errors = [f for f in findings if f.level == "error"]
+    warnings = [f for f in findings if f.level == "warning"]
+    lines = [f"# Check: {name}"]
     # identifies the exact content checked; a re-run with a differing digest
     # means the file changed between the runs (read-only mandate tripwire)
-    print(f"digest: sha256:{hashlib.sha256(args.proposal.read_bytes()).hexdigest()}")
-    print(
+    lines.append(f"digest: sha256:{digest}")
+    lines.append(
         "\n## Verified mechanically — errors" if errors
         else "\n## Verified mechanically — no errors"
     )
-    for e in errors:
-        print(f"- ERROR: {e}")
+    lines += [f"- ERROR: {f.message}" for f in errors]
     if warnings:
-        print("\n## Verified mechanically — warnings (possible false positives)")
-        for w in warnings:
-            print(f"- WARNING: {w}")
-    print(
+        lines.append("\n## Verified mechanically — warnings (possible false positives)")
+        lines += [f"- WARNING: {f.message}" for f in warnings]
+    lines.append(
         "\n## Deferred to the agent pass\n"
         "- typos, grammar, and wording\n"
         "- content-level forbidden material (e.g. expected results in prose)\n"
@@ -557,7 +799,36 @@ def main(argv: list[str] | None = None) -> int:
         "\nThis check is advisory: it gates nothing. A clean result is mechanical "
         "only — substance is not judged here; the review skill renders that verdict."
     )
-    return 1 if errors else 0
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("proposal", type=Path)
+    parser.add_argument("--guidelines", type=Path, default=None)
+    parser.add_argument("--structure", type=Path, default=None)
+    parser.add_argument("--json", action="store_true",
+                        help="emit findings as JSON instead of the human report")
+    args = parser.parse_args(argv)
+
+    structure = load_structure(args.structure)
+    overrides = load_overrides(args.proposal, args.guidelines)
+    findings = check_findings(args.proposal, structure, overrides)
+    digest = hashlib.sha256(args.proposal.read_bytes()).hexdigest()
+    exit_code = 1 if any(f.level == "error" for f in findings) else 0
+
+    if args.json:
+        print(json.dumps({
+            "file": args.proposal.name,
+            "digest": f"sha256:{digest}",
+            "exit_code": exit_code,
+            "findings": [
+                {"level": f.level, "rule": f.rule, "message": f.message} for f in findings
+            ],
+        }, ensure_ascii=False, indent=2))
+    else:
+        print(render_report(args.proposal.name, digest, findings))
+    return exit_code
 
 
 if __name__ == "__main__":

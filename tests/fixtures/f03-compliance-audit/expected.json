@@ -17,7 +17,19 @@
       "three consecutive sentences start with `How`",
       "email address found",
       "possible matriculation number"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "forbidden-section",
+        "methodology-missing",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "email-address",
+        "matriculation-number",
+        "repeated-sentence-start"
+      ]
+    }
   },
   "semantic": [
     "research questions are work packages phrased as implementation goals ('how can X be translated/integrated/exported'), not analytical questions",

@@ -4,7 +4,11 @@
   "check": {
     "exit_code": 0,
     "errors_contain": [],
-    "warnings_contain": []
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
   },
   "semantic": [
     "two figure links (img/sensor-anomaly-triage-a.png, img/sensor-anomaly-triage-b.png) must survive import with slug-prefixed img/ paths — check treats them as body text and ignores them"

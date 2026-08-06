@@ -17,7 +17,20 @@
       "first-person pronouns found",
       "three consecutive sentences start with `How`",
       "email address found"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "forbidden-section",
+        "methodology-missing",
+        "min-references",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "email-address",
+        "first-person-pronoun",
+        "repeated-sentence-start"
+      ]
+    }
   },
   "semantic": [
     "RQ1-RQ3 are implementation goals ('How can X be implemented/built/designed')",

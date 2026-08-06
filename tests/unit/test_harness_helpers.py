@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from l1_checks import (
     disallowed_errors,
+    disallowed_rules,
     is_enumerated_review,
     parse_grade,
     select_draft,
@@ -57,6 +58,24 @@ def test_disallowed_errors_filters_allowed():
     ]
     assert disallowed_errors(out)
     assert len(disallowed_errors(out)) == 2
+
+
+def test_disallowed_rules_tolerates_the_reference_shortfall_by_identifier():
+    """The tolerance is keyed on the rule id, so rewording the message cannot
+    change what the harness lets through."""
+    findings = [
+        {"level": "error", "rule": "min-references", "message": "only 1 references — …"},
+        {"level": "error", "rule": "forbidden-section",
+         "message": "forbidden section: `Work Plan`"},
+        {"level": "warning", "rule": "todo-marker", "message": "open [TODO: x]"},
+    ]
+    assert disallowed_rules(findings) == ["forbidden section: `Work Plan`"]
+
+
+def test_disallowed_rules_reworded_message_still_tolerated():
+    reworded = [{"level": "error", "rule": "min-references",
+                 "message": "the proposal cites too few sources"}]
+    assert disallowed_rules(reworded) == []
 
 
 def test_is_enumerated_review():

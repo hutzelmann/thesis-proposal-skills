@@ -18,7 +18,19 @@
       "reference `Silva24Early` defined but never cited",
       "email address found",
       "confidentiality marker `confidential`"
-    ]
+    ],
+    "rules": {
+      "errors": [
+        "forbidden-section",
+        "methodology-missing",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "confidentiality-marker",
+        "email-address",
+        "reference-uncited"
+      ]
+    }
   },
   "semantic": [
     "RQ1 and RQ2 are implementation goals rather than analytical questions",

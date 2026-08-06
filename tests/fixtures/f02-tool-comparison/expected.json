@@ -12,7 +12,17 @@
       "`Zeitplan` runs 7 lines — at most 3 allowed",
       "only 2 references — at least 3 required"
     ],
-    "warnings_contain": []
+    "warnings_contain": [],
+    "rules": {
+      "errors": [
+        "methodology-missing",
+        "min-references",
+        "required-section-missing",
+        "timeline-table",
+        "timeline-too-long"
+      ],
+      "warnings": []
+    }
   },
   "semantic": [
     "`Zeitplan` is the canonical German timeline title, so the heading itself is legitimate — what fails is the five-phase Gantt table under it, which the timeline size guard catches instead of the old forbidden-heading rule",

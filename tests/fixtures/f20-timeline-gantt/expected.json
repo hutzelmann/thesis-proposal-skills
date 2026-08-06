@@ -7,7 +7,14 @@
       "table in `Timeline` — the timeline is one short sentence",
       "`Timeline` runs 7 lines — at most 3 allowed"
     ],
-    "warnings_contain": []
+    "warnings_contain": [],
+    "rules": {
+      "errors": [
+        "timeline-table",
+        "timeline-too-long"
+      ],
+      "warnings": []
+    }
   },
   "semantic": [
     "isolates the timeline size guard: everything else is clean, so the only findings are the two the guard produces — this is the mechanism that replaced the deleted `timeline`/`zeitplan` forbidden-heading patterns",
