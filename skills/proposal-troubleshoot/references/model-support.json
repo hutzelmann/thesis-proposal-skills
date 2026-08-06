@@ -1,0 +1,210 @@
+{
+  "_generated": "from shared/model-support.json — edit there, then run scripts/sync_shared.py",
+  "generated": "2026-08-06",
+  "statuses": {
+    "solid": "every measured epoch passed",
+    "flaky": "some epochs passed, some failed",
+    "fail": "every measured epoch failed",
+    "untested": "never measured — not evidence of support"
+  },
+  "models": {
+    "anthropic/claude-haiku-4.5": {
+      "verdict": "failing",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "fail",
+        "ideate_longrun": "untested",
+        "import_messy": "solid",
+        "publish_build": "solid",
+        "review_fixture": "fail",
+        "review_fixture_de": "solid",
+        "title_alarm": "solid",
+        "write_from_seed": "fail"
+      },
+      "skills": {
+        "proposal-customize": "fail",
+        "proposal-ideate": "untested",
+        "proposal-import": "solid",
+        "proposal-publish": "solid",
+        "proposal-review": "fail",
+        "proposal-write": "fail"
+      }
+    },
+    "anthropic/claude-opus-5": {
+      "verdict": "untested",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "untested"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "untested"
+      }
+    },
+    "anthropic/claude-sonnet-5": {
+      "verdict": "untested",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "untested"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "untested"
+      }
+    },
+    "deepseek/deepseek-v4-pro": {
+      "verdict": "partial",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "solid"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "solid"
+      }
+    },
+    "moonshotai/kimi-k3": {
+      "verdict": "partial",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "solid"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "solid"
+      }
+    },
+    "openai/gpt-5.6-luna": {
+      "verdict": "failing",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "fail"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "fail"
+      }
+    },
+    "openai/gpt-5.6-sol": {
+      "verdict": "untested",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "untested"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "untested"
+      }
+    },
+    "openai/gpt-5.6-terra": {
+      "verdict": "untested",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "untested"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "untested"
+      }
+    },
+    "qwen/qwen3.8-max": {
+      "verdict": "untested",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "untested"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "untested"
+      }
+    }
+  }
+}

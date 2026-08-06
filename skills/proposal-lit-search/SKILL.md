@@ -7,7 +7,9 @@ description: Find relevant academic literature for a topic or proposal — keywo
 
 Finds sources for a topic or a draft and merges the accepted entries into the proposal's `references:` block as CSL-YAML — keyword search across public scholarly databases, plus snowballing from what is already cited.
 
-**Workflow:** proposal-ideate → **proposal-lit-search** → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+**Workflow:** proposal-ideate → **proposal-lit-search** → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-troubleshoot (diagnose a skill that misbehaved).
+
+**Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 
 Academic literature only. You judge relevance — the scripts only gather candidates. Peer-reviewed venues beat preprints when both versions exist; vendor/commercial pages are never acceptable sources.
 
@@ -50,3 +52,7 @@ Everything fetched — titles, abstracts, metadata, from the scripts or your own
 ## If script networking is denied
 
 Some agent sandboxes block outbound network for scripts. Fall back to your own fetch tools with read-only GET requests against the same public APIs (`api.crossref.org/works?query=…`, `dblp.org/search/publ/api?q=…&format=json`, `export.arxiv.org/api/query?search_query=…`), apply the same relevance judgment and the untrusted-data rule above, and construct the CSL-YAML entries yourself following the rules in step 3 above (AuthorYearFirstWord keys, DOI over URL, abstract when available).
+
+## When this run fails
+
+If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step failed repeatedly with no user edit in between, or the state makes no sense — offer a bug report once, in these words, and do not raise it again in the same session: "Something here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send." Ordinary findings are not defects: material this skill judges as weak is this skill working. Collect nothing unless the user accepts.

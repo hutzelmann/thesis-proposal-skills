@@ -37,10 +37,12 @@ from l1_checks import (  # noqa: E402
     verdict_draft,
     verdict_early_stop,
     verdict_import,
+    verdict_no_spurious_offer,
     verdict_provenance,
     verdict_review,
     verdict_seed,
     verdict_title_alarm,
+    verdict_troubleshoot_model_rung,
 )
 from sources import MESSY_REQUEST  # noqa: E402
 
@@ -238,6 +240,20 @@ def review_l2_quality():
     return score
 
 
+@scorer(metrics=[accuracy()])
+def no_spurious_offer():
+    """Negative coverage for the failure-path report offer: this fixture's oracle
+    expects findings, so the run succeeded and no offer belongs in the answer.
+
+    Rides along on tasks that already run rather than costing its own metered
+    task — the behaviour under test is what the model says while doing its job.
+    """
+    async def score(state: TaskState, target: Target) -> Score:
+        ok, why = verdict_no_spurious_offer(state.output.completion)
+        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
+    return score
+
+
 @task
 def review_fixture() -> Task:
     return Task(
@@ -249,7 +265,7 @@ def review_fixture() -> Task:
             files=stage_files("f05-slr-interviews", "proposal-review"),
         )],
         solver=agent_solver(),
-        scorer=[review_l1(), review_l2_quality()],
+        scorer=[review_l1(), review_l2_quality(), no_spurious_offer()],
         sandbox="local",
     )
 
@@ -846,5 +862,45 @@ def check_report_hardened() -> Task:
         )],
         solver=agent_solver(),
         scorer=[check_report_l1()],
+        sandbox="local",
+    )
+
+
+# ---------- task: troubleshoot resolves the model rung without a report -------
+#
+# The rung is stated in the prompt rather than inferred from the runner, so the
+# expected outcome is identical on every model under test: the user says they ran
+# claude-haiku-4.5, which the vendored verdicts record as failing proposal-write.
+# The prompt also closes rung 0 (already reinstalled), so rung 1 is the target and
+# a model that stops at "update first" is not accidentally graded correct.
+
+
+@scorer(metrics=[accuracy()])
+def troubleshoot_model_rung_l1():
+    async def score(state: TaskState, target: Target) -> Score:
+        listing = await sandbox().exec(
+            ["bash", "-c", "test -d ws/bug-report && echo present || echo absent"], timeout=10
+        )
+        bundle_present = "present" in listing.stdout
+        ok, why = verdict_troubleshoot_model_rung(state.output.completion, bundle_present)
+        return Score(value=CORRECT if ok else INCORRECT, explanation=why)
+    return score
+
+
+@task
+def troubleshoot_model_rung() -> Task:
+    return Task(
+        dataset=[Sample(
+            input=skill_prompt(
+                "proposal-troubleshoot",
+                "The write skill produced a draft that ignored half of what I told it. I was "
+                "running claude-haiku-4.5. I have already re-run "
+                "`npx skills add hutzelmann/thesis-proposal-skills` and it still happens. "
+                "Is this a bug I should report?",
+            ),
+            files=stage_files("f05-slr-interviews", "proposal-troubleshoot"),
+        )],
+        solver=agent_solver(),
+        scorer=[troubleshoot_model_rung_l1(), no_spurious_offer()],
         sandbox="local",
     )

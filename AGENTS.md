@@ -4,7 +4,7 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ## What this repo is
 
-`thesis-proposal-skills`: eight `proposal-*` agent skills (under `skills/`) that help students write thesis proposals, plus the machinery to test them. Users install the skills into their own workspace; their proposals never live here. Real proposals sit in the untracked `confidential/` directory — never commit, copy, or quote its contents. Developer credentials live in the gitignored `.env` (template: `.env.example`), not in `confidential/`.
+`thesis-proposal-skills`: nine `proposal-*` agent skills (under `skills/`) that help students write thesis proposals, plus the machinery to test them. Users install the skills into their own workspace; their proposals never live here. Real proposals sit in the untracked `confidential/` directory — never commit, copy, or quote its contents. Developer credentials live in the gitignored `.env` (template: `.env.example`), not in `confidential/`.
 
 ## Spec-first workflow (mandatory)
 
@@ -32,7 +32,14 @@ uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # mo
 uv run poe report                  # regenerate README model-support summary + docs/model-support.md from logs
 uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
 uv run poe audit-status            # post-publish: skills.sh verdicts vs audit-baseline.json
+uv run poe identify <bug-report/>  # resolve a submitted report's hashes.txt to the revision it ran
 ```
+
+A user's bug report is produced by `proposal-troubleshoot`, whose collector emits git blob
+hashes for every installed skill file. `poe identify` compares them against the trees in this
+repository and names the revision the report is about — always run it before reproducing, since
+a report against an older published snapshot will not reproduce on `main`. A file it reports as
+matching no revision was edited locally, which answers most "works for me" reports.
 
 The model-support matrix (`harness/models.toml` roster, cost gate, classification, report) is documented in `harness/README.md`. Metered matrix runs always show their estimate and wait for confirmation — never bypass the gate with `--yes` on a user's behalf without their explicit cost approval.
 
@@ -83,15 +90,16 @@ Message content is sometimes a string and sometimes a content-block array; norma
 
 ## Skill header pattern
 
-Every `SKILL.md` is read twice: by the agent that loads it as instructions, and by anyone who lands on its page at skills.sh, which renders the frontmatter and the body and nothing else. Each body therefore opens with the same three blocks, in this order, before the first `##` heading:
+Every `SKILL.md` is read twice: by the agent that loads it as instructions, and by anyone who lands on its page at skills.sh, which renders the frontmatter and the body and nothing else. Each body therefore opens with the same four blocks, in this order, before the first `##` heading:
 
 1. **Purpose** — one or two sentences, impersonal, in the vocabulary of someone who has never read this repo. States the deliverable. It must never restate, soften, or paraphrase a rule stated below it: the first statement of a rule fixes that rule's scope. Where the mandate is already purpose-shaped, the purpose block adds the user-facing outcome the mandate omits rather than re-saying it.
-2. **Workflow line** — byte-identical in all eight files, with only the containing skill's own name wrapped in `**`. It is the only way a visitor who lands on one page learns the other seven exist.
-3. **Mandate** — the skill's agent-facing opening paragraph, verbatim, pinned in `tests/unit/data/skill_mandates/<skill>.txt`.
+2. **Workflow line** — byte-identical in all nine files, with only the containing skill's own name wrapped in `**`. It is the only way a visitor who lands on one page learns the other eight exist.
+3. **Voice block** — byte-identical in all nine files (its bytes live as a constant in `tests/unit/test_skill_header_pattern.py`): neutral constructive tone, no praise of the user or their material, no self-praise, short precise chat messages. Chat conduct only — it carries no operational rules.
+4. **Mandate** — the skill's agent-facing opening paragraph, verbatim, pinned in `tests/unit/data/skill_mandates/<skill>.txt`.
 
 No file gets an exception, and nothing is inserted between a mandate and the paragraph beneath it. `tests/unit/test_skill_header_pattern.py` enforces all of it; rewording a mandate means editing its pinned copy in the same change, so the reword shows up as a diff under review.
 
-Adding a ninth skill means updating the workflow line in every existing skill, since each page names the whole set.
+Adding a tenth skill means updating the workflow line in every existing skill, since each page names the whole set. Every skill except `proposal-troubleshoot` also carries the bug-report offer block verbatim once, in a closing `## When this run fails` section — `proposal-troubleshoot` is where the offer leads, so it does not refer itself. `tests/unit/test_report_offer.py` enforces both halves.
 
 ## History
 

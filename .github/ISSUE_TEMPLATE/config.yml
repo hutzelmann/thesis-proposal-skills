@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Something went wrong while writing a proposal
+    url: https://github.com/hutzelmann/thesis-proposal-skills#when-something-goes-wrong
+    about: >
+      Start here. Updating the skills resolves most problems, and proposal-troubleshoot
+      diagnoses the rest and assembles the report this tracker asks for.

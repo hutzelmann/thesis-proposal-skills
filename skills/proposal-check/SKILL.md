@@ -7,7 +7,9 @@ description: Low-level check of a thesis proposal — required sections, citatio
 
 Checks a thesis proposal before hand-in: required sections, citations that do not resolve, content that must not appear, format guardrails, and typos. Findings come back as one list in chat, in time to fix them before a supervisor sees them.
 
-**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → **proposal-check** → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → **proposal-check** → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-troubleshoot (diagnose a skill that misbehaved).
+
+**Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 
 **Read-only skill: you MUST NOT modify any file during a check run — no fixes, no edits, however obvious. You diagnose and report; nothing else.** Editing happens in a separate step, only after the user explicitly asks, via the write skill.
 
@@ -17,7 +19,7 @@ Deterministic low-level checks plus a language pass for one proposal file. Resul
 
 ## Target
 
-Resolve the proposal file: explicit user mention wins; exactly one markdown file ending in a `---` metadata block → auto-pick; several candidates → list them and ask.
+Resolve the proposal file: explicit user mention wins; exactly one markdown file ending in a `---` metadata block → auto-pick; several candidates → list them and ask. A `<slug>.notes.md` is never a candidate, and neither is anything under `bug-report/`: a reduced reproduction left there by the troubleshoot skill is a structurally valid proposal, so it would otherwise win the pick and quietly redirect the check away from the real draft.
 
 ## Step 1 — deterministic script
 
@@ -46,4 +48,10 @@ After the script, check yourself and report findings in the same chat message:
 
 ## Reporting
 
-One chat message: script buckets first, agent findings second, then a one-line verdict ("mechanically clean, N warnings, M language issues"). No file output. **Never edit the proposal during a check run** — not even obvious fixes; report only. Editing happens in a separate step, only after the user explicitly asks, following the write skill's conventions (minimal surgical edits).
+One chat message: script buckets first, agent findings second, then a one-line verdict that scopes its own claim ("mechanically clean, N warnings, M language issues — substance not judged; the review skill renders that verdict"). No file output. **Never edit the proposal during a check run** — not even obvious fixes; report only. Editing happens in a separate step, only after the user explicitly asks, following the write skill's conventions (minimal surgical edits).
+
+## When this run fails
+
+If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step failed repeatedly with no user edit in between, or the state makes no sense — offer a bug report once, in these words, and do not raise it again in the same session: "Something here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send." Ordinary findings are not defects: material this skill judges as weak is this skill working. Collect nothing unless the user accepts.
+
+A digest mismatch is the one finding here that is always a defect: it means the file changed during a read-only run. Report it as such and make the offer.

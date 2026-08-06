@@ -7,7 +7,9 @@ description: Import an existing proposal (usually PDF) into the standard single-
 
 Brings a proposal that already exists — PDF, Word, LaTeX — into this workspace as one markdown file, with its references carried across and every gap the source left behind marked rather than silently dropped.
 
-**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: **proposal-import** (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: **proposal-import** (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-troubleshoot (diagnose a skill that misbehaved).
+
+**Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 
 Convert an existing proposal document into one `<slug>.md` in the standard format: markdown body, trailing `---` metadata block (blank line before it) with `title`, `subtitle`, `lang`, `references` in CSL-YAML. Never carry an `author` key over from the source — proposals are anonymous.
 
@@ -137,3 +139,9 @@ If the script cannot read the file, the import did not happen — say so plainly
 ## Wrap-up
 
 Report: sections mapped, references verified/enriched/unverifiable (per reference), items stripped, what went into the notes file, figures marked, and what the check still reports after your fixes.
+
+## When this run fails
+
+If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step failed repeatedly with no user edit in between, or the state makes no sense — offer a bug report once, in these words, and do not raise it again in the same session: "Something here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send." Ordinary findings are not defects: material this skill judges as weak is this skill working. Collect nothing unless the user accepts.
+
+Personal data surviving an import is always a defect, not a finding. Report it and make the offer.

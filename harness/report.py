@@ -11,6 +11,7 @@ Usage: uv run poe report [--log-dir logs/evals]
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -21,6 +22,9 @@ REPO = HARNESS.parent
 REGISTRY = HARNESS / "models.toml"
 README = REPO / "README.md"
 GRID = REPO / "docs" / "model-support.md"
+# vendored into proposal-troubleshoot by scripts/sync_shared.py; the skill runs
+# in a user workspace and can reach neither this repository nor the network
+SUPPORT_JSON = REPO / "shared" / "model-support.json"
 
 
 def newest_logs(log_dir: Path, registry: support.Registry) -> dict[tuple[str, str], object]:
@@ -100,8 +104,16 @@ def main() -> int:
     GRID.write_text(
         support.render_grid(models, tasks, cells, costs, timestamp), encoding="utf-8"
     )
-    print(f"README summary + {GRID.relative_to(REPO)} regenerated from {len(logs)} log(s), "
-          f"newest {timestamp}")
+    SUPPORT_JSON.parent.mkdir(parents=True, exist_ok=True)
+    exported = support.export_support(
+        models, tasks, cells, verdicts, timestamp, registry.tasks.skills
+    )
+    SUPPORT_JSON.write_text(
+        json.dumps(exported, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    print(f"README summary + {GRID.relative_to(REPO)} + {SUPPORT_JSON.relative_to(REPO)} "
+          f"regenerated from {len(logs)} log(s), newest {timestamp}")
+    print("run scripts/sync_shared.py to materialize the vendored copy")
     return 0
 
 

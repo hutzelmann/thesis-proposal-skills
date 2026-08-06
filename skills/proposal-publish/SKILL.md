@@ -7,7 +7,9 @@ description: Build a PDF (or docx fallback) from a proposal file via pandoc — 
 
 Builds a PDF from a proposal file — compact layout, typst first, pandoc as the fallback — and can also produce a stripped hand-in export.
 
-**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → **proposal-publish**. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → **proposal-publish**. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-troubleshoot (diagnose a skill that misbehaved).
+
+**Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 
 Publishing is optional — a proposal markdown file is an acceptable hand-in on its own. Never pressure the user into installing anything; offer the paths and their costs.
 
@@ -44,3 +46,9 @@ Relay the script's messages rather than re-diagnosing; on Windows use `py` if `p
 - docx output uses pandoc's default styling (acceptable last resort; the compact look exists for the typst and LaTeX tiers).
 - Remind the user to rename the PDF to include their name before sending (supervisors receive many proposals).
 - If check hasn't run recently, offer it first — but publishing proceeds on user confirmation regardless (check is advisory).
+
+## When this run fails
+
+If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step failed repeatedly with no user edit in between, or the state makes no sense — offer a bug report once, in these words, and do not raise it again in the same session: "Something here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send." Ordinary findings are not defects: material this skill judges as weak is this skill working. Collect nothing unless the user accepts.
+
+A missing `pandoc` or `typst` is not a defect either — it is a toolchain the user has not installed, and the install guidance above is the answer. Make the offer only when the toolchain is present and the build still fails.

@@ -1,16 +1,17 @@
-"""L0: every shipped SKILL.md opens with the same three blocks (skill-packaging
+"""L0: every shipped SKILL.md opens with the same four blocks (skill-packaging
 spec: uniform skill opening structure, enforced offline).
 
-Order is title, purpose, workflow line, mandate. The workflow line is
-byte-identical across the set except for which skill name is bolded, and each
-mandate is pinned in `tests/unit/data/skill_mandates/`, so a reword fails here
-instead of passing review silently.
+Order is title, purpose, workflow line, voice block, mandate. The workflow line
+is byte-identical across the set except for which skill name is bolded, the
+voice block is byte-identical everywhere, and each mandate is pinned in
+`tests/unit/data/skill_mandates/`, so a reword fails here instead of passing
+review silently.
 
 Adjacency ("nothing inserted between a mandate and the paragraph beneath it") is
 enforced structurally rather than by pinning what follows: the only insertable
-header blocks are the purpose and the workflow line, and both are pinned to a
-fixed index above the mandate, with the workflow line required to appear exactly
-once in the whole file.
+header blocks are the purpose, the workflow line, and the voice block, and all
+three are pinned to a fixed index above the mandate, with the workflow line
+required to appear exactly once in the whole file.
 
 The title is not required to match the skill name — proposal-lit-search's is
 `# Literature Search`.
@@ -33,7 +34,16 @@ ids = lambda paths: [str(p.relative_to(REPO)) for p in paths]  # noqa: E731
 WORKFLOW_LABEL = "**Workflow:**"
 PURPOSE_INDEX = 1
 WORKFLOW_INDEX = 2
-MANDATE_INDEX = 3
+VOICE_INDEX = 3
+MANDATE_INDEX = 4
+# Byte-identical in every skill (skill-packaging spec: voice block). Chat
+# conduct only — it carries no operational rules, so it cannot collide with a
+# mandate.
+VOICE_BLOCK = (
+    "**Voice:** neutral and constructive — never praise the user or their "
+    "material, never compliment your own output. Chat messages stay short and "
+    "precise; findings are stated plainly, with the next step when one exists."
+)
 # "one or two sentences" — a bound on padding, not a style rule.
 PURPOSE_MAX_CHARS = 400
 
@@ -53,7 +63,7 @@ def workflow_line(skill_md: Path) -> str:
 
 def test_every_skill_is_discovered():
     """A glob that silently matches nothing would make every test below vacuous."""
-    assert len(SKILL_MDS) == 8, f"expected 8 skills, found {[p.parent.name for p in SKILL_MDS]}"
+    assert len(SKILL_MDS) == 9, f"expected 9 skills, found {[p.parent.name for p in SKILL_MDS]}"
     pinned = {p.stem for p in MANDATE_DIR.glob("*.txt")}
     assert pinned == {d.name for d in SKILL_DIRS}, (
         f"pinned mandates do not cover the skill set: {pinned ^ {d.name for d in SKILL_DIRS}}"
@@ -79,6 +89,11 @@ def test_header_block_order(skill_md):
     assert blocks[WORKFLOW_INDEX].startswith(WORKFLOW_LABEL), (
         f"{name}: block {WORKFLOW_INDEX} is not the workflow line — exactly one paragraph "
         "may precede it"
+    )
+    assert blocks[VOICE_INDEX] == VOICE_BLOCK, (
+        f"{name}: block {VOICE_INDEX} is not the voice block, or its wording drifted — "
+        "the voice block is byte-identical in every skill, between the workflow line "
+        "and the mandate"
     )
 
 

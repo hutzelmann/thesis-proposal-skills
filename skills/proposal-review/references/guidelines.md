@@ -5,7 +5,7 @@
 Default guidance for writing Bachelor's and Master's thesis proposals in computer science, in English (default) or German.
 A workspace `guidelines.md` may override or extend these defaults; its TOML block wins per key, its lists replace the defaults, and it may allow sections again that are forbidden here.
 Set `timeline_detail = "detailed"` there when a program demands a full work plan: the timeline then accepts tables, lists and subsections, and work-plan headings stop being forbidden. The default is `"simple"`.
-The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, the timeline size limit, research-question conventions, the mechanically matchable title tells) is defined in `structure.json`; this document is the authority for everything semantic.
+The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, the timeline size limit, research-question conventions, the default page limit with its words-per-page estimation constant, the mechanically matchable title tells) is defined in `structure.json`; this document is the authority for everything semantic.
 
 ## The Thesis Title
 
@@ -82,6 +82,17 @@ Research questions must be:
 
 The methodology section must reference every research question explicitly with `(RQ1)`, `(RQ2)`, … at the end of the sentence describing how that question is answered — one question per statement, never a collective reference like "(RQ1, RQ2 and RQ3)".
 
+## Substance Tests
+
+A proposal that satisfies every structural rule can still be empty.
+Five tests define the substance bar; agents judging a proposal cite them by these names, and a proposal that fails them is not ready no matter how cleanly it checks:
+
+- **Delta test** — the proposal states precisely what the thesis adds beyond the work it cites. A contribution section that reads as a feature list or restates the field fails.
+- **Falsifiability test** — the research questions can come out negative. A question whose every conceivable outcome counts as success fails.
+- **Swap test** — the proposal's core statements could not equally describe ten other theses in the area. Text that stays plausible after swapping the topic noun fails as generic.
+- **Method-fit test** — the methodology concretely answers each research question. Method prose that never touches the questions is boilerplate and fails.
+- **Executability test** — the proposal gives concrete, actionable goals: it names the objects of study (dataset, system, population, corpus), states a concrete evaluation, is feasible in the stated months, and makes clear what the student would actually do first.
+
 ## Methodology Content
 
 - **Prototype Implementation** — Previous Work: key tools and libraries supporting the prototype and how they are used. Requirements: what the prototype must do, and explicitly which requirements are out of scope. Evaluation: not correctness verification, but how the prototype answers the research questions (dataset, benchmark, metrics).
@@ -105,6 +116,8 @@ The methodology section must reference every research question explicitly with `
 
 - Language: English or German per the proposal's `lang`. In German, use English scientific terms with German capitalization and the canonical German section titles.
 - Tone: professional, specific, concise. No vague language, no generalizations, no marketing.
+- Every sentence carries information essential to this thesis. Scene-setting openers, truisms, and restatements of the obvious are filler: delete them. Shortness comes from deleting low-information sentences, not from compressing wording.
+- The rendered proposal stays within five pages (workspace `page_limit` overrides this). The bound is deliberately generous — a proposal that respects the density rule stays well under it. Mechanical checks estimate pages from word count and warn, never fail.
 - Avoid technical details irrelevant to the research questions or methodology; stay on the level of ideas and concepts.
 - Define abbreviations at first use, e.g. "System on a Chip (SoC)".
 - Active voice; avoid passive constructions (especially German "soll … werden" chains).

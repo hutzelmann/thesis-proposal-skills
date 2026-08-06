@@ -171,6 +171,56 @@ def test_model_verdict_partial_never_supported_with_untested_cells():
     assert v.untested_tasks == ("b",)
 
 
+def test_rollup_cells_lets_the_worst_measured_result_win():
+    assert support.rollup_cells(["solid", "fail"]) == "fail"
+    assert support.rollup_cells(["solid", "flaky"]) == "flaky"
+    assert support.rollup_cells(["solid", "solid"]) == "solid"
+
+
+def test_rollup_cells_never_lets_untested_mask_a_measured_result():
+    """A skill covered by two tasks, one measured and one not, is as good as its
+    measurement — reporting `untested` there would hide a real failure, and
+    reporting a pass would invent one."""
+    assert support.rollup_cells(["fail", "untested"]) == "fail"
+    assert support.rollup_cells(["solid", "untested"]) == "solid"
+    assert support.rollup_cells(["untested", "untested"]) == "untested"
+    assert support.rollup_cells([]) == "untested"
+
+
+def test_export_support_keys_by_skill_and_drops_the_routing_prefix(registry):
+    models = support.select_models(registry, ids=["cheapo-1"])
+    tasks = ["alpha", "beta"]
+    cells = {
+        (models[0].id, "alpha"): support.Cell("fail", passes=0, epochs=3),
+        (models[0].id, "beta"): support.Cell("solid", passes=3, epochs=3),
+    }
+    verdicts = {models[0].id: support.model_verdict({"alpha": "fail", "beta": "solid"})}
+    out = support.export_support(
+        models, tasks, cells, verdicts, "2026-08-06",
+        skills={"alpha": "proposal-write", "beta": "proposal-check"},
+    )
+    key = next(iter(out["models"]))
+    assert not key.startswith("openrouter/"), "the routing prefix is not part of model identity"
+    record = out["models"][key]
+    assert record["verdict"] == "failing"
+    assert record["skills"] == {"proposal-check": "solid", "proposal-write": "fail"}
+    assert record["tasks"] == {"alpha": "fail", "beta": "solid"}
+
+
+def test_export_support_marks_a_never_measured_cell_untested(registry):
+    """A consumer reading a blank cell as a pass would clear a model nothing is
+    known about, so absence has to be explicit in the data."""
+    models = support.select_models(registry, ids=["cheapo-1"])
+    out = support.export_support(
+        models, ["alpha"], {}, {}, "2026-08-06", skills={"alpha": "proposal-write"}
+    )
+    record = next(iter(out["models"].values()))
+    assert record["tasks"]["alpha"] == "untested"
+    assert record["skills"]["proposal-write"] == "untested"
+    assert record["verdict"] == "untested"
+    assert "untested" in out["statuses"], "the export documents what its statuses mean"
+
+
 def test_estimate_cost_arithmetic(registry):
     models = support.select_models(registry, ids=["cheapo-1"])
     est = support.estimate_cost(models, ["alpha"], registry)

@@ -103,7 +103,10 @@ matrix = [
 # edge-instruction-following that ideate_longrun's extraction phase already
 # covers, so they are out of the default matrix (2026-08-06 task audit).
 # Runnable on demand via --tasks.
-extended = ["ideate_stonewall", "ideate_outofscope"]
+# troubleshoot_model_rung is here rather than in the matrix on purpose: the
+# negative half of the offer discipline already rides along on review_fixture at
+# no extra cost, so the rung probe does not need to be paid for on every model.
+extended = ["ideate_stonewall", "ideate_outofscope", "troubleshoot_model_rung"]
 # Smoke subset: cheap, short, high signal.
 core = ["write_from_seed", "import_messy", "customize_override"]
 # Heavy dialogue tasks: reduced to 1 epoch on frontier-tier models.

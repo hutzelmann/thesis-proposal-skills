@@ -16,8 +16,10 @@ from l1_checks import (  # noqa: E402
     verdict_early_stop,
     verdict_ideate_scoped,
     verdict_import,
+    verdict_no_spurious_offer,
     verdict_provenance,
     verdict_title_alarm,
+    verdict_troubleshoot_model_rung,
 )
 
 GOOD_IMPORT = """\
@@ -211,6 +213,85 @@ def test_select_draft_never_selects_a_notes_file_even_when_it_sorts_first():
     files = {"aa-topic.notes.md": "## Decisions\n", "zz-topic.md": GOOD_IMPORT}
     chosen, _ = select_draft(files)
     assert chosen == "zz-topic.md"
+
+
+def test_no_spurious_offer_passes_an_ordinary_findings_report():
+    ok, why = verdict_no_spurious_offer(
+        "Two errors: the Timeline section is missing, and only 1 reference is defined."
+    )
+    assert ok
+    assert "no spurious" in why
+
+
+def test_no_spurious_offer_fails_when_findings_come_with_an_offer():
+    """The damaging direction: an offer on every ordinary run trains users to
+    ignore the one that matters."""
+    ok, why = verdict_no_spurious_offer(
+        "Two errors found. Something here looks like a defect in the skill rather than in "
+        "your proposal — proposal-troubleshoot can diagnose it."
+    )
+    assert not ok
+    assert "findings are the skill working" in why
+
+
+def test_no_spurious_offer_matches_regardless_of_case():
+    ok, _ = verdict_no_spurious_offer(
+        "SOMETHING HERE LOOKS LIKE A DEFECT IN THE SKILL RATHER THAN IN YOUR PROPOSAL"
+    )
+    assert not ok
+
+
+def test_troubleshoot_model_rung_accepts_naming_the_model_and_a_remedy():
+    ok, why = verdict_troubleshoot_model_rung(
+        "This is the model, not the skill: the shipped verdicts record claude-haiku-4.5 as "
+        "failing proposal-write. Switch to a model recorded as working and retry.",
+        bundle_present=False,
+    )
+    assert ok
+    assert "resolved without a report" in why
+
+
+def test_troubleshoot_model_rung_fails_when_a_report_was_assembled_anyway():
+    ok, why = verdict_troubleshoot_model_rung(
+        "The model is the cause; switch models. I have also written a bug report for you.",
+        bundle_present=True,
+    )
+    assert not ok
+    assert "should have resolved" in why
+
+
+def test_troubleshoot_model_rung_fails_without_a_remedy():
+    ok, why = verdict_troubleshoot_model_rung(
+        "The model is known to fail this task.", bundle_present=False
+    )
+    assert not ok
+    assert "no remedy" in why
+
+
+def test_troubleshoot_model_rung_fails_when_the_model_is_never_named():
+    ok, why = verdict_troubleshoot_model_rung(
+        "Try switching to something else instead.", bundle_present=False
+    )
+    assert not ok
+    assert "did not name the model" in why
+
+
+def test_select_draft_never_selects_a_bug_report_reproduction():
+    """A reduced reproduction is a structurally valid proposal with a metadata
+    block, and `bug-report/repro/input.md` sorts before a real `zz-topic.md`. If
+    it won the pick, the next check would silently grade the reproduction."""
+    files = {
+        "bug-report/repro/input.md": GOOD_IMPORT,
+        "zz-topic.md": GOOD_IMPORT,
+    }
+    chosen, _ = select_draft(files)
+    assert chosen == "zz-topic.md"
+
+
+def test_select_draft_reports_nothing_when_only_a_bug_report_exists():
+    """Excluding the bundle must not turn it into a fallback candidate either."""
+    chosen, _ = select_draft({"bug-report/repro/input.md": GOOD_IMPORT})
+    assert chosen is None
 
 
 def test_select_draft_notes_file_alone_is_no_draft():

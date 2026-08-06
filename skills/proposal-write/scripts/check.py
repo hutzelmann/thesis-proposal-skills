@@ -430,6 +430,23 @@ def check(proposal_path: Path, structure: dict, overrides: dict) -> tuple[list[s
     for todo in todos:
         warnings.append(f"open {todo}")
 
+    # -- estimated length (estimate from word count: markdown has no pages)
+    if length_cfg := structure.get("length"):
+        page_limit = overrides.get("page_limit", length_cfg["page_limit"])
+        words = sum(
+            len(line.split())
+            for line in body.split("\n")
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+        estimated = words / length_cfg["words_per_page"]
+        if estimated > page_limit:
+            warnings.append(
+                f"estimated length ~{estimated:.1f} pages ({words} words at "
+                f"{length_cfg['words_per_page']} words/page) exceeds the "
+                f"{page_limit}-page limit — an estimate, not a rendered count; "
+                f"delete low-information sentences rather than compressing wording"
+            )
+
     # -- warning-class patterns
     fp = (r"\b(I|[Ww]e|[Mm]y|[Oo]ur)\b" if lang == "en"
           else r"\b([Ii]ch|[Ww]ir|[Mm]ein\w*|[Uu]nser\w*)\b")
@@ -524,7 +541,8 @@ def main() -> int:
         "- whether the timeline names a real timeframe, and work plans the "
         "structure check cannot see (e.g. a Gantt chart pasted in as an image)\n"
         "- all semantic quality rules (analytical RQs, argument soundness) — see review skill\n"
-        "\nThis check is advisory: it gates nothing."
+        "\nThis check is advisory: it gates nothing. A clean result is mechanical "
+        "only — substance is not judged here; the review skill renders that verdict."
     )
     return 1 if errors else 0
 

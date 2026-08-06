@@ -85,6 +85,11 @@
     "detail_modes": ["simple", "detailed"],
     "default_detail": "simple"
   },
+  "_length_comment": "Estimation constants only, not semantic data: checks estimate rendered pages as body words / words_per_page and warn above page_limit. The substance and density rules stay prose in guidelines.md.",
+  "length": {
+    "page_limit": 5,
+    "words_per_page": 500
+  },
   "_title_comment": "Mechanically matchable tells for the thesis title only. Openers match at the start of the title, buzzwords anywhere, both case-insensitively and regardless of the proposal's lang. min_words is per lang because German compounds one noun where English needs three. Tool, product and vendor names are deliberately absent: the set is unbounded and stays agent judgement per guidelines.md.",
   "title": {
     "min_words": {"en": 4, "de": 3},

@@ -315,3 +315,58 @@ def test_boolean_literal_key_is_not_also_shape_warned(tmp_path):
     out = run_check(victim).stdout
     assert "`on` is a YAML boolean literal" in out
     assert "reference id `on` does not follow" not in out
+
+
+def inflate(source: str, words: int) -> str:
+    """Insert one long single-sentence paragraph into the introduction section.
+
+    One sentence with a unique start, so neither the repeated-sentence-start
+    nor the first-person warning can fire on the padding.
+    """
+    filler = "Padding " + " ".join(f"w{i}" for i in range(words)) + "."
+    heading = "# Introduction to the Topic\n"
+    return source.replace(heading, heading + "\n" + filler + "\n", 1)
+
+
+def test_length_estimate_warns_over_limit(tmp_path):
+    """Default limit 5 pages at 500 words/page; the overrun is a warning, never
+    an error (guidance-model spec: default page limit)."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "long.md"
+    victim.write_text(inflate(source, 2600))
+    result = run_check(victim)
+    assert result.returncode == 0, result.stdout
+    assert "estimated length" in result.stdout
+    assert "5-page limit" in result.stdout
+    assert "estimate" in result.stdout
+
+
+def test_length_estimate_stays_silent_within_limit():
+    result = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md")
+    assert "estimated length" not in result.stdout
+
+
+def test_length_estimate_respects_override(tmp_path):
+    """A workspace page_limit both relaxes and tightens the default."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "long.md"
+    victim.write_text(inflate(source, 2600))
+    (tmp_path / "guidelines.md").write_text("```toml\npage_limit = 10\n```\n")
+    assert "estimated length" not in run_check(victim).stdout
+
+    tight = tmp_path / "tight"
+    tight.mkdir()
+    short = tight / "short.md"
+    short.write_text(inflate(source, 600))
+    (tight / "guidelines.md").write_text("```toml\npage_limit = 1\n```\n")
+    out = run_check(short).stdout
+    assert "estimated length" in out
+    assert "1-page limit" in out
+
+
+def test_footer_scopes_clean_verdict():
+    """A clean result must say substance was not judged (skill-check spec:
+    two-bucket honest reporting)."""
+    out = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md").stdout
+    assert "substance is not judged here" in out
+    assert "review skill renders that verdict" in out

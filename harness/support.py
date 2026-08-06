@@ -326,6 +326,66 @@ def render_summary(
     return "\n".join(lines)
 
 
+_ROLLUP_ORDER = ("fail", "flaky", "solid", "untested")
+
+
+def rollup_cells(classifications: list[str]) -> str:
+    """One classification for a skill covered by several tasks: worst wins, but
+    `untested` never masquerades as a pass — it only survives when nothing else
+    was measured. A skill reading a blank cell as supported would clear a model
+    nothing is known about.
+    """
+    present = set(classifications)
+    for status in _ROLLUP_ORDER:
+        if status in present:
+            return status
+    return "untested"
+
+
+def export_support(
+    models: list[Model],
+    tasks: list[str],
+    cells: dict[tuple[str, str], Cell],
+    verdicts: dict[str, Verdict],
+    timestamp: str,
+    skills: dict[str, str] | None = None,
+) -> dict:
+    """Machine-readable support data for vendoring into a skill that cannot read
+    this repository. Per model: the overall verdict, the raw per-task cells, and
+    a per-skill rollup — the skill-level view is what a user-side consumer needs,
+    since it reasons about `proposal-write`, not about `write_from_seed`.
+
+    Keys drop the `openrouter/` routing prefix, as the rendered tables do: it is
+    how this harness reaches a model, not part of the model's identity, and a
+    user's agent never reports itself with it.
+    """
+    skills = skills or {}
+    out_models: dict[str, dict] = {}
+    for m in models:
+        task_cells = {
+            task: cells.get((m.id, task), Cell("untested")).classification for task in tasks
+        }
+        by_skill: dict[str, list[str]] = {}
+        for task, classification in task_cells.items():
+            by_skill.setdefault(skills.get(task, task), []).append(classification)
+        out_models[m.id.removeprefix("openrouter/")] = {
+            "verdict": verdicts.get(m.id, Verdict("untested")).status,
+            "enabled": m.enabled,
+            "tasks": dict(sorted(task_cells.items())),
+            "skills": {name: rollup_cells(vals) for name, vals in sorted(by_skill.items())},
+        }
+    return {
+        "generated": timestamp,
+        "statuses": {
+            "solid": "every measured epoch passed",
+            "flaky": "some epochs passed, some failed",
+            "fail": "every measured epoch failed",
+            "untested": "never measured — not evidence of support",
+        },
+        "models": dict(sorted(out_models.items())),
+    }
+
+
 def render_grid(
     models: list[Model],
     tasks: list[str],

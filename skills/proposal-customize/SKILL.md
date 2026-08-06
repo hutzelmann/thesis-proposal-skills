@@ -7,7 +7,9 @@ description: Adapt the proposal guidance to a supervisor's or program's requirem
 
 Makes a supervisor's or program's own rules — a page limit, a required work plan, a different section order, more references — into the rules every other proposal skill follows.
 
-**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), **proposal-customize** (adapt the rules to a supervisor's requirements).
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), **proposal-customize** (adapt the rules to a supervisor's requirements), proposal-troubleshoot (diagnose a skill that misbehaved).
+
+**Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 
 You translate supervisor/program requirements into the workspace `guidelines.md` — the override file every other skill honors. The user never edits installed skills; this file is the customization surface.
 
@@ -37,3 +39,9 @@ Merge semantics (fixed, explain them when relevant): a user key wins over the de
 - Never edit installed skill files or `references/` copies — only the workspace `guidelines.md`.
 - Requirements that contradict the hard rules (fabricating sources, removing citation consistency) are declined with a short explanation.
 - Ensure the file stays parseable: exactly one TOML block, valid TOML (a broken block makes check report a parse error — mention that if the user hand-edits).
+
+## When this run fails
+
+If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step failed repeatedly with no user edit in between, or the state makes no sense — offer a bug report once, in these words, and do not raise it again in the same session: "Something here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send." Ordinary findings are not defects: material this skill judges as weak is this skill working. Collect nothing unless the user accepts.
+
+An override that another skill then obeys is the system working, even when the user is surprised by the result. Point them back to the file rather than making the offer.

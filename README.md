@@ -85,6 +85,7 @@ Whichever skill is running, six rules apply:
 | `proposal-review` | Supervisor-style content review: a verdict on whether there is a thesis here (ready / needs revision / no viable thesis core), then every weak point with a concrete suggestion. |
 | `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. A plain markdown hand-in is fine too. |
 | `proposal-customize` | Adapts everything to your supervisor's requirements ("detailed work plan required", "max 3 pages"). |
+| `proposal-troubleshoot` | Diagnoses a skill that misbehaved, and assembles a bug report if it really is a defect. Most problems turn out not to be. |
 
 Your proposal itself lives in **one self-contained file**: readable text on top, literature entries at the bottom. A companion `<slug>.notes.md` beside it keeps the working knowledge the hand-in cannot carry, such as decisions, open points and rejected literature. Many proposals can sit side by side in one folder.
 
@@ -99,6 +100,24 @@ Your proposal itself lives in **one self-contained file**: readable text on top,
 4. Tell your agent: *"Help me develop a thesis idea"*, or *"Import my existing proposal from proposal.pdf"*.
 
 The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own, in any order, on a proposal that already exists. PDF building is optional; install `pandoc` and `typst` only when you want it (the publish skill tells you how).
+
+## When something goes wrong
+
+If a skill misbehaves — a script fails, a rule is applied that should not be, output contradicts what the skill says about itself — tell your agent: *"something went wrong with the proposal skills"*. `proposal-troubleshoot` takes it from there.
+
+**Update first.** Re-run the install and try again before anything else:
+
+```sh
+npx skills add hutzelmann/thesis-proposal-skills
+```
+
+The installed skills carry no version number, so there is no way to tell from inside your folder whether yours are current. Updating is cheaper than finding out, and it resolves more problems than every other cause combined.
+
+If the problem survives that, the skill works through the likely causes in order — your model not being able to do that particular task, a `guidelines.md` rule doing exactly what it says, a missing `pandoc` or `typst` — and most sessions end there, with an answer and no report.
+
+**If it really is a defect**, the skill writes a `bug-report/` folder in your own directory and stops. Nothing is transmitted, and there is no "submit" button anywhere in these skills. You then choose what happens to it: paste it into an [issue](https://github.com/hutzelmann/thesis-proposal-skills/issues), email it, or show it to your supervisor.
+
+**Your proposal text is not included by default.** The report carries the environment, which skill versions you have, and what the failing script printed — but of your proposal only counts and hashes, unless you ask for more. Your idea is unpublished; the report is built on that assumption. You will be shown exactly what the report contains before it is written, and you can delete the folder once you have sent it.
 
 ## Model support
 
@@ -135,4 +154,4 @@ This repo is **only** for developing and testing the skills. User proposals neve
 - Tests: `uv run pytest` runs L0 without model calls; `harness/` holds the L1/L2 model evals (see `harness/README.md`).
 - Fixtures in `tests/fixtures/` are synthetic: no real proposals, no personal data.
 
-MIT licensed. Issues and PRs welcome; please open an issue first.
+MIT licensed. Issues and PRs welcome; please open an issue first. If you hit a problem while writing a proposal, [When something goes wrong](#when-something-goes-wrong) is the path — it produces a report a maintainer can act on, and `uv run poe identify <bug-report/>` resolves a submitted one to the revision it ran against.

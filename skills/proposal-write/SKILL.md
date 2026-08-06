@@ -7,7 +7,9 @@ description: Write a thesis proposal from scratch or refine an existing one, fol
 
 Produces the actual proposal text — a first draft from a seed file, sharper prose from bullet points, or a revision that works through a review's findings one by one, with every claim tied to something in the literature.
 
-**Workflow:** proposal-ideate → proposal-lit-search → **proposal-write** → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements).
+**Workflow:** proposal-ideate → proposal-lit-search → **proposal-write** → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-troubleshoot (diagnose a skill that misbehaved).
+
+**Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 
 You write and refine thesis proposals in the single-file format: markdown body, trailing `---` metadata block (`title`, `subtitle`, `lang`, `references` in CSL-YAML), preceded by a blank line. Proposals are anonymous: no `author` key, no writer name in the text.
 
@@ -28,7 +30,7 @@ Strong defaults (workspace `guidelines.md` may override them):
 
 ## The notes file
 
-A proposal may have a companion working file, `<slug>.notes.md`, with five sections: Decisions, Open Points, Next Focus, Excluded Literature, Log. It is workspace-internal — never built, never submitted, never a proposal candidate.
+A proposal may have a companion working file, `<slug>.notes.md`, with five sections: Decisions, Open Points, Next Focus, Excluded Literature, Log. It is workspace-internal — never built, never submitted, never a proposal candidate. The same holds for anything under `bug-report/`, which the troubleshoot skill writes: a reduced reproduction there looks like a proposal and must never be drafted into.
 
 If the target proposal has one, read it before drafting. Recorded decisions steer the draft and are not re-litigated; Next Focus names the gaps to work on first. Decisions this session produces go into its Decisions section. When you resolve a `[TODO: …]` marker in the proposal, move it into the Log as a done entry — the marker text plus what resolved it — instead of deleting it silently.
 
@@ -41,6 +43,13 @@ Proposal TODOs are for submission-blocking gaps only. Working knowledge that doe
 3. In the methodology, reference every research question as `(RQn)` at the end of the sentence describing how it is answered — one question per statement.
 4. Close with the timeline: one sentence naming the start month and the submission month. If the material does not say and the user is there to ask, ask once; otherwise write `[TODO: state start month and submission month, or "as soon as possible"]`. Write "as soon as possible" only when the user has actually said so — it is their claim to make, and a user with a registered submission date would be misrepresented by it. Never a table, never phases: that is forbidden work-plan content, not a fuller timeline.
 5. If the check reports a reference shortfall, say so and suggest running the literature-search skill (ideally snowballing) before polishing further.
+
+## Substance and density
+
+The guidelines' substance tests (delta, falsifiability, swap, method-fit, executability) and density rule bind your own output, not only the review:
+
+- **Never manufacture substance.** Where the material supplies no delta, no object of study, no method detail, the gap becomes a `[TODO: …]` marker or the content is omitted — never generic prose. The test before writing a sentence is the swap test: text that would stay plausible for ten other theses in the area does not go in, however well it reads.
+- **Density pass, every writing pass.** Before reporting, re-read what you produced and delete every sentence that carries no information essential to this thesis — scene-setting openers, truisms, restatements of the obvious. This pass is binding like the script's error list. When refining, filler in sections the request did not touch is reported as a suggestion in chat, never silently deleted — the surgical-edit rule wins.
 
 ## The title
 
@@ -81,4 +90,8 @@ Two findings you must **not** "fix":
 
 ## Finishing a pass
 
-State what you changed, what the check still reports, and which TODOs remain. Do not run publish unasked.
+State what you changed, what the check still reports, which TODOs remain, and which sections rest on thin material — pointing to the ideation skill when idea substance is missing and to the review skill for the substance verdict. Do not run publish unasked.
+
+## When this run fails
+
+If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step failed repeatedly with no user edit in between, or the state makes no sense — offer a bug report once, in these words, and do not raise it again in the same session: "Something here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send." Ordinary findings are not defects: material this skill judges as weak is this skill working. Collect nothing unless the user accepts.

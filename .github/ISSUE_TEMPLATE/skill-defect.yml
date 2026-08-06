@@ -1,0 +1,96 @@
+name: Skill defect
+description: A proposal-* skill misbehaved — a script failed, or it broke a rule it states about itself
+labels: ["defect"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Run `proposal-troubleshoot` first.** Tell your agent *"something went wrong with the
+        proposal skills"*. It works through the likely causes, and most of them turn out not to be
+        defects. If it is one, it writes a `bug-report/` folder in your proposal directory whose
+        `report.md` fills in every field below.
+
+        **Your proposal text is not required and not wanted.** The default report carries no
+        proposal prose at all. Please do not paste your thesis idea here — it is a public tracker.
+
+  - type: checkboxes
+    id: updated
+    attributes:
+      label: Updated first
+      options:
+        - label: I re-ran `npx skills add hutzelmann/thesis-proposal-skills` and the problem still happens
+          required: true
+
+  - type: input
+    id: skill
+    attributes:
+      label: Which skill
+      placeholder: proposal-check
+    validations:
+      required: true
+
+  - type: dropdown
+    id: rung
+    attributes:
+      label: Triage outcome
+      description: The rung `proposal-troubleshoot` reached — the "Triage" section of report.md
+      options:
+        - A shipped script failed (non-zero exit, crash, missing tool)
+        - A skill broke a rule it states about itself
+        - Neither — the cause could not be identified
+        - Evidence about a model that is already recorded as weak
+    validations:
+      required: true
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: The "What happened" section of report.md — asked for, what it did, what was expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: measured
+    attributes:
+      label: Environment and installed skills
+      description: >
+        Paste the `[measured]` lines from report.md, plus `hashes.txt` and `skills-lock.json`
+        if you have them. These identify which revision you were running, which is usually the
+        first thing that has to be established.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: self_reported
+    attributes:
+      label: Agent and harness
+      description: The `[self-reported]` model and harness lines from report.md
+      placeholder: |
+        [self-reported] model: claude-sonnet-5
+        [self-reported] harness: Claude Code CLI
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: script_output
+    attributes:
+      label: Captured script output
+      description: The "Captured script output" section of report.md, as the report redacted it
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        If the report produced a `repro/` folder, paste `input.md` and `command.txt` here or
+        attach them. Synthetic content only — a reproduction that carries real proposal text
+        cannot be used as a test case.
+      render: markdown
+    validations:
+      required: false

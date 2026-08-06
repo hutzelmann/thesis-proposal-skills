@@ -17,6 +17,10 @@ DRAFT_ALLOWED_ERRORS = ("references — at least",)
 NON_PROPOSAL_MARKDOWN = ("guidelines.md",)
 NOTES_SUFFIX = ".notes.md"
 ARTIFACT_SUFFIXES = ("-review.md", "-handout.md")
+# a bug report's reduced reproduction is a proposal in every structural respect,
+# metadata block included, so it would otherwise win an auto-pick and silently
+# redirect the next check away from the real draft
+NON_PROPOSAL_DIRS = ("bug-report/",)
 
 
 def select_draft(files: dict[str, str], seed_name: str = "",
@@ -38,6 +42,7 @@ def select_draft(files: dict[str, str], seed_name: str = "",
         if name != seed_name
         and name not in NON_PROPOSAL_MARKDOWN
         and not name.endswith(NOTES_SUFFIX)
+        and not any(part in name for part in NON_PROPOSAL_DIRS)
         and not (seed_name and name.endswith(ARTIFACT_SUFFIXES))
     )
     if candidates:
@@ -352,6 +357,45 @@ def verdict_provenance(transcript: str, seed_text: str | None,
     if assistant_only:
         detail += f"; never in a student turn: {', '.join(assistant_only[:8])}"
     return share >= threshold, detail
+
+
+# the user-facing half of the uniform failure-path offer (skill-packaging spec).
+# Pinned verbatim in tests/unit/test_report_offer.py; matched loosely here because
+# a model may re-wrap or re-punctuate it when relaying.
+REPORT_OFFER_MARK = "looks like a defect in the skill rather than in your proposal"
+
+
+def verdict_no_spurious_offer(answer: str) -> tuple[bool, str]:
+    """A run that completed and reported findings must NOT offer a bug report.
+
+    This is the expensive failure mode to get wrong: an offer attached to ordinary
+    findings teaches users that every finding is a malfunction, and they stop
+    reading the offer that matters. A missed offer costs one report; a spurious
+    one costs the mechanism.
+    """
+    if REPORT_OFFER_MARK in (answer or "").lower():
+        return False, "offered a bug report on a run whose findings are the skill working"
+    return True, "no spurious bug-report offer"
+
+
+def verdict_troubleshoot_model_rung(answer: str, bundle_present: bool) -> tuple[bool, str]:
+    """The model rung resolves without a report: an unsupported model is named as
+    the cause and no bundle is written unasked.
+
+    `bundle_present` is measured by the caller (the bundle is a directory, not
+    workspace markdown, so it is outside this module's plain-values contract).
+    """
+    problems = []
+    if bundle_present:
+        problems.append("assembled a bug report for a cause it should have resolved")
+    low = (answer or "").lower()
+    if "model" not in low:
+        problems.append("did not name the model as the cause")
+    if not any(word in low for word in ("switch", "another model", "different model", "instead")):
+        problems.append("named no remedy the user can act on")
+    if problems:
+        return False, "; ".join(problems)
+    return True, "model rung resolved without a report"
 
 
 def verdict_early_stop(files: dict[str, str]) -> tuple[bool, str]:
