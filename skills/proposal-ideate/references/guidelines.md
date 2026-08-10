@@ -29,7 +29,7 @@ The alarm is raised, never enforced: an agent tells you which class your title f
 A proposal consists of exactly the five canonical sections, in this order (titles per `structure.json`). The order is checked, not only the presence of each section.
 
 1. **Introduction to the Topic** — Introduce the topic and explain why it is important and relevant. Stay on a high level: no deep background, no technical details. Refer to the thesis itself only at the end of the section.
-2. **Contribution to the State-of-the-Art** — Explain the relevant current approaches without repeating the introduction. State explicitly and precisely how the thesis extends previous work; this delta is the heart of the proposal.
+2. **Contribution to the State-of-the-Art** — Explain the relevant current approaches without repeating the introduction. State explicitly and precisely how the thesis extends previous work; this delta is the heart of the proposal. Group the prior work into thematic clusters — never chronologically, never one publication per paragraph — and within a cluster compare and contrast rather than summarize, naming the limitation the cluster shares. A section that walks through one paper after another is a reading list, not a state of the art. Close by naming the gap the thesis fills and tying it to the research questions. This is also where the work describes what it will build or do; a construction goal belongs here, never among the research questions.
 3. **Research Focus and Research Questions** — State the high-level research focus in a single paragraph that adds precision beyond the introduction, then list each research question as an item of an ordered list.
 4. **Methodology for Research: \<Methodology\>** — One methodology from the closed set (Prototype Implementation, Theoretical Analysis, Systematic Literature Review, User Study) with its required subsections per `structure.json`. Never combine methodologies — decide on one and stick to it.
 5. **Timeline** — One short sentence naming the month the thesis starts and the month it is submitted, or stating that it begins as soon as possible. Nothing else belongs here.
@@ -80,6 +80,8 @@ Research questions must be:
 - self-contained — understandable without reading the rest of the proposal.
 - answerable through the chosen methodology and the analyses described in the methodology section.
 - analytical — they require analysis, comparison, or evaluation ("to what degree", "under which conditions"). Never phrase a research question as an implementation goal ("how can X be implemented/designed/built") and never so it can be answered with a simple yes or no.
+
+A goal and a question are different things, and confusing them is why the implementation phrasing keeps appearing: a goal says what the work will **do** and starts with a verb like design, implement, evaluate, compare; a question asks what the work will **find out**. Both belong in the proposal — the goal in the contribution section, where the work describes itself, and the question here. A research-question list that reads as a build plan usually means the goals were written in the wrong section, so move them rather than deleting them.
 - non-overlapping — no question may be a refinement or near-duplicate of another.
 
 The methodology section must reference every research question explicitly with `(RQ1)`, `(RQ2)`, … at the end of the sentence describing how that question is answered — one question per statement, never a collective reference like "(RQ1, RQ2 and RQ3)".
@@ -102,6 +104,18 @@ Five tests define the substance bar; agents judging a proposal cite them by thes
 - **Systematic Literature Review** — Search Strategy and Selection Criteria: what literature is included and excluded. Extracted Information: what is extracted (taxonomy, classification) and how deeply sources are analyzed. Synthesis: how extracted information is synthesized into answers.
 - **User Study** — Preparation: study design, recruitment, and (if prototype-based) the prototype's scope with explicitly excluded properties. Procedure: tasks performed and data collected. Analysis: how collected data is analyzed to answer the research questions.
 
+Whatever the branch, say what the work will yield as an expectation — "the thesis expects", "it is hypothesized" — never as a result already obtained; a proposal that asserts its outcome has stopped being a plan. Name the foreseeable limitations too (sample size, generalization, access, time): a reviewer values an acknowledged limitation over a grand claim, and an unacknowledged one reads as an unnoticed one. None of this is an expected-results section, which stays forbidden — it is how the claims the proposal already makes are phrased.
+
+### Research involving human participants
+
+Guidance, not a required section, and nothing here is mechanically checked — but a proposal that stays silent on all of it invites the first question a supervisor will ask. Two or three precise sentences inside Preparation or Procedure are enough; this is not a compliance appendix.
+
+- Name the ethics route the study follows and the approval needed before data collection starts.
+- Describe informed consent: what participants are told, when, and how consent is recorded.
+- State what personal data is collected, how it is pseudonymized or anonymized, how long it is kept, and on what legal basis.
+- Where the study exposes participants to risk — driving simulators, safety-critical interfaces, sustained-attention tasks — say how that risk is bounded and how a participant can stop.
+- Where participants are compensated, say how, because it affects who volunteers.
+
 ## Literature and Citations
 
 - Two citation forms, both usable in one proposal. `[@key]` renders as `[1]`: use it when the citation is evidence attached to a claim. `@key` renders as `Smith et al. [1]`: use it whenever the authors belong in the running text — as the subject ("@Smith26Deep propose a detector that …"), or as the possessor of the thing under discussion ("the detector of @Smith26Deep"). Apply the rule consistently — never both forms for the same work in one sentence.
@@ -111,8 +125,9 @@ Five tests define the substance bar; agents judging a proposal cite them by thes
 - Every entry carries a DOI when one exists; add a URL only when there is no DOI. Include the abstract when available. Do not add volume, series, address, or page fields.
 - Cite only keys that exist in the proposal's `references` block. Never fabricate publications. When a supporting source is missing, write `[TODO: add key reference for …]`.
 - Avoid citing the same publication in consecutive sentences; cite it once and then stop repeating the citation.
-- At least three relevant scientific publications must be cited (workspace overrides may raise this). The introduction and the contribution section in particular must ground their claims in the literature.
+- Three relevant scientific publications is the mechanical floor, not the target: it catches an empty bibliography and nothing more. A submitted proposal usually carries ten to fifteen, and a proposal sitting exactly at the floor has a thin literature base whatever the check says. Workspace overrides may raise the floor. The introduction and the contribution section in particular must ground their claims in the literature.
 - Prefer peer-reviewed publications over preprints and over vendor or commercial web sources; vendor pages must never carry definitional or scientific claims.
+- Published standards and regulations (ISO, IEEE, ETSI, SAE, UNECE, EU regulations) are legitimate — and often the only correct — sources for normative definitions, required behavior, and terminology. Cite the standard by its own designation and year, never a vendor's or a blog's summary of it. The limit is exact: a standard establishes what is *required*, never that an approach *works*, so an empirical claim still needs peer-reviewed evidence.
 
 ## Writing Rules
 
