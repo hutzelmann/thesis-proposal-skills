@@ -55,10 +55,13 @@ KINDS = ("canonical", "oblique", "collision", "negative")
 MAX_PREPARATORY_CALLS = 3
 CASE_TIMEOUT_S = 90
 
-# The contested cases are the ones whose outcome is genuinely in doubt, so they
-# are the only ones worth repeating. Spending epochs uniformly buys repetition of
-# cases that were never close.
-COLLISION_EPOCHS = 3
+# Uniform, because the assumption behind measuring only the contested cases
+# repeatedly did not survive contact: on 2026-08-10 `litsearch-oblique` — an
+# ordinary case — failed in the sweep and passed on re-measurement the same
+# evening. Any case can be flaky, and a single failure that cannot be told from a
+# coin flip is worse than no measurement, because a description edit then gets
+# credited with fixing it.
+DEFAULT_EPOCHS = 3
 
 # The agent must be able to pick a skill and glance at a file, and must not be
 # able to start doing the work. Measured 2026-08-10: `--allowed-tools` alone does
@@ -68,14 +71,22 @@ COLLISION_EPOCHS = 3
 ALLOWED_TOOLS = ("Skill", "Read", "Glob")
 DISALLOWED_TOOLS = ("Bash", "Write", "Edit", "NotebookEdit", "Task", "WebFetch", "WebSearch")
 
-# Staged into every measurement workspace so utterances can name a real file the
-# way a user's would.
+# The files a case's utterance may name. Only the ones a given sentence actually
+# names are staged for it: staging the union made "my idea" ambiguous in every
+# workspace, and on 2026-08-10 the agent answered `litsearch-collision` by asking
+# which of three drafts was meant — correct behaviour, scored as a routing
+# failure.
 WORKSPACE_FIXTURES = (
     ("f05-slr-interviews", "microservice-technical-debt.md"),
     ("f12-clean-de", "typsystem-einheitenfehler.md"),
     ("w01-ideate-seed", "data-drift-detection.md"),
     ("s01-raw-email", "submission-email.txt"),
 )
+
+# What a case gets when its utterance names nothing. Not an empty directory: a
+# student asking "how do I get this out of markdown" has a proposal, and an empty
+# workspace would only trade one clarifying question for another.
+DEFAULT_PROPOSAL = "microservice-technical-debt.md"
 
 
 @dataclass(frozen=True)
@@ -260,8 +271,13 @@ def previous_score(path: Path = REPORT_FILE) -> str | None:
 
 
 def render_report(results: list[Result], matrix: Matrix, model: str,
-                  revision: str | None = None, supersedes: str | None = None) -> str:
+                  revision: str | None = None, supersedes: str | None = None,
+                  epochs: int = DEFAULT_EPOCHS, conditions_changed: bool = False) -> str:
     passed, total = matrix.totals
+    earlier = (
+        f"- measured under different conditions, not comparable: {supersedes}"
+        if conditions_changed else f"- supersedes: {supersedes}"
+    ) if supersedes else None
     lines = [
         "# Skill routing",
         "",
@@ -271,8 +287,8 @@ def render_report(results: list[Result], matrix: Matrix, model: str,
         "",
         f"- model: `{model}`",
         f"- skills revision: `{revision or skills_revision()}`",
-        f"- measurements: {total} ({passed} correct)",
-        *([f"- supersedes: {supersedes}"] if supersedes else []),
+        f"- measurements: {total} ({passed} correct), {epochs} epochs per case",
+        *([earlier] if earlier else []),
         "",
         "## Per kind",
         "",
@@ -293,14 +309,17 @@ def render_report(results: list[Result], matrix: Matrix, model: str,
     lines += ["", "## Wrong outcomes", ""]
     if not wrong:
         lines.append("None.")
+    attempts: dict[str, int] = {}
+    for result in results:
+        if result.error is None:
+            attempts[result.case_id] = attempts.get(result.case_id, 0) + 1
     seen: dict[tuple[str, str, str], int] = {}
     for result in wrong:
         key = (result.case_id, result.expected, result.selected)
         seen[key] = seen.get(key, 0) + 1
     for (case_id, expected, selected), count in seen.items():
-        times = f" ({count}/{COLLISION_EPOCHS} epochs)" if count > 1 else ""
         lines.append(f"- `{case_id}` expected `{expected}`, selected "
-                     f"`{selected}`{times}")
+                     f"`{selected}` ({count}/{attempts[case_id]} epochs)")
 
     if matrix.errors:
         lines += ["", "## Errors", ""] + [f"- {e}" for e in matrix.errors]
@@ -340,15 +359,34 @@ def prepare_config(base: Path) -> Path:
     return config
 
 
-def stage_workspace(ws: Path) -> None:
+def files_named(utterance: str) -> list[str]:
+    """Fixture filenames the sentence itself names, in order of appearance.
+
+    Derived from the utterance rather than declared per case: a `files` key would
+    say the same thing twice and the two would drift, with the drift invisible
+    until a case quietly stopped routing.
+    """
+    stageable = {name for _, name in WORKSPACE_FIXTURES}
+    named = []
+    for word in utterance.replace("(", " ").replace(")", " ").split():
+        token = word.strip(".,;:!?\"'")
+        if token.endswith((".md", ".txt")) and token not in named:
+            named.append(token)
+    unknown = [n for n in named if n not in stageable]
+    if unknown:
+        raise ValueError(f"utterance names files the suite cannot stage: {unknown}")
+    return named
+
+
+def stage_workspace(ws: Path, case: Case | None = None) -> None:
     skill_home = ws / ".claude" / "skills"
     skill_home.mkdir(parents=True, exist_ok=True)
     for name in installed_skills():
         shutil.copytree(SKILLS / name, skill_home / name)
-    for fixture, filename in WORKSPACE_FIXTURES:
-        source = FIXTURES / fixture / filename
-        if source.exists():
-            shutil.copy2(source, ws / filename)
+    wanted = files_named(case.utterance) if case else []
+    for filename in wanted or [DEFAULT_PROPOSAL]:
+        fixture = next(f for f, name in WORKSPACE_FIXTURES if name == filename)
+        shutil.copy2(FIXTURES / fixture / filename, ws / filename)
 
 
 def stream_events(ws: Path, config: Path, utterance: str, model: str,
@@ -397,7 +435,7 @@ def measure(case: Case, config: Path, model: str, timeout: int,
     result = Result(case_id=case.id, expected=case.expected, kind=case.kind)
     with tempfile.TemporaryDirectory(prefix="routing-") as tmp:
         ws = Path(tmp)
-        stage_workspace(ws)
+        stage_workspace(ws, case)
         events, error = stream_events(ws, config, case.utterance, model, timeout)
     if keep_events:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -424,10 +462,8 @@ def select_cases(cases: list[Case], args: argparse.Namespace) -> list[Case]:
     return cases
 
 
-def epochs_for(case: Case, override: int | None) -> int:
-    if override is not None:
-        return override
-    return COLLISION_EPOCHS if case.kind == "collision" else 1
+def epochs_for(_case: Case, override: int | None) -> int:
+    return override if override is not None else DEFAULT_EPOCHS
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -444,6 +480,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="write each case's raw event stream to logs/routing/ for diagnosis")
     parser.add_argument("--render", type=Path,
                         help="regenerate the report from a saved run log, measuring nothing")
+    parser.add_argument("--conditions-changed", action="store_true",
+                        help="the rig, not the skills, changed since the last report — "
+                             "record the earlier score as not comparable")
     args = parser.parse_args(argv)
 
     if args.render:
@@ -496,7 +535,9 @@ def main(argv: list[str] | None = None) -> int:
     (LOG_DIR / f"{stamp}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     if not args.no_report:
         REPORT_FILE.write_text(
-            render_report(results, matrix, args.model, supersedes=previous_score()),
+            render_report(results, matrix, args.model, supersedes=previous_score(),
+                          epochs=args.epochs or DEFAULT_EPOCHS,
+                          conditions_changed=args.conditions_changed),
             encoding="utf-8")
         print(f"routing: report written to {REPORT_FILE.relative_to(REPO)}")
     return 0 if passed == total else 1

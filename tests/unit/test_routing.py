@@ -14,13 +14,14 @@ from pathlib import Path
 import pytest
 from helpers import REPO
 from routing import (
+    DEFAULT_PROPOSAL,
     KINDS,
     NO_ROUTE,
-    WORKSPACE_FIXTURES,
     Case,
     Result,
     classify,
     composition_problems,
+    files_named,
     installed_skills,
     load_cases,
     misroutes,
@@ -28,6 +29,7 @@ from routing import (
     previous_score,
     render_report,
     route_from_events,
+    stage_workspace,
     tool_calls,
 )
 
@@ -192,6 +194,78 @@ def test_report_states_when_nothing_mis_routed():
     assert "None." in render_report(results, classify(results), "sonnet")
 
 
+def test_report_states_the_epoch_count():
+    results = [result("a", "proposal-check", route="proposal-check")]
+    assert "3 epochs per case" in render_report(results, classify(results), "sonnet", epochs=3)
+
+
+def test_a_conditions_change_is_not_a_comparison():
+    results = [result("a", "proposal-check", route="proposal-check")]
+    changed = render_report(results, classify(results), "sonnet", supersedes="55/60",
+                            conditions_changed=True)
+    assert "not comparable: 55/60" in changed
+    assert "supersedes" not in changed
+
+
+def test_partial_failure_renders_as_a_rate():
+    results = [
+        result("c", "proposal-ideate", route=None),
+        result("c", "proposal-ideate", route="proposal-ideate"),
+        result("c", "proposal-ideate", route="proposal-ideate"),
+    ]
+    assert "(1/3 epochs)" in render_report(results, classify(results), "sonnet")
+
+
+# ---------- staging ----------------------------------------------------------
+
+
+def test_utterance_naming_one_file_stages_only_that_file():
+    assert files_named("Please check microservice-technical-debt.md.") == [
+        "microservice-technical-debt.md"
+    ]
+
+
+def test_utterance_naming_two_files_stages_both_in_order():
+    named = files_named("Compare data-drift-detection.md with submission-email.txt please.")
+    assert named == ["data-drift-detection.md", "submission-email.txt"]
+
+
+def test_utterance_naming_nothing_stages_nothing_by_itself():
+    assert files_named("I need something I can email tomorrow.") == []
+
+
+def test_parenthesised_filename_is_still_named():
+    assert files_named("Ein Student schickte das (submission-email.txt).") == [
+        "submission-email.txt"
+    ]
+
+
+def test_unstageable_file_is_reported_not_silently_dropped():
+    with pytest.raises(ValueError, match="cannot stage"):
+        files_named("Please check my-own-thesis.md.")
+
+
+def test_every_case_in_the_shipped_dataset_can_be_staged():
+    for case in load_cases():
+        files_named(case.utterance)
+
+
+def test_staging_installs_every_skill_and_only_the_named_file(tmp_path):
+    case = Case(id="x", utterance="Please check microservice-technical-debt.md.",
+                expected="proposal-check", kind="canonical", lang="en")
+    stage_workspace(tmp_path, case)
+    assert sorted(p.name for p in tmp_path.glob("*.md")) == ["microservice-technical-debt.md"]
+    installed = sorted(p.name for p in (tmp_path / ".claude" / "skills").iterdir())
+    assert installed == installed_skills()
+
+
+def test_staging_falls_back_to_one_proposal_when_nothing_is_named(tmp_path):
+    case = Case(id="x", utterance="I need a PDF to email tomorrow.",
+                expected="proposal-publish", kind="oblique", lang="en")
+    stage_workspace(tmp_path, case)
+    assert [p.name for p in tmp_path.glob("*.md")] == [DEFAULT_PROPOSAL]
+
+
 # ---------- dataset ----------------------------------------------------------
 
 
@@ -212,15 +286,6 @@ def test_dataset_carries_negatives_and_german_cases():
 
 def test_dataset_kinds_are_known():
     assert {c.kind for c in load_cases()} <= set(KINDS)
-
-
-def test_utterances_naming_a_file_name_one_that_is_staged():
-    staged = {name for _, name in WORKSPACE_FIXTURES}
-    for case in load_cases():
-        for word in case.utterance.replace("(", " ").replace(")", " ").split():
-            token = word.strip(".,;:!?")
-            if token.endswith((".md", ".txt")):
-                assert token in staged, f"{case.id} names unstaged file {token}"
 
 
 def test_missing_case_kind_is_reported():
