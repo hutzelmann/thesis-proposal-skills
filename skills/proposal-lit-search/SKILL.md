@@ -7,7 +7,7 @@ description: Find relevant academic literature for a topic or proposal — keywo
 
 Finds sources for a topic or a draft and merges the accepted entries into the proposal's `references:` block as CSL-YAML — keyword search across public scholarly databases, plus snowballing from what is already cited.
 
-**Workflow:** proposal-ideate → **proposal-lit-search** → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-troubleshoot (diagnose a skill that misbehaved).
+**Workflow:** proposal-ideate → **proposal-lit-search** → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-supervise (supervisor-side feedback on a raw submission), proposal-troubleshoot (diagnose a skill that misbehaved).
 
 **Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 

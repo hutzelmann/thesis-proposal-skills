@@ -7,7 +7,7 @@ description: Socratic development of a thesis idea — refine a vague topic into
 
 Turns a vague thesis idea into a starting point that holds up — the student thinks out loud, this skill pushes back until topic, research questions, and a plausible method take shape. Every session leaves durable working notes behind, and a converged session ends by seeding the `<slug>.md` file the write skill turns into a full draft.
 
-**Workflow:** **proposal-ideate** → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-troubleshoot (diagnose a skill that misbehaved).
+**Workflow:** **proposal-ideate** → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-supervise (supervisor-side feedback on a raw submission), proposal-troubleshoot (diagnose a skill that misbehaved).
 
 **Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 

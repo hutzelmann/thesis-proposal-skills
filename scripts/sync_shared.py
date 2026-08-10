@@ -26,6 +26,9 @@ SYNC_MAP: dict[str, list[str]] = {
         "skills/proposal-review/references",
         "skills/proposal-customize/references",
         "skills/proposal-ideate/references",
+        # supervise applies the review rubric itself, so the semantic rules
+        # travel with it
+        "skills/proposal-supervise/references",
     ],
     "shared/structure.json": [
         "skills/proposal-check/references",
@@ -34,6 +37,7 @@ SYNC_MAP: dict[str, list[str]] = {
         # the script
         "skills/proposal-import/references",
         "skills/proposal-write/references",
+        "skills/proposal-supervise/references",
         # troubleshoot needs the canonical titles as a redaction allowlist: a
         # backticked span in captured script output is kept only when it is a
         # canonical title, since anything else may be the student's own wording
@@ -45,6 +49,8 @@ SYNC_MAP: dict[str, list[str]] = {
     "skills/proposal-check/scripts/check.py": [
         "skills/proposal-import/scripts",
         "skills/proposal-write/scripts",
+        # supervise runs the mechanical check over the file it normalized
+        "skills/proposal-supervise/scripts",
     ],
     # common+crossref vendored into import: validate_refs.py imports them as
     # Python modules, so a missing sibling would crash rather than degrade.

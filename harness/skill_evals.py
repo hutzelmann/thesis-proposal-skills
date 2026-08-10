@@ -47,6 +47,11 @@ from l1_checks import (
     verdict_review,
     verdict_review_localized,
     verdict_seed,
+    verdict_supervise_letter,
+    verdict_supervise_no_personal_data,
+    verdict_supervise_pointers,
+    verdict_supervise_points,
+    verdict_supervise_tier,
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
 )
@@ -835,4 +840,74 @@ def troubleshoot_model_rung() -> Task:
         "`npx skills add hutzelmann/thesis-proposal-skills` and it still happens. "
         "Is this a bug I should report?",
         [troubleshoot_model_rung_l1(), no_spurious_offer()],
+    )
+
+
+# ---------- task: supervise a raw submission ----------------------------------
+
+# .txt on purpose: a raw email is not a proposal, so it must stay outside the
+# fixture-wide "every proposal md builds / has an oracle" invariants and is
+# staged explicitly instead of via the .md glob
+S01_SUBMISSION = "submission-email.txt"
+# the fixture's fake identity — none of it may reach the send-package
+S01_FORBIDDEN = ("Musterfrau", "00000000", "erika.musterfrau@example.org", "Musterstraße")
+INSTALLED_SKILLS = tuple(sorted(
+    d.name for d in SKILLS.iterdir() if d.is_dir() and d.name.startswith("proposal-")
+))
+
+
+async def supervise_package() -> dict[str, str]:
+    """Contents of the `<slug>-package/` directory the skill assembled."""
+    listing = await sandbox().exec(
+        ["bash", "-c", "ls ws/*-package/* 2>/dev/null"], timeout=10)
+    files = {}
+    for path in listing.stdout.splitlines():
+        name = path.strip().removeprefix("ws/")
+        text = await read_ws(name) if name else None
+        if text is not None:
+            files[name] = text
+    return files
+
+
+async def supervise_letter() -> str | None:
+    files = await supervise_package()
+    return next((text for name, text in files.items() if name.endswith("letter.md")), None)
+
+
+@verdict_scorer("supervise_l1_letter")
+async def supervise_l1_letter(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_letter(await supervise_letter())
+
+
+@verdict_scorer("supervise_l1_points")
+async def supervise_l1_points(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_points(await supervise_letter())
+
+
+@verdict_scorer("supervise_l1_tier")
+async def supervise_l1_tier(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_tier(await supervise_letter())
+
+
+@verdict_scorer("supervise_l1_no_personal_data")
+async def supervise_l1_no_personal_data(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_no_personal_data(await supervise_package(), S01_FORBIDDEN)
+
+
+@verdict_scorer("supervise_l1_pointers")
+async def supervise_l1_pointers(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_pointers(await supervise_letter(), INSTALLED_SKILLS)
+
+
+@task
+def supervise_feedback() -> Task:
+    return proposal_task(
+        "proposal-supervise", "s01-raw-email",
+        f"A student emailed me this thesis idea — I saved it as ws/{S01_SUBMISSION}. "
+        "Prepare my feedback: the letter draft and the file I can send back.",
+        [supervise_l1_letter(), supervise_l1_points(), supervise_l1_tier(),
+         supervise_l1_no_personal_data(), supervise_l1_pointers()],
+        extra_skill_files={
+            f"ws/{S01_SUBMISSION}": str(FIXTURES / "s01-raw-email" / S01_SUBMISSION),
+        },
     )

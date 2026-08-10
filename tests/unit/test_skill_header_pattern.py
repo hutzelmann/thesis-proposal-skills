@@ -66,7 +66,7 @@ def workflow_line(skill_md: Path) -> str:
 
 def test_every_skill_is_discovered():
     """A glob that silently matches nothing would make every test below vacuous."""
-    assert len(SKILL_MDS) == 9, f"expected 9 skills, found {[p.parent.name for p in SKILL_MDS]}"
+    assert len(SKILL_MDS) == 10, f"expected 10 skills, found {[p.parent.name for p in SKILL_MDS]}"
     pinned = {p.stem for p in MANDATE_DIR.glob("*.txt")}
     assert pinned == {d.name for d in SKILL_DIRS}, (
         f"pinned mandates do not cover the skill set: {pinned ^ {d.name for d in SKILL_DIRS}}"

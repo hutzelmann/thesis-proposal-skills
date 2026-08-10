@@ -112,7 +112,12 @@ matrix = [
 # troubleshoot_model_rung is here rather than in the matrix on purpose: the
 # negative half of the offer discipline already rides along on review_fixture at
 # no extra cost, so the rung probe does not need to be paid for on every model.
-extended = ["ideate_stonewall", "ideate_outofscope", "ideate_probing", "troubleshoot_model_rung"]
+# supervise_feedback joins the matrix at the next big metered run
+# (add-proposal-supervise); until then it runs on demand like the others here.
+extended = [
+  "ideate_stonewall", "ideate_outofscope", "ideate_probing", "troubleshoot_model_rung",
+  "supervise_feedback",
+]
 # Smoke subset: cheap, short, high signal.
 core = ["write_from_seed", "import_messy", "customize_override"]
 # Heavy dialogue tasks: reduced to 1 epoch on frontier-tier models.
@@ -136,6 +141,7 @@ ideate_outofscope = "proposal-ideate"
 customize_override = "proposal-customize"
 publish_build = "proposal-publish"
 import_messy = "proposal-import"
+supervise_feedback = "proposal-supervise"
 
 # Default epochs per price tier (flakiness statistics where re-runs are cheap).
 # The heavy tasks above always drop to 1 epoch on the frontier tier. The CLI

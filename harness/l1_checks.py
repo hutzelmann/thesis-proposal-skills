@@ -591,6 +591,69 @@ def verdict_publish(listing: str) -> tuple[bool, str]:
     return True, "PDF built, gitignore maintained"
 
 
+SUPERVISE_TIER_PATTERN = re.compile(
+    r"\bready\b|\bbereit\b|needs revision|no viable thesis core"
+    r"|überarbeitung erforderlich|kein tragfähiger thesenkern"
+)
+
+
+def verdict_supervise_letter(letter: str | None) -> tuple[bool, str]:
+    """supervise: a letter draft exists in the send-package and is not empty."""
+    if not letter or not letter.strip():
+        return False, "no letter in the send-package"
+    return True, "letter present"
+
+
+def verdict_supervise_points(letter: str | None) -> tuple[bool, str]:
+    """supervise: the letter carries a numbered points list of at most five
+    entries (skill-supervise spec: curated to pressing points)."""
+    items = re.findall(r"^\s*\d+[.)]\s", letter or "", re.MULTILINE)
+    if not items:
+        return False, "no numbered points in the letter"
+    if len(items) > 5:
+        return False, f"{len(items)} numbered points — at most five survive curation"
+    return True, f"{len(items)} curated points"
+
+
+def verdict_supervise_tier(letter: str | None) -> tuple[bool, str]:
+    """supervise: the letter opens with one of the three verdict tiers, English
+    or German, case-insensitive like every prose-relaying verdict. Word-bounded
+    where the tier is a single word ("already" must not count as "ready")."""
+    head = " ".join((letter or "").splitlines()[:5]).lower()
+    hit = SUPERVISE_TIER_PATTERN.search(head)
+    if not hit:
+        return False, "no verdict tier in the letter's opening lines"
+    return True, f"verdict tier: {hit.group(0)}"
+
+
+def verdict_supervise_no_personal_data(package: dict[str, str],
+                                       forbidden: tuple[str, ...]) -> tuple[bool, str]:
+    """supervise: no personal-data token from the submission survives anywhere
+    in the send-package (skill-supervise spec: intake strips identity).
+    `package` maps package-relative names to file contents."""
+    if not package:
+        return False, "send-package is empty or missing"
+    leaks = [(name, token) for name, text in sorted(package.items())
+             for token in forbidden if token.lower() in text.lower()]
+    if leaks:
+        return False, "personal data survived: " + "; ".join(
+            f"{token!r} in {name}" for name, token in leaks)
+    return True, f"{len(package)} package file(s) free of the submission's personal data"
+
+
+def verdict_supervise_pointers(letter: str | None,
+                               installed: tuple[str, ...]) -> tuple[bool, str]:
+    """supervise: the letter steers somewhere real — at least one skill named,
+    and every `proposal-*` name it mentions exists in the installed set."""
+    named = set(re.findall(r"proposal-[a-z][a-z-]*[a-z]", letter or ""))
+    if not named:
+        return False, "letter names no skill at all"
+    unknown = sorted(named - set(installed))
+    if unknown:
+        return False, "letter names unknown skills: " + ", ".join(unknown)
+    return True, "pointers resolve: " + ", ".join(sorted(named))
+
+
 def verdict_early_stop(files: dict[str, str]) -> tuple[bool, str]:
     """Stonewalled session: no proposal file seeded, but a notes file records
     the state (`ideation.notes.md` when no topic ever emerged). Whether the

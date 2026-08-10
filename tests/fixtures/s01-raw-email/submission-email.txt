@@ -1,0 +1,18 @@
+From: Erika Musterfrau <erika.musterfrau@example.org>
+Subject: Bachelor thesis idea — hope this is enough?
+
+Dear Professor,
+
+my name is Erika Musterfrau, matriculation number 00000000, I am in the 6th semester of Business Informatics and I would like to write my Bachelor's thesis under your supervision.
+
+My idea: companies subscribe to many SaaS tools and over time nobody keeps track of what is actually used. I want to build a dashboard that scans which tools a company uses and shows the overlaps between them, so companies can cancel duplicates and save money. I think this is a real problem because I saw it at my working student job.
+
+My plan would be: months 1-2 reading literature, months 3-4 implementing the dashboard, month 5 evaluation (maybe a survey?), month 6 writing everything up and buffer.
+
+As sources I found two blog posts about "SaaS sprawl" that describe the problem well, and I could also cite the tool vendors' websites.
+
+I hope this is roughly what you expect for a proposal. Could you tell me what is still missing?
+
+Best regards,
+Erika Musterfrau
+Musterstraße 1, 12345 Musterstadt

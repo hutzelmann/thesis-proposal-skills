@@ -4,7 +4,7 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ## What this repo is
 
-`thesis-proposal-skills`: nine `proposal-*` agent skills (under `skills/`) that help students write thesis proposals, plus the machinery to test them. Users install the skills into their own workspace; their proposals never live here. Real proposals sit in a private local directory kept out of version control via `.git/info/exclude` — never commit, copy, quote, or name its contents. Developer credentials live in the gitignored `.env` (template: `.env.example`), never beside the real proposals.
+`thesis-proposal-skills`: ten `proposal-*` agent skills (under `skills/`) that help students write thesis proposals — nine student-side, plus the supervisor-side `proposal-supervise` — and the machinery to test them. Users install the skills into their own workspace; their proposals never live here. Real proposals sit in a private local directory kept out of version control via `.git/info/exclude` — never commit, copy, quote, or name its contents. Developer credentials live in the gitignored `.env` (template: `.env.example`), never beside the real proposals.
 
 ## Spec-first workflow (mandatory)
 
@@ -132,13 +132,13 @@ Message content is sometimes a string and sometimes a content-block array; norma
 Every `SKILL.md` is read twice: by the agent that loads it as instructions, and by anyone who lands on its page at skills.sh, which renders the frontmatter and the body and nothing else. Each body therefore opens with the same four blocks, in this order, before the first `##` heading:
 
 1. **Purpose** — one or two sentences, impersonal, in the vocabulary of someone who has never read this repo. States the deliverable. It must never restate, soften, or paraphrase a rule stated below it: the first statement of a rule fixes that rule's scope. Where the mandate is already purpose-shaped, the purpose block adds the user-facing outcome the mandate omits rather than re-saying it.
-2. **Workflow line** — byte-identical in all nine files, with only the containing skill's own name wrapped in `**`. It is the only way a visitor who lands on one page learns the other eight exist.
-3. **Voice block** — byte-identical in all nine files (its bytes live as a constant in `tests/unit/test_skill_header_pattern.py`): neutral constructive tone, no praise of the user or their material, no self-praise, short precise chat messages. Chat conduct only — it carries no operational rules.
+2. **Workflow line** — byte-identical in all ten files, with only the containing skill's own name wrapped in `**`. It is the only way a visitor who lands on one page learns the other nine exist.
+3. **Voice block** — byte-identical in all ten files (its bytes live as a constant in `tests/unit/test_skill_header_pattern.py`): neutral constructive tone, no praise of the user or their material, no self-praise, short precise chat messages. Chat conduct only — it carries no operational rules.
 4. **Mandate** — the skill's agent-facing opening paragraph, verbatim, pinned in `tests/unit/data/skill_mandates/<skill>.txt`.
 
 No file gets an exception, and nothing is inserted between a mandate and the paragraph beneath it. `tests/unit/test_skill_header_pattern.py` enforces all of it; rewording a mandate means editing its pinned copy in the same change, so the reword shows up as a diff under review.
 
-Adding a tenth skill means updating the workflow line in every existing skill, since each page names the whole set. Every skill except `proposal-troubleshoot` also carries the bug-report offer block verbatim once, in a closing `## When this run fails` section — `proposal-troubleshoot` is where the offer leads, so it does not refer itself. `tests/unit/test_report_offer.py` enforces both halves.
+Adding a skill means updating the workflow line in every existing skill, since each page names the whole set. Every skill except `proposal-troubleshoot` also carries the bug-report offer block verbatim once, in a closing `## When this run fails` section — `proposal-troubleshoot` is where the offer leads, so it does not refer itself. `tests/unit/test_report_offer.py` enforces both halves.
 
 ## History
 

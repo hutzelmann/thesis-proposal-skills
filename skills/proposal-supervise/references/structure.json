@@ -1,0 +1,224 @@
+{
+  "_generated": "from shared/structure.json — edit there, then run scripts/sync_shared.py",
+  "_comment": "Single source of truth for the mechanically checkable proposal skeleton. Semantic rules live in shared/guidelines/guidelines.md. Synced into skills by scripts/sync_shared.py.",
+  "min_references": 3,
+  "sections": {
+    "order": [
+      "introduction",
+      "contribution",
+      "research_questions",
+      "methodology",
+      "timeline"
+    ],
+    "titles": {
+      "introduction": {
+        "en": "Introduction to the Topic",
+        "de": "Einführung in das Thema"
+      },
+      "contribution": {
+        "en": "Contribution to the State-of-the-Art",
+        "de": "Beitrag zum Stand der Technik"
+      },
+      "research_questions": {
+        "en": "Research Focus and Research Questions",
+        "de": "Forschungsfokus und Forschungsfragen"
+      },
+      "methodology": {
+        "en": "Methodology for Research: {methodology}",
+        "de": "Forschungsmethodik: {methodology}"
+      },
+      "timeline": {
+        "en": "Timeline",
+        "de": "Zeitplan"
+      }
+    }
+  },
+  "methodologies": {
+    "prototype": {
+      "title": {
+        "en": "Prototype Implementation",
+        "de": "Prototypimplementierung"
+      },
+      "subsections": [
+        {
+          "en": "Previous Work",
+          "de": "Vorarbeiten"
+        },
+        {
+          "en": "Requirements",
+          "de": "Anforderungen"
+        },
+        {
+          "en": "Evaluation",
+          "de": "Evaluation"
+        }
+      ]
+    },
+    "theoretical": {
+      "title": {
+        "en": "Theoretical Analysis",
+        "de": "Theoretische Analyse"
+      },
+      "subsections": [
+        {
+          "en": "Formalization",
+          "de": "Formalisierung"
+        },
+        {
+          "en": "Requirements",
+          "de": "Anforderungen"
+        },
+        {
+          "en": "Example",
+          "de": "Beispiel"
+        }
+      ]
+    },
+    "slr": {
+      "title": {
+        "en": "Systematic Literature Review",
+        "de": "Systematische Literaturrecherche"
+      },
+      "subsections": [
+        {
+          "en": "Search Strategy and Selection Criteria",
+          "de": "Suchstrategie und Auswahlkriterien"
+        },
+        {
+          "en": "Extracted Information",
+          "de": "Extrahierte Informationen"
+        },
+        {
+          "en": "Synthesis",
+          "de": "Synthese"
+        }
+      ]
+    },
+    "user_study": {
+      "title": {
+        "en": "User Study",
+        "de": "Nutzerstudie"
+      },
+      "subsections": [
+        {
+          "en": "Preparation",
+          "de": "Vorbereitung"
+        },
+        {
+          "en": "Procedure",
+          "de": "Durchführung"
+        },
+        {
+          "en": "Analysis",
+          "de": "Analyse"
+        }
+      ]
+    }
+  },
+  "forbidden_heading_patterns": [
+    "time plan",
+    "schedule",
+    "workplan",
+    "work plan",
+    "milestones",
+    "gantt",
+    "work package",
+    "workpackage",
+    "arbeitsplan",
+    "meilensteine",
+    "arbeitspaket",
+    "expected results",
+    "erwartete ergebnisse",
+    "thesis structure",
+    "preliminary structure",
+    "chapter structure",
+    "gliederung",
+    "supervisor",
+    "betreuer",
+    "deliverables"
+  ],
+  "_work_plan_comment": "Subset of forbidden_heading_patterns dropped when timeline_detail = detailed. `time plan` and `schedule` stay forbidden even then: they are rival names for the canonical timeline section, not work-plan markers.",
+  "work_plan_heading_patterns": [
+    "workplan",
+    "work plan",
+    "milestones",
+    "gantt",
+    "work package",
+    "workpackage",
+    "arbeitsplan",
+    "meilensteine",
+    "arbeitspaket"
+  ],
+  "timeline": {
+    "max_body_lines": 3,
+    "detail_modes": [
+      "simple",
+      "detailed"
+    ],
+    "default_detail": "simple"
+  },
+  "_length_comment": "Estimation constants only, not semantic data: checks estimate rendered pages as body words / words_per_page and warn above page_limit. The substance and density rules stay prose in guidelines.md.",
+  "length": {
+    "page_limit": 5,
+    "words_per_page": 500
+  },
+  "_title_comment": "Mechanically matchable tells for the thesis title only. Openers match at the start of the title, buzzwords anywhere, both case-insensitively and regardless of the proposal's lang. min_words is per lang because German compounds one noun where English needs three. Tool, product and vendor names are deliberately absent: the set is unbounded and stays agent judgement per guidelines.md.",
+  "title": {
+    "min_words": {
+      "en": 4,
+      "de": 3
+    },
+    "max_words": 20,
+    "implementation_openers": [
+      "implementing",
+      "implementation of",
+      "development of",
+      "developing",
+      "building a",
+      "building an",
+      "design and implementation of",
+      "entwicklung von",
+      "entwicklung einer",
+      "entwicklung eines",
+      "implementierung von",
+      "implementierung einer",
+      "umsetzung von",
+      "umsetzung einer",
+      "konzeption und umsetzung",
+      "konzept für",
+      "realisierung",
+      "erstellung von",
+      "erstellung einer"
+    ],
+    "buzzwords": [
+      "revolutioniz",
+      "next-gen",
+      "cutting-edge",
+      "ai-powered",
+      "game-chang",
+      "seamless",
+      "disruptive",
+      "bahnbrechend",
+      "revolutionär",
+      "zukunftsweisend",
+      "wegweisend"
+    ]
+  },
+  "confidentiality_patterns": [
+    "confidential",
+    "internal use only",
+    "do not distribute",
+    "non-disclosure",
+    "NDA",
+    "vertraulich",
+    "nur für den internen gebrauch",
+    "geheim"
+  ],
+  "research_questions": {
+    "format": "ordered list under the research_questions section",
+    "label": "RQ",
+    "min_count": 1,
+    "methodology_reference_pattern": "\\(RQ\\d+\\)"
+  },
+  "todo_marker": "\\[TODO:[^\\]]*\\]"
+}
