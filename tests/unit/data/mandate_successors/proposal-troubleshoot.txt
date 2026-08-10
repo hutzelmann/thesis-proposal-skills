@@ -1,0 +1,1 @@
+Naming the rung is part of the answer. A report that says "it did not work" costs a maintainer a round-trip; a report that says "rung 4, the check skill edited my file" is actionable on sight. When no rung fits, say so and record the cause as unidentified rather than choosing the rung that sounds closest.

@@ -8,10 +8,12 @@ voice block is byte-identical everywhere, and each mandate is pinned in
 review silently.
 
 Adjacency ("nothing inserted between a mandate and the paragraph beneath it") is
-enforced structurally rather than by pinning what follows: the only insertable
-header blocks are the purpose, the workflow line, and the voice block, and all
-three are pinned to a fixed index above the mandate, with the workflow line
-required to appear exactly once in the whole file.
+enforced from both sides: above, the only insertable header blocks — purpose,
+workflow line, voice block — are pinned to fixed indices, with the workflow line
+required to appear exactly once in the whole file; below, the block directly
+beneath each mandate is pinned in `tests/unit/data/mandate_successors/` (empty
+pin = the mandate closes the header region), so a paragraph slipped in after a
+mandate fails instead of passing silently.
 
 The title is not required to match the skill name — proposal-lit-search's is
 `# Literature Search`.
@@ -28,6 +30,7 @@ SKILL_DIRS = sorted(
 )
 SKILL_MDS = [d / "SKILL.md" for d in SKILL_DIRS]
 MANDATE_DIR = REPO / "tests" / "unit" / "data" / "skill_mandates"
+SUCCESSOR_DIR = REPO / "tests" / "unit" / "data" / "mandate_successors"
 
 ids = lambda paths: [str(p.relative_to(REPO)) for p in paths]  # noqa: E731
 
@@ -67,6 +70,11 @@ def test_every_skill_is_discovered():
     pinned = {p.stem for p in MANDATE_DIR.glob("*.txt")}
     assert pinned == {d.name for d in SKILL_DIRS}, (
         f"pinned mandates do not cover the skill set: {pinned ^ {d.name for d in SKILL_DIRS}}"
+    )
+    successors = {p.stem for p in SUCCESSOR_DIR.glob("*.txt")}
+    assert successors == {d.name for d in SKILL_DIRS}, (
+        "pinned mandate successors do not cover the skill set: "
+        f"{successors ^ {d.name for d in SKILL_DIRS}}"
     )
 
 
@@ -136,4 +144,30 @@ def test_mandate_matches_pinned_copy(skill_md):
     assert header_blocks(skill_md)[MANDATE_INDEX] == pinned, (
         f"{name}: mandate differs from tests/unit/data/skill_mandates/{name}.txt — "
         "a mandate stays verbatim; revise the pinned copy in the same change to reword it"
+    )
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=ids(SKILL_MDS))
+def test_mandate_adjacent_to_pinned_successor(skill_md):
+    """Nothing is inserted between a mandate and the paragraph beneath it
+    (skill-packaging spec). An empty pin means the mandate closes the header
+    region, so any block after it is an insertion."""
+    name = skill_md.parent.name
+    pinned = (SUCCESSOR_DIR / f"{name}.txt").read_text(encoding="utf-8").strip()
+    blocks = header_blocks(skill_md)
+    if not pinned:
+        assert len(blocks) == MANDATE_INDEX + 1, (
+            f"{name}: {len(blocks) - MANDATE_INDEX - 1} block(s) inserted after the "
+            "mandate — the pinned successor is empty, so the mandate must close the "
+            "header region"
+        )
+        return
+    assert len(blocks) > MANDATE_INDEX + 1, (
+        f"{name}: a successor paragraph is pinned but the mandate closes the header region"
+    )
+    assert blocks[MANDATE_INDEX + 1] == pinned, (
+        f"{name}: the block beneath the mandate differs from "
+        f"tests/unit/data/mandate_successors/{name}.txt — nothing is inserted "
+        "between a mandate and the paragraph beneath it; revise the pinned copy "
+        "in the same change to reword that paragraph"
     )
