@@ -491,7 +491,8 @@ def main(argv: list[str] | None = None) -> int:
         REPORT_FILE.write_text(
             render_report(results, classify(results), payload["model"],
                           payload.get("skills_revision")), encoding="utf-8")
-        print(f"routing: report rebuilt from {args.render} into {REPORT_FILE.relative_to(REPO)}")
+        print("routing: report rebuilt from "
+              f"{args.render} into {REPORT_FILE.relative_to(REPO).as_posix()}")
         return 0
 
     cases = load_cases()
@@ -539,7 +540,7 @@ def main(argv: list[str] | None = None) -> int:
                           epochs=args.epochs or DEFAULT_EPOCHS,
                           conditions_changed=args.conditions_changed),
             encoding="utf-8")
-        print(f"routing: report written to {REPORT_FILE.relative_to(REPO)}")
+        print(f"routing: report written to {REPORT_FILE.relative_to(REPO).as_posix()}")
     return 0 if passed == total else 1
 
 

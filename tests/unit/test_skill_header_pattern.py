@@ -32,7 +32,7 @@ SKILL_MDS = [d / "SKILL.md" for d in SKILL_DIRS]
 MANDATE_DIR = REPO / "tests" / "unit" / "data" / "skill_mandates"
 SUCCESSOR_DIR = REPO / "tests" / "unit" / "data" / "mandate_successors"
 
-ids = lambda paths: [str(p.relative_to(REPO)) for p in paths]  # noqa: E731
+ids = lambda paths: [p.relative_to(REPO).as_posix() for p in paths]  # noqa: E731
 
 WORKFLOW_LABEL = "**Workflow:**"
 PURPOSE_INDEX = 1

@@ -24,6 +24,25 @@ jobs:
       - name: Spec validation (pinned in the poe task)
         run: uv run poe specs
 
+  # The skills run on the student's machine, and a good share of those are
+  # Windows. `sync_shared.py` shipped a header built from a `Path` for months:
+  # every Windows clone failed the drift gate, and nobody here could see it.
+  # A source-level rule now catches that specific class (test_repo_conventions);
+  # this job catches what a rule cannot — line endings, encoding defaults,
+  # tmp_path semantics. It runs the fast subset: the document toolchain is not
+  # installable cheaply on this runner, and the export tiers have jobs below.
+  l0-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Sync dev environment
+        run: uv sync --dev
+      - name: L0 fast subset
+        run: uv run poe test-fast
+
   # Export tiers are verified by building real documents. The l0 job has no
   # document toolchain, so those tests skip there; these two jobs supply it from
   # pre-built published images, installing nothing into them.

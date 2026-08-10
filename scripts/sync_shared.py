@@ -65,19 +65,23 @@ SYNC_MAP: dict[str, list[str]] = {
 
 
 def render(source: Path) -> str:
+    # Headers are written into committed files, so the path must render the same
+    # on every host: .as_posix() or a Windows sync rewrites every generated copy
+    # with backslashes and the drift check fails on a fresh Windows clone.
+    rel = source.relative_to(REPO).as_posix()
     text = source.read_text(encoding="utf-8")
     if source.suffix == ".md":
         return MD_HEADER + text
     if source.suffix == ".json":
         data = json.loads(text)
-        header = f"from {source.relative_to(REPO)} — edit there, then run scripts/sync_shared.py"
+        header = f"from {rel} — edit there, then run scripts/sync_shared.py"
         stamped = {JSON_HEADER_KEY: header, **data}
         return json.dumps(stamped, ensure_ascii=False, indent=2) + "\n"
     if source.suffix == ".py":
         # two lines, so the banner stays inside the line-length limit whatever
         # the source path is
         header = (
-            f"# GENERATED from {source.relative_to(REPO)}\n"
+            f"# GENERATED from {rel}\n"
             "# Edit there, then run scripts/sync_shared.py\n"
         )
         lines = text.split("\n", 1)
@@ -96,11 +100,11 @@ def sync(check: bool) -> int:
             dest = REPO / dest_dir / source.name
             if check:
                 if not dest.exists() or dest.read_text(encoding="utf-8") != expected:
-                    drift.append(str(dest.relative_to(REPO)))
+                    drift.append(dest.relative_to(REPO).as_posix())
             else:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(expected, encoding="utf-8")
-                print(f"synced {src_rel} -> {dest.relative_to(REPO)}")
+                print(f"synced {src_rel} -> {dest.relative_to(REPO).as_posix()}")
     if check and drift:
         print("OUT OF SYNC (run scripts/sync_shared.py):", *drift, sep="\n  ")
         return 1

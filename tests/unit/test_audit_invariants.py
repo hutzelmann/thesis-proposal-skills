@@ -18,7 +18,7 @@ SKILL_DIRS = sorted(
 SKILL_MDS = [d / "SKILL.md" for d in SKILL_DIRS]
 USER_SCRIPTS = sorted((REPO / "skills").glob("proposal-*/scripts/*.py"))
 
-ids = lambda paths: [str(p.relative_to(REPO)) for p in paths]  # noqa: E731
+ids = lambda paths: [p.relative_to(REPO).as_posix() for p in paths]  # noqa: E731
 
 
 # publish.py invokes fixed document tools (pandoc/typst) by constant name — the
@@ -31,7 +31,9 @@ def test_no_dynamic_code_loading(script):
     """Snyk flagged importlib-from-argv as code injection (lit-search HIGH)."""
     text = script.read_text(encoding="utf-8")
     patterns = ["importlib", "__import__", "exec(", "eval(", "os.system"]
-    if str(script.relative_to(REPO / "skills")) not in SUBPROCESS_ALLOWED:
+    # .as_posix(): SUBPROCESS_ALLOWED holds POSIX keys, so a Windows separator
+    # here would silently un-allow publish.py and fail the run.
+    if script.relative_to(REPO / "skills").as_posix() not in SUBPROCESS_ALLOWED:
         patterns.append("subprocess")
     for pattern in patterns:
         assert pattern not in text, (

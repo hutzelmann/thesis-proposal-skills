@@ -24,7 +24,7 @@ def declares_author(path: Path) -> bool:
 
 def test_no_fixture_declares_an_author_except_the_tripwire():
     offenders = [
-        str(md.relative_to(REPO))
+        md.relative_to(REPO).as_posix()
         for md in sorted((REPO / "tests" / "fixtures").glob("*/*.md"))
         if md != TRIPWIRE and declares_author(md)
     ]
@@ -38,7 +38,7 @@ def test_tripwire_still_declares_an_author():
 
 def test_no_skill_file_declares_an_author():
     offenders = [
-        str(p.relative_to(REPO))
+        p.relative_to(REPO).as_posix()
         for p in sorted((REPO / "skills").rglob("*"))
         if p.is_file() and p.suffix in {".md", ".typ", ".tex", ".json"}
         and declares_author(p)

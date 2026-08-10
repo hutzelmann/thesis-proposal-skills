@@ -114,7 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     SUPPORT_JSON.write_text(
         json.dumps(exported, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(f"README summary + {GRID.relative_to(REPO)} + {SUPPORT_JSON.relative_to(REPO)} "
+    print(f"README summary + {GRID.relative_to(REPO).as_posix()} "
+          f"+ {SUPPORT_JSON.relative_to(REPO).as_posix()} "
           f"regenerated from {len(logs)} log(s), newest {timestamp}")
     print("run scripts/sync_shared.py to materialize the vendored copy")
     return 0

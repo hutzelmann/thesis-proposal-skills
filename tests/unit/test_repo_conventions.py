@@ -61,8 +61,8 @@ def test_no_test_file_manipulates_sys_path(path):
         for node in ast.walk(tree)
     )
     assert not calls_syspath, (
-        f"{path.relative_to(REPO)} manipulates sys.path ({offending[:1]}) — add the import "
-        "root to `[tool.pytest.ini_options] pythonpath` in pyproject.toml instead"
+        f"{path.relative_to(REPO).as_posix()} manipulates sys.path ({offending[:1]}) — add "
+        "the import root to `[tool.pytest.ini_options] pythonpath` in pyproject.toml instead"
     )
 
 
@@ -88,10 +88,70 @@ def test_main_takes_argv(path, node):
     """
     names = [arg.arg for arg in node.args.args]
     assert names[:1] == ["argv"], (
-        f"{path.relative_to(REPO)}: main{tuple(names)} does not take `argv` — use "
+        f"{path.relative_to(REPO).as_posix()}: main{tuple(names)} does not take `argv` — use "
         "`def main(argv: list[str] | None = None) -> int` and pass it to parse_args()"
     )
-    assert node.args.defaults, f"{path.relative_to(REPO)}: `argv` needs a `None` default"
+    assert node.args.defaults, (
+        f"{path.relative_to(REPO).as_posix()}: `argv` needs a `None` default"
+    )
+
+
+# ---------- cross-platform paths ----------------------------------------------
+
+
+def stringified_relative_to(tree: ast.AST) -> list[int]:
+    """Line numbers where a `relative_to(...)` result is turned into a string
+    without `.as_posix()`.
+
+    Only stringified uses are flagged: `a.relative_to(b)` compared as a `Path`
+    is correct, and demanding `.as_posix()` there would be wrong. A string,
+    though, is either written into a committed file, used as a dict key, or
+    compared against a POSIX literal — all three break on Windows.
+    """
+    def unposixed(expr: ast.AST) -> list[int]:
+        wrapped = {
+            id(node.func.value) for node in ast.walk(expr)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "as_posix"
+        }
+        return [
+            node.lineno for node in ast.walk(expr)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "relative_to" and id(node) not in wrapped
+        ]
+
+    hits: list[int] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FormattedValue):          # inside an f-string
+            hits += unposixed(node.value)
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+              and node.func.id == "str" and node.args):   # str(path.relative_to(...))
+            hits += unposixed(node.args[0])
+    return sorted(set(hits))
+
+
+PATH_FILES = [p for root in [*SCRIPT_DIRS, TESTS] for p in python_files(root)]
+
+
+def test_path_scan_covers_the_tree():
+    """Guards the guard: a broken root list would make the next test vacuous."""
+    assert len(PATH_FILES) >= 20
+
+
+@pytest.mark.parametrize("path", PATH_FILES, ids=lambda p: p.name)
+def test_relative_paths_render_as_posix(path):
+    """`sync_shared.py` wrote `skills\\proposal-check\\references` into every
+    generated header on Windows, so the drift check — a CI gate and a pre-commit
+    hook — failed on every Windows clone, and a sync there would have rewritten
+    the committed headers. An external contributor found it in one of the two
+    header sites; the second was added later, and nothing noticed either.
+    """
+    lines = stringified_relative_to(ast.parse(path.read_text(encoding="utf-8")))
+    assert not lines, (
+        f"{path.relative_to(REPO).as_posix()}:{lines} stringifies relative_to() without "
+        "`.as_posix()` — a repository-relative path that becomes text must render "
+        "the same on every host"
+    )
 
 
 # ---------- verdict coverage --------------------------------------------------

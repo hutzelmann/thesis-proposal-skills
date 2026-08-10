@@ -190,8 +190,10 @@ INSTALLED_SKILLS = tuple(sorted(
 
 
 def package_files(ws: Path) -> dict[str, str]:
+    # .as_posix(): the keys are matched against literal `<dir>/<name>` paths in
+    # the verdicts, which a Windows separator would never match.
     return {
-        str(f.relative_to(ws)): f.read_text(encoding="utf-8")
+        f.relative_to(ws).as_posix(): f.read_text(encoding="utf-8")
         for d in sorted(ws.glob("*-package")) if d.is_dir()
         for f in sorted(d.iterdir()) if f.is_file()
     }
