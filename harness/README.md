@@ -56,6 +56,25 @@ uv run poe dev ideate_scoped --model sonnet
 
 Fast, free on the subscription, highest execution fidelity — but no L2 judging and no per-model comparison logs; it is the everyday loop, not the source of record.
 
+## Skill routing (real selector, Max subscription)
+
+Every task above hands the agent a skill body and measures what it does with it. `uv run poe routing` measures the step before that: with all ten skills installed and nothing else, which one does the host actually select for a user utterance? The decision is made from the frontmatter `description` alone — no body is loaded — so this is the only place the descriptions are under test.
+
+```sh
+uv run poe routing                              # 40 cases, sonnet, 3 epochs on the collision kind
+uv run poe routing -- --model haiku             # the stress run: the weakest reader
+uv run poe routing -- --kind collision --jobs 1
+uv run poe routing -- --case review-canonical
+```
+
+Cases live in `routing_cases.toml`, four kinds: `canonical` (the phrasing the description promises), `oblique` (how a student types it), `collision` (parked in a zone another skill also claims), `negative` (no `proposal-*` skill may answer). `expected` encodes the *intended* boundary, so a case that routes wrong is a finding about the descriptions, not a dataset bug. Results land in `logs/routing/` and the report is regenerated at `docs/skill-routing.md` — a confusion matrix, because an aggregate pass rate cannot tell you which skill stole which utterance.
+
+The verdict is the first `proposal-*` skill invoked; the run is killed there. Up to three preparatory tool calls are tolerated (the agent may glance at a named file first), after which the case counts as unrouted. Only `Skill`, `Read` and `Glob` are reachable, so a measurement cannot start doing the work.
+
+Isolation matters more here than anywhere else: a run against the operator's own configuration measures the operator's skills, hooks and plugins, not a student's install. The rig therefore builds a temp `CLAUDE_CONFIG_DIR` containing only empty settings plus a symlink to the existing credentials, and **refuses to run rather than fall back** to the ambient config. Two dead ends worth not re-discovering: `--safe-mode` disables the skills under test along with everything else, and a fresh config directory with no credentials reports `Not logged in`. Point `ROUTING_CONFIG_DIR` at a prepared directory to bypass the symlink entirely.
+
+Claude-only by construction. Other hosts read the same `description` but select through their own prompts, and simulating those prompts would measure our simulation. Not part of `poe test` or CI — it needs a host install and a subscription — but the route extraction, the classification and the dataset's composition are covered by `tests/unit/test_routing.py` against recorded streams, with no model call.
+
 ## Audit pre-flight (publish pipeline)
 
 Order: L0 suite (includes `tests/unit/test_audit_invariants.py`) → `uv run python scripts/audit_scan.py` (the real Snyk Agent Scan engine against the repo's skills, staged in an isolated HOME/XDG so the developer's own agent configs are never touched; needs `SNYK_TOKEN` in the environment or in the repo-root `.env`; fails at risk ≥ 0.5 — calibrated 2026-08-02, risk ≤ 0.3 findings exist on skills skills.sh reports clean) → publish on explicit request → `uv run python scripts/audit_status.py` (skills.sh verdicts vs `audit-baseline.json`; `--update` after review).

@@ -28,6 +28,9 @@ _drift = "python3 scripts/sync_shared.py --check"
 test-fast = "pytest -n auto --dist loadgroup -m 'not slow'"
 cov = "pytest --cov --cov-report=term-missing --cov-fail-under=78"
 dev = "python harness/claude_runner.py"
+# skill selection, not skill behaviour: needs a host install and a subscription,
+# so it stays out of `test` and out of CI. Its verdict logic is covered there.
+routing = "python harness/routing.py"
 audit = "python scripts/audit_scan.py"
 audit-status = "python scripts/audit_status.py"
 identify = "python scripts/identify_release.py"

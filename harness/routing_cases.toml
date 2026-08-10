@@ -1,0 +1,322 @@
+# Routing dataset — which skill does a host agent select for a user utterance?
+#
+# Unlike every other harness dataset, these cases never reach a skill body. They
+# are decided by the frontmatter `description` alone, which is the only text a
+# host reads before choosing. `expected` therefore encodes the *intended* trigger
+# boundary, not what the current descriptions happen to say: a case whose route
+# is wrong today is the point, not a dataset bug.
+#
+# Kinds:
+#   canonical  the phrasing the skill's description literally promises
+#   oblique    how a student actually types it — no vocabulary borrowed from us
+#   collision  deliberately parked in a zone another skill also claims; carries a
+#              word that skill owns while the intent stays unambiguous
+#   negative   proposal-adjacent work no proposal-* skill should claim
+#
+# `expected = "none"` means no proposal-* skill may be selected.
+# Files named in utterances are staged into the measurement workspace; see
+# harness/routing.py WORKSPACE_FIXTURES.
+
+# ---------- proposal-check ---------------------------------------------------
+
+[[cases]]
+id = "check-canonical"
+utterance = "Please check my proposal microservice-technical-debt.md."
+expected = "proposal-check"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "check-oblique"
+utterance = "Did I get the citations and the section headings right in microservice-technical-debt.md?"
+expected = "proposal-check"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "check-collision"
+utterance = "Before I ask for a full review, run the mechanical checks over microservice-technical-debt.md."
+expected = "proposal-check"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-review --------------------------------------------------
+
+[[cases]]
+id = "review-canonical"
+utterance = "Please review my proposal microservice-technical-debt.md — is it ready for my supervisor?"
+expected = "proposal-review"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "review-oblique"
+utterance = "Does the argument in microservice-technical-debt.md actually hold together, or is the thesis core too thin?"
+expected = "proposal-review"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "review-collision"
+utterance = "Check whether the research questions in microservice-technical-debt.md are sharp enough to carry a thesis."
+expected = "proposal-review"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-write ---------------------------------------------------
+
+[[cases]]
+id = "write-canonical"
+utterance = "Please turn my idea notes in data-drift-detection.md into a full proposal draft."
+expected = "proposal-write"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "write-oblique"
+utterance = "My Related Work section is still just bullet points. Make it read like proper prose."
+expected = "proposal-write"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "write-collision"
+utterance = "I got feedback that my methodology section is too vague — rewrite that section properly."
+expected = "proposal-write"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-ideate --------------------------------------------------
+
+[[cases]]
+id = "ideate-canonical"
+utterance = "I have a rough topic around federated learning for my thesis but no research questions yet. Where do I start?"
+expected = "proposal-ideate"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "ideate-oblique"
+utterance = "I honestly do not know what I want to write about yet. Can we work it out together?"
+expected = "proposal-ideate"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "ideate-collision"
+utterance = "I want to figure out whether my idea is worth pursuing at all — talk it through with me."
+expected = "proposal-ideate"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-lit-search ----------------------------------------------
+
+[[cases]]
+id = "litsearch-canonical"
+utterance = "I need academic sources for my topic — search the literature and add the references."
+expected = "proposal-lit-search"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "litsearch-oblique"
+utterance = "My bibliography has four entries. That cannot be enough for a Master's thesis."
+expected = "proposal-lit-search"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "litsearch-collision"
+utterance = "Is my idea already published somewhere? Check what exists on this."
+expected = "proposal-lit-search"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-import --------------------------------------------------
+
+[[cases]]
+id = "import-canonical"
+utterance = "I have an existing proposal as a PDF from another tool. Please bring it into the standard format."
+expected = "proposal-import"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "import-oblique"
+utterance = "My proposal lives in a Word document my supervisor sent back. How do I continue working on it here?"
+expected = "proposal-import"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "import-collision"
+utterance = "Take my old LaTeX draft and write it into the single-file format you use."
+expected = "proposal-import"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-publish -------------------------------------------------
+
+[[cases]]
+id = "publish-canonical"
+utterance = "Can you build a PDF from microservice-technical-debt.md?"
+expected = "proposal-publish"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "publish-oblique"
+utterance = "I need something I can email tomorrow morning. How do I get this out of markdown?"
+expected = "proposal-publish"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "publish-collision"
+utterance = "Export microservice-technical-debt.md so I can hand it to my supervisor."
+expected = "proposal-publish"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-customize -----------------------------------------------
+
+[[cases]]
+id = "customize-canonical"
+utterance = "My supervisor wants a detailed work plan and a hard page limit. Adjust the guidance you follow."
+expected = "proposal-customize"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "customize-oblique"
+utterance = "Our program prescribes a different section order than the one you keep using. Can that be changed?"
+expected = "proposal-customize"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "customize-collision"
+utterance = "The chair's template demands at least 30 references. Make the review rules match that."
+expected = "proposal-customize"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-supervise -----------------------------------------------
+
+[[cases]]
+id = "supervise-canonical"
+utterance = "A student emailed me this thesis idea — I saved it as submission-email.txt. I need constructive feedback to send back."
+expected = "proposal-supervise"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "supervise-oblique"
+utterance = "One of my Master's students sent this in as submission-email.txt. What should I tell them?"
+expected = "proposal-supervise"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "supervise-collision"
+utterance = "Review this student submission in submission-email.txt and draft what I should reply."
+expected = "proposal-supervise"
+kind = "collision"
+lang = "en"
+
+# ---------- proposal-troubleshoot --------------------------------------------
+
+[[cases]]
+id = "troubleshoot-canonical"
+utterance = "The check script crashed with a traceback when I ran it on my proposal."
+expected = "proposal-troubleshoot"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "troubleshoot-oblique"
+utterance = "It keeps telling me the Evaluation section is missing, but it is clearly there. Something is wrong with your tooling."
+expected = "proposal-troubleshoot"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "troubleshoot-collision"
+utterance = "The review I got contradicts the rules the skill itself states. Is that a bug?"
+expected = "proposal-troubleshoot"
+kind = "collision"
+lang = "en"
+
+# ---------- negatives --------------------------------------------------------
+
+[[cases]]
+id = "negative-python-format"
+utterance = "Format this Python file according to PEP 8."
+expected = "none"
+kind = "negative"
+lang = "en"
+
+[[cases]]
+id = "negative-cv"
+utterance = "Write my CV for a PhD application."
+expected = "none"
+kind = "negative"
+lang = "en"
+
+[[cases]]
+id = "negative-paper-summary"
+utterance = "Summarize this paper I have to present in the seminar next week."
+expected = "none"
+kind = "negative"
+lang = "en"
+
+[[cases]]
+id = "negative-latex-lab-report"
+utterance = "Set up a LaTeX template for my lab report."
+expected = "none"
+kind = "negative"
+lang = "en"
+
+# ---------- German -----------------------------------------------------------
+
+[[cases]]
+id = "check-canonical-de"
+utterance = "Bitte prüfe typsystem-einheitenfehler.md auf formale Fehler."
+expected = "proposal-check"
+kind = "canonical"
+lang = "de"
+
+[[cases]]
+id = "review-canonical-de"
+utterance = "Kannst du typsystem-einheitenfehler.md inhaltlich begutachten? Ist das reif für meinen Betreuer?"
+expected = "proposal-review"
+kind = "canonical"
+lang = "de"
+
+[[cases]]
+id = "write-oblique-de"
+utterance = "Mach aus meinen Stichpunkten in data-drift-detection.md einen ausformulierten Entwurf."
+expected = "proposal-write"
+kind = "oblique"
+lang = "de"
+
+[[cases]]
+id = "ideate-oblique-de"
+utterance = "Ich habe nur eine vage Idee für meine Masterarbeit und weiß überhaupt nicht, wie ich anfangen soll."
+expected = "proposal-ideate"
+kind = "oblique"
+lang = "de"
+
+[[cases]]
+id = "publish-canonical-de"
+utterance = "Ich brauche ein PDF von typsystem-einheitenfehler.md zum Ausdrucken."
+expected = "proposal-publish"
+kind = "canonical"
+lang = "de"
+
+[[cases]]
+id = "supervise-canonical-de"
+utterance = "Ein Student hat mir diese Themenskizze geschickt (submission-email.txt). Ich möchte ihm konstruktives Feedback zurückgeben."
+expected = "proposal-supervise"
+kind = "canonical"
+lang = "de"
