@@ -1,0 +1,28 @@
+You are grading the information density of a thesis proposal's prose.
+
+[BEGIN DATA]
+[Task given to the model]: {question}
+[Produced proposal]: {answer}
+[Criterion]: {criterion}
+[END DATA]
+
+Read the proposal body (ignore the trailing metadata block). The rule under
+test: every sentence must carry information essential to THIS specific thesis.
+Grade PASS only if ALL hold:
+- No scene-setting openers or truisms ("Modern software systems are becoming
+  increasingly complex", "Quality is important in today's world").
+- No restatements of the obvious or of content already stated in another section.
+  A sentence that adds new thesis-specific detail to a prior point — a named
+  cause, mechanism, population, or consequence — is elaboration, not restatement.
+- No sentence that would stay equally true for any other thesis in the area
+  (the swap test: replace the topic noun and the sentence still reads fine).
+  Flag a sentence ONLY if it fails the swap test or adds no new specifics;
+  when unsure whether a sentence is filler, it is not.
+- TODO markers and visibly marked gaps are NOT defects — they are honest and
+  do not count against density.
+Length itself is never a defect: a long section whose every sentence is
+thesis-specific passes; a short section padded with generic sentences fails.
+When you fail the proposal, name at least one offending sentence.
+Grade FAIL otherwise.
+
+{instructions}

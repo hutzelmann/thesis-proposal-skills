@@ -20,14 +20,16 @@ from inspect_ai._util.registry import registry_info
 # The full task set with the scorer names each one registers. Update this map
 # in the same change that adds or renames a scorer — never to make a test pass.
 EXPECTED_SCORERS = {
-    "write_from_seed": ["write_l1", "write_l2_rq_quality"],
+    "write_from_seed": ["write_l1", "write_l2_rq_quality", "write_l2_density"],
     "review_fixture": ["review_l1", "review_l2_quality", "no_spurious_offer"],
+    "review_hollow": ["review_hollow_l1", "review_hollow_l2", "no_spurious_offer"],
     "title_alarm": ["title_l1", "title_l2_alarm"],
     "ideate_longrun": [
         "ideate_l1_seed", "ideate_l1_notes_progress",
         "ideate_l1_provenance", "ideate_l2_socratic",
     ],
     "ideate_stonewall": ["ideate_l1_early_stop", "ideate_l2_socratic"],
+    "ideate_probing": ["ideate_l1_early_stop", "ideate_l2_socratic"],
     "ideate_noidea": ["ideate_l2_socratic"],
     "ideate_outofscope": ["ideate_l2_socratic"],
     "check_report": ["check_report_l1"],
@@ -61,7 +63,9 @@ def test_l1_scorers_keep_the_marker_the_classifier_reads():
     counting on those tasks and fail models the exclusion was meant to spare."""
     deterministic = {
         name for names in EXPECTED_SCORERS.values() for name in names
-        if not name.endswith(("_l2", "_l2_quality", "_l2_alarm", "_l2_rq_quality", "_l2_socratic"))
+        if not name.endswith(
+            ("_l2", "_l2_quality", "_l2_alarm", "_l2_rq_quality", "_l2_socratic", "_l2_density")
+        )
     }
     unmarked = {
         name for name in deterministic

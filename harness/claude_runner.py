@@ -35,6 +35,7 @@ from l1_checks import (
     select_draft,
     verdict_check_report,
     verdict_draft,
+    verdict_hollow_review,
     verdict_ideate_scoped,
     verdict_import,
     verdict_review,
@@ -59,6 +60,15 @@ SCENARIOS = {
         "skill": "proposal-review",
         "proposal": "microservice-technical-debt.md",
         "request": "Please review my proposal microservice-technical-debt.md — "
+                   "is it ready for my supervisor?",
+    },
+    # check-clean but hollow: the run passes only on the no-viable-core verdict,
+    # judged by the pure L1 function alone — no model-graded scorer on this path
+    "review_hollow": {
+        "fixture": "f22-hollow-generic",
+        "skill": "proposal-review",
+        "proposal": "software-quality-ml.md",
+        "request": "Please review my proposal software-quality-ml.md — "
                    "is it ready for my supervisor?",
     },
     "write_from_seed": {
@@ -179,6 +189,9 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
     if name == "review_fixture":
         review_name = scenario["proposal"].replace(".md", "-review.md")
         return verdict_review(original, current, read(ws / review_name), review_name)
+    if name == "review_hollow":
+        review_name = scenario["proposal"].replace(".md", "-review.md")
+        return verdict_hollow_review(original, current, read(ws / review_name), review_name)
     if name == "write_from_seed":
         # the skill may draft into a fresh <slug>.md instead of the seed
         chosen, where = select_draft(workspace_markdown(ws), scenario["proposal"], original)

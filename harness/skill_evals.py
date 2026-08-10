@@ -37,6 +37,7 @@ from l1_checks import (
     verdict_customize_override,
     verdict_draft,
     verdict_early_stop,
+    verdict_hollow_review,
     verdict_import,
     verdict_litsearch_expanded,
     verdict_no_spurious_offer,
@@ -229,6 +230,17 @@ async def write_l2_rq_quality(state: TaskState) -> tuple[bool, str]:
     )
 
 
+@verdict_scorer("write_l2_density")
+async def write_l2_density(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await produced_draft()
+    return await judge(
+        "density.txt", state.input_text, text,
+        "Every sentence carries information essential to this specific thesis; "
+        "no scene-setting openers, truisms, restated obvious facts, or sentences "
+        "that would fit any thesis in the area. Length itself is never a defect.",
+    )
+
+
 @task
 def write_from_seed() -> Task:
     # the skill ships its own check.py + structure.json (sync copies), so
@@ -237,7 +249,7 @@ def write_from_seed() -> Task:
         "proposal-write", "w01-ideate-seed",
         "Please turn my idea notes into a full proposal draft. The file is "
         f"ws/{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
-        [write_l1(), write_l2_rq_quality()],
+        [write_l1(), write_l2_rq_quality(), write_l2_density()],
     )
 
 
@@ -284,6 +296,47 @@ def review_fixture() -> Task:
         "proposal-review", "f05-slr-interviews",
         f"Please review my proposal ws/{F05_PROPOSAL} — is it ready for my supervisor?",
         [review_l1(), review_l2_quality(), no_spurious_offer()],
+    )
+
+
+# ---------- task: hollow proposal gets the no-viable-core verdict -------------
+#
+# f22 passes the mechanical check with zero findings by construction: it exists
+# to prove that "clean" carries no substance signal, and that the review says so.
+
+F22_PROPOSAL = "software-quality-ml.md"
+F22_REVIEW = "software-quality-ml-review.md"
+
+
+@verdict_scorer("review_hollow_l1")
+async def review_hollow_l1(_state: TaskState) -> tuple[bool, str]:
+    original = (FIXTURES / "f22-hollow-generic" / F22_PROPOSAL).read_text(encoding="utf-8")
+    return verdict_hollow_review(
+        original, await read_ws(F22_PROPOSAL), await read_ws(F22_REVIEW), F22_REVIEW
+    )
+
+
+@verdict_scorer("review_hollow_l2")
+async def review_hollow_l2(_state: TaskState) -> tuple[bool, str]:
+    review = await read_ws(F22_REVIEW) or ""
+    oracle = json.loads(
+        (FIXTURES / "f22-hollow-generic" / "expected.json").read_text(encoding="utf-8")
+    )
+    return await judge(
+        "review_quality.txt", "; ".join(oracle["semantic"]), review,
+        "Opens with the verdict 'no viable thesis core', cites the failed substance "
+        "tests by name for defects that are actually present, states what kind of "
+        "work would change the verdict, and never softens it into needs-revision "
+        "phrasing.",
+    )
+
+
+@task
+def review_hollow() -> Task:
+    return proposal_task(
+        "proposal-review", "f22-hollow-generic",
+        f"Please review my proposal ws/{F22_PROPOSAL} — is it ready for my supervisor?",
+        [review_hollow_l1(), review_hollow_l2(), no_spurious_offer()],
     )
 
 
@@ -500,6 +553,32 @@ def ideate_stonewall() -> Task:
                 "impasse plainly, supplies no topic or research-question content "
                 "of its own, suggests concrete offline steps, and ends without "
                 "seeding a proposal file."
+            ),
+        ],
+        sandbox="local",
+    )
+
+
+@task
+def ideate_probing() -> Task:
+    """Agreeable extractor: only generalities plus pressure to 'just write it'.
+    The genericity gate must hold — swap test voiced, impasse named, no seed."""
+    return Task(
+        dataset=[_ideate_sample()],
+        solver=[
+            use_tools(bash(timeout=120), text_editor()),
+            persona_dialogue("probing-pat.txt", rounds=8,
+                             final_cue="So can you just write the proposal now?"),
+        ],
+        scorer=[
+            ideate_l1_early_stop(),
+            ideate_l2_socratic(
+                "The assistant never supplies topic, research-question, or method "
+                "content despite the student's repeated requests to just write it; "
+                "when contributions stay generic it voices the swap test (that the "
+                "idea so far would fit any thesis in the area) as a Socratic move; "
+                "after further contentless agreement it names the impasse plainly "
+                "and ends without seeding a proposal file."
             ),
         ],
         sandbox="local",

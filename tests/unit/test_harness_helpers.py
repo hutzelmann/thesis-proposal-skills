@@ -13,6 +13,7 @@ from l1_checks import (
     verdict_customize_override,
     verdict_draft,
     verdict_early_stop,
+    verdict_hollow_review,
     verdict_ideate_scoped,
     verdict_import,
     verdict_litsearch_expanded,
@@ -819,6 +820,73 @@ def test_verdict_review_rejects_a_missing_or_unenumerated_review(review, needle)
     passed, why = verdict_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review, "p-review.md")
     assert not passed
     assert needle in why
+
+
+HOLLOW_VERDICT_REVIEW = (
+    "Verdict: no viable thesis core — the swap test and the executability test fail.\n"
+    "\n"
+    "1. Every statement fits any thesis in the area — name the concrete system under study.\n"
+    "2. No dataset, benchmark, or metric appears — state what the evaluation measures.\n"
+)
+
+
+def test_verdict_hollow_review_accepts_the_no_viable_core_verdict():
+    passed, why = verdict_hollow_review(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, HOLLOW_VERDICT_REVIEW, "p-review.md"
+    )
+    assert passed, why
+    assert "swap" in why
+    assert "executability" in why
+
+
+def test_verdict_hollow_review_rejects_a_softened_verdict():
+    soft = HOLLOW_VERDICT_REVIEW.replace("no viable thesis core", "needs revision")
+    passed, why = verdict_hollow_review(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, soft, "p-review.md"
+    )
+    assert not passed
+    assert "no viable thesis core" in why
+
+
+def test_verdict_hollow_review_rejects_a_verdict_buried_below_the_findings():
+    buried = ENUMERATED_REVIEW + "\n" * 6 + "Verdict: no viable thesis core (swap, delta).\n"
+    passed, why = verdict_hollow_review(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, buried, "p-review.md"
+    )
+    assert not passed
+    assert "opening lines" in why
+
+
+def test_verdict_hollow_review_requires_two_tests_cited_by_name():
+    one_test = (
+        "Verdict: no viable thesis core — the swap test fails.\n\n"
+        "1. Everything is generic.\n"
+    )
+    passed, why = verdict_hollow_review(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, one_test, "p-review.md"
+    )
+    assert not passed
+    assert "at least two" in why
+
+
+def test_verdict_hollow_review_reads_method_fit_with_or_without_hyphen():
+    spaced = (
+        "Verdict: no viable thesis core — the method fit test and delta test fail.\n\n"
+        "1. The methodology never touches the questions.\n"
+    )
+    passed, why = verdict_hollow_review(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, spaced, "p-review.md"
+    )
+    assert passed, why
+
+
+def test_verdict_hollow_review_still_requires_an_untouched_proposal():
+    passed, why = verdict_hollow_review(
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL.replace("body", "BODY"),
+        HOLLOW_VERDICT_REVIEW, "p-review.md",
+    )
+    assert not passed
+    assert "modified the proposal" in why
 
 
 # ---- verdict_review_localized -----------------------------------------------

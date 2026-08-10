@@ -1,0 +1,21 @@
+{
+  "fixture": "f22-hollow-generic",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "Swap test: every core statement stays plausible after replacing machine learning or software quality with a neighboring topic; nothing is specific to this thesis",
+    "Delta test: the contribution section restates the field and names no extension beyond the cited work",
+    "Executability test: no object of study is named anywhere — no dataset, benchmark, system, metric, or population; the evaluation restates the research questions instead of describing analyses",
+    "Falsifiability: the research questions are phrased analytically but no outcome could count as a negative result as long as no measurable criterion exists",
+    "Title names a field-sized ambition (improving software quality with machine learning) rather than a thesis — the vagueness alarm class, invisible to the mechanical tells",
+    "Mechanically clean by construction: the fixture proves that zero check findings carry no substance signal"
+  ]
+}

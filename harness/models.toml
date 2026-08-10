@@ -93,6 +93,7 @@ matrix = [
   "write_from_seed",
   "review_fixture",
   "review_fixture_de",
+  "review_hollow",
   "title_alarm",
   "ideate_longrun",
   "customize_override",
@@ -106,14 +107,14 @@ matrix = [
 # troubleshoot_model_rung is here rather than in the matrix on purpose: the
 # negative half of the offer discipline already rides along on review_fixture at
 # no extra cost, so the rung probe does not need to be paid for on every model.
-extended = ["ideate_stonewall", "ideate_outofscope", "troubleshoot_model_rung"]
+extended = ["ideate_stonewall", "ideate_outofscope", "ideate_probing", "troubleshoot_model_rung"]
 # Smoke subset: cheap, short, high signal.
 core = ["write_from_seed", "import_messy", "customize_override"]
 # Heavy dialogue tasks: reduced to 1 epoch on frontier-tier models.
 heavy = ["ideate_longrun"]
 # Tasks whose *_l1* scorers are environment-fidelity probes (red-by-design on
 # the Inspect path): structural scores ignored, rubric (*_l2*) scores count.
-excluded_l1 = ["title_alarm", "review_fixture", "review_fixture_de"]
+excluded_l1 = ["title_alarm", "review_fixture", "review_fixture_de", "review_hollow"]
 excluded = ["check_report", "check_report_hardened", "ideate_noidea", "litsearch_expand"]
 
 # Task -> skill under test; verdict notes name skills, not harness task ids.
@@ -121,9 +122,11 @@ excluded = ["check_report", "check_report_hardened", "ideate_noidea", "litsearch
 write_from_seed = "proposal-write"
 review_fixture = "proposal-review"
 review_fixture_de = "proposal-review"
+review_hollow = "proposal-review"
 title_alarm = "proposal-review"
 ideate_longrun = "proposal-ideate"
 ideate_stonewall = "proposal-ideate"
+ideate_probing = "proposal-ideate"
 ideate_outofscope = "proposal-ideate"
 customize_override = "proposal-customize"
 publish_build = "proposal-publish"
@@ -146,6 +149,7 @@ default = { input = 250000, output = 12000 }
 publish_build = { input = 120000, output = 6000 }
 ideate_longrun = { input = 700000, output = 20000 }
 ideate_stonewall = { input = 200000, output = 8000 }
+ideate_probing = { input = 250000, output = 9000 }
 ideate_outofscope = { input = 200000, output = 8000 }
 import_messy = { input = 150000, output = 6000 }
 

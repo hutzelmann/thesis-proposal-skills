@@ -461,6 +461,30 @@ def verdict_review_localized(original: str, current: str | None, review: str | N
     return True, f"{language} review file present, proposal untouched"
 
 
+SUBSTANCE_TESTS = ("delta", "falsifiability", "swap", "method-fit", "executability")
+
+
+def verdict_hollow_review(original: str, current: str | None, review: str | None,
+                          review_name: str) -> tuple[bool, str]:
+    """review_hollow: on a mechanically clean but generic proposal, the review
+    opens with the no-viable-core verdict and cites at least two substance
+    tests by name (skill-review spec: three-tier substance verdict). Whether
+    the review says what would change the verdict is judged by the L2 rubric.
+    Case-insensitive like every prose-relaying verdict."""
+    ok, why = verdict_review(original, current, review, review_name)
+    if not ok:
+        return False, why
+    head = " ".join((review or "").splitlines()[:5]).lower()
+    if "no viable thesis core" not in head:
+        return False, "verdict 'no viable thesis core' not in the review's opening lines"
+    low = (review or "").lower().replace("method fit", "method-fit")
+    cited = [t for t in SUBSTANCE_TESTS if t in low]
+    if len(cited) < 2:
+        return False, (f"substance tests cited: {', '.join(cited) or 'none'} — "
+                       "at least two expected by name")
+    return True, f"no-viable-core verdict, tests cited: {', '.join(cited)}"
+
+
 def verdict_litsearch_expanded(text: str | None, before: int = 3) -> tuple[bool, str]:
     """lit-search: the reference list grew and carries no duplicate ids.
 

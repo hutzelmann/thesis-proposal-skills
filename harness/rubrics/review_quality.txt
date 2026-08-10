@@ -13,6 +13,11 @@ Grade PASS only if ALL hold:
   ordering, or markup/formatting conventions (content-only mandate).
 - If grammar/spelling is mentioned at all, it is a brief closing hint with at
   most two examples — never an exhaustive list.
+- Neutral constructive tone throughout: no praise of the student or their draft
+  ("great idea", "excellent proposal", "well done"), no self-congratulation by
+  the reviewer, no softening filler before findings. Plain statements of what
+  is fine are acceptable; compliments are not.
+- The [Criterion] stated above holds in full.
 Grade FAIL otherwise.
 
 {instructions}
