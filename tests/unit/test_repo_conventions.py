@@ -118,3 +118,37 @@ def test_every_verdict_has_an_l0_test(verdict):
         f"{verdict} has no test under tests/unit/ — a verdict without one is "
         "logic that only a metered eval run can exercise"
     )
+
+
+def test_private_local_paths_stay_unnamed():
+    """The paths in `.git/info/exclude` are private by definition — a committed
+    file naming one advertises where sensitive local material lives. The
+    entries are read at runtime so this test never has to name them either.
+    Skips off this machine (fresh clones and CI have an empty exclude file);
+    the immutable archive under openspec/changes/archive/ is exempt as history.
+    """
+    exclude = REPO / ".git" / "info" / "exclude"
+    if not exclude.exists():
+        pytest.skip("no .git/info/exclude here")
+    private = [
+        line.strip().strip("/")
+        for line in exclude.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    if not private:
+        pytest.skip("no private local paths declared")
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files"], capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    offenders = []
+    for rel in tracked:
+        if rel.startswith("openspec/changes/archive/"):
+            continue
+        try:
+            text = (REPO / rel).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, FileNotFoundError):
+            continue
+        offenders.extend(f"{rel}: names `{name}/`" for name in private if name + "/" in text)
+    assert not offenders, "\n".join(offenders)

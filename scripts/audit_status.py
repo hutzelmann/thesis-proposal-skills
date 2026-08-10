@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Post-publish confirmation: fetch the skills.sh audit verdicts for all eight
-skills and diff them against the committed audit-baseline.json.
+"""Post-publish confirmation: fetch the skills.sh audit verdicts for every
+shipped skill and diff them against the committed audit-baseline.json.
 
 Verdicts drift both through our publishes and through provider-side re-scans,
 so a zero-diff run is the only evidence the published state is what we think
-it is. `--update` rewrites the baseline after a reviewed change.
+it is. `--update` rewrites the baseline after a reviewed change. A skill the
+site does not know yet (HTTP 404 — shipped here but never published) is
+recorded as null rather than failing the run, so the baseline names it and
+the first publish shows up as drift.
 
 Usage: uv run python scripts/audit_status.py [--update]
 Exit codes: 0 = matches baseline (or baseline updated), 1 = drift, 2 = fetch failure.
@@ -22,10 +25,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 BASELINE = REPO / "audit-baseline.json"
 API = "https://skills.sh/api/v1/skills/audit/hutzelmann/thesis-proposal-skills/{skill}"
-SKILLS = [
-    "proposal-check", "proposal-customize", "proposal-ideate", "proposal-import",
-    "proposal-lit-search", "proposal-publish", "proposal-review", "proposal-write",
-]
+# derived, not listed: audit_scan.py globs the same directories, and a listed
+# roster is how proposal-troubleshoot went unmonitored for four days
+SKILLS = sorted(p.name for p in (REPO / "skills").glob("proposal-*") if p.is_dir())
 
 
 def normalize(payload: dict) -> dict:
@@ -43,8 +45,8 @@ def normalize(payload: dict) -> dict:
 def diff(baseline: dict, current: dict) -> list[str]:
     lines: list[str] = []
     for skill in sorted(set(baseline) | set(current)):
-        base_providers = baseline.get(skill, {})
-        cur_providers = current.get(skill, {})
+        base_providers = baseline.get(skill) or {}  # null = recorded as unpublished
+        cur_providers = current.get(skill) or {}
         for provider in sorted(set(base_providers) | set(cur_providers)):
             before = base_providers.get(provider)
             after = cur_providers.get(provider)
@@ -59,8 +61,13 @@ def fetch_all() -> dict:
         request = urllib.request.Request(
             API.format(skill=skill), headers={"User-Agent": "thesis-proposal-skills audit poller"}
         )
-        with urllib.request.urlopen(request, timeout=30) as response:
-            verdicts[skill] = normalize(json.load(response))
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                verdicts[skill] = normalize(json.load(response))
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+            verdicts[skill] = None  # shipped here, never published
     return verdicts
 
 

@@ -31,6 +31,11 @@ dev = "python harness/claude_runner.py"
 audit = "python scripts/audit_scan.py"
 audit-status = "python scripts/audit_status.py"
 identify = "python scripts/identify_release.py"
+# the one place the OpenSpec CLI version is pinned; CI calls this task
+specs = "npx -y @fission-ai/openspec@1.7.0 validate --all --strict"
+_sync_dev = "uv sync --dev"
+_hooks = "git config core.hooksPath .githooks"
+setup = ["_sync_dev", "_hooks"]
 
 [tool.poe.tasks.smoke]
 cmd = "python harness/matrix.py --models claude-haiku-4.5 --core --epochs 1"

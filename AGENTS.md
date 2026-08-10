@@ -4,7 +4,7 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ## What this repo is
 
-`thesis-proposal-skills`: nine `proposal-*` agent skills (under `skills/`) that help students write thesis proposals, plus the machinery to test them. Users install the skills into their own workspace; their proposals never live here. Real proposals sit in the untracked `confidential/` directory — never commit, copy, or quote its contents. Developer credentials live in the gitignored `.env` (template: `.env.example`), not in `confidential/`.
+`thesis-proposal-skills`: nine `proposal-*` agent skills (under `skills/`) that help students write thesis proposals, plus the machinery to test them. Users install the skills into their own workspace; their proposals never live here. Real proposals sit in a private local directory kept out of version control via `.git/info/exclude` — never commit, copy, quote, or name its contents. Developer credentials live in the gitignored `.env` (template: `.env.example`), never beside the real proposals.
 
 ## Spec-first workflow (mandatory)
 
@@ -18,7 +18,7 @@ Instructions for AI agents working **on this repository** (skill development and
 - **Never edit generated copies.** Files marked GENERATED (skill `references/`, vendored scripts in `skills/proposal-import/scripts/` and `skills/proposal-write/scripts/`) come from `shared/` or sibling skills; edit the source, then run `python3 scripts/sync_shared.py`. CI fails on drift.
 - **Fixtures are synthetic.** Nothing derived verbatim from real proposals; personal data obviously fake (`Erika Musterfrau`, matriculation `00000000`). Every proposal fixture carries an `expected.json` oracle calibrated against `skills/proposal-check/scripts/check.py`; non-proposal web fixtures (`g` prefix) ship none.
 - **Git**: work directly on `main`, no branches or worktrees; commit per completed OpenSpec change. Do not push and do not publish to skills.sh — both happen only on explicit request.
-- **Credentials**: dev-side keys live in the gitignored `.env` at the repo root (`cp .env.example .env`, fill in) or in the environment; never hardcode, log, or commit them, and never store keys in `confidential/` — that directory holds real proposals only. User-side scripts resolve keys via environment, then `$THESIS_PROPOSAL_KEYS`, then `api-keys.env` in the working directory, then `~/.config/thesis-proposal/api-keys.env` — never by searching ancestor directories.
+- **Credentials**: dev-side keys live in the gitignored `.env` at the repo root (`cp .env.example .env`, fill in) or in the environment; never hardcode, log, or commit them, and never store keys in the private proposals directory — it holds real proposals only. User-side scripts resolve keys via environment, then `$THESIS_PROPOSAL_KEYS`, then `api-keys.env` in the working directory, then `~/.config/thesis-proposal/api-keys.env` — never by searching ancestor directories.
 
 ## Python conventions
 
@@ -58,9 +58,11 @@ function name.
 Registered poe tasks (`[tool.poe.tasks]` in `pyproject.toml`) are the canonical entry points:
 
 ```sh
+uv run poe setup                   # once per clone: dev env + core.hooksPath (pre-commit sync hook)
 uv run poe test                    # L0 chain: pytest + ruff + generated-copy drift check — must stay green
 uv run poe test-fast               # inner loop: parallel, without the pandoc/typst builds (~3s)
-uv run poe cov                     # coverage with the 70% floor
+uv run poe cov                     # coverage with the 78% floor
+uv run poe specs                   # openspec validate --all --strict, CLI version pinned here for CI
 uv run poe dev <scenario> --model haiku   # dev loop, subscription (claude_runner passthrough)
 uv run poe smoke                   # metered smoke: 1 cheap model × core tasks × 1 epoch (cost-gated)
 uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # model-support matrix, cost-gated

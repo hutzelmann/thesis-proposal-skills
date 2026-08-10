@@ -1,5 +1,9 @@
 # Thesis Proposal Skills
 
+[![CI](https://img.shields.io/github/actions/workflow/status/hutzelmann/thesis-proposal-skills/ci.yml?branch=main&label=CI)](https://github.com/hutzelmann/thesis-proposal-skills/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/hutzelmann/thesis-proposal-skills)](LICENSE.txt)
+[![skills.sh](https://img.shields.io/badge/skills.sh-install-2ea44f)](https://www.skills.sh/hutzelmann/thesis-proposal-skills)
+
 Write a convincing Bachelor's or Master's thesis proposal with the help of an AI agent, in English or German.
 
 **The idea stays yours.** The agent does not invent your topic, and it does not steer you toward one it happens to like. It works on the idea you bring: it asks the questions your supervisor would ask, checks whether the field has already answered them, and condenses your own answers into a clean, professional proposal. Keeping you focused and on track is its job; every decision that shapes the thesis stays yours.

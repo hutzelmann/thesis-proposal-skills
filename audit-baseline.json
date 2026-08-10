@@ -97,6 +97,7 @@
       "status": "pass"
     }
   },
+  "proposal-troubleshoot": null,
   "proposal-write": {
     "Gen Agent Trust Hub": {
       "riskLevel": "SAFE",

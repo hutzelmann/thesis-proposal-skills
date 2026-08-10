@@ -15,14 +15,14 @@ jobs:
           python-version: "3.12"
       - name: Sync dev environment
         run: uv sync --dev
-      - name: Lint
-        run: uv run ruff check .
-      - name: L0 tests (no model calls)
-        run: uv run pytest tests/unit/ -q
-      - name: Generated-copy drift check
-        run: uv run python scripts/sync_shared.py --check
-      - name: Spec validation
-        run: npx -y @fission-ai/openspec@latest validate --all --strict
+      # The gate is the poe task, not a restatement of its steps: a change to
+      # what `poe test` runs reaches CI without editing this file.
+      - name: L0 gate (pytest + ruff + drift)
+        run: uv run poe test
+      - name: Coverage floor
+        run: uv run poe cov
+      - name: Spec validation (pinned in the poe task)
+        run: uv run poe specs
 
   # Export tiers are verified by building real documents. The l0 job has no
   # document toolchain, so those tests skip there; these two jobs supply it from
