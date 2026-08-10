@@ -697,14 +697,14 @@ def test_verdict_title_alarm_rejects_a_missing_or_unenumerated_review():
 PROPOSAL_TEXT = "# Introduction to the Topic\n\nbody\n"
 GOOD_OVERRIDE = (
     "# Workspace guidelines\n\n"
-    "```toml\nmin_references = 8\ntimeline_detail = \"detailed\"\n```\n"
+    "```toml\n[references]\nmin_count = 8\n\n[timeline]\ndetail = \"detailed\"\n```\n"
 )
 
 
 def test_customize_override_accepts_the_requested_settings():
     passed, why = verdict_customize_override(PROPOSAL_TEXT, PROPOSAL_TEXT, GOOD_OVERRIDE)
     assert passed, why
-    assert "min_references=8" in why
+    assert "min_count=8" in why
 
 
 def test_customize_override_rejects_a_modified_proposal():
@@ -718,9 +718,12 @@ def test_customize_override_rejects_a_modified_proposal():
 @pytest.mark.parametrize(("guidelines", "needle"), [
     (None, "not created"),
     ("no fenced block here", "no fenced TOML block"),
-    ("```toml\nmin_references = = 8\n```", "does not parse"),
-    ('```toml\nmin_references = 3\ntimeline_detail = "detailed"\n```', "min_references is 3"),
-    ("```toml\nmin_references = 8\n```", "timeline_detail"),
+    ("```toml\n[references]\nmin_count = = 8\n```", "does not parse"),
+    ('```toml\n[references]\nmin_count = 3\n\n[timeline]\ndetail = "detailed"\n```',
+     "min_count is 3"),
+    ("```toml\n[references]\nmin_count = 8\n```", "[timeline] detail"),
+    # the pre-migration flat shape buys the workspace nothing and must not pass
+    ('```toml\nmin_references = 8\ntimeline_detail = "detailed"\n```', "min_count is None"),
 ])
 def test_customize_override_rejects_a_bad_override(guidelines, needle):
     passed, why = verdict_customize_override(PROPOSAL_TEXT, PROPOSAL_TEXT, guidelines)
@@ -731,7 +734,7 @@ def test_customize_override_rejects_a_bad_override(guidelines, needle):
 def test_customize_override_accepts_a_case_insensitive_detail_value():
     """The check script lowercases the mode, so the verdict must not be stricter
     than the script it is grading."""
-    override = '```toml\nmin_references = 8\ntimeline_detail = "Detailed"\n```'
+    override = '```toml\n[references]\nmin_count = 8\n\n[timeline]\ndetail = "Detailed"\n```'
     passed, why = verdict_customize_override(PROPOSAL_TEXT, PROPOSAL_TEXT, override)
     assert passed, why
 

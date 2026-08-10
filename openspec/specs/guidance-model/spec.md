@@ -61,17 +61,29 @@ The default guidance SHALL forbid: work plans, phase breakdowns and milestone ta
 - **THEN** it states that proposals stay anonymous and identification happens through the hand-in channel, not the document
 
 ### Requirement: Workspace override file
-A user-owned `guidelines.md` in the workspace SHALL override/extend defaults. It consists of a machine-readable fenced TOML block (keys include `required_sections`, `forbidden_sections`, `page_limit`, `min_references`, `timeline_detail`) plus freeform prose. Merge semantics: a user key wins over the default per key; list values replace defaults entirely; a default-forbidden section may be allowed again. Absent file means pure defaults.
+A user-owned `guidelines.md` in the workspace SHALL override/extend defaults. It consists of a machine-readable fenced TOML block plus freeform prose. Absent file means pure defaults.
 
-`timeline_detail` SHALL accept `simple` (the default) or `detailed`. Under `detailed` the timeline size constraint SHALL NOT apply and the work-plan heading patterns SHALL NOT be forbidden, so a program that mandates a phase table can have one without abandoning the rest of the defaults.
+Every override key SHALL be the same key path the value occupies in the structured guidance data. There SHALL be exactly one naming rule: no hand-named aliases, and no flat spelling accepted alongside a nested one. The overridable set SHALL cover the reference minimum, the required-section list, the forbidden-heading list, the timeline detail mode, the page limit, and the research-question count bounds.
+
+Merge semantics: a user key wins over the default per key; list values replace defaults entirely; a default-forbidden section may be allowed again by omitting it from the replacement list.
+
+The timeline detail mode SHALL accept `simple` (the default) or `detailed`. Under `detailed` the timeline size constraint SHALL NOT apply and the work-plan heading patterns SHALL NOT be forbidden, so a program that mandates a phase table can have one without abandoning the rest of the defaults.
 
 #### Scenario: Supervisor requires a detailed work plan
-- **WHEN** `guidelines.md` sets `timeline_detail = "detailed"`
+- **WHEN** `guidelines.md` sets the timeline detail mode to `detailed`
 - **THEN** checks accept a timeline section containing a phase or milestone table, and work-plan headings are no longer reported as forbidden
 
 #### Scenario: Raised reference minimum
-- **WHEN** `guidelines.md` sets `min_references = 8`
+- **WHEN** `guidelines.md` raises the reference minimum to 8
 - **THEN** a proposal with 5 references fails the reference-count check
+
+#### Scenario: Research-question bounds overridden
+- **WHEN** `guidelines.md` sets the research-question upper bound to 3
+- **THEN** a proposal declaring four research questions fails the count check
+
+#### Scenario: Override key mirrors the structure path
+- **WHEN** a value is nested in the structured guidance data
+- **THEN** the override key for it is nested identically, and no alternative spelling is honoured
 
 ### Requirement: Thesis title quality
 The guidance SHALL govern the proposal's own thesis title, stating that it is printed on the student's final study certificate and therefore outlives the document. A title SHALL name what is contributed and what it is contributed about, at a level of abstraction that stays true when the tool used to produce it is replaced. It SHALL stand on its own: the rendered title page carries title and subtitle, but the certificate carries the title alone, so the title SHALL NOT depend on the subtitle or on any surrounding context to be understood. It SHALL state its subject rather than pose a question, and SHALL stay within the documented word bounds, whose minimum is per language because German compounds into one noun what English spreads over several. A concrete technology, product, vendor, or company name MAY appear only as a scope qualifier, and only once the student has stated why that technology is the object of study rather than the instrument of it.

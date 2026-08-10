@@ -55,7 +55,7 @@ def test_detailed_timeline_needs_the_override(tmp_path):
     the phase table under `# Timeline` is then a size-guard error."""
     source = (FIXTURES / "w02-override-workspace" / "ml-code-review.md").read_text()
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source)  # no guidelines.md next to it -> timeline_detail defaults to simple
+    victim.write_text(source)  # no guidelines.md next to it -> [timeline] detail is simple
     result = run_check(victim)
     assert "table in `Timeline`" in result.stdout
     assert "forbidden section: `Timeline`" not in result.stdout  # it is a canonical title now
@@ -65,7 +65,8 @@ def test_detailed_mode_also_unforbids_work_plan_headings(tmp_path):
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
     victim = tmp_path / "ml-code-review.md"
     victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"))
-    (tmp_path / "guidelines.md").write_text('```toml\ntimeline_detail = "detailed"\n```\n')
+    (tmp_path / "guidelines.md").write_text(
+        '```toml\n[timeline]\ndetail = "detailed"\n```\n')
     result = run_check(victim)
     assert "matches `milestones`" not in result.stdout
 
@@ -82,10 +83,44 @@ def test_unknown_timeline_detail_is_reported(tmp_path):
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
     victim = tmp_path / "ml-code-review.md"
     victim.write_text(source)
-    (tmp_path / "guidelines.md").write_text('```toml\ntimeline_detail = "gantt"\n```\n')
+    (tmp_path / "guidelines.md").write_text('```toml\n[timeline]\ndetail = "gantt"\n```\n')
     result = run_check(victim)
-    assert "unknown timeline_detail `gantt`" in result.stdout
+    assert "unknown [timeline] detail `gantt`" in result.stdout
     assert result.returncode == 1
+
+
+def test_retired_override_key_is_reported_not_ignored(tmp_path):
+    """A workspace whose overrides quietly stopped applying is worse off than one
+    that fails: the settings look present and do nothing."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source)
+    (tmp_path / "guidelines.md").write_text("```toml\nmin_references = 8\n```\n")
+    result = run_check(victim)
+    assert "`min_references` was replaced by `[references] min_count`" in result.stdout
+    assert result.returncode == 1
+    # and the retired key is genuinely not honoured
+    assert "at least 8 required" not in result.stdout
+
+
+def test_unknown_override_key_is_reported(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source)
+    (tmp_path / "guidelines.md").write_text(
+        "```toml\n[references]\nmin_cout = 8\n```\n")  # typo
+    result = run_check(victim)
+    assert "unknown workspace override `[references] min_cout`" in result.stdout
+
+
+def test_research_question_bounds_are_overridable(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source)  # three questions
+    (tmp_path / "guidelines.md").write_text(
+        "```toml\n[research_questions]\nmax_count = 2\n```\n")
+    result = run_check(victim)
+    assert "3 research questions — at most 2 allowed" in result.stdout
 
 
 def test_level2_sections_still_checked(tmp_path):
@@ -371,18 +406,18 @@ def test_length_estimate_stays_silent_within_limit():
 
 
 def test_length_estimate_respects_override(tmp_path):
-    """A workspace page_limit both relaxes and tightens the default."""
+    """A workspace page limit both relaxes and tightens the default."""
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
     victim = tmp_path / "long.md"
     victim.write_text(inflate(source, 2600))
-    (tmp_path / "guidelines.md").write_text("```toml\npage_limit = 10\n```\n")
+    (tmp_path / "guidelines.md").write_text("```toml\n[length]\npage_limit = 10\n```\n")
     assert "estimated length" not in run_check(victim).stdout
 
     tight = tmp_path / "tight"
     tight.mkdir()
     short = tight / "short.md"
     short.write_text(inflate(source, 600))
-    (tight / "guidelines.md").write_text("```toml\npage_limit = 1\n```\n")
+    (tight / "guidelines.md").write_text("```toml\n[length]\npage_limit = 1\n```\n")
     out = run_check(short).stdout
     assert "estimated length" in out
     assert "1-page limit" in out
@@ -396,24 +431,26 @@ def test_page_limit_override_must_be_a_positive_number(tmp_path, value):
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
     victim = tmp_path / "typed.md"
     victim.write_text(source)
-    (tmp_path / "guidelines.md").write_text(f"```toml\npage_limit = {value}\n```\n")
+    (tmp_path / "guidelines.md").write_text(
+        f"```toml\n[length]\npage_limit = {value}\n```\n")
     result = run_check(victim)
     assert result.returncode == 1
-    assert "page_limit must be a positive number" in result.stdout
+    assert "[length] page_limit must be a positive number" in result.stdout
     assert "digest: sha256:" in result.stdout
 
 
 @pytest.mark.parametrize("value", ['"8"', "-5", "true"])
 def test_min_references_override_must_be_a_non_negative_integer(tmp_path, value):
-    """Same degradation for min_references: error plus the default minimum,
-    which the clean fixture satisfies — so no shortfall error alongside."""
+    """Same degradation for the reference minimum: error plus the default, which
+    the clean fixture satisfies — so no shortfall error alongside."""
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
     victim = tmp_path / "typed.md"
     victim.write_text(source)
-    (tmp_path / "guidelines.md").write_text(f"```toml\nmin_references = {value}\n```\n")
+    (tmp_path / "guidelines.md").write_text(
+        f"```toml\n[references]\nmin_count = {value}\n```\n")
     result = run_check(victim)
     assert result.returncode == 1
-    assert "min_references must be a non-negative integer" in result.stdout
+    assert "[references] min_count must be a non-negative integer" in result.stdout
     assert "references — at least" not in result.stdout
 
 

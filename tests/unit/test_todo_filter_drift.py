@@ -17,7 +17,7 @@ STRUCTURE = json.loads((REPO / "shared" / "structure.json").read_text(encoding="
 
 
 def test_lua_scanner_matches_the_canonical_marker():
-    marker = STRUCTURE["todo_marker"]
+    marker = STRUCTURE["todo"]["marker"]
     # the canonical regex is "\[TODO:[^\]]*\]" — derive its literal opening
     # token rather than restating it, so a rename of the marker fails here
     opening = re.match(r"^\\\[([A-Za-z]+):", marker)

@@ -1,6 +1,9 @@
 {
   "_comment": "Single source of truth for the mechanically checkable proposal skeleton. Semantic rules live in shared/guidelines/guidelines.md. Synced into skills by scripts/sync_shared.py.",
-  "min_references": 3,
+  "_override_comment": "A workspace guidelines.md overrides a value by naming the same key path it has here — [references] min_count, [length] page_limit, and so on. One rule, no aliases: a key that does not resolve to an overridable leaf is reported as an error rather than ignored.",
+  "references": {
+    "min_count": 3
+  },
   "sections": {
     "order": [
       "introduction",
@@ -66,24 +69,30 @@
       ]
     }
   },
-  "forbidden_heading_patterns": [
-    "time plan", "schedule",
-    "workplan", "work plan", "milestones", "gantt", "work package", "workpackage",
-    "arbeitsplan", "meilensteine", "arbeitspaket",
-    "expected results", "erwartete ergebnisse",
-    "thesis structure", "preliminary structure", "chapter structure", "gliederung",
-    "supervisor", "betreuer",
-    "deliverables"
-  ],
-  "_work_plan_comment": "Subset of forbidden_heading_patterns dropped when timeline_detail = detailed. `time plan` and `schedule` stay forbidden even then: they are rival names for the canonical timeline section, not work-plan markers.",
-  "work_plan_heading_patterns": [
-    "workplan", "work plan", "milestones", "gantt", "work package", "workpackage",
-    "arbeitsplan", "meilensteine", "arbeitspaket"
-  ],
+  "_work_plan_comment": "work_plan_patterns is the subset of heading_patterns dropped when [timeline] detail = detailed. `time plan` and `schedule` stay forbidden even then: they are rival names for the canonical timeline section, not work-plan markers.",
+  "forbidden": {
+    "heading_patterns": [
+      "time plan", "schedule",
+      "workplan", "work plan", "milestones", "gantt", "work package", "workpackage",
+      "arbeitsplan", "meilensteine", "arbeitspaket",
+      "expected results", "erwartete ergebnisse",
+      "thesis structure", "preliminary structure", "chapter structure", "gliederung",
+      "supervisor", "betreuer",
+      "deliverables"
+    ],
+    "work_plan_patterns": [
+      "workplan", "work plan", "milestones", "gantt", "work package", "workpackage",
+      "arbeitsplan", "meilensteine", "arbeitspaket"
+    ],
+    "confidentiality_patterns": [
+      "confidential", "internal use only", "do not distribute", "non-disclosure", "NDA",
+      "vertraulich", "nur für den internen gebrauch", "geheim"
+    ]
+  },
   "timeline": {
     "max_body_lines": 3,
     "detail_modes": ["simple", "detailed"],
-    "default_detail": "simple"
+    "detail": "simple"
   },
   "_length_comment": "Estimation constants only, not semantic data: checks estimate rendered pages as body words / words_per_page and warn above page_limit. The substance and density rules stay prose in guidelines.md.",
   "length": {
@@ -108,10 +117,6 @@
       "bahnbrechend", "revolutionär", "zukunftsweisend", "wegweisend"
     ]
   },
-  "confidentiality_patterns": [
-    "confidential", "internal use only", "do not distribute", "non-disclosure", "NDA",
-    "vertraulich", "nur für den internen gebrauch", "geheim"
-  ],
   "_rq_comment": "Counts only. Whether the questions are distinct, non-overlapping and analytically phrased stays prose in guidelines.md — a count is checkable, a judgement is not.",
   "research_questions": {
     "format": "ordered list under the research_questions section",
@@ -120,5 +125,7 @@
     "max_count": 5,
     "methodology_reference_pattern": "\\(RQ\\d+\\)"
   },
-  "todo_marker": "\\[TODO:[^\\]]*\\]"
+  "todo": {
+    "marker": "\\[TODO:[^\\]]*\\]"
+  }
 }

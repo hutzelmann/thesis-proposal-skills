@@ -4,7 +4,7 @@
 
 Default guidance for writing Bachelor's and Master's thesis proposals in computer science, in English (default) or German.
 A workspace `guidelines.md` may override or extend these defaults; its TOML block wins per key, its lists replace the defaults, and it may allow sections again that are forbidden here.
-Set `timeline_detail = "detailed"` there when a program demands a full work plan: the timeline then accepts tables, lists and subsections, and work-plan headings stop being forbidden. The default is `"simple"`.
+Set `[timeline] detail = "detailed"` there when a program demands a full work plan: the timeline then accepts tables, lists and subsections, and work-plan headings stop being forbidden. The default is `"simple"`. Every override key is the key path the value has in `structure.json`; a key that does not resolve to an overridable leaf is reported, never silently ignored.
 The machine-checkable skeleton (canonical section titles in both languages, section order, methodology subsections, forbidden headings, minimum reference count, the timeline size limit, research-question conventions, the default page limit with its words-per-page estimation constant, the mechanically matchable title tells) is defined in `structure.json`; this document is the authority for everything semantic.
 
 ## The Thesis Title
@@ -134,7 +134,7 @@ Guidance, not a required section, and nothing here is mechanically checked — b
 - Language: English or German per the proposal's `lang`. In German, use English scientific terms with German capitalization and the canonical German section titles.
 - Tone: professional, specific, concise. No vague language, no generalizations, no marketing.
 - Every sentence carries information essential to this thesis. Scene-setting openers, truisms, and restatements of the obvious are filler: delete them. Shortness comes from deleting low-information sentences, not from compressing wording.
-- The rendered proposal stays within five pages (workspace `page_limit` overrides this). The bound is deliberately generous — a proposal that respects the density rule stays well under it. Mechanical checks estimate pages from word count and warn, never fail.
+- The rendered proposal stays within five pages (workspace `[length] page_limit` overrides this). The bound is deliberately generous — a proposal that respects the density rule stays well under it. Mechanical checks estimate pages from word count and warn, never fail.
 - Avoid technical details irrelevant to the research questions or methodology; stay on the level of ideas and concepts.
 - Define abbreviations at first use, e.g. "System on a Chip (SoC)".
 - Active voice; avoid passive constructions (especially German "soll … werden" chains).

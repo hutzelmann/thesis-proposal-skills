@@ -9,7 +9,7 @@ Reference for the synthetic test fixtures in this directory (the "fixture bluepr
 | No research questions at all | ~4/11 | Check (RQ section empty), Write/Ideate (must elicit) |
 | RQs phrased as implementation goals ("how can X be built") | dominant where RQs exist | L2 rubric, Review |
 | Bibliography present but never cited in-text | ~6/11 | Check (defined-but-uncited warning) |
-| < 3 scientific references / URL-only bibliographies | ~4/11 | Check (min_references), lit-search |
+| < 3 scientific references / URL-only bibliographies | ~4/11 | Check ([references] min_count), lit-search |
 | Mixed methodologies in one proposal | ~4/11 | Review rubric (single-method rule) |
 | Forbidden content: work plans/Gantt, chapter outlines, expected results | very common | Check (forbidden headings, timeline size guard) |
 | Personal data: matriculation numbers, addresses, supervisor names/emails | common | Check (warning regexes), Import (strip on import) |
@@ -49,7 +49,7 @@ The corpus leaves real coverage holes; these fixtures are designed from the rule
 | `f13-pure-slr` | en | MSc | Pure Systematic Literature Review with its required subsections (search strategy / extracted information / synthesis) — corpus only has SLR *mixed* with interviews (f05). Exercises that branch of the methodology→subsection table. |
 | `f14-user-study` | de | BSc | Pure User Study (preparation / procedure / analysis) — methodology entirely absent from the corpus. |
 | `f17-theoretical` | en | BSc | Pure Theoretical Analysis (formalization / requirements / example) — corpus theoretical proposals (f03, f08) are free-form and defect-laden; the compliant branch is untested without this. |
-| `f15-format-broken` | en | BSc | Trailing-YAML guardrail fixture: missing blank line before `---`, boolean-literal citation key (`on`), duplicate metadata block, leftover `[TODO: …]`, exactly 2 references (min_references boundary), a three-word title (below the English `min_words` bound), and the only fixture keeping an `author:` key — it owns the anonymity tripwire. Tiny file, pure Check-mechanics oracle. |
+| `f15-format-broken` | en | BSc | Trailing-YAML guardrail fixture: missing blank line before `---`, boolean-literal citation key (`on`), duplicate metadata block, leftover `[TODO: …]`, exactly 2 references ([references] min_count boundary), a three-word title (below the English `min_words` bound), and the only fixture keeping an `author:` key — it owns the anonymity tripwire. Tiny file, pure Check-mechanics oracle. |
 | `f16-figures-import` | en | MSc | Invented PDF containing two figures — the corpus is nearly figure-free, so Import's `img/`-TODO path has no ground truth without it. |
 | `f19-drift-alert-validity` | en | MSc | Session-derived (see `docs/demo/harvest.log`): skills-generated clean-with-TODOs proposal, 15 verified references, citation inside RQ2 — the pattern that broke the publish rq-filter; no other fixture covers either trait. |
 | `f20-timeline-gantt` | en | MSc | Isolates the timeline size guard: a Gantt table under an otherwise-correct `Timeline` heading, with nothing else wrong. The guard replaced the deleted `timeline`/`zeitplan` forbidden-heading patterns, and f02 only exercises it amid five other defects. |
@@ -59,7 +59,7 @@ The corpus leaves real coverage holes; these fixtures are designed from the rule
 Workflow-state fixtures (not proposals, but required test states):
 
 - `w01-ideate-seed` — an Ideate-produced skeleton (idea notes, candidate RQ bullets, empty `references:`) as Write's starting state.
-- `w02-override-workspace` — a workspace with `guidelines.md` whose TOML block sets `timeline_detail = "detailed"` and `min_references = 8`; oracle for override precedence in Write/Check/Customize, with one key relaxing (the phase table passes) and one tightening (3 references still fail) in the same file.
+- `w02-override-workspace` — a workspace with `guidelines.md` whose TOML block sets `[timeline] detail = "detailed"` and `[references] min_count = 8`; oracle for override precedence in Write/Check/Customize, with one key relaxing (the phase table passes) and one tightening (3 references still fail) in the same file. It is also the only fixture demonstrating the override key shape, which mirrors `structure.json`'s key paths.
 - `w03-snowball-seed` — a proposal with three solid references; oracle for lit-search snowballing expansion.
 - `s01-raw-email` — a raw submission (`s` prefix): a synthetic student email pasted as-is (`submission-email.txt` — deliberately not `.md`, so the corpus-wide "every proposal builds and has an oracle" invariants skip it), with fake personal data (Erika Musterfrau, matriculation 00000000), an implementation-goal idea, blog-post sources, and a work plan. Input for the supervise L1 task, which asserts none of the personal data reaches the send-package. Not a proposal, so no `expected.json`.
 - `g01-research-group` — not a workspace state but a synthetic *web* fixture (`g` prefix): a fictional research-group homepage (`group.html`) plus a canned DBLP-shaped `dblp.json`, served over localhost for the ideate scoping preamble. Not a proposal, so no `expected.json`. The page carries a deliberate prompt-injection canary (`CANARY-B715`) that the scoped-ideation verdict asserts never reaches produced files.

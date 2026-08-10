@@ -568,14 +568,17 @@ def verdict_customize_override(original: str, current: str | None, guidelines: s
         data = tomllib.loads(match.group(1))
     except tomllib.TOMLDecodeError as exc:
         return False, f"TOML does not parse: {exc}"
-    if data.get("min_references") != min_references:
-        return False, f"min_references is {data.get('min_references')!r}, not {min_references}"
-    detail = str(data.get("timeline_detail", "<absent>")).lower()
+    # Override keys mirror structure.json's paths, so both settings are nested.
+    # A flat key here is the pre-migration shape and buys the workspace nothing.
+    found_refs = data.get("references", {}).get("min_count")
+    if found_refs != min_references:
+        return False, f"[references] min_count is {found_refs!r}, not {min_references}"
+    detail = str(data.get("timeline", {}).get("detail", "<absent>")).lower()
     if detail != timeline_detail:
-        return False, (f"timeline_detail is {detail!r}, not {timeline_detail!r} — "
+        return False, (f"[timeline] detail is {detail!r}, not {timeline_detail!r} — "
                        "the work plan stays blocked")
-    return True, (f"valid TOML: min_references={min_references}, "
-                  f'timeline_detail="{timeline_detail}"')
+    return True, (f"valid TOML: [references] min_count={min_references}, "
+                  f'[timeline] detail="{timeline_detail}"')
 
 
 def verdict_publish(listing: str) -> tuple[bool, str]:

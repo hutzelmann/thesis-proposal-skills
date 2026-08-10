@@ -65,6 +65,9 @@ RULE_IDS = (
     "title-question-form",
     "title-too-short",
     "title-too-long",
+    # workspace override file
+    "override-key-retired",
+    "override-key-unknown",
     # structure
     "timeline-detail-unknown",
     "page-limit-invalid",
@@ -110,6 +113,70 @@ def load_structure(path: Path | None) -> dict:
     if path is None:
         path = Path(__file__).resolve().parent.parent / "references" / "structure.json"
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+# A workspace overrides a value by naming the key path it has in structure.json.
+# One rule, no aliases — which only works if a key that resolves to nothing is
+# reported rather than ignored, so both maps below exist to produce errors.
+OVERRIDABLE = {
+    ("references", "min_count"),
+    ("sections", "required"),
+    ("forbidden", "heading_patterns"),
+    ("timeline", "detail"),
+    ("length", "page_limit"),
+    ("research_questions", "min_count"),
+    ("research_questions", "max_count"),
+}
+
+RETIRED_KEYS = {
+    "min_references": "[references] min_count",
+    "page_limit": "[length] page_limit",
+    "timeline_detail": "[timeline] detail",
+    "required_sections": "[sections] required",
+    "forbidden_sections": "[forbidden] heading_patterns",
+}
+
+
+def overridden(overrides: dict, table: str, key: str) -> bool:
+    block = overrides.get(table)
+    return isinstance(block, dict) and key in block
+
+
+def setting(structure: dict, overrides: dict, table: str, key: str):
+    """The workspace value if the workspace set that leaf, else the default."""
+    if overridden(overrides, table, key):
+        return overrides[table][key]
+    return structure.get(table, {}).get(key)
+
+
+def override_key_findings(overrides: dict) -> list[Finding]:
+    """Every override key that will not be honoured, named.
+
+    A workspace whose overrides silently stopped applying is worse off than one
+    that fails: the settings look present and do nothing. A typo and a retired
+    key are the same failure seen from the user's side, so both are reported.
+    """
+    out = []
+    for name, value in overrides.items():
+        if name.startswith("_"):
+            continue
+        if name in RETIRED_KEYS:
+            out.append(error(
+                "override-key-retired",
+                f"workspace override `{name}` was replaced by `{RETIRED_KEYS[name]}` — "
+                "move it there; it is not applied as written",
+            ))
+        elif not isinstance(value, dict):
+            out.append(error("override-key-unknown",
+                             f"unknown workspace override `{name}` — it is not applied"))
+        else:
+            out += [
+                error("override-key-unknown",
+                      f"unknown workspace override `[{name}] {leaf}` — it is not applied")
+                for leaf in value
+                if (name, leaf) not in OVERRIDABLE
+            ]
+    return out
 
 
 def load_overrides(proposal: Path, explicit: Path | None) -> dict:
@@ -384,11 +451,11 @@ def rule_timeline_mode(ctx: Context) -> list[Finding]:
     """`ctx.detail` has already fallen back to the default; this reports the
     value that caused the fallback, in its place in the report."""
     timeline_cfg = ctx.structure["timeline"]
-    declared = ctx.overrides.get("timeline_detail", timeline_cfg["default_detail"])
+    declared = setting(ctx.structure, ctx.overrides, "timeline", "detail")
     if declared in timeline_cfg["detail_modes"]:
         return []
     return [error("timeline-detail-unknown",
-                  f"guidelines.md: unknown timeline_detail `{declared}` — must be one of: "
+                  f"guidelines.md: unknown [timeline] detail `{declared}` — must be one of: "
                   f"{', '.join(timeline_cfg['detail_modes'])}")]
 
 
@@ -400,10 +467,10 @@ def rule_required_sections(ctx: Context) -> list[Finding]:
 
 
 def rule_section_order(ctx: Context) -> list[Finding]:
-    # An overridden required_sections list carries its own order; otherwise the
+    # An overridden required-section list carries its own order; otherwise the
     # canonical order applies, with the methodology matched by title prefix
     # because its heading is a template.
-    if "required_sections" in ctx.overrides:
+    if overridden(ctx.overrides, "sections", "required"):
         expected = [(t, t, False) for t in ctx.required]
     else:
         expected = [
@@ -442,7 +509,7 @@ def rule_timeline_size(ctx: Context) -> list[Finding]:
 
 def rule_methodology(ctx: Context) -> list[Finding]:
     """Canonical mode only: an overridden section list replaces the closed set."""
-    if "required_sections" in ctx.overrides:
+    if overridden(ctx.overrides, "sections", "required"):
         return []
     methodologies = ctx.structure["methodologies"]
     meth_names = {m["title"][ctx.lang]: key for key, m in methodologies.items()}
@@ -465,11 +532,10 @@ def rule_methodology(ctx: Context) -> list[Finding]:
 
 
 def rule_forbidden_sections(ctx: Context) -> list[Finding]:
-    forbidden = [p.lower() for p in ctx.overrides.get(
-        "forbidden_sections", ctx.structure["forbidden_heading_patterns"]
-    )]
+    forbidden = [p.lower() for p in
+                 setting(ctx.structure, ctx.overrides, "forbidden", "heading_patterns")]
     if ctx.detail == "detailed":
-        work_plan = {p.lower() for p in ctx.structure["work_plan_heading_patterns"]}
+        work_plan = {p.lower() for p in ctx.structure["forbidden"]["work_plan_patterns"]}
         forbidden = [p for p in forbidden if p not in work_plan]
     out = []
     for h in ctx.head_texts:
@@ -494,7 +560,7 @@ def rule_research_questions(ctx: Context) -> list[Finding]:
         ))
     # .get(): an older structure file, or a workspace that clears the key,
     # disables the bound rather than crashing the whole check.
-    rq_max = ctx.structure["research_questions"].get("max_count")
+    rq_max = setting(ctx.structure, ctx.overrides, "research_questions", "max_count")
     if rq_max and len(rq_items) > rq_max:
         out.append(error(
             "research-questions-too-many",
@@ -596,17 +662,17 @@ def rule_reference_id_shape(ctx: Context) -> list[Finding]:
 
 def rule_min_references(ctx: Context) -> list[Finding]:
     defined = set(ctx.meta.reference_ids)
-    min_refs = ctx.overrides.get("min_references", ctx.structure["min_references"])
+    min_refs = setting(ctx.structure, ctx.overrides, "references", "min_count")
     out = []
     if isinstance(min_refs, bool) or not isinstance(min_refs, int) or min_refs < 0:
-        # same degradation as an unknown timeline_detail: report, use default —
+        # same degradation as an unknown [timeline] detail: report, use default —
         # a negative value would silently disable the check
         out.append(error(
             "min-references-invalid",
-            f"guidelines.md: min_references must be a non-negative integer, "
+            f"guidelines.md: [references] min_count must be a non-negative integer, "
             f"not `{min_refs}`",
         ))
-        min_refs = ctx.structure["min_references"]
+        min_refs = ctx.structure["references"]["min_count"]
     if len(defined) < min_refs:
         out.append(error("min-references",
                          f"only {len(defined)} references — at least {min_refs} required"))
@@ -615,7 +681,7 @@ def rule_min_references(ctx: Context) -> list[Finding]:
 
 def rule_todo_markers(ctx: Context) -> list[Finding]:
     return [warn("todo-marker", f"open {todo}")
-            for todo in re.findall(ctx.structure["todo_marker"], ctx.body)]
+            for todo in re.findall(ctx.structure["todo"]["marker"], ctx.body)]
 
 
 def rule_length(ctx: Context) -> list[Finding]:
@@ -624,7 +690,7 @@ def rule_length(ctx: Context) -> list[Finding]:
     if not length_cfg:
         return []
     out = []
-    page_limit = ctx.overrides.get("page_limit", length_cfg["page_limit"])
+    page_limit = setting(ctx.structure, ctx.overrides, "length", "page_limit")
     if (
         isinstance(page_limit, bool)
         or not isinstance(page_limit, (int, float))
@@ -635,7 +701,8 @@ def rule_length(ctx: Context) -> list[Finding]:
         # bad override, never crash the report or silently disable the rule
         out.append(error(
             "page-limit-invalid",
-            f"guidelines.md: page_limit must be a positive number, not `{page_limit}`",
+            f"guidelines.md: [length] page_limit must be a positive number, "
+            f"not `{page_limit}`",
         ))
         page_limit = length_cfg["page_limit"]
     words = sum(
@@ -681,7 +748,7 @@ def rule_prose_patterns(ctx: Context) -> list[Finding]:
             "`author:` found — proposals are anonymous by default; remove it "
             "unless your program requires a named cover page",
         ))
-    for pattern in ctx.structure["confidentiality_patterns"]:
+    for pattern in ctx.structure["forbidden"]["confidentiality_patterns"]:
         if re.search(rf"\b{re.escape(pattern)}\b", ctx.body, re.IGNORECASE):
             out.append(warn(
                 "confidentiality-marker",
@@ -721,9 +788,9 @@ def build_context(body: str, meta: Metadata, structure: dict, overrides: dict) -
     lang = meta.lang if meta.lang in ("en", "de") else "en"
 
     timeline_cfg = structure["timeline"]
-    detail = overrides.get("timeline_detail", timeline_cfg["default_detail"])
+    detail = setting(structure, overrides, "timeline", "detail")
     if detail not in timeline_cfg["detail_modes"]:
-        detail = timeline_cfg["default_detail"]
+        detail = timeline_cfg["detail"]
 
     head_texts = [t for _, t in headings(body)]
     titles = structure["sections"]["titles"]
@@ -737,7 +804,8 @@ def build_context(body: str, meta: Metadata, structure: dict, overrides: dict) -
         detail=detail, head_texts=head_texts, titles=titles, meth_tpl=meth_tpl,
         meth_prefix=meth_prefix,
         meth_heads=[h for h in head_texts if h.startswith(meth_prefix)],
-        required=overrides.get("required_sections", required_default),
+        required=(setting(structure, overrides, "sections", "required")
+                  if overridden(overrides, "sections", "required") else required_default),
     )
 
 
@@ -752,6 +820,9 @@ def check_findings(proposal_path: Path, structure: dict, overrides: dict) -> lis
             f"guidelines.md TOML block does not parse: {overrides['_parse_error']}",
         ))
         overrides = {}
+    # before the rules: a key that will not be honoured explains every verdict
+    # below it, and reading those first would waste the user's time.
+    findings += override_key_findings(overrides)
 
     ctx = build_context(body, meta, structure, overrides)
     for rule in RULES:

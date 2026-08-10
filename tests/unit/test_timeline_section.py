@@ -156,7 +156,7 @@ def test_non_canonical_headings_do_not_affect_order(tmp_path):
 
 
 def test_override_list_supplies_its_own_order(tmp_path):
-    """An overridden required_sections list is ordered; that order is enforced,
+    """An overridden [sections] required list is ordered; that order is enforced,
     and the canonical default no longer applies."""
     victim = tmp_path / "custom.md"
     victim.write_text(
@@ -164,12 +164,12 @@ def test_override_list_supplies_its_own_order(tmp_path):
         "---\ntitle: t\nlang: en\nreferences: []\n---\n"
     )
     (tmp_path / "guidelines.md").write_text(
-        '```toml\nrequired_sections = ["Beta", "Alpha"]\n```\n'
+        '```toml\n[sections]\nrequired = ["Beta", "Alpha"]\n```\n'
     )
     assert "out of order" not in run_check(victim).stdout
 
     (tmp_path / "guidelines.md").write_text(
-        '```toml\nrequired_sections = ["Alpha", "Beta"]\n```\n'
+        '```toml\n[sections]\nrequired = ["Alpha", "Beta"]\n```\n'
     )
     assert "section out of order: `Beta` before `Alpha`" in run_check(victim).stdout
 
@@ -183,7 +183,7 @@ def test_no_forbidden_pattern_collides_with_a_canonical_title():
     that no future pattern quietly takes them back."""
     structure = json.loads(STRUCTURE.read_text(encoding="utf-8"))
     titles = structure["sections"]["titles"]
-    patterns = [p.lower() for p in structure["forbidden_heading_patterns"]]
+    patterns = [p.lower() for p in structure["forbidden"]["heading_patterns"]]
     for key, per_lang in titles.items():
         for lang, title in per_lang.items():
             stem = title.split("{")[0].strip().lower()
@@ -193,8 +193,8 @@ def test_no_forbidden_pattern_collides_with_a_canonical_title():
 
 def test_work_plan_patterns_are_a_subset_of_forbidden():
     structure = json.loads(STRUCTURE.read_text(encoding="utf-8"))
-    forbidden = {p.lower() for p in structure["forbidden_heading_patterns"]}
-    work_plan = {p.lower() for p in structure["work_plan_heading_patterns"]}
+    forbidden = {p.lower() for p in structure["forbidden"]["heading_patterns"]}
+    work_plan = {p.lower() for p in structure["forbidden"]["work_plan_patterns"]}
     assert work_plan <= forbidden, work_plan - forbidden
 
 
@@ -202,6 +202,6 @@ def test_rival_timeline_names_stay_forbidden_even_when_detailed():
     """`schedule` and `time plan` are rival names for the canonical section, not
     work-plan markers — the detailed mode must not un-forbid them."""
     structure = json.loads(STRUCTURE.read_text(encoding="utf-8"))
-    work_plan = {p.lower() for p in structure["work_plan_heading_patterns"]}
+    work_plan = {p.lower() for p in structure["forbidden"]["work_plan_patterns"]}
     assert "schedule" not in work_plan
     assert "time plan" not in work_plan

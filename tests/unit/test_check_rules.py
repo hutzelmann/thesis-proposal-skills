@@ -118,7 +118,7 @@ def test_title_rule_says_nothing_about_a_block_scalar():
 
 
 def test_timeline_mode_reports_an_unknown_value():
-    ctx = context(CLEAN, {"timeline_detail": "gantt"})
+    ctx = context(CLEAN, {"timeline": {"detail": "gantt"}})
     assert rules_of(check.rule_timeline_mode(ctx)) == ["timeline-detail-unknown"]
     # and the effective mode falls back, so the size guard still runs
     assert ctx.detail == "simple"
@@ -130,7 +130,7 @@ def test_timeline_size_is_skipped_in_detailed_mode():
     )
     assert "timeline-table" in rules_of(check.rule_timeline_size(context(with_table)))
     assert check.rule_timeline_size(
-        context(with_table, {"timeline_detail": "detailed"})
+        context(with_table, {"timeline": {"detail": "detailed"}})
     ) == []
 
 
@@ -170,7 +170,7 @@ def test_methodology_rule_reports_a_missing_subsection():
 def test_methodology_rule_is_silent_when_the_workspace_overrides_the_sections():
     """An overridden section list replaces the closed set, so the canonical
     methodology rules no longer apply."""
-    ctx = context(CLEAN, {"required_sections": ["Alpha", "Beta"]})
+    ctx = context(CLEAN, {"sections": {"required": ["Alpha", "Beta"]}})
     assert check.rule_methodology(ctx) == []
 
 
@@ -207,7 +207,7 @@ def test_reference_id_shape_rule_catches_a_missing_year():
 def test_min_references_respects_a_workspace_override():
     ctx = context(CLEAN)
     assert check.rule_min_references(ctx) == []
-    raised = context(CLEAN, {"min_references": 99})
+    raised = context(CLEAN, {"references": {"min_count": 99}})
     assert rules_of(check.rule_min_references(raised)) == ["min-references"]
 
 
@@ -225,13 +225,13 @@ def test_length_rejects_a_non_positive_or_non_numeric_page_limit():
     """Bad override degrades to the default with an error — the clean fixture
     stays under the default, so the error is the only finding."""
     for bad in ("5", -1, 0, float("nan"), True):
-        ctx = context(CLEAN, {"page_limit": bad})
+        ctx = context(CLEAN, {"length": {"page_limit": bad}})
         assert rules_of(check.rule_length(ctx)) == ["page-limit-invalid"], bad
 
 
 def test_min_references_rejects_a_negative_or_non_integer_override():
     for bad in ("8", -5, True):
-        ctx = context(CLEAN, {"min_references": bad})
+        ctx = context(CLEAN, {"references": {"min_count": bad}})
         assert rules_of(check.rule_min_references(ctx)) == ["min-references-invalid"], bad
 
 
@@ -239,6 +239,10 @@ def test_min_references_rejects_a_negative_or_non_integer_override():
 # explicitly so `test_every_declared_identifier_is_reachable` stays honest
 # rather than being weakened to a subset check.
 COVERED_BY_UNIT_TESTS = {
+    # no fixture carries a broken override file: a fixture's guidelines.md is
+    # part of its oracle, so a retired key there would be a fixture defect
+    "override-key-retired",
+    "override-key-unknown",
     "metadata-block-missing",
     "metadata-title-missing",
     "title-question-form",
