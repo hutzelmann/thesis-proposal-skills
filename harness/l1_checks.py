@@ -593,9 +593,12 @@ def verdict_publish(listing: str) -> tuple[bool, str]:
 
 # "viable thesis core" / "tragfähiger thesenkern" without the leading no/kein:
 # real letters negate naturally ("does not yet have a viable thesis core"), and
-# the assertion is that a tier is stated, not which wording carries the negation
+# the assertion is that a tier is stated, not which wording carries the negation.
+# "idea stage" / "ideenphase" is the student-facing rendering of the bottom
+# tier (skill-supervise spec); the blunt phrases stay accepted alongside it.
 SUPERVISE_TIER_PATTERN = re.compile(
     r"\bready\b|\bbereit\b|needs revision|viable thesis core"
+    r"|idea stage|not yet a proposal|ideenphase|noch kein exposé"
     r"|überarbeitung erforderlich|tragfähiger thesenkern"
 )
 
@@ -623,10 +626,12 @@ def verdict_supervise_tier(letter: str | None) -> tuple[bool, str]:
     or German, case-insensitive like every prose-relaying verdict. Word-bounded
     where the tier is a single word ("already" must not count as "ready")."""
     head = " ".join((letter or "").splitlines()[:5]).lower()
-    hit = SUPERVISE_TIER_PATTERN.search(head)
-    if not hit:
+    hits = sorted(set(SUPERVISE_TIER_PATTERN.findall(head)), key=len, reverse=True)
+    if not hits:
         return False, "no verdict tier in the letter's opening lines"
-    return True, f"verdict tier: {hit.group(0)}"
+    # longest first: an incidental "ready" ("before it is ready to write")
+    # must not mask the actual tier phrase sitting beside it
+    return True, "verdict tier: " + ", ".join(hits)
 
 
 def verdict_supervise_no_personal_data(package: dict[str, str],

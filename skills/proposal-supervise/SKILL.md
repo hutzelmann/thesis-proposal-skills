@@ -35,17 +35,32 @@ Paths are relative to the workspace root for a standard install; the script real
 
 Then apply the review rules from `references/guidelines.md` — plus any workspace `guidelines.md` override, which carries the professor's own requirements and wins — exactly as the review skill would: the five substance tests (delta, falsifiability, swap, method-fit, executability) decide the verdict; title, research questions, contribution delta, argument soundness, single methodology, and sentence-level density are the dimensions. Do not invent a separate quality bar: what check and review would tell the student is what you work from.
 
-Write the complete findings to `<slug>-review.md` beside the proposal: verdict first, every finding enumerated with a concrete suggestion, ordered by severity. This file is for the professor only and never enters the send-package.
+Write the complete findings to `<slug>-review.md` beside the proposal: verdict first, every finding enumerated with a concrete suggestion, ordered by severity. This file keeps the review skill's blunt vocabulary — ready / needs revision / no viable thesis core — is for the professor only, and never enters the send-package.
+
+## Decide the tier
+
+The letter's tier follows from the review, with one asymmetry: the harshest outcome needs clear evidence, because delivering it on a coin-flip is worse than a cautious "needs revision".
+
+- Review verdict **ready** or **needs revision** → same tier in the letter. No question.
+- Review verdict **no viable thesis core** → check the evidence bar: at least three of the five substance tests fail decisively, and for each you can state why no single revision round could repair it. Bar met → the letter takes the **idea stage** tier. No question.
+- Bar not met (borderline) → stop before writing the letter and put the decision to the professor, with the split evidence and three choices:
+
+  1. Needs-revision letter, emphasizing re-grounding in the points.
+  2. Idea-stage letter.
+  3. "Show me `<slug>-review.md` first" — then wait for their call.
+
+  Summarize which substance tests failed decisively, which are uncertain, and quote one finding per test so the professor can decide without leaving the chat. If the professor declines to decide, or nobody can answer (a non-interactive run), default to the needs-revision letter: in doubt, for the student.
 
 ## Curate the letter
 
 Write `<slug>-package/letter.md` in the language of the submission. Body only: no salutation ("Dear student") and no sign-off ("Best regards") — the professor pastes the letter into their own reply and adds their own greeting and signature:
 
-1. **Verdict first**, as the state of the proposal, one of three: **ready** — "no substantial revisions are needed from my side"; **needs revision** — address the points below and resubmit; **no viable thesis core** — the idea needs re-grounding before a proposal makes sense, said plainly and paired with the concrete way forward (start with the ideation skill), never softened into revision advice. Write the tier phrase itself into the opening paragraph — a paraphrase that drops the tier words leaves the student guessing where they stand. German letters use **bereit** / **Überarbeitung erforderlich** / **kein tragfähiger Thesenkern**. Never promise any supervisor action.
+1. **Verdict first**, as the state of the proposal, one of three: **ready** — "no substantial revisions are needed from my side"; **needs revision** — address the points below and resubmit; **idea stage** — this is an idea that has not yet reached the proposal stage, so the next step is ideation, not revision. An idea-stage opening carries three things in order: the standard a proposal must meet (an analytical research question, a stated contribution, grounded literature), an assurance anchored in a named true strength of the submission — never generic — and ideation as the designed next step for exactly this transition. It is a stage, not a failure, and also not revision advice: say plainly that a proposal cannot be built from the material as it stands. Write the tier phrase itself into the opening paragraph — a paraphrase that drops the tier words leaves the student guessing where they stand. German letters use **bereit** / **Überarbeitung erforderlich** / **Ideenphase — noch kein Exposé**. Never promise any supervisor action.
 2. **Three to five points**, as a numbered list — never more. Pick the findings that most block a viable thesis; everything else stays in the professor-side review. Phrase each as a direction, not a prescribed fix, and end each point by naming the skill that addresses it (thin literature → proposal-lit-search, vague prose → proposal-write, no viable questions → proposal-ideate, format issues → proposal-check).
-3. **What to keep**: name the load-bearing strengths — parts that are sound and should survive the revision. This is information, not encouragement; generic praise stays out.
-4. **Disclosure**, in plain words for a student who may never have used an AI tool: this feedback was prepared with an AI assistant that follows the program's proposal guidelines.
-5. **Getting started**: close with the language-matching section of `references/getting-started.md`, quoted verbatim.
+3. **What to keep**: name the load-bearing strengths — parts that are sound and should survive the revision. This is information, not encouragement; generic praise stays out. For an idea-stage letter this block is where the assurance anchors, so it is never omitted there.
+4. **Starter literature** (idea-stage and borderline outcomes only, and only when `../proposal-lit-search/` is installed): offer the professor once, in chat, to look up two or three relevant verified papers as a "where this conversation already is" pointer. On accept, follow the lit-search skill's verification rules — real lookups only, never invented entries — and add a short list (title, venue, year) after the strengths block. Declined, unanswered, or sibling missing: the letter carries no trace of the offer.
+5. **Disclosure**, in plain words for a student who may never have used an AI tool: this feedback was prepared with an AI assistant that follows the program's proposal guidelines.
+6. **Getting started**: close with the language-matching section of `references/getting-started.md`, quoted verbatim.
 
 Copy `<slug>.md` into `<slug>-package/` as the attachment. The package holds exactly these two files — the professor attaches the folder's contents to their own reply and nothing else needs assembling.
 

@@ -93,9 +93,13 @@ SCENARIOS = {
         "skill": "proposal-supervise",
         "siblings": ("proposal-import",),
         "package": True,
+        # the closing sentence pre-answers the borderline deferral: a headless
+        # single-turn run has no professor to ask, so it exercises the
+        # needs-revision default instead of stalling
         "request": "A student emailed me this thesis idea — I saved it as "
                    "submission-email.txt. Prepare my feedback: the letter draft "
-                   "and the file I can send back.",
+                   "and the file I can send back. If the verdict turns out "
+                   "borderline, do not ask me — take the needs-revision path.",
     },
     # nothing staged: the group page and a canned DBLP-shaped publication list
     # are served over localhost ({url}/{dblp} filled at runtime) and the

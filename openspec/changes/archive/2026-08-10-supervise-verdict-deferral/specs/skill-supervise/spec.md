@@ -1,39 +1,6 @@
-# skill-supervise Specification
+# skill-supervise Delta
 
-## Purpose
-Supervisor-side feedback on raw student submissions: normalize whatever arrives, curate the most pressing findings into a draft feedback letter with a continuable artifact, and steer the student into the proposal toolchain.
-## Requirements
-### Requirement: Raw submission intake and normalization
-
-The skill SHALL accept a raw student submission in any form it is handed — PDF, Word export, pasted text, or an already-standard proposal file — and SHALL normalize non-standard input to the standard single-file proposal format with the same guarantees the import skill gives: personal data stripped, gaps marked, references carried over. The normalized file SHALL be named by an idea slug and placed in the professor's workspace beside their other proposals. The skill SHALL NOT build a student registry, SHALL NOT record student identity in any artifact it writes, and SHALL NOT manage artifact lifecycle beyond the single run — retention and deletion stay manual.
-
-#### Scenario: Pasted email fragment
-- **WHEN** the professor hands the skill half a page of pasted email text describing a thesis idea
-- **THEN** the skill produces a slug-named standard-format proposal file with gaps marked, and proceeds to feedback
-
-#### Scenario: PDF submission
-- **WHEN** the professor points the skill at a submitted PDF
-- **THEN** the skill runs the import pipeline, strips personal data, and continues from the resulting standard-format file
-
-#### Scenario: No identity professor-side
-- **WHEN** the submission carries the student's name, matriculation number, or contact data
-- **THEN** no artifact the skill writes contains that data — the idea file is identified by slug only
-
-### Requirement: Findings reused from check and review, curated to pressing points
-
-The skill SHALL derive findings from the same sources the student-facing skills use — the mechanical check and the content-level review rubric, judged against the workspace guidelines override where one exists — and SHALL NOT introduce a separate quality rubric of its own. For the letter, the skill SHALL curate the combined findings to the three to five points that most block a viable thesis, each phrased as a direction rather than a prescribed fix. The letter SHALL name load-bearing strengths — parts that are sound and must be kept — and SHALL NOT contain generic praise.
-
-#### Scenario: Many findings, few points
-- **WHEN** check and review together yield a dozen findings
-- **THEN** the letter carries at most five curated points, ranked by how much each blocks a viable thesis, and the remaining findings appear only in the professor-side review file
-
-#### Scenario: Supervisor override respected
-- **WHEN** the workspace carries a guidelines override with the professor's own requirements
-- **THEN** findings are judged against the override, matching what the student-facing skills would report
-
-#### Scenario: Strength named, flattery absent
-- **WHEN** the submission contains a workable core design amid weak surroundings
-- **THEN** the letter states what is sound and should be kept, and contains no generic praise of the student or the material
+## MODIFIED Requirements
 
 ### Requirement: Verdict expressed as proposal state
 
@@ -75,17 +42,7 @@ For idea-stage and borderline outcomes, the skill SHALL offer the professor — 
 - **WHEN** the outcome is idea-stage and the literature-search sibling is installed
 - **THEN** the skill offers the starter-literature step and adds papers only after the professor accepts, from verified lookups only
 
-### Requirement: Draft-only delivery and package separation
-
-The skill SHALL NOT send, publish, or transmit anything; the letter SHALL identify itself as a draft for the professor to edit and deliver through their own channel. The full review file SHALL be written professor-side beside the slug-named proposal file and SHALL NOT be part of the send-package; the send-package SHALL contain nothing beyond the letter and the normalized proposal file.
-
-#### Scenario: Run completes
-- **WHEN** the skill finishes a submission
-- **THEN** nothing has left the machine, and the chat summary tells the professor to review and edit the draft letter before sending it themselves
-
-#### Scenario: Professor-only content stays out
-- **WHEN** the send-package is assembled
-- **THEN** it contains exactly the letter and the normalized proposal file — the full review file is absent
+## ADDED Requirements
 
 ### Requirement: Borderline verdict deferred to the supervisor
 

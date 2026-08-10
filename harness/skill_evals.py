@@ -904,7 +904,9 @@ def supervise_feedback() -> Task:
     return proposal_task(
         "proposal-supervise", "s01-raw-email",
         f"A student emailed me this thesis idea — I saved it as ws/{S01_SUBMISSION}. "
-        "Prepare my feedback: the letter draft and the file I can send back.",
+        "Prepare my feedback: the letter draft and the file I can send back. "
+        "If the verdict turns out borderline, do not ask me — take the "
+        "needs-revision path.",
         [supervise_l1_letter(), supervise_l1_points(), supervise_l1_tier(),
          supervise_l1_no_personal_data(), supervise_l1_pointers()],
         extra_skill_files={

@@ -73,6 +73,16 @@ def test_tier_accepts_naturally_negated_no_viable_core():
     assert verdict_supervise_tier(letter)[0]
 
 
+def test_tier_accepts_idea_stage_rendering_en_de():
+    """The student-facing bottom tier is 'idea stage' / 'Ideenphase'
+    (skill-supervise spec: verdict expressed as proposal state)."""
+    en = "Verdict: **idea stage** — this is not yet a proposal, and that is fine."
+    de = ("Einschätzung: **Ideenphase — noch kein Exposé.** "
+          "Der nächste Schritt ist die Ideenfindung.")
+    assert verdict_supervise_tier(en)[0]
+    assert verdict_supervise_tier(de)[0]
+
+
 def test_tier_ready_is_word_bounded():
     ok, _ = verdict_supervise_tier("We have already received your idea.")
     assert not ok, "'already' must not count as the tier 'ready'"
