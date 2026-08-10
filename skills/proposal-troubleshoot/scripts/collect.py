@@ -351,6 +351,37 @@ def notes_log(proposal: Path | None) -> tuple[str, str] | None:
     return ("notes-log.md", "\n".join(lines[start:end]).rstrip() + "\n")
 
 
+def sibling_artifacts(proposal: Path | None) -> list[str]:
+    """Hash-level inventory of the companion artifacts beside the proposal —
+    the review file and the supervise send-package. Names carry the slug, so
+    they are recorded under the placeholder; their content never enters the
+    report at any level, because the letter derives from a student's
+    unpublished submission and the graded levels govern the proposal only.
+    """
+    if proposal is None:
+        return []
+    out: list[str] = []
+    review = proposal.with_name(proposal.stem + "-review.md")
+    if review.is_file():
+        h = file_hashes(review)
+        out.append(
+            f"[measured] review file present as {PROPOSAL_PLACEHOLDER}-review.md "
+            f"({h['bytes']} bytes, sha256:{h['sha256']}); content withheld at every level"
+        )
+    package = proposal.with_name(proposal.stem + "-package")
+    if package.is_dir():
+        files = sorted(f for f in package.iterdir() if f.is_file())
+        out.append(
+            f"[measured] send-package present as {PROPOSAL_PLACEHOLDER}-package/ "
+            f"({len(files)} file(s)); content withheld at every level:"
+        )
+        for f in files:
+            shown = f.name if f.name == "letter.md" else PROPOSAL_PLACEHOLDER + f.suffix
+            h = file_hashes(f)
+            out.append(f"  {shown} — {h['bytes']} bytes, sha256:{h['sha256']}")
+    return out
+
+
 # --------------------------------------------------------------------------
 # report
 # --------------------------------------------------------------------------
@@ -418,6 +449,7 @@ def build_report(level: str, proposal: Path | None,
         sections.append("[measured] no proposal file was named; the problem is not tied to one")
     else:
         sections.extend(describe_proposal(proposal, level))
+        sections.extend(sibling_artifacts(proposal))
 
     sections += ["", "## Captured script output", ""]
     if not script_outputs:

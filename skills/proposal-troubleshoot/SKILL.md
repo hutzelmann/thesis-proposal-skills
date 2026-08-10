@@ -45,7 +45,7 @@ A failure on a model already recorded as failing is still worth reporting if the
 
 ### Rung 2 — a supervisor's override is responsible
 
-If the workspace holds `guidelines.md`, read it. When the behavior the user objects to is what those overrides ask for — a work plan where the defaults forbid one, a section list that differs, a page limit — the skills are working as designed. Name the override responsible, quote the line, and stop. Their supervisor's rules win over the defaults; that is the whole point of the file.
+If the workspace holds `guidelines.md`, read it. When the behavior the user objects to is what those overrides ask for — a work plan where the defaults forbid one, a section list that differs, a page limit — the skills are working as designed. Name the override responsible, quote the line, and stop. The override wins over the defaults — whether the user is the student who received it or the supervisor who wrote it; that is the whole point of the file.
 
 ### Rung 3 — a script failed
 
