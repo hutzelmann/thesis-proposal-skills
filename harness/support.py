@@ -28,6 +28,7 @@ class Model:
     output_price: float
     enabled: bool
     cache_read_price: float = 0.0  # $/Mtok; parse defaults it to input_price
+    note: str = ""  # free-text caveat rendered into the summary Notes column
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,7 @@ def parse_registry(text: str) -> Registry:
             output_price=float(m["output_price"]),
             enabled=bool(m["enabled"]),
             cache_read_price=float(m.get("cache_read_price", m["input_price"])),
+            note=str(m.get("note", "")),
         )
         for m in data["models"]
     )
@@ -322,6 +324,8 @@ def render_summary(
         short = m.id.removeprefix("openrouter/")
         if not m.enabled:
             notes = (notes + "; " if notes else "") + "disabled in registry"
+        if m.note:
+            notes = (notes + "; " if notes else "") + m.note
         lines.append(f"| `{short}` | {label} | {notes} |")
     return "\n".join(lines)
 

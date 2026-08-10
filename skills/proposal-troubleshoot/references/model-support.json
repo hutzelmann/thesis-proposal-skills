@@ -1,6 +1,6 @@
 {
   "_generated": "from shared/model-support.json — edit there, then run scripts/sync_shared.py",
-  "generated": "2026-08-06",
+  "generated": "2026-08-10",
   "statuses": {
     "solid": "every measured epoch passed",
     "flaky": "some epochs passed, some failed",
@@ -18,6 +18,7 @@
         "publish_build": "solid",
         "review_fixture": "fail",
         "review_fixture_de": "solid",
+        "review_hollow": "fail",
         "title_alarm": "solid",
         "write_from_seed": "fail"
       },
@@ -40,6 +41,7 @@
         "publish_build": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
+        "review_hollow": "untested",
         "title_alarm": "untested",
         "write_from_seed": "untested"
       },
@@ -62,6 +64,7 @@
         "publish_build": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
+        "review_hollow": "untested",
         "title_alarm": "untested",
         "write_from_seed": "untested"
       },
@@ -84,6 +87,7 @@
         "publish_build": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
+        "review_hollow": "untested",
         "title_alarm": "untested",
         "write_from_seed": "solid"
       },
@@ -106,6 +110,7 @@
         "publish_build": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
+        "review_hollow": "untested",
         "title_alarm": "untested",
         "write_from_seed": "solid"
       },
@@ -119,7 +124,7 @@
       }
     },
     "openai/gpt-5.6-luna": {
-      "verdict": "failing",
+      "verdict": "untested",
       "enabled": true,
       "tasks": {
         "customize_override": "untested",
@@ -128,8 +133,9 @@
         "publish_build": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
+        "review_hollow": "untested",
         "title_alarm": "untested",
-        "write_from_seed": "fail"
+        "write_from_seed": "untested"
       },
       "skills": {
         "proposal-customize": "untested",
@@ -137,7 +143,7 @@
         "proposal-import": "untested",
         "proposal-publish": "untested",
         "proposal-review": "untested",
-        "proposal-write": "fail"
+        "proposal-write": "untested"
       }
     },
     "openai/gpt-5.6-sol": {
@@ -150,6 +156,7 @@
         "publish_build": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
+        "review_hollow": "untested",
         "title_alarm": "untested",
         "write_from_seed": "untested"
       },
@@ -172,6 +179,7 @@
         "publish_build": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
+        "review_hollow": "untested",
         "title_alarm": "untested",
         "write_from_seed": "untested"
       },
@@ -194,6 +202,7 @@
         "publish_build": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
+        "review_hollow": "untested",
         "title_alarm": "untested",
         "write_from_seed": "untested"
       },

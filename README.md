@@ -122,19 +122,19 @@ If the problem survives that, the skill works through the likely causes in order
 ## Model support
 
 <!-- model-support:start -->
-Model support, measured by the metered eval matrix on **2026-08-06** (3 epochs per cell unless noted; details in docs/model-support.md):
+Model support, measured by the metered eval matrix on **2026-08-10** (3 epochs per cell unless noted; details in docs/model-support.md):
 
 | Model (pinned version) | Verdict | Notes |
 |---|---|---|
 | `anthropic/claude-haiku-4.5` | ❌ not recommended | fails: proposal-customize, proposal-review, proposal-write |
 | `anthropic/claude-sonnet-5` | ❔ untested |  |
 | `anthropic/claude-opus-5` | ❔ untested |  |
-| `openai/gpt-5.6-luna` | ❌ not recommended | fails: proposal-write |
+| `openai/gpt-5.6-luna` | ❔ untested | the eval harness cannot drive this model (Azure strict tool schemas reject Inspect's tools) — untested is a harness limitation, not a quality signal |
 | `openai/gpt-5.6-terra` | ❔ untested |  |
 | `openai/gpt-5.6-sol` | ❔ untested |  |
-| `deepseek/deepseek-v4-pro` | 🟡 partial | untested on 7 task(s); tested cells solid |
+| `deepseek/deepseek-v4-pro` | 🟡 partial | untested on 8 task(s); tested cells solid |
 | `qwen/qwen3.8-max` | ❔ untested |  |
-| `moonshotai/kimi-k3` | 🟡 partial | untested on 7 task(s); tested cells solid |
+| `moonshotai/kimi-k3` | 🟡 partial | untested on 8 task(s); tested cells solid |
 <!-- model-support:end -->
 
 ## For supervisors

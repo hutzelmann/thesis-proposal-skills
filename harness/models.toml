@@ -39,6 +39,11 @@ input_price = 0.1
 output_price = 0.6
 cache_read_price = 0.01
 enabled = true
+# The account's data policy pins luna to Azure, whose strict tool-schema
+# validation rejects Inspect's text_editor tool before the model runs; direct
+# probes show the model itself handles tools fine. Measurements are invalid,
+# so its logs are quarantined and the note keeps the reason visible.
+note = "the eval harness cannot drive this model (Azure strict tool schemas reject Inspect's tools) — untested is a harness limitation, not a quality signal"
 
 [[models]]
 id = "openrouter/openai/gpt-5.6-terra"

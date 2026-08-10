@@ -327,6 +327,38 @@ def test_failing_verdict_names_skills_once(registry):
     assert notes == "fails: proposal-alpha, proposal-dialog; flaky on: proposal-beta"
 
 
+# cheapo-1 with a registry note; the other models stay note-free
+_NOTED_TOML = REGISTRY_TOML.replace(
+    "output_price = 5.0\nenabled = true",
+    'output_price = 5.0\nenabled = true\nnote = "harness cannot drive it"',
+)
+
+
+def test_parse_registry_reads_optional_note(registry):
+    noted = support.parse_registry(_NOTED_TOML)
+    assert noted.models[0].note == "harness cannot drive it"
+    assert noted.models[1].note == ""
+    assert registry.models[0].note == ""
+
+
+def test_render_summary_note_alone_on_untested_row():
+    noted = support.parse_registry(_NOTED_TOML)
+    text = support.render_summary(support.select_models(noted), {}, "x")
+    row = next(line for line in text.splitlines() if "cheapo-1" in line)
+    assert "❔ untested" in row
+    assert row.endswith("| harness cannot drive it |")
+
+
+def test_render_summary_note_appended_after_verdict_notes():
+    noted = support.parse_registry(_NOTED_TOML)
+    verdicts = {"openrouter/lab/cheapo-1": support.Verdict("failing", failing_tasks=("alpha",))}
+    text = support.render_summary(
+        support.select_models(noted), verdicts, "x", noted.tasks.skills
+    )
+    row = next(line for line in text.splitlines() if "cheapo-1" in line)
+    assert "fails: proposal-alpha; harness cannot drive it" in row
+
+
 def test_parse_registry_requires_skill_mapping_for_matrix_tasks():
     bad = REGISTRY_TOML.replace('alpha = "proposal-alpha"\n', "")
     with pytest.raises(ValueError, match="skills mapping"):
