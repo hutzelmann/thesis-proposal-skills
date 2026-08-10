@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 import tomllib
@@ -68,6 +69,7 @@ RULE_IDS = (
     "title-too-long",
     # structure
     "timeline-detail-unknown",
+    "page-limit-invalid",
     "required-section-missing",
     "section-out-of-order",
     "timeline-table",
@@ -91,6 +93,7 @@ RULE_IDS = (
     "reference-id-shape",
     "reference-id-too-long",
     "min-references",
+    "min-references-invalid",
     # content
     "todo-marker",
     "length-over-limit",
@@ -588,10 +591,20 @@ def rule_reference_id_shape(ctx: Context) -> list[Finding]:
 def rule_min_references(ctx: Context) -> list[Finding]:
     defined = set(ctx.meta.reference_ids)
     min_refs = ctx.overrides.get("min_references", ctx.structure["min_references"])
+    out = []
+    if isinstance(min_refs, bool) or not isinstance(min_refs, int) or min_refs < 0:
+        # same degradation as an unknown timeline_detail: report, use default —
+        # a negative value would silently disable the check
+        out.append(error(
+            "min-references-invalid",
+            f"guidelines.md: min_references must be a non-negative integer, "
+            f"not `{min_refs}`",
+        ))
+        min_refs = ctx.structure["min_references"]
     if len(defined) < min_refs:
-        return [error("min-references",
-                      f"only {len(defined)} references — at least {min_refs} required")]
-    return []
+        out.append(error("min-references",
+                         f"only {len(defined)} references — at least {min_refs} required"))
+    return out
 
 
 def rule_todo_markers(ctx: Context) -> list[Finding]:
@@ -604,22 +617,36 @@ def rule_length(ctx: Context) -> list[Finding]:
     length_cfg = ctx.structure.get("length")
     if not length_cfg:
         return []
+    out = []
     page_limit = ctx.overrides.get("page_limit", length_cfg["page_limit"])
+    if (
+        isinstance(page_limit, bool)
+        or not isinstance(page_limit, (int, float))
+        or not math.isfinite(page_limit)
+        or page_limit <= 0
+    ):
+        # a quoted, negative, or non-finite value must degrade like any other
+        # bad override, never crash the report or silently disable the rule
+        out.append(error(
+            "page-limit-invalid",
+            f"guidelines.md: page_limit must be a positive number, not `{page_limit}`",
+        ))
+        page_limit = length_cfg["page_limit"]
     words = sum(
         len(line.split())
         for line in ctx.body.split("\n")
         if line.strip() and not line.lstrip().startswith("#")
     )
     estimated = words / length_cfg["words_per_page"]
-    if estimated <= page_limit:
-        return []
-    return [warn(
-        "length-over-limit",
-        f"estimated length ~{estimated:.1f} pages ({words} words at "
-        f"{length_cfg['words_per_page']} words/page) exceeds the "
-        f"{page_limit}-page limit — an estimate, not a rendered count; "
-        f"delete low-information sentences rather than compressing wording",
-    )]
+    if estimated > page_limit:
+        out.append(warn(
+            "length-over-limit",
+            f"estimated length ~{estimated:.1f} pages ({words} words at "
+            f"{length_cfg['words_per_page']} words/page) exceeds the "
+            f"{page_limit}-page limit — an estimate, not a rendered count; "
+            f"delete low-information sentences rather than compressing wording",
+        ))
+    return out
 
 
 def rule_prose_patterns(ctx: Context) -> list[Finding]:

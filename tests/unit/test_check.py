@@ -351,6 +351,35 @@ def test_length_estimate_respects_override(tmp_path):
     assert "1-page limit" in out
 
 
+@pytest.mark.parametrize("value", ['"5"', "-1", "0", "nan", "true"])
+def test_page_limit_override_must_be_a_positive_number(tmp_path, value):
+    """A quoted, negative, zero, non-finite, or boolean value degrades to the
+    default with an error — never a crash, never a silently disabled rule
+    (skill-check spec: advisory reporting)."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "typed.md"
+    victim.write_text(source)
+    (tmp_path / "guidelines.md").write_text(f"```toml\npage_limit = {value}\n```\n")
+    result = run_check(victim)
+    assert result.returncode == 1
+    assert "page_limit must be a positive number" in result.stdout
+    assert "digest: sha256:" in result.stdout
+
+
+@pytest.mark.parametrize("value", ['"8"', "-5", "true"])
+def test_min_references_override_must_be_a_non_negative_integer(tmp_path, value):
+    """Same degradation for min_references: error plus the default minimum,
+    which the clean fixture satisfies — so no shortfall error alongside."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "typed.md"
+    victim.write_text(source)
+    (tmp_path / "guidelines.md").write_text(f"```toml\nmin_references = {value}\n```\n")
+    result = run_check(victim)
+    assert result.returncode == 1
+    assert "min_references must be a non-negative integer" in result.stdout
+    assert "references — at least" not in result.stdout
+
+
 def test_footer_scopes_clean_verdict():
     """A clean result must say substance was not judged (skill-check spec:
     two-bucket honest reporting)."""

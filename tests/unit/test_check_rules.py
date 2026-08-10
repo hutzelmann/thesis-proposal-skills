@@ -221,6 +221,20 @@ def test_prose_patterns_rule_reports_personal_data_and_first_person():
     assert "email-address" in found
 
 
+def test_length_rejects_a_non_positive_or_non_numeric_page_limit():
+    """Bad override degrades to the default with an error — the clean fixture
+    stays under the default, so the error is the only finding."""
+    for bad in ("5", -1, 0, float("nan"), True):
+        ctx = context(CLEAN, {"page_limit": bad})
+        assert rules_of(check.rule_length(ctx)) == ["page-limit-invalid"], bad
+
+
+def test_min_references_rejects_a_negative_or_non_integer_override():
+    for bad in ("8", -5, True):
+        ctx = context(CLEAN, {"min_references": bad})
+        assert rules_of(check.rule_min_references(ctx)) == ["min-references-invalid"], bad
+
+
 # Identifiers this file produces that no fixture happens to carry. Listed
 # explicitly so `test_every_declared_identifier_is_reachable` stays honest
 # rather than being weakened to a subset check.
@@ -251,6 +265,8 @@ COVERED_BY_UNIT_TESTS = {
     "first-person-pronoun",
     "repeated-sentence-start",
     "length-over-limit",
+    "page-limit-invalid",
+    "min-references-invalid",
     "forbidden-section",
     "section-out-of-order",
 }
