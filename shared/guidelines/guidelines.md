@@ -70,6 +70,8 @@ Methodology names and their required subsections:
 
 ## Research Questions
 
+One to five research questions. The upper bound is not a style preference: a proposal carrying more of them has usually not decided what it is measuring, and the extra questions turn out to be refinements of one another or work for a second thesis. Fold them together or drop one — a workspace may raise or lower both bounds.
+
 Research questions must be:
 
 - specific and focused — neither too broad nor too narrow.

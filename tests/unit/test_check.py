@@ -99,6 +99,43 @@ def test_level2_sections_still_checked(tmp_path):
     assert "(RQ3) never referenced" in result.stdout
 
 
+def with_extra_research_questions(source: str, count: int) -> str:
+    """Extend f00's three-question list to `count`, keeping every (RQn) cross-ref."""
+    added = "".join(
+        f"{n}. To what degree does review latency change under configuration {n}?\n"
+        for n in range(4, count + 1)
+    )
+    body = source.replace(
+        "3. How does model performance vary across different programming "
+        "languages and project domains?\n",
+        "3. How does model performance vary across different programming "
+        "languages and project domains?\n" + added,
+    )
+    refs = "".join(f" This is answered by measuring latency (RQ{n}).\n"
+                   for n in range(4, count + 1))
+    return body.replace("\n# Timeline", refs + "\n# Timeline")
+
+
+def test_too_many_research_questions_errors(tmp_path):
+    """The count bounds scope, and scope is exactly what an over-long list has
+    not decided. Six questions is a second thesis hiding in the first."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "six-questions.md"
+    victim.write_text(with_extra_research_questions(source, 6))
+    result = run_check(victim)
+    assert result.returncode == 1
+    assert "6 research questions — at most 5 allowed" in result.stdout
+
+
+def test_research_questions_at_the_bound_pass(tmp_path):
+    """Five is allowed: the rule is an upper bound, not a target of three."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    victim = tmp_path / "five-questions.md"
+    victim.write_text(with_extra_research_questions(source, 5))
+    result = run_check(victim)
+    assert "research questions — at most" not in result.stdout
+
+
 def test_multiple_metadata_blocks_error(tmp_path):
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
     victim = tmp_path / "double.md"

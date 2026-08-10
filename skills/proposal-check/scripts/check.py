@@ -492,6 +492,14 @@ def rule_research_questions(ctx: Context) -> list[Finding]:
             "research-questions-not-a-list",
             "no ordered-list research questions found in the research-questions section",
         ))
+    # .get(): an older structure file, or a workspace that clears the key,
+    # disables the bound rather than crashing the whole check.
+    rq_max = ctx.structure["research_questions"].get("max_count")
+    if rq_max and len(rq_items) > rq_max:
+        out.append(error(
+            "research-questions-too-many",
+            f"{len(rq_items)} research questions — at most {rq_max} allowed",
+        ))
     out += [
         error("research-question-unreferenced",
               f"(RQ{n}) never referenced in the methodology section")

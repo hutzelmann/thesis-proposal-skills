@@ -214,10 +214,12 @@
     "nur für den internen gebrauch",
     "geheim"
   ],
+  "_rq_comment": "Counts only. Whether the questions are distinct, non-overlapping and analytically phrased stays prose in guidelines.md — a count is checkable, a judgement is not.",
   "research_questions": {
     "format": "ordered list under the research_questions section",
     "label": "RQ",
     "min_count": 1,
+    "max_count": 5,
     "methodology_reference_pattern": "\\(RQ\\d+\\)"
   },
   "todo_marker": "\\[TODO:[^\\]]*\\]"
