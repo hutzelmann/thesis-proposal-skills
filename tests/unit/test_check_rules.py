@@ -167,6 +167,53 @@ def test_methodology_rule_reports_a_missing_subsection():
     ]
 
 
+CASE_STUDY = {
+    "title": {"en": "Case Study", "de": "Fallstudie"},
+    "subsections": [
+        {"en": "Case and Context", "de": "Fall und Kontext", "guidance": "the case"},
+        {"en": "Analysis", "de": "Analyse", "guidance": "how it is analysed"},
+    ],
+}
+
+
+def test_workspace_branch_is_merged_over_the_shipped_set():
+    """The closure stays; its contents are the workspace's to decide."""
+    merged = check.merge_methodologies(STRUCTURE, {"methodologies": {"case": CASE_STUDY}})
+    assert merged["case"]["title"]["en"] == "Case Study"
+    assert set(STRUCTURE["methodologies"]) < set(merged)
+
+
+def test_workspace_can_disable_a_shipped_branch():
+    merged = check.merge_methodologies(
+        STRUCTURE, {"methodologies": {"theoretical": {"enabled": False}}})
+    assert "theoretical" not in merged
+    assert "prototype" in merged
+
+
+def test_workspace_declaring_nothing_gets_the_shipped_set():
+    assert check.merge_methodologies(STRUCTURE, {}) == STRUCTURE["methodologies"]
+
+
+@pytest.mark.parametrize(("branch", "needle"), [
+    ({"subsections": [{"en": "A", "de": "A", "guidance": "g"}]}, "needs a `title`"),
+    ({"title": {"en": "X"}, "subsections": [{"en": "A", "de": "A", "guidance": "g"}]},
+     "needs a `title`"),
+    ({"title": {"en": "X", "de": "X"}}, "at least one subsection"),
+    ({"title": {"en": "X", "de": "X"}, "subsections": [{"en": "A", "de": "A"}]}, "guidance"),
+    ({"title": {"en": "X", "de": "X"}, "subsections": [{"en": "A", "guidance": "g"}]},
+     "needs both `en` and `de`"),
+    ({"title": {"en": "X", "de": "X"}, "subsections": [], "colour": "red"}, "unknown key"),
+])
+def test_invalid_branch_is_named_and_not_applied(branch, needle):
+    """A branch that cannot say what goes inside it would have the write skill
+    inventing content for a heading it has never seen."""
+    assert needle in check.branch_problem(branch)
+    assert check.merge_methodologies(STRUCTURE, {"methodologies": {"x": branch}}) == \
+        STRUCTURE["methodologies"]
+    findings = check.override_key_findings({"methodologies": {"x": branch}})
+    assert rules_of(findings) == ["methodology-branch-invalid"]
+
+
 def test_methodology_rule_is_silent_when_the_workspace_overrides_the_sections():
     """An overridden section list replaces the closed set, so the canonical
     methodology rules no longer apply."""
@@ -243,6 +290,7 @@ COVERED_BY_UNIT_TESTS = {
     # part of its oracle, so a retired key there would be a fixture defect
     "override-key-retired",
     "override-key-unknown",
+    "methodology-branch-invalid",
     "metadata-block-missing",
     "metadata-title-missing",
     "title-question-form",

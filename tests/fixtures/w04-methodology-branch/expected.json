@@ -1,0 +1,20 @@
+{
+  "fixture": "w04-methodology-branch",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "the methodology `Case Study` is not in the shipped set: it exists only because this workspace's guidelines.md declares it, with a title in both languages and guidance for each of its three subsections",
+    "the declared subsections (Case and Context / Data Collection / Analysis) are the ones the check requires here — no shipped branch has that set, so a pass proves the workspace declaration was merged rather than ignored",
+    "the same workspace disables the shipped `theoretical` branch: a proposal declaring `Theoretical Analysis` here must be reported as an unknown methodology, which is the removal half of the mechanism",
+    "the proposal is otherwise clean, so any finding at all means the merge broke — this fixture is the positive control for workspace-configurable methodologies",
+    "the human-participants guidance is followed inside Data Collection (consent, pseudonymisation) rather than in a separate section, which is what the advisory prose asks for"
+  ]
+}

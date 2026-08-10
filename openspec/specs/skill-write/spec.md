@@ -108,7 +108,6 @@ When a companion `<slug>.notes.md` exists for the target proposal, the write ski
 - **WHEN** the target proposal has no companion notes file and the session makes no recordable decision
 - **THEN** the skill writes the proposal as usual and creates no notes file
 
-
 ### Requirement: Title negotiated once research questions exist
 The skill SHALL judge the proposal's title against the guidance once the research questions are written, including a title inherited unchanged from an ideation seed, and SHALL NOT treat an inherited title as settled. Where the title matches an alarm class, the skill SHALL raise it in chat, state that the title is printed on the study certificate, and offer between one and three abstracted alternatives naming the contribution and its object. The skill SHALL write the student's chosen title, never a silent replacement, and where a named technology is retained the skill SHALL have the student's stated reason that the technology is the object of study.
 
@@ -149,3 +148,15 @@ After every writing pass, before reporting, the skill SHALL re-read the produced
 #### Scenario: Author's filler in an untouched section
 - **WHEN** a refinement pass notices removable filler in a section the request did not touch
 - **THEN** the skill reports the sentences as removable in chat and leaves the text unchanged
+
+### Requirement: The methodology set comes from the merged guidance
+The write skill SHALL take the acceptable methodologies and their required subsections from the merged guidance — shipped defaults with the workspace declaration applied — rather than from the shipped set alone. When a proposal uses a workspace-declared branch, the skill SHALL fill its subsections from the guidance that branch declares, and SHALL NOT substitute the content contract of a shipped branch with a similar name.
+
+#### Scenario: Writing into a workspace branch
+- **WHEN** the workspace declares a methodology branch and the user chooses it
+- **THEN** the skill writes that branch's declared subsections and follows the guidance declared for each
+
+#### Scenario: Disabled branch not offered
+- **WHEN** the workspace has disabled a shipped methodology
+- **THEN** the skill does not offer it when the methodology is chosen
+

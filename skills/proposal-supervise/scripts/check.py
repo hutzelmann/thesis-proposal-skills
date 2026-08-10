@@ -70,6 +70,7 @@ RULE_IDS = (
     # workspace override file
     "override-key-retired",
     "override-key-unknown",
+    "methodology-branch-invalid",
     # structure
     "timeline-detail-unknown",
     "page-limit-invalid",
@@ -151,6 +152,53 @@ def setting(structure: dict, overrides: dict, table: str, key: str):
     return structure.get(table, {}).get(key)
 
 
+BRANCH_KEYS = {"title", "subsections", "enabled"}
+
+
+def branch_problem(branch: object) -> str | None:
+    """Why this workspace methodology branch cannot be applied, or None.
+
+    `guidance` is required per subsection here but absent from the shipped
+    branches: those carry their content contract as prose in guidelines.md, and
+    a workspace has no prose file to carry one. Without it the write skill would
+    be inventing what belongs under a heading it has never seen.
+    """
+    if not isinstance(branch, dict):
+        return "must be a table"
+    unknown = sorted(set(branch) - BRANCH_KEYS)
+    if unknown:
+        return f"unknown key(s) {', '.join(unknown)}"
+    if branch.get("enabled") is False:
+        return None                                   # disabling needs nothing else
+    title = branch.get("title")
+    if not isinstance(title, dict) or not (title.get("en") and title.get("de")):
+        return "needs a `title` with both `en` and `de`"
+    subs = branch.get("subsections")
+    if not isinstance(subs, list) or not subs:
+        return "needs at least one subsection"
+    for i, sub in enumerate(subs, 1):
+        if not isinstance(sub, dict) or not (sub.get("en") and sub.get("de")):
+            return f"subsection {i} needs both `en` and `de`"
+        if not sub.get("guidance"):
+            return (f"subsection {i} (`{sub['en']}`) needs `guidance` saying what "
+                    "belongs in it — the shipped branches carry that as prose, "
+                    "a workspace branch has nowhere else to put it")
+    return None
+
+
+def merge_methodologies(structure: dict, overrides: dict) -> dict:
+    """Shipped branches with the workspace declaration applied, invalid ones out."""
+    merged = dict(structure["methodologies"])
+    for key, branch in (overrides.get("methodologies") or {}).items():
+        if branch_problem(branch) is not None:
+            continue
+        if isinstance(branch, dict) and branch.get("enabled") is False:
+            merged.pop(key, None)
+        else:
+            merged[key] = branch
+    return merged
+
+
 def override_key_findings(overrides: dict) -> list[Finding]:
     """Every override key that will not be honoured, named.
 
@@ -168,6 +216,15 @@ def override_key_findings(overrides: dict) -> list[Finding]:
                 f"workspace override `{name}` was replaced by `{RETIRED_KEYS[name]}` — "
                 "move it there; it is not applied as written",
             ))
+        elif name == "methodologies":
+            # keyed by branch id rather than by a fixed leaf set, so it is
+            # validated by shape; one bad branch never invalidates the others
+            out += [
+                error("methodology-branch-invalid",
+                      f"workspace methodology `{key}`: {problem} — branch not applied")
+                for key, branch in (value or {}).items()
+                if (problem := branch_problem(branch)) is not None
+            ]
         elif not isinstance(value, dict):
             out.append(error("override-key-unknown",
                              f"unknown workspace override `{name}` — it is not applied"))
@@ -386,6 +443,7 @@ class Context:
     lang: str
     structure: dict
     overrides: dict
+    methodologies: dict    # shipped set with the workspace declaration applied
     detail: str            # effective timeline mode after validation
     head_texts: list[str]
     titles: dict
@@ -513,7 +571,7 @@ def rule_methodology(ctx: Context) -> list[Finding]:
     """Canonical mode only: an overridden section list replaces the closed set."""
     if overridden(ctx.overrides, "sections", "required"):
         return []
-    methodologies = ctx.structure["methodologies"]
+    methodologies = ctx.methodologies
     meth_names = {m["title"][ctx.lang]: key for key, m in methodologies.items()}
     if not ctx.meth_heads:
         return [error("methodology-missing", f"methodology section missing (`{ctx.meth_tpl}`)")]
@@ -803,6 +861,7 @@ def build_context(body: str, meta: Metadata, structure: dict, overrides: dict) -
     ]
     return Context(
         body=body, meta=meta, lang=lang, structure=structure, overrides=overrides,
+        methodologies=merge_methodologies(structure, overrides),
         detail=detail, head_texts=head_texts, titles=titles, meth_tpl=meth_tpl,
         meth_prefix=meth_prefix,
         meth_heads=[h for h in head_texts if h.startswith(meth_prefix)],

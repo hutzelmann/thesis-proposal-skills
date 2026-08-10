@@ -113,6 +113,54 @@ def test_unknown_override_key_is_reported(tmp_path):
     assert "unknown workspace override `[references] min_cout`" in result.stdout
 
 
+CASE_STUDY_TOML = """```toml
+[methodologies.case_study.title]
+en = "Case Study"
+de = "Fallstudie"
+
+[[methodologies.case_study.subsections]]
+en = "Case and Context"
+de = "Fall und Kontext"
+guidance = "the organisation studied and why it fits"
+
+[[methodologies.case_study.subsections]]
+en = "Analysis"
+de = "Analyse"
+guidance = "how the material is coded and synthesised"
+```
+"""
+
+
+def test_workspace_branch_passes_end_to_end():
+    """The positive control lives as a fixture so the merge is exercised through
+    the script, not only through the merge function."""
+    result = run_check(
+        FIXTURES / "w04-methodology-branch" / "release-readiness-signals.md")
+    assert result.returncode == 0, result.stdout
+    assert "no errors" in result.stdout
+
+
+def test_workspace_branch_requires_its_own_subsections(tmp_path):
+    source = (FIXTURES / "w04-methodology-branch" /
+              "release-readiness-signals.md").read_text()
+    victim = tmp_path / "case.md"
+    victim.write_text(source.replace("## Analysis", "## Findings"))
+    (tmp_path / "guidelines.md").write_text(CASE_STUDY_TOML)
+    result = run_check(victim)
+    assert "methodology subsection missing: `Analysis`" in result.stdout
+
+
+def test_disabled_shipped_branch_becomes_unknown(tmp_path):
+    source = (FIXTURES / "f17-theoretical" / "physical-unit-consistency.md").read_text()
+    victim = tmp_path / "theory.md"
+    victim.write_text(source)
+    (tmp_path / "guidelines.md").write_text(
+        "```toml\n[methodologies.theoretical]\nenabled = false\n```\n")
+    out = run_check(victim).stdout
+    assert "unknown methodology `Theoretical Analysis`" in out
+    assert "Theoretical Analysis" not in out.split("must be one of:")[1].split("\n")[0]
+
+
 def test_research_question_bounds_are_overridable(tmp_path):
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
     victim = tmp_path / "ml-code-review.md"

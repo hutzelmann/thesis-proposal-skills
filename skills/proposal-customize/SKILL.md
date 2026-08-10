@@ -38,6 +38,26 @@ heading_patterns = ["..."]      # replaces the default forbidden list entirely
 detail = "detailed"             # default "simple": one sentence, no table, no phases
 ```
 
+The methodology set is configurable the same way, and is the one override with an entry per branch rather than a single leaf:
+
+```toml
+[methodologies.case_study.title]
+en = "Case Study"
+de = "Fallstudie"
+
+[[methodologies.case_study.subsections]]
+en = "Case and Context"
+de = "Fall und Kontext"
+guidance = "The organisation or system studied, why it suits the research questions, what access exists."
+
+[methodologies.theoretical]
+enabled = false                 # a shipped branch this program does not accept
+```
+
+A branch id matching a shipped one replaces it; a new id adds one; `enabled = false` removes one. **`guidance` per subsection is required and you may not invent it**: the shipped branches carry their content contract as prose in `references/guidelines.md`, and a workspace branch has nowhere else to put one — without it the write skill fills a heading it has never seen. If the user cannot say what belongs in a subsection, stop and say the branch cannot be written yet; do not guess. Before disabling a shipped branch, say plainly that any existing proposal declaring it starts failing the check.
+
+What stays fixed is the closure, not the contents: a proposal still declares exactly one methodology, from whatever set this workspace ends up with.
+
 **Every key is the key path it has in `references/structure.json`.** That is the whole naming rule — there are no short forms, and a key that does not resolve to an overridable leaf is reported by the check as an error rather than quietly ignored. If you meet a workspace file written before this shape (`min_references = 8`, `timeline_detail = "detailed"`, and the other flat keys), migrate it in place and tell the user which keys you moved; leaving it costs them their overrides.
 
 Merge semantics (fixed, explain them when relevant): a user key wins over the default per key; list values **replace** the default list entirely (they do not append); removing an entry from `[forbidden] heading_patterns` allows that section again. `[timeline] detail = "detailed"` is the one switch that governs the timeline section: it lifts the one-sentence size limit and stops work-plan headings (work plan, milestones, Gantt, work packages) being forbidden. Leave the forbidden list alone for that — the switch does the whole job.
