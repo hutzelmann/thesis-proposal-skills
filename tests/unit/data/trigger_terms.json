@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "Which skill owns which trigger moment. Descriptions are the only text a host",
+    "reads when choosing a skill, so an overlap here is not a wording preference —",
+    "it decides which skill a user's sentence reaches.",
+    "",
+    "Ownership is over PHRASES, not words. The words that collide (supervisor,",
+    "feedback, review, idea) are exactly the ones several skills legitimately need;",
+    "owning them would fight honest prose and be switched off by the next reader.",
+    "What can be owned is a moment: 'is it ready for the supervisor' belongs to one",
+    "skill even though four may say 'supervisor'.",
+    "",
+    "Seeded 2026-08-10 from the collisions measured in docs/skill-routing.md and the",
+    "haiku probe that routed a review request to proposal-check. Moving a boundary",
+    "means editing this file in the same commit as the description."
+  ],
+  "owned": {
+    "before handing it to a supervisor": "proposal-review",
+    "ready for their supervisor": "proposal-review",
+    "asks for feedback": "proposal-review",
+    "feedback to return": "proposal-supervise",
+    "receives a thesis proposal": "proposal-supervise",
+    "quick gate": "proposal-check",
+    "forbidden content": "proposal-check",
+    "already published": "proposal-lit-search",
+    "citation snowballing": "proposal-lit-search",
+    "research questions yet": "proposal-ideate",
+    "resume an earlier ideation": "proposal-ideate",
+    "standard single-file format": "proposal-import",
+    "build a pdf": "proposal-publish",
+    "install the build tools": "proposal-publish",
+    "wants something different": "proposal-customize",
+    "bullet points turned into prose": "proposal-write",
+    "a skill misbehaved": "proposal-troubleshoot"
+  },
+  "shared": [
+    "supervisor",
+    "professor",
+    "feedback",
+    "review",
+    "check",
+    "idea",
+    "proposal",
+    "thesis",
+    "literature",
+    "references",
+    "sections",
+    "format",
+    "pdf",
+    "student"
+  ]
+}

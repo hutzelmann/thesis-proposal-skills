@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -182,7 +183,7 @@ def tool_calls(events: list[dict]) -> list[tuple[str, dict]]:
     return calls
 
 
-def route_from_events(events: list[dict]) -> str | None:
+def route_from_events(events: list[dict], bound: int = MAX_PREPARATORY_CALLS) -> str | None:
     """First `proposal-*` skill invoked, or None when the case went unrouted.
 
     Non-skill calls are tolerated up to MAX_PREPARATORY_CALLS, as is an
@@ -197,7 +198,7 @@ def route_from_events(events: list[dict]) -> str | None:
                 raise ValueError(f"Skill tool_use carries no skill name: {payload!r}")
             if skill.startswith(SKILL_PREFIX):
                 return skill
-        if seen > MAX_PREPARATORY_CALLS:
+        if seen > bound:
             return None
     return None
 
@@ -242,8 +243,24 @@ def skills_revision() -> str:
         return "unknown"
 
 
+SCORE_LINE = re.compile(r"measurements: (\d+) \((\d+) correct\)")
+
+
+def previous_score(path: Path = REPORT_FILE) -> str | None:
+    """The score the report about to be overwritten was carrying.
+
+    A routing number in isolation says little — the question is always whether a
+    description edit moved it. Reading the outgoing report is enough to keep that
+    comparison in the artifact instead of in someone's memory.
+    """
+    if not path.exists():
+        return None
+    match = SCORE_LINE.search(path.read_text(encoding="utf-8"))
+    return f"{match.group(2)}/{match.group(1)}" if match else None
+
+
 def render_report(results: list[Result], matrix: Matrix, model: str,
-                  revision: str | None = None) -> str:
+                  revision: str | None = None, supersedes: str | None = None) -> str:
     passed, total = matrix.totals
     lines = [
         "# Skill routing",
@@ -255,6 +272,7 @@ def render_report(results: list[Result], matrix: Matrix, model: str,
         f"- model: `{model}`",
         f"- skills revision: `{revision or skills_revision()}`",
         f"- measurements: {total} ({passed} correct)",
+        *([f"- supersedes: {supersedes}"] if supersedes else []),
         "",
         "## Per kind",
         "",
@@ -477,7 +495,9 @@ def main(argv: list[str] | None = None) -> int:
     }
     (LOG_DIR / f"{stamp}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     if not args.no_report:
-        REPORT_FILE.write_text(render_report(results, matrix, args.model), encoding="utf-8")
+        REPORT_FILE.write_text(
+            render_report(results, matrix, args.model, supersedes=previous_score()),
+            encoding="utf-8")
         print(f"routing: report written to {REPORT_FILE.relative_to(REPO)}")
     return 0 if passed == total else 1
 

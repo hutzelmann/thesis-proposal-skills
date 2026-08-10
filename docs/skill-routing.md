@@ -4,15 +4,16 @@ Which skill the host selector invokes for a user utterance, decided by the front
 
 - model: `sonnet`
 - skills revision: `3a1e23e`
-- measurements: 60 (51 correct)
+- measurements: 60 (55 correct)
+- supersedes: 51/60
 
 ## Per kind
 
 | kind | correct | measured |
 | --- | --- | --- |
 | canonical | 14 | 14 |
-| oblique | 10 | 12 |
-| collision | 23 | 30 |
+| oblique | 11 | 12 |
+| collision | 26 | 30 |
 | negative | 4 | 4 |
 
 ## Expected against selected
@@ -22,14 +23,12 @@ Which skill the host selector invokes for a user utterance, decided by the front
 | none | none | 4 |
 | proposal-check | proposal-check | 6 |
 | proposal-customize | proposal-customize | 5 |
-| proposal-ideate | none ← not selected | 3 |
-| proposal-ideate | proposal-ideate | 3 |
-| proposal-import | none ← not selected | 1 |
-| proposal-import | proposal-import | 4 |
+| proposal-ideate | none ← not selected | 1 |
+| proposal-ideate | proposal-ideate | 5 |
+| proposal-import | proposal-import | 5 |
 | proposal-lit-search | none ← not selected | 4 |
 | proposal-lit-search | proposal-lit-search | 1 |
-| proposal-publish | none ← not selected | 1 |
-| proposal-publish | proposal-publish | 5 |
+| proposal-publish | proposal-publish | 6 |
 | proposal-review | proposal-review | 6 |
 | proposal-supervise | proposal-supervise | 6 |
 | proposal-troubleshoot | proposal-troubleshoot | 5 |
@@ -37,8 +36,6 @@ Which skill the host selector invokes for a user utterance, decided by the front
 
 ## Wrong outcomes
 
-- `ideate-collision` expected `proposal-ideate`, selected `none` (3/3 epochs)
+- `ideate-collision` expected `proposal-ideate`, selected `none`
 - `litsearch-oblique` expected `proposal-lit-search`, selected `none`
 - `litsearch-collision` expected `proposal-lit-search`, selected `none` (3/3 epochs)
-- `import-collision` expected `proposal-import`, selected `none`
-- `publish-oblique` expected `proposal-publish`, selected `none`

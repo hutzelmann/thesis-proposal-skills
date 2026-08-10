@@ -1,6 +1,6 @@
 ---
 name: proposal-publish
-description: Build a PDF (or docx fallback) from a proposal file via pandoc — compact layout, typst-first, with install guidance when tools are missing. Also offers a stripped hand-in export. Use when the user wants a PDF, wants to hand something to their supervisor, or asks how to install the build tools.
+description: Build a PDF (or docx fallback) from a proposal file via pandoc — compact layout, typst-first, with install guidance when tools are missing. Also offers a stripped hand-in export. Use when the user wants a PDF or something to email, print or hand to their supervisor, wants the proposal out of markdown, or asks how to install the build tools.
 ---
 
 # Proposal Publish

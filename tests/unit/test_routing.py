@@ -25,6 +25,7 @@ from routing import (
     load_cases,
     misroutes,
     outcome_label,
+    previous_score,
     render_report,
     route_from_events,
     tool_calls,
@@ -74,6 +75,15 @@ def test_route_ignores_non_assistant_events():
 def test_wandering_past_the_bound_is_unrouted():
     peek = events("preparatory-then-route")[0]
     assert route_from_events([peek] * 4 + events("routed-check")) is None
+
+
+def test_the_preparatory_bound_is_a_parameter_not_a_law():
+    """Raising it must be able to change a verdict, or the constant could never
+    be questioned against a recorded run."""
+    peek = events("preparatory-then-route")[0]
+    wandering = [peek] * 4 + events("routed-check")
+    assert route_from_events(wandering) is None
+    assert route_from_events(wandering, bound=10) == "proposal-check"
 
 
 def test_tool_calls_preserve_order():
@@ -150,6 +160,19 @@ def test_report_separates_never_selected_from_stolen():
     assert outcome_label("proposal-ideate", NO_ROUTE) == " ← not selected"
     assert outcome_label("proposal-review", "proposal-check") == " ← mis-routed"
     assert outcome_label("proposal-check", "proposal-check") == ""
+
+
+def test_report_states_the_score_it_supersedes(tmp_path):
+    earlier = tmp_path / "skill-routing.md"
+    results = [result("a", "proposal-check", route="proposal-check")]
+    earlier.write_text(render_report(results, classify(results), "sonnet"), encoding="utf-8")
+    assert previous_score(earlier) == "1/1"
+    assert "supersedes: 1/1" in render_report(
+        results, classify(results), "sonnet", supersedes=previous_score(earlier))
+
+
+def test_first_report_has_nothing_to_supersede(tmp_path):
+    assert previous_score(tmp_path / "absent.md") is None
 
 
 def test_report_records_the_revision_it_was_rendered_for():
