@@ -197,9 +197,23 @@ The PDF and intermediate build source SHALL be written next to the proposal. Pub
 ### Requirement: Hand-in export
 Publish SHALL offer a stripped export for supervisor hand-ins without tooling: references reduced to citation-ready entries with abstracts removed.
 
+The hand-in export is the one publish output that is not an ignorable build artifact — it is a deliverable meant to be kept and sent. Publish SHALL therefore NOT silently replace an existing hand-in export whose content differs from what it would write. It SHALL refuse, report the file and the way to proceed anyway, and exit non-zero. An explicit force option SHALL perform the replacement. Writing content identical to the existing file SHALL succeed silently, so an unchanged rebuild stays free. The skill SHALL relay the refusal to the user rather than resolving it on their behalf, because whether hand edits may be discarded is the user's decision.
+
 #### Scenario: Markdown hand-in
 - **WHEN** the user requests the hand-in export
 - **THEN** a copy without abstract fields is produced, citations intact
+
+#### Scenario: Hand-in export was edited by hand
+- **WHEN** the hand-in export already exists with content differing from what would be written
+- **THEN** publish refuses, names the file and the force option, and exits non-zero without writing
+
+#### Scenario: Forced replacement
+- **WHEN** the user requests the hand-in export with the force option and a differing file exists
+- **THEN** the file is replaced
+
+#### Scenario: Unchanged rebuild
+- **WHEN** the hand-in export already exists and its content matches what would be written
+- **THEN** the run succeeds without a refusal
 
 ### Requirement: Bibliography presentation
 The reference list SHALL be introduced by an unnumbered headline styled like a section heading, worded in the proposal's declared language ("References" in English, "Literatur" in German). Entries SHALL be set one step below body size, justified, in a two-column arrangement: each entry's numeric label stands flush left in a fixed-width label column, and every text line — first and wrapped alike — aligns on a common left edge, with a small uniform gap separating entries. The reference list SHALL never render as unlabeled body paragraphs. The typst tier is the fidelity reference; the LaTeX tier SHALL approximate the same presentation without packages beyond a standard installation.

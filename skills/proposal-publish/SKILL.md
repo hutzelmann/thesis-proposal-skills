@@ -43,6 +43,7 @@ Relay the script's messages rather than re-diagnosing; on Windows use `py` if `p
 ## Hand-in guidance
 
 - `--handout` strips abstracts from the references block (supervisor-facing file should not be half bibliography database) — citations and entries stay intact. The handout is a deliverable meant to be kept and sent, so it is deliberately **not** gitignored.
+- Because it is not gitignored, the handout is the one output a user may have edited by hand. The script refuses to replace an edited one and says so; relay that refusal instead of resolving it — renaming the file or discarding the edits is the user's decision, not yours. `--force` is for when they have decided.
 - docx output uses pandoc's default styling (acceptable last resort; the compact look exists for the typst and LaTeX tiers).
 - Remind the user to rename the PDF to include their name before sending (supervisors receive many proposals).
 - If check hasn't run recently, offer it first — but publishing proceeds on user confirmation regardless (check is advisory).

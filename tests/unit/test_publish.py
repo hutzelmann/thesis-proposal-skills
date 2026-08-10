@@ -74,6 +74,52 @@ def test_ensure_gitignore_appends_only_missing(tmp_path):
     assert "*.typ" in content
 
 
+SOURCE = (
+    "Body text.\n\n---\nreferences:\n- id: A1\n  title: T\n"
+    "  abstract: some abstract\n  DOI: 10.1/x\n---\n"
+)
+
+
+def seeded(tmp_path):
+    proposal = tmp_path / "topic.md"
+    proposal.write_text(SOURCE, encoding="utf-8")
+    return proposal, tmp_path / "topic-handout.md"
+
+
+def test_handout_written_when_absent(tmp_path):
+    proposal, handout = seeded(tmp_path)
+    assert publish.main([str(proposal), "--handout"]) == 0
+    assert "abstract" not in handout.read_text(encoding="utf-8")
+
+
+def test_handout_rewrite_of_identical_content_is_silent(tmp_path):
+    """An unchanged rebuild must stay free — the guard is about hand edits."""
+    proposal, handout = seeded(tmp_path)
+    publish.main([str(proposal), "--handout"])
+    assert publish.main([str(proposal), "--handout"]) == 0
+    assert handout.exists()
+
+
+def test_edited_handout_is_not_overwritten(tmp_path, capsys):
+    """The handout is the one publish output that is not gitignored, because it
+    is meant to be kept and sent. A difference is therefore a hand edit."""
+    proposal, handout = seeded(tmp_path)
+    publish.main([str(proposal), "--handout"])
+    handout.write_text("Body text, fixed by hand.\n", encoding="utf-8")
+    before = handout.read_text(encoding="utf-8")
+    assert publish.main([str(proposal), "--handout"]) == 2
+    assert handout.read_text(encoding="utf-8") == before
+    assert "--force" in capsys.readouterr().err
+
+
+def test_force_replaces_an_edited_handout(tmp_path):
+    proposal, handout = seeded(tmp_path)
+    publish.main([str(proposal), "--handout"])
+    handout.write_text("Body text, fixed by hand.\n", encoding="utf-8")
+    assert publish.main([str(proposal), "--handout", "--force"]) == 0
+    assert "fixed by hand" not in handout.read_text(encoding="utf-8")
+
+
 def test_strip_abstracts_block_scalar_with_blank_lines():
     text = (
         "Body.\n\n---\nreferences:\n- id: A1\n  title: T\n"

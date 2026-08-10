@@ -156,12 +156,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("proposal", type=Path)
     parser.add_argument("--handout", action="store_true",
                         help="write a stripped markdown export instead of building")
+    parser.add_argument("--force", action="store_true",
+                        help="replace an existing handout that was edited after it was written")
     args = parser.parse_args(argv)
     proposal = args.proposal.resolve()
 
     if args.handout:
         target = proposal.with_name(proposal.stem + "-handout.md")
-        target.write_text(strip_abstracts(proposal.read_text(encoding="utf-8")), encoding="utf-8")
+        export = strip_abstracts(proposal.read_text(encoding="utf-8"))
+        # Every other output is an ignored build artifact this script owns. The
+        # handout is not ignored, because it is meant to be kept and sent — so a
+        # difference here is a hand edit, and discarding it is the user's call.
+        edited = (not args.force and target.exists()
+                  and target.read_text(encoding="utf-8") != export)
+        if edited:
+            print(
+                f"{target.name} exists and differs from what would be written — "
+                "it was edited after it was generated. Rename it, or re-run with "
+                "--force to replace it.",
+                file=sys.stderr,
+            )
+            return 2
+        target.write_text(export, encoding="utf-8")
         print(
             f"handout written: {target.name} (abstracts stripped — "
             "rename to include your name before sending)"
