@@ -124,8 +124,8 @@ If reduction never isolates it, record that the attempt was made and failed. Nev
 
 The bundle is local and nothing has been sent. Tell the user their options and stop:
 
-- open an issue at `https://github.com/hutzelmann/thesis-proposal-skills/issues` and paste `report.md` into the skill-defect template, attaching `repro/` if there is one
-- email it, or hand it to their supervisor if the material is sensitive enough that they would rather it not be public
+- open a prefilled issue. Build the URL from the filled `report.md`: start with `https://github.com/hutzelmann/thesis-proposal-skills/issues/new?template=skill-defect.yml`, then append URL-encoded query parameters for the form's short fields — `skill` (which skill misbehaved), `rung` (the exact text of the matching triage-outcome option), `what_happened` (that section of the report), `self_reported` (the `[self-reported]` model and harness lines). Give the user the URL and name what is left to do by hand: tick the updated-first box, paste the `[measured]` lines plus `hashes.txt` into the environment field, paste the captured script output, and attach `repro/` if there is one — those are too long to travel in a URL. If the URL itself grows past a few thousand characters, leave `what_happened` out of it and say so.
+- email `report.md`, or hand it to their supervisor if the material is sensitive enough that they would rather it not be public
 - keep it, and delete `bug-report/` once it has been sent
 
-Do not offer to file it, and do not file it. This skill transmits nothing, has no credentials, and must not acquire either.
+The URL carries nothing beyond what the chosen disclosure level already put into `report.md` — building it changes no privacy decision. Do not open it, do not offer to file the issue, and do not file it: the user reviews the form and submits it themselves. This skill transmits nothing, has no credentials, and must not acquire either.
