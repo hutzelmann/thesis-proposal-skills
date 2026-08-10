@@ -7,6 +7,7 @@ import pytest
 from l1_checks import (
     verdict_supervise_letter,
     verdict_supervise_no_personal_data,
+    verdict_supervise_package,
     verdict_supervise_pointers,
     verdict_supervise_points,
     verdict_supervise_tier,
@@ -64,6 +65,14 @@ def test_tier_absent_or_buried_fails():
     assert not verdict_supervise_tier(buried)[0]
 
 
+def test_tier_accepts_naturally_negated_no_viable_core():
+    """Regression (sonnet dev run 2026-08-10): real letters phrase the bottom
+    tier as prose — 'does not yet have a viable thesis core' — not verbatim."""
+    letter = ("Dear student,\n\nThank you for sending this idea. Right now it does "
+              "not yet have a viable thesis core — the material needs re-grounding.")
+    assert verdict_supervise_tier(letter)[0]
+
+
 def test_tier_ready_is_word_bounded():
     ok, _ = verdict_supervise_tier("We have already received your idea.")
     assert not ok, "'already' must not count as the tier 'ready'"
@@ -87,6 +96,32 @@ def test_personal_data_match_is_case_insensitive():
     package = {"pkg/idea.md": "contact: ERIKA.MUSTERFRAU@EXAMPLE.ORG"}
     assert not verdict_supervise_no_personal_data(
         package, ("erika.musterfrau@example.org",))[0]
+
+
+def test_pointers_ignore_the_repo_name_in_the_install_blurb():
+    """Regression (sonnet dev run 2026-08-10): `hutzelmann/thesis-proposal-skills`
+    in the getting-started blurb must not read as a skill named proposal-skills."""
+    letter = ("1. Sharpen the question — proposal-ideate.\n\nRun `npx skills add "
+              "hutzelmann/thesis-proposal-skills` to install the tools.")
+    ok, why = verdict_supervise_pointers(letter, SKILL_SET)
+    assert ok
+    assert "proposal-skills" not in why
+
+
+def test_package_aggregate_passes_on_a_complete_package():
+    package = {"pkg/letter.md": LETTER, "pkg/idea.md": "# Introduction to the Topic"}
+    ok, why = verdict_supervise_package(package, ("Musterfrau",), SKILL_SET)
+    assert ok
+    assert "3 curated points" in why
+
+
+def test_package_aggregate_reports_every_failed_aspect():
+    package = {"pkg/idea.md": "Erika Musterfrau"}
+    ok, why = verdict_supervise_package(package, ("Musterfrau",), SKILL_SET)
+    assert not ok
+    assert "no letter" in why
+    assert "Musterfrau" in why
+    assert "no numbered points" in why
 
 
 @pytest.mark.parametrize(("letter", "ok", "fragment"), [

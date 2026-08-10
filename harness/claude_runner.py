@@ -39,6 +39,7 @@ from l1_checks import (
     verdict_ideate_scoped,
     verdict_import,
     verdict_review,
+    verdict_supervise_package,
 )
 from sources import MESSY_REQUEST
 
@@ -85,6 +86,17 @@ SCENARIOS = {
         "request": MESSY_REQUEST,
         "produces": True,
     },
+    # supervisor-side: raw email fixture (.txt) to a send-package; import is
+    # installed as a sibling, matching a professor's whole-set install
+    "supervise_feedback": {
+        "fixture": "s01-raw-email",
+        "skill": "proposal-supervise",
+        "siblings": ("proposal-import",),
+        "package": True,
+        "request": "A student emailed me this thesis idea — I saved it as "
+                   "submission-email.txt. Prepare my feedback: the letter draft "
+                   "and the file I can send back.",
+    },
     # nothing staged: the group page and a canned DBLP-shaped publication list
     # are served over localhost ({url}/{dblp} filled at runtime) and the
     # single-turn request pre-answers the whole administrative preamble,
@@ -127,7 +139,8 @@ def stage(scenario: dict, ws: Path) -> None:
     if scenario.get("fixture"):
         fixture = FIXTURES / scenario["fixture"]
         for f in fixture.iterdir():
-            if f.is_file() and f.suffix == ".md":
+            # .txt: raw-submission fixtures (s prefix) ship the source as text
+            if f.is_file() and f.suffix in (".md", ".txt"):
                 shutil.copy(f, ws / f.name)
             if f.is_dir() and f.name == "img":
                 shutil.copytree(f, ws / "img")
@@ -166,7 +179,23 @@ def workspace_markdown(ws: Path) -> dict[str, str]:
     return {f.name: f.read_text(encoding="utf-8") for f in sorted(ws.glob("*.md"))}
 
 
+S01_FORBIDDEN = ("Musterfrau", "00000000", "erika.musterfrau@example.org", "Musterstraße")
+INSTALLED_SKILLS = tuple(sorted(
+    d.name for d in SKILLS.iterdir() if d.is_dir() and d.name.startswith("proposal-")
+))
+
+
+def package_files(ws: Path) -> dict[str, str]:
+    return {
+        str(f.relative_to(ws)): f.read_text(encoding="utf-8")
+        for d in sorted(ws.glob("*-package")) if d.is_dir()
+        for f in sorted(d.iterdir()) if f.is_file()
+    }
+
+
 def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
+    if scenario.get("package"):
+        return verdict_supervise_package(package_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS)
     if name == "ideate_scoped":
         files = workspace_markdown(ws)
         produced, where = select_draft(files)

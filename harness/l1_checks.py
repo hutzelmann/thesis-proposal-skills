@@ -591,9 +591,12 @@ def verdict_publish(listing: str) -> tuple[bool, str]:
     return True, "PDF built, gitignore maintained"
 
 
+# "viable thesis core" / "tragfähiger thesenkern" without the leading no/kein:
+# real letters negate naturally ("does not yet have a viable thesis core"), and
+# the assertion is that a tier is stated, not which wording carries the negation
 SUPERVISE_TIER_PATTERN = re.compile(
-    r"\bready\b|\bbereit\b|needs revision|no viable thesis core"
-    r"|überarbeitung erforderlich|kein tragfähiger thesenkern"
+    r"\bready\b|\bbereit\b|needs revision|viable thesis core"
+    r"|überarbeitung erforderlich|tragfähiger thesenkern"
 )
 
 
@@ -645,13 +648,35 @@ def verdict_supervise_pointers(letter: str | None,
                                installed: tuple[str, ...]) -> tuple[bool, str]:
     """supervise: the letter steers somewhere real — at least one skill named,
     and every `proposal-*` name it mentions exists in the installed set."""
-    named = set(re.findall(r"proposal-[a-z][a-z-]*[a-z]", letter or ""))
+    # the lookbehind keeps repo/install names out: `thesis-proposal-skills` in
+    # the getting-started blurb must not read as a skill named proposal-skills
+    named = set(re.findall(r"(?<![\w-])proposal-[a-z][a-z-]*[a-z]", letter or ""))
     if not named:
         return False, "letter names no skill at all"
     unknown = sorted(named - set(installed))
     if unknown:
         return False, "letter names unknown skills: " + ", ".join(unknown)
     return True, "pointers resolve: " + ", ".join(sorted(named))
+
+
+def verdict_supervise_package(package: dict[str, str], forbidden: tuple[str, ...],
+                              installed: tuple[str, ...]) -> tuple[bool, str]:
+    """Aggregate of the five supervise package verdicts for single-verdict
+    runners (the dev runner); the Inspect task scores them separately. Fails on
+    the first missing piece but reports every failed aspect."""
+    letter = next((text for name, text in sorted(package.items())
+                   if name.endswith("letter.md")), None)
+    results = [
+        verdict_supervise_letter(letter),
+        verdict_supervise_points(letter),
+        verdict_supervise_tier(letter),
+        verdict_supervise_no_personal_data(package, forbidden),
+        verdict_supervise_pointers(letter, installed),
+    ]
+    failed = [why for ok, why in results if not ok]
+    if failed:
+        return False, "; ".join(failed)
+    return True, "; ".join(why for _, why in results)
 
 
 def verdict_early_stop(files: dict[str, str]) -> tuple[bool, str]:
