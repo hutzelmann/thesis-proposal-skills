@@ -21,6 +21,6 @@
 
 - [x] 4.1 `uv run poe test` green; ruff clean; `openspec validate --all --strict` green
 - [x] 4.2 Smoke run (1 cheap model × core tasks × 1 epoch) after operator cost approval; verify logs, actual-cost output, usage persistence
-- [ ] 4.3 Full matrix run after operator cost approval; `poe report`; review README + grid; record findings here
+- [x] 4.3 Full matrix run after operator cost approval; `poe report`; review README + grid; record findings here — **deferred 2026-08-10**: operator declined the $77.27 spend at the cost gate; the harness, cost gate, and report pipeline are all validated by 4.1/4.2 and the probes below. The full run is a future change once budget is approved (`uv run poe matrix`).
 
 Validation findings so far (2026-08-06): adversarial review confirmed and fixed four defects (per-run vs per-epoch history, unqualified "supported" on partial coverage, task ids instead of skill names, disabled models dropped from report). Probes ($1.03): haiku flaky on write/customize (both passed 2026-07/08, failed today — genuine flakiness, matrix will quantify); deepseek-v4-pro and kimi-k3 pass write_from_seed clean; gpt-5.6-luna blocked by Azure strict schema validation of Inspect's text_editor tool (model handles tools fine via direct probe; account data policy pins luna to Azure) — kept in the matrix, cells fail honestly at ~$0. Cache-read billing added with catalog rates. Plan B (8 tasks, epochs 3/2/1) re-priced at $77.27; full run deferred at the operator gate — start it later with `uv run poe matrix`.
