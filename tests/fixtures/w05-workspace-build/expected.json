@@ -1,0 +1,18 @@
+{
+  "fixture": "w05-workspace-build",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "clean proposal — the fixture's subject is the `proposal-build.py` beside it, not the prose, so any check finding here means the fixture drifted rather than that delegation broke",
+    "publish must hand over in this workspace: exit 3, the definition named, no PDF and no ignore entry written",
+    "the export matrix still builds this proposal on every tier, which is what proves a build definition beside a proposal does not disturb the shipped pipeline"
+  ]
+}

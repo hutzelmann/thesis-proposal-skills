@@ -9,6 +9,7 @@ finding fixed in local-audit-gates.
 import re
 from pathlib import Path
 
+import publish
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
@@ -86,3 +87,37 @@ def test_lit_search_keeps_no_hand_through_rule():
     text = (REPO / "skills" / "proposal-lit-search" / "SKILL.md").read_text(encoding="utf-8")
     assert "never read, echo, log, or write the key value" in text
     assert "OPENALEX_API_KEY=` (no value" in text  # placeholder, not a value, is documented
+
+
+# -- workspace-supplied build (skill-packaging: "Audit-pattern regressions
+# caught by tests"). publish.py may start the fixed document tools by constant
+# name; it may not start a file it discovered in the user's workspace. A build
+# definition is user-authored code, and running it belongs to the agent the
+# user already directs, not to a shipped script. Discovery reports, the agent
+# executes -- the split is what keeps SUBPROCESS_ALLOWED meaning what it meant
+# when Snyk rated the published skill LOW.
+
+
+@pytest.mark.parametrize("script", USER_SCRIPTS, ids=ids(USER_SCRIPTS))
+def test_no_shell_invocation(script):
+    text = script.read_text(encoding="utf-8")
+    assert "shell=True" not in text, (
+        f"{script.name}: subprocess through a shell — arguments must stay a list"
+    )
+
+
+def test_publish_never_executes_a_discovered_build_definition(tmp_path, monkeypatch):
+    """Handover must reach no subprocess at all: not the discovered definition,
+    and not the built-in pipeline it replaces."""
+    proposal = tmp_path / "topic.md"
+    proposal.write_text("Body.\n", encoding="utf-8")
+    (tmp_path / "proposal-build.py").write_text("raise SystemExit('ran')\n", encoding="utf-8")
+
+    def refuse(*args, **_kwargs):
+        raise AssertionError(
+            f"publish.py started a subprocess while handing over: {args!r} — a shipped "
+            "script must not execute a path it found in the workspace"
+        )
+
+    monkeypatch.setattr(publish.subprocess, "run", refuse)
+    assert publish.main([str(proposal)]) == publish.HANDOVER_EXIT

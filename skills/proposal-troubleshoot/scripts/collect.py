@@ -52,6 +52,14 @@ TODO_RE = re.compile(r"\[TODO:[^\]]*\]")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
 DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:\w]+", re.IGNORECASE)
 
+# workspace build definitions proposal-publish delegates to. Restated rather
+# than imported: a skill never reaches into a sibling's scripts, and a user may
+# have installed only one of the two. tests/unit/test_troubleshoot_collect.py
+# pins these against publish.py's own constants so the two cannot drift.
+BUILD_STEM = "proposal-build"
+BUILD_RECIPE_NAMES = frozenset({"makefile", "gnumakefile", "justfile"})
+BUILD_TARGET_RE = re.compile(rf"^{BUILD_STEM}\b[^\n]*:", re.MULTILINE)
+
 
 # --------------------------------------------------------------------------
 # hashing
@@ -351,16 +359,49 @@ def notes_log(proposal: Path | None) -> tuple[str, str] | None:
     return ("notes-log.md", "\n".join(lines[start:end]).rstrip() + "\n")
 
 
+def workspace_build_lines(proposal: Path) -> list[str]:
+    """The workspace build definition, if publish would delegate to one.
+
+    Without this line a report from a workspace-built document is
+    indistinguishable from one about the shipped pipeline, and every such
+    report reads as "works for me". The names come from the fixed set publish
+    recognizes, so they carry nothing about the user and are recorded verbatim;
+    the file's content is the user's own code and never enters the report.
+    """
+    out: list[str] = []
+    for entry in sorted(proposal.parent.iterdir(), key=lambda p: p.name):
+        if not entry.is_file():
+            continue
+        recipe = entry.name.lower().lstrip(".") in BUILD_RECIPE_NAMES
+        if recipe and not BUILD_TARGET_RE.search(
+            entry.read_text(encoding="utf-8", errors="replace")
+        ):
+            continue
+        if not recipe and not (
+            entry.name == BUILD_STEM or entry.name.startswith(BUILD_STEM + ".")
+        ):
+            continue
+        h = file_hashes(entry)
+        target = f" (target `{BUILD_STEM}`)" if recipe else ""
+        out.append(
+            f"[measured] workspace build definition present as {entry.name}{target} "
+            f"({h['bytes']} bytes, sha256:{h['sha256']}); content withheld at every "
+            "level — this document was not built by the shipped pipeline"
+        )
+    return out
+
+
 def sibling_artifacts(proposal: Path | None) -> list[str]:
     """Hash-level inventory of the companion artifacts beside the proposal —
-    the review file and the supervise send-package. Names carry the slug, so
-    they are recorded under the placeholder; their content never enters the
-    report at any level, because the letter derives from a student's
-    unpublished submission and the graded levels govern the proposal only.
+    the review file, the supervise send-package, and any workspace build
+    definition. Slug-bearing names are recorded under the placeholder; content
+    never enters the report at any level, because the letter derives from a
+    student's unpublished submission, the build definition is the user's own
+    code, and the graded levels govern the proposal only.
     """
     if proposal is None:
         return []
-    out: list[str] = []
+    out: list[str] = list(workspace_build_lines(proposal))
     review = proposal.with_name(proposal.stem + "-review.md")
     if review.is_file():
         h = file_hashes(review)

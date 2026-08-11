@@ -239,6 +239,48 @@ def test_full_level_report_still_excludes_companion_text(workspace):
     assert "Unique-letter-phrase" not in report
 
 
+BUILD_SCRIPT = "# faculty-template-path-nobody-else-should-see\nprint('built')\n"
+
+
+def test_workspace_build_definition_recorded(workspace):
+    """Without this line a workspace-built document is indistinguishable from
+    one the shipped pipeline produced, and the report reads as "works for me"."""
+    (workspace / "proposal-build.py").write_text(BUILD_SCRIPT, encoding="utf-8")
+    joined = "\n".join(sibling_artifacts(workspace / "quantum-basket-weaving.md"))
+    assert "proposal-build.py" in joined
+    assert "sha256:" in joined
+    assert "not built by the shipped pipeline" in joined
+    assert "faculty-template-path-nobody-else-should-see" not in joined
+
+
+def test_workspace_build_recipe_recorded_only_with_the_target(workspace):
+    makefile = workspace / "Makefile"
+    makefile.write_text("all:\n\techo hi\n", encoding="utf-8")
+    assert sibling_artifacts(workspace / "quantum-basket-weaving.md") == []
+    makefile.write_text("proposal-build:\n\tpandoc $(PROPOSAL_PATH)\n", encoding="utf-8")
+    joined = "\n".join(sibling_artifacts(workspace / "quantum-basket-weaving.md"))
+    assert "Makefile (target `proposal-build`)" in joined
+
+
+def test_full_level_report_excludes_build_definition_content(workspace):
+    (workspace / "proposal-build.py").write_text(BUILD_SCRIPT, encoding="utf-8")
+    assert run(["--level", "full"]) == 0
+    report = (workspace / "bug-report" / "report.md").read_text(encoding="utf-8")
+    assert "proposal-build.py" in report
+    assert "faculty-template-path-nobody-else-should-see" not in report
+
+
+def test_build_definition_names_match_publishs_own():
+    """The collector restates publish.py's constants rather than importing
+    across skills. Pinning them here is what keeps the two from drifting."""
+    import collect
+    import publish
+
+    assert collect.BUILD_STEM == publish.BUILD_STEM
+    assert frozenset(publish.RECIPE_RUNNERS) == collect.BUILD_RECIPE_NAMES
+    assert collect.BUILD_TARGET_RE.pattern == publish.RECIPE_TARGET_RE.pattern
+
+
 def test_notes_log_absent_is_not_an_error(tmp_path):
     lonely = tmp_path / "solo.md"
     lonely.write_text(PROPOSAL, encoding="utf-8")

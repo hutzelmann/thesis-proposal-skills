@@ -5,6 +5,11 @@ Stdlib-only (Python >= 3.11). Engine resolution: typst (preferred) -> LaTeX
 engine -> docx. Outputs (PDF + intermediate source) land next to the proposal;
 build artifacts are added to the workspace .gitignore. --handout writes a
 stripped markdown export (abstracts removed) instead of building.
+
+A workspace may replace the built-in pipeline with a build definition of its
+own beside the proposal. This script discovers one and hands over: it reports
+what it found and exits 3 without building. It never runs the definition
+itself -- executing workspace code is the agent's job, not a shipped script's.
 """
 
 from __future__ import annotations
@@ -14,12 +19,25 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 LATEX_ENGINES = ("tectonic", "xelatex", "lualatex", "pdflatex")
 GITIGNORE_MARKER = "# proposal build artifacts (managed by proposal-publish)"
 GITIGNORE_ENTRIES = ("*.pdf", "*.typ", "*.tex", "*.docx")
+
+# Workspace-supplied build. BUILD_STEM matches `proposal-build` with or without
+# a suffix, so a workspace picks whatever it likes; RECIPE_RUNNERS entries count
+# only when the file declares the target, so an unrelated Makefile in the
+# workspace is not mistaken for a proposal build.
+BUILD_STEM = "proposal-build"
+RECIPE_RUNNERS = {"makefile": "make", "gnumakefile": "make", "justfile": "just"}
+# make writes `proposal-build:`, just writes `proposal-build proposal:` — one
+# line-anchored pattern covers both. Narrow extraction, not recipe parsing.
+RECIPE_TARGET_RE = re.compile(rf"^{BUILD_STEM}\b[^\n]*:", re.MULTILINE)
+HANDOVER_EXIT = 3
+PROPOSAL_ENV = "PROPOSAL_PATH"
 
 INSTALL_HINT = (
     "For PDF output install pandoc + typst (two single binaries):\n"
@@ -40,6 +58,79 @@ def resolve_engine(which=shutil.which) -> tuple[str, str] | None:
         if which(engine):
             return ("latex", engine)
     return ("docx", "pandoc")
+
+
+@dataclass(frozen=True)
+class WorkspaceBuild:
+    """A build definition the workspace supplies beside the proposal."""
+
+    path: Path
+    target: str | None = None  # recipe files only
+    runner: str | None = None  # advisory command name, never a dispatch table
+
+    def describe(self) -> str:
+        if self.target is None:
+            return self.path.name
+        return f"{self.path.name} (target `{self.target}`)"
+
+
+def find_workspace_build(proposal: Path) -> list[WorkspaceBuild]:
+    """Build definitions beside the proposal — never above it.
+
+    One pass over the directory rather than a lookup per candidate name: on a
+    case-insensitive filesystem `Makefile` and `makefile` are the same file, and
+    a per-name lookup would find it twice and trip the ambiguity refusal.
+    """
+    found: list[WorkspaceBuild] = []
+    for entry in sorted(proposal.parent.iterdir(), key=lambda p: p.name):
+        if not entry.is_file():
+            continue
+        if entry.name == BUILD_STEM or entry.name.startswith(BUILD_STEM + "."):
+            found.append(WorkspaceBuild(entry))
+            continue
+        runner = RECIPE_RUNNERS.get(entry.name.lower().lstrip("."))
+        # errors="replace": a recipe file in some other encoding must not crash
+        # a build, and the target pattern is pure ASCII either way
+        if runner and RECIPE_TARGET_RE.search(
+            entry.read_text(encoding="utf-8", errors="replace")
+        ):
+            found.append(WorkspaceBuild(entry, BUILD_STEM, runner))
+    return found
+
+
+def report_handover(found: list[WorkspaceBuild], proposal: Path) -> int:
+    """Report the workspace build definition and hand over without building.
+
+    Nothing here runs the definition: a shipped script must not execute a path
+    it discovered in the workspace (tests/unit/test_audit_invariants.py). The
+    agent that invoked this script runs it, which is also why the built-in
+    pipeline is unreachable from here — a fallback would quietly produce the
+    default layout for a workspace that asked for a different one.
+    """
+    if len(found) > 1:
+        print(
+            "more than one workspace build definition beside the proposal: "
+            + ", ".join(b.describe() for b in found)
+            + "\nnothing was built and none was chosen — keep one, or pass "
+            "--builtin for the built-in pipeline.",
+            file=sys.stderr,
+        )
+        return HANDOVER_EXIT
+    definition = found[0]
+    how = (
+        f"Run it with {PROPOSAL_ENV}={proposal} set in the environment; it also "
+        "receives that path as its first argument."
+        if definition.runner is None
+        else f"Run it with: {PROPOSAL_ENV}={proposal} {definition.runner} {definition.target}"
+    )
+    print(
+        f"workspace build definition found: {definition.describe()} — publish built "
+        f"nothing, and the built-in pipeline is not used.\n{how}\n"
+        "This is a handover, not a failure. --builtin builds with the built-in "
+        "pipeline instead.",
+        file=sys.stderr,
+    )
+    return HANDOVER_EXIT
 
 
 def proposal_lang(text: str) -> str:
@@ -158,6 +249,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="write a stripped markdown export instead of building")
     parser.add_argument("--force", action="store_true",
                         help="replace an existing handout that was edited after it was written")
+    parser.add_argument("--builtin", action="store_true",
+                        help="ignore a workspace build definition and use the built-in pipeline")
     args = parser.parse_args(argv)
     proposal = args.proposal.resolve()
 
@@ -183,6 +276,13 @@ def main(argv: list[str] | None = None) -> int:
             "rename to include your name before sending)"
         )
         return 0
+
+    # After the handout branch, so the hand-in export is never delegated — it is
+    # a transform of the proposal source, not a rendered document. Before engine
+    # resolution, so a delegating workspace is never told to install a toolchain
+    # it does not need.
+    if not args.builtin and (found := find_workspace_build(proposal)):
+        return report_handover(found, proposal)
 
     resolved = resolve_engine()
     if resolved is None:

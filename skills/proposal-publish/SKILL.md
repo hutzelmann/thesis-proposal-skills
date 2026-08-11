@@ -1,6 +1,6 @@
 ---
 name: proposal-publish
-description: Build a PDF (or docx fallback) from a proposal file via pandoc — compact layout, typst-first, with install guidance when tools are missing. Also offers a stripped hand-in export. Use when the user wants a PDF or something to email, print or hand to their supervisor, wants the proposal out of markdown, or asks how to install the build tools.
+description: Build a PDF (or docx fallback) from a proposal file via pandoc — compact layout, typst-first, with install guidance when tools are missing. Also offers a stripped hand-in export, and hands over to a workspace build script where one exists. Use when the user wants a PDF or something to email, print or hand to their supervisor, wants the proposal out of markdown, has a faculty document template to build with, or asks how to install the build tools.
 ---
 
 # Proposal Publish
@@ -29,6 +29,36 @@ The script resolves the best pipeline automatically: **typst** (preferred) → *
 Citations render in two forms, both usable in one document: `[@key]` becomes `[1]`, and `@key` becomes `Smith et al. [1]` — the author name derived from the proposal's own reference entry, so it never has to be typed. The filter chain producing this is order-dependent (`author-intext.lua` → `cite-split.lua` → citeproc → `rq-filter.lua` → `todo-filter.lua`); don't reorder it.
 
 `[TODO: …]` markers render as numbered annotations rather than prose — a marker alone on its line becomes a callout block, one inside a sentence becomes a highlight, and a marker carried by the title or subtitle is numbered ahead of the body. There is deliberately no option to render them quietly: the way to a marker-free PDF is to resolve the markers, which `proposal-check` already lists.
+
+## Workspace build script
+
+A workspace can replace this pipeline with a build of its own — a faculty title page, a mandated cover sheet, a house style. The script looks for one **beside the proposal**, never in a directory above it, in either form:
+
+- a file named `proposal-build` with any suffix, or none;
+- a `Makefile` or `justfile` declaring a `proposal-build` target. A recipe file without that target is ignored, so an unrelated build system in the workspace changes nothing.
+
+When one is found, publish **builds nothing** and exits 3, naming what it found. Run that definition and relay its output. It receives exactly one thing: the proposal's absolute path, in `PROPOSAL_PATH`, and — for a build file — as its first argument. The proposal's directory is the output directory.
+
+**Exit 3 is a handover, not a failure.** Nothing went wrong: do not offer a bug report for it.
+
+**Never fall back to the built-in pipeline when a workspace build fails.** Report the failure and stop. Producing the default layout for a workspace that asked for a different one is the worst outcome available — it succeeds visibly and is wrong invisibly. `--builtin` exists so the user can ask for the built-in document deliberately, for instance to tell a template problem from a content problem; it is never your recovery move. Two definitions beside one proposal are refused rather than chosen between — relay the refusal.
+
+Whenever you report a built document, say which pipeline produced it. `--handout` is never delegated: it is a transform of the proposal source, not a rendered document.
+
+A minimal build script, as `proposal-build.sh` beside the proposal:
+
+```sh
+#!/bin/sh
+pandoc "$PROPOSAL_PATH" --template faculty.typ -o proposal.pdf
+echo "built proposal.pdf with the faculty template"
+```
+
+The same thing as a `Makefile` target, for a workspace that already has one:
+
+```make
+proposal-build:
+	pandoc "$(PROPOSAL_PATH)" --template faculty.typ -o proposal.pdf
+```
 
 ## When tools are missing
 
