@@ -37,4 +37,4 @@
 ## 4. Verification
 
 - [x] 4.1 `openspec validate --all --strict`.
-- [ ] 4.2 Commit, and confirm the `l0-windows` job is green before archiving the change.
+- [x] 4.2 Commit, and confirm the `l0-windows` job is green before archiving the change.
