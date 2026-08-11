@@ -156,6 +156,26 @@
           "de": "Auswertung"
         }
       ]
+    },
+    "case_study": {
+      "title": {
+        "en": "Case Study",
+        "de": "Fallstudie"
+      },
+      "subsections": [
+        {
+          "en": "Case and Units of Analysis",
+          "de": "Fall und Analyseeinheiten"
+        },
+        {
+          "en": "Data Collection",
+          "de": "Datenerhebung"
+        },
+        {
+          "en": "Analysis",
+          "de": "Auswertung"
+        }
+      ]
     }
   },
   "_work_plan_comment": "work_plan_patterns is the subset of heading_patterns dropped when [timeline] detail = detailed. `time plan` and `schedule` stay forbidden even then: they are rival names for the canonical timeline section, not work-plan markers.",

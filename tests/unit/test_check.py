@@ -135,13 +135,15 @@ def test_workspace_branch_passes_end_to_end():
     """The positive control lives as a fixture so the merge is exercised through
     the script, not only through the merge function."""
     result = run_check(
-        FIXTURES / "w04-methodology-branch" / "release-readiness-signals.md")
+        FIXTURES / "w04-methodology-branch" / "flaky-test-trust.md")
     assert result.returncode == 0, result.stdout
     assert "no errors" in result.stdout
 
 
 def test_workspace_branch_requires_its_own_subsections(tmp_path):
-    source = (FIXTURES / "w04-methodology-branch" /
+    # CASE_STUDY_TOML replaces the *shipped* case_study branch (same id), so this
+    # also proves replace-by-id: the shipped subsections stop applying.
+    source = (FIXTURES / "f25-case-study" /
               "release-readiness-signals.md").read_text()
     victim = tmp_path / "case.md"
     victim.write_text(source.replace("## Analysis", "## Findings"))

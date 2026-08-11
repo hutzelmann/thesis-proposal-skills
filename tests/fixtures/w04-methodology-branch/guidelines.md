@@ -1,30 +1,30 @@
 # Workspace Guidelines
 
-My supervisor runs industrial case studies and does not accept a purely theoretical thesis.
+My supervisor embeds students in industry teams to improve a process while studying it, and does not accept a purely theoretical thesis.
 
 ```toml
-[methodologies.case_study]
-[methodologies.case_study.title]
-en = "Case Study"
-de = "Fallstudie"
+[methodologies.action_research]
+[methodologies.action_research.title]
+en = "Action Research"
+de = "Aktionsforschung"
 
-[[methodologies.case_study.subsections]]
-en = "Case and Context"
-de = "Fall und Kontext"
-guidance = "The organisation, system, or project studied, why it suits the research questions, and what access to it exists."
+[[methodologies.action_research.subsections]]
+en = "Problem Diagnosis"
+de = "Problemdiagnose"
+guidance = "The organisation and the problem as its members experience it, the evidence that the problem is real, and the agreed scope of the intervention."
 
-[[methodologies.case_study.subsections]]
-en = "Data Collection"
-de = "Datenerhebung"
-guidance = "Which sources are drawn on — interviews, documents, repository history — and how each is recorded."
+[[methodologies.action_research.subsections]]
+en = "Intervention Cycles"
+de = "Interventionszyklen"
+guidance = "The planned change, how many plan-act-observe cycles fit the timeframe, and what is measured or recorded in each cycle."
 
-[[methodologies.case_study.subsections]]
-en = "Analysis"
-de = "Analyse"
-guidance = "How the collected material is coded and synthesised into answers, and what threatens the validity of a single-case result."
+[[methodologies.action_research.subsections]]
+en = "Reflection and Learning"
+de = "Reflexion und Erkenntnisse"
+guidance = "How each cycle's observations feed the next, how the researcher's double role is handled, and what the organisation and the research each take away."
 
 [methodologies.theoretical]
 enabled = false
 ```
 
-Case studies are the house method here; describe the case before anything else, and never generalise from one case without saying so.
+Action research is the house method here; the student changes the process and studies the change, and both halves must be planned.
