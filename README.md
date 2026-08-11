@@ -87,8 +87,8 @@ Whichever skill is running, six rules apply:
 | `proposal-import` | Converts an existing proposal (usually a PDF) into the workable format and strips personal data. |
 | `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs, estimated length. |
 | `proposal-review` | Supervisor-style content review: a verdict on whether there is a thesis here (ready / needs revision / no viable thesis core), then every weak point with a concrete suggestion. |
-| `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. A plain markdown hand-in is fine too. |
-| `proposal-customize` | Adapts everything to your supervisor's requirements ("detailed work plan required", "max 3 pages"). |
+| `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. Where your program prescribes its own document, a build script in your folder takes over instead. A plain markdown hand-in is fine too. |
+| `proposal-customize` | Adapts everything to your supervisor's requirements ("detailed work plan required", "max 3 pages", a methodology the defaults do not carry). |
 | `proposal-supervise` | For supervisors: turns a raw student submission into a curated draft feedback letter plus a send-package the student can continue from. Drafts only, never sends. |
 | `proposal-troubleshoot` | Diagnoses a skill that misbehaved, and assembles a bug report if it really is a defect. Most problems turn out not to be. |
 
@@ -104,7 +104,7 @@ Your proposal itself lives in **one self-contained file**: readable text on top,
    ```
 4. Tell your agent: *"Help me develop a thesis idea"*, or *"Import my existing proposal from proposal.pdf"*.
 
-The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own, in any order, on a proposal that already exists. PDF building is optional; install `pandoc` and `typst` only when you want it (the publish skill tells you how).
+The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own, in any order, on a proposal that already exists. PDF building is optional; install `pandoc` and `typst` only when you want it (the publish skill tells you how). If your program hands you its own template, you do not need either: a `proposal-build` script in your folder takes over the build entirely.
 
 ## When something goes wrong
 
@@ -144,6 +144,8 @@ Model support, measured by the metered eval matrix on **2026-08-10** (3 epochs p
 
 ## For supervisors
 
+**These skills are built to work at any university, with any supervisor's rules.** What ships is a portable default, not a house style: every institution-specific decision — required sections, reference minimum, accepted methodologies, the document your students hand in — is something you set in their workspace, in files they copy into their own folder. Nothing below asks you to adopt this repository's conventions, and none of it requires a fork.
+
 The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, an explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. The proposal closes with a one-sentence timeline (the start month and the submission month, or "as soon as possible") and nothing more: work plans, phase tables and Gantt charts are forbidden, as are personal data and expected-results sections. The default methodology branches and their subsections are grounded in the research-methods literature; [docs/methodology-sources.md](docs/methodology-sources.md) records the citation behind every branch.
 
 Substance is judged, not assumed. The review skill applies five named tests (delta, falsifiability, anti-generic, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. The student decides what to do about it; the tools advise and never block.
@@ -159,6 +161,8 @@ The methodology set itself is one of those knobs. If your accepted method is mis
 ## For contributors (this repository)
 
 This repo is **only** for developing and testing the skills. User proposals never live here.
+
+**Defaults stay portable; institution-specific settings belong in the workspace.** These skills have to work at any university, so a change that makes one program's convention the shipped default is the wrong shape even when the underlying need is real — required sections, reference minimums, accepted methodologies and document layouts are all configurable per workspace, and that is where such a change belongs. If your program needs something the customization surface cannot express, that gap is the bug worth reporting, and it is a much better contribution than a fork. [For supervisors](#for-supervisors) describes the surface from the using side.
 
 - Specs are the source of truth: `openspec/specs/`, managed with [OpenSpec](https://github.com/Fission-AI/OpenSpec). Every change runs propose, review, apply, archive. Agent integration files are not committed; run `openspec init --tools <your-agent>` once locally (and `openspec update` after CLI upgrades).
 - `shared/` holds the single-source guidance; `scripts/sync_shared.py` materializes it, together with the cross-skill script copies, into the skills. Activate the pre-commit hook once per clone with `git config core.hooksPath .githooks`; it re-materializes and stages the copies on every commit, and CI's `--check` catches bypassed hooks.

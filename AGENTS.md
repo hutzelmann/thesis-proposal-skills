@@ -123,9 +123,24 @@ uv run inspect log dump logs/evals/<run>.eval | jq -r '
 
 Message content is sometimes a string and sometimes a content-block array; normalize with `if type == "array" then map(.text // "") | join("") else . end`.
 
+## Portability and the workspace boundary
+
+These skills must stay usable at any university, by any supervisor. The shipped defaults are therefore the portable ones, and **anything institution-specific belongs in the user's workspace, never in the skills**: a program's required sections, its reference minimum, its accepted methodologies, its document layout. A request to make one faculty's convention the default is a request to configure a workspace — say so and point at the mechanism rather than editing `shared/`.
+
+This is not a stylistic preference. A contributor retargeted the shipped defaults to their own lab and opened a 116-file pull request, which was the honest reading of the contributing guidance at the time; the work was real and the layer was wrong. The customization surface exists so that the answer to "our program needs X" is a file in a folder.
+
+Two invariants carry that surface, and both are the kind a well-meaning change undoes by accident:
+
+- **Override keys mirror their `structure.json` key path.** One rule, no aliases, no second spelling accepted beside the first, and a key resolving to no overridable leaf is reported as an error rather than ignored — a workspace whose overrides silently stopped applying is worse off than one that fails. Adding a convenience alias costs exactly the property `2026-08-11-nest-workspace-overrides` bought.
+- **Publish hands over to a workspace build and never falls back.** When a `proposal-build` definition exists beside the proposal, the built-in document cannot be produced without `--builtin`. A fallback added while fixing something unrelated would silently reintroduce the failure the design prevents: a student emailing a document in the wrong template because a build failed quietly. See `2026-08-11-add-workspace-build-delegation`.
+
+User-facing documentation of both lives in README "For supervisors", `skills/proposal-customize/SKILL.md`, and `skills/proposal-publish/SKILL.md`; the working examples are `tests/fixtures/w04-methodology-branch/` and `tests/fixtures/w05-workspace-build/`.
+
 ## Editing guidance content
 
 `shared/structure.json` holds only the mechanically checkable skeleton (canonical titles en+de, methodology table, forbidden patterns); semantic rules stay prose in `shared/guidelines/guidelines.md`. Every structured title must appear verbatim in the prose (drift-guarded by an L0 test). The formalization boundary is deliberate — do not encode semantic quality rules as data.
+
+Default methodology branches carry provenance: a citation for the taxonomy the branch derives from and for its subsection contract, recorded in `docs/methodology-sources.md`. A branch added to the defaults without one is a preference wearing a citation's clothes.
 
 ## Skill header pattern
 
