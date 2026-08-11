@@ -75,6 +75,14 @@
         {"en": "Design and Participants", "de": "Versuchsdesign und Teilnehmende"},
         {"en": "Statistical Analysis", "de": "Statistische Auswertung"}
       ]
+    },
+    "model_evaluation": {
+      "title": {"en": "Empirical Model Evaluation", "de": "Empirische Modellevaluation"},
+      "subsections": [
+        {"en": "Data and Baselines", "de": "Daten und Baselines"},
+        {"en": "Experimental Setup", "de": "Versuchsaufbau"},
+        {"en": "Analysis", "de": "Auswertung"}
+      ]
     }
   },
   "_work_plan_comment": "work_plan_patterns is the subset of heading_patterns dropped when [timeline] detail = detailed. `time plan` and `schedule` stay forbidden even then: they are rival names for the canonical timeline section, not work-plan markers.",

@@ -1,0 +1,14 @@
+{
+  "fixture": "f24-model-evaluation",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": []
+}
