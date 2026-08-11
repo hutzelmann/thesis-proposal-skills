@@ -152,6 +152,8 @@ Feedback on incoming submissions has a skill of its own. `proposal-supervise` ta
 
 Your rules replace these defaults, and you do not have to relay them student by student. Run `proposal-customize` yourself, and it produces a single `guidelines.md` holding your requirements: a page limit, a minimum number of references, a different section list, a full work plan in place of the one-sentence timeline, plus freeform notes such as a required focus or a house style. Hand that file to your students. Once it sits in their proposal folder, every skill follows it, and checks and reviews report against your requirements instead of the defaults. A student who receives your rules as prose can produce the same file with the same skill.
 
+The methodology set itself is one of those knobs. If your accepted method is missing from the defaults, adding it is a few lines in that same `guidelines.md`, not a fork: a declared branch adds to the shipped set, a declaration with a shipped branch's id replaces it, and `enabled = false` removes one your program does not accept. [docs/methodology-catalog.md](docs/methodology-catalog.md) carries ready-to-paste declarations for common non-default methods — action research, simulation, mapping studies, repository mining, replications, and mixed methods with its scope warning — and [tests/fixtures/w04-methodology-branch/guidelines.md](tests/fixtures/w04-methodology-branch/guidelines.md) is a complete working example.
+
 ## For contributors (this repository)
 
 This repo is **only** for developing and testing the skills. User proposals never live here.
