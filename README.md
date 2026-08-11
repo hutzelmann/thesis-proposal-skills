@@ -144,7 +144,7 @@ Model support, measured by the metered eval matrix on **2026-08-10** (3 epochs p
 
 ## For supervisors
 
-The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, an explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. The proposal closes with a one-sentence timeline (the start month and the submission month, or "as soon as possible") and nothing more: work plans, phase tables and Gantt charts are forbidden, as are personal data and expected-results sections.
+The skills encode conservative academic guidance: analytical research questions (not implementation goals), a single methodology, an explicit contribution over the state of the art, no fabricated references, and visible TODO markers for every gap. The proposal closes with a one-sentence timeline (the start month and the submission month, or "as soon as possible") and nothing more: work plans, phase tables and Gantt charts are forbidden, as are personal data and expected-results sections. The default methodology branches and their subsections are grounded in the research-methods literature; [docs/methodology-sources.md](docs/methodology-sources.md) records the citation behind every branch.
 
 Substance is judged, not assumed. The review skill applies five named tests (delta, falsifiability, anti-generic, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. The student decides what to do about it; the tools advise and never block.
 
