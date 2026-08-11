@@ -9,8 +9,11 @@ jobs:
   l0:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      # Pinned to an exact patch while checkout floats on its major tag: setup-uv
+      # stopped publishing major and minor tags at v8 as a supply-chain measure,
+      # so `@v9` resolves to nothing. Bump this one by hand.
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: "3.12"
       - name: Sync dev environment
@@ -34,8 +37,8 @@ jobs:
   l0-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0    # exact patch, see the l0 job
         with:
           python-version: "3.12"
       - name: Sync dev environment
@@ -61,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     container: pandoc/extra:3.9.0.2-ubuntu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the test runner
         # Ubuntu 24.04 marks its Python environment externally managed; this
         # container is discarded after the job, so overriding is safe here.
@@ -73,6 +76,6 @@ jobs:
     runs-on: ubuntu-latest
     container: pandoc/typst:3.10.0.0-ubuntu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build every fixture on the typst tier
         run: sh scripts/ci_typst_build.sh
