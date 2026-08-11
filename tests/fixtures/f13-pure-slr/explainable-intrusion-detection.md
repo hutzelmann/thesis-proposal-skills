@@ -31,7 +31,7 @@ Backward and forward snowballing on the included studies complements the databas
 Included are peer-reviewed publications since 2016 that apply an explanation technique to a machine-learning-based intrusion detector and report an evaluation of the explanations.
 Excluded are position papers, purely conceptual work, and studies outside the network domain.
 
-## Extracted Information
+## Quality Assessment and Extracted Information
 
 For every included study, a structured form records the explanation technique, its scope, the detector family, the datasets, the evaluation method for explanation quality, and the intended audience.
 Extraction covers the full text of each study, and a second pass validates a random sample of the extracted records.

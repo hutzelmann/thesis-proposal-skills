@@ -63,7 +63,7 @@ Methodology names and their required subsections:
 | Example | Beispiel |
 | Systematic Literature Review | Systematische Literaturrecherche |
 | Search Strategy and Selection Criteria | Suchstrategie und Auswahlkriterien |
-| Extracted Information | Extrahierte Informationen |
+| Quality Assessment and Extracted Information | Qualitätsbewertung und extrahierte Informationen |
 | Synthesis | Synthese |
 | User Study | Nutzerstudie |
 | Preparation | Vorbereitung |
@@ -105,9 +105,11 @@ Five tests define the substance bar; agents judging a proposal cite them by thes
 
 These are the content contracts for the shipped branches. A workspace that declares its own branch carries that branch's contract in the declaration itself — read it there, and never fill a workspace subsection from a shipped branch that happens to have a similar name.
 
-- **Prototype Implementation** — Previous Work: key tools and libraries supporting the prototype and how they are used. Requirements: what the prototype must do, and explicitly which requirements are out of scope. Evaluation: not correctness verification, but how the prototype answers the research questions (dataset, benchmark, metrics).
+Whatever the branch, the methodology section opens with one or two sentences stating why this methodology answers these research questions — the method-fit test written down by the student, not left for a reviewer to reconstruct. A section that starts at its first subsection has skipped its own justification.
+
+- **Prototype Implementation** — Previous Work: key tools and libraries supporting the prototype and how they are used. Requirements: what the prototype must do, and explicitly which requirements are out of scope. Evaluation: not correctness verification, but how the prototype answers the research questions (dataset, benchmark, metrics) — name the empirical form the evaluation takes (a benchmark, a controlled measurement, a case study, a simulation) and compare against the state-of-the-art alternatives the contribution section cites, or state why comparing is impractical. Naming the form is part of this methodology, not a second one.
 - **Theoretical Analysis** — Formalization: the mathematical model, logic, or type system. Requirements: expressiveness/soundness expectations, and what is out of scope. Example: the case study or running example illustrating the formalization.
-- **Systematic Literature Review** — Search Strategy and Selection Criteria: what literature is included and excluded. Extracted Information: what is extracted (taxonomy, classification) and how deeply sources are analyzed. Synthesis: how extracted information is synthesized into answers.
+- **Systematic Literature Review** — Search Strategy and Selection Criteria: what literature is included and excluded; frame the review question and derive the search terms along PICOC (population, intervention, comparison, outcome, context) — a shape that serves this branch and misleads elsewhere. Quality Assessment and Extracted Information: how the quality of included studies is assessed and whether the assessment excludes or merely weights them, plus what is extracted (taxonomy, classification) and how deeply sources are analyzed; a mapping-style review that legitimately skips per-study assessment says so here and states why breadth replaces depth. Synthesis: how extracted information is synthesized into answers, declaring whether a formal meta-analysis is intended or the synthesis stays narrative.
 - **User Study** — Preparation: study design, recruitment, and (if prototype-based) the prototype's scope with explicitly excluded properties. Procedure: tasks performed and data collected. Analysis: how collected data is analyzed to answer the research questions.
 
 Whatever the branch, say what the work will yield as an expectation — "the thesis expects", "it is hypothesized" — never as a result already obtained; a proposal that asserts its outcome has stopped being a plan. Name the foreseeable limitations too (sample size, generalization, access, time): a reviewer values an acknowledged limitation over a grand claim, and an unacknowledged one reads as an unnoticed one. None of this is an expected-results section, which stays forbidden — it is how the claims the proposal already makes are phrased.
@@ -121,6 +123,14 @@ Guidance, not a required section, and nothing here is mechanically checked — b
 - State what personal data is collected, how it is pseudonymized or anonymized, how long it is kept, and on what legal basis.
 - Where the study exposes participants to risk — driving simulators, safety-critical interfaces, sustained-attention tasks — say how that risk is bounded and how a participant can stop.
 - Where participants are compensated, say how, because it affects who volunteers.
+
+### Research on secondary data
+
+The same advisory style applies to work on mined, scraped, or third-party data — repository histories, public datasets, crawled documents. One or two sentences inside the methodology are enough, and nothing here is mechanically checked:
+
+- Name where the data comes from and under which license or terms it may be used for research.
+- Say whether the data contains personal data — names and emails in commit metadata count — and how that is handled.
+- Where derived data or the dataset itself is to be published, say whether the terms permit it.
 
 ## Literature and Citations
 

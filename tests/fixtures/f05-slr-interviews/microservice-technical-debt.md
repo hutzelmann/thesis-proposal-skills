@@ -31,7 +31,7 @@ The review follows established guidelines for systematic literature reviews in s
 Searches run over four digital libraries with a string that combines microservice terminology and technical debt terminology.
 Included are peer-reviewed primary studies published since 2015 that report on technical debt in microservice systems; excluded are position papers, vendor whitepapers, and studies on generic service-oriented architectures.
 
-## Extracted Information
+## Quality Assessment and Extracted Information
 
 Each included study is coded with the reported debt types, the management strategies applied, and the context factors of the studied systems.
 A classification of the coded debt types against an established monolith-oriented taxonomy answers the first research question (RQ1).

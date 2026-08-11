@@ -6,7 +6,8 @@
     "errors_contain": [
       "required section missing: `Timeline`",
       "required section missing: `Contribution to the State-of-the-Art`",
-      "forbidden section: `Work Plan` (matches `work plan`)"
+      "forbidden section: `Work Plan` (matches `work plan`)",
+      "methodology subsection missing: `Quality Assessment and Extracted Information`"
     ],
     "warnings_contain": [
       "metadata block has no `title:`",
@@ -18,6 +19,7 @@
     "rules": {
       "errors": [
         "forbidden-section",
+        "methodology-subsection-missing",
         "required-section-missing"
       ],
       "warnings": [
