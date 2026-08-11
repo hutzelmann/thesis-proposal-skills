@@ -97,6 +97,7 @@
       "status": "pass"
     }
   },
+  "proposal-supervise": null,
   "proposal-troubleshoot": null,
   "proposal-write": {
     "Gen Agent Trust Hub": {
