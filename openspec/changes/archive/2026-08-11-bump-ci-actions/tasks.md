@@ -9,5 +9,5 @@
 
 - [x] 2.1 `uv run poe test` and `openspec validate --all --strict` still green — the
       workflow is not covered by either, so this only confirms nothing else moved.
-- [ ] 2.2 Commit, push, and confirm all four jobs pass with no Node.js 20 annotation left
+- [x] 2.2 Commit, push, and confirm all four jobs pass with no Node.js 20 annotation left
       in the run before archiving.
