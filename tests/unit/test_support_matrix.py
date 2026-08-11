@@ -385,8 +385,9 @@ def test_render_grid_marks_reduced_and_untested(registry):
 
 
 def test_shipped_registry_parses_and_covers_all_eval_tasks():
-    registry = support.parse_registry((REPO / "harness" / "models.toml").read_text())
-    evals_src = (REPO / "harness" / "skill_evals.py").read_text()
+    registry = support.parse_registry(
+        (REPO / "harness" / "models.toml").read_text(encoding="utf-8"))
+    evals_src = (REPO / "harness" / "skill_evals.py").read_text(encoding="utf-8")
     import re
 
     defined = set(re.findall(r"@task\ndef (\w+)\(", evals_src))

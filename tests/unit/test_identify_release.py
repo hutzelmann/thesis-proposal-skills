@@ -31,11 +31,17 @@ def run_git(repo: Path, *args: str) -> str:
 
 
 def blob(repo: Path, text: str) -> str:
+    """The blob name git would give these exact bytes.
+
+    The pipe is binary on purpose: `text=True` wraps stdin in a `TextIOWrapper`
+    whose default newline setting translates every `\\n` to `os.linesep`, so on
+    Windows this hashed CRLF content and matched no committed blob at all.
+    """
     proc = subprocess.run(
         ["git", "-C", str(repo), "hash-object", "--stdin"],
-        input=text, capture_output=True, text=True, check=True,
+        input=text.encode("utf-8"), capture_output=True, check=True,
     )
-    return proc.stdout.strip()
+    return proc.stdout.decode("utf-8").strip()
 
 
 @pytest.fixture
@@ -47,14 +53,18 @@ def history(tmp_path):
     subprocess.run(run_git_init, check=True)
     run_git(repo, "config", "user.email", "dev@example.org")
     run_git(repo, "config", "user.name", "Dev")
+    # git for Windows ships core.autocrlf=true, which would store these files
+    # LF-normalized while the test hashes what it wrote: pin it, and write bytes,
+    # so the fixture's stored bytes do not depend on the host's git config
+    run_git(repo, "config", "core.autocrlf", "false")
 
-    (repo / SKILL_FILE).write_text(V1, encoding="utf-8")
-    (repo / OTHER_FILE).write_text(SCRIPT, encoding="utf-8")
+    (repo / SKILL_FILE).write_bytes(V1.encode("utf-8"))
+    (repo / OTHER_FILE).write_bytes(SCRIPT.encode("utf-8"))
     run_git(repo, "add", "-A")
     run_git(repo, "commit", "-q", "-m", "first release")
     first = run_git(repo, "rev-parse", "--short", "HEAD").strip()
 
-    (repo / SKILL_FILE).write_text(V2, encoding="utf-8")
+    (repo / SKILL_FILE).write_bytes(V2.encode("utf-8"))
     run_git(repo, "add", "-A")
     run_git(repo, "commit", "-q", "-m", "reword the check skill")
     second = run_git(repo, "rev-parse", "--short", "HEAD").strip()

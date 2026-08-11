@@ -61,17 +61,17 @@ def test_strip_abstracts_removes_continuations():
 
 def test_ensure_gitignore_idempotent(tmp_path):
     publish.ensure_gitignore(tmp_path)
-    first = (tmp_path / ".gitignore").read_text()
+    first = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert "*.pdf" in first
     assert publish.GITIGNORE_MARKER in first
     publish.ensure_gitignore(tmp_path)
-    assert (tmp_path / ".gitignore").read_text() == first
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == first
 
 
 def test_ensure_gitignore_appends_only_missing(tmp_path):
-    (tmp_path / ".gitignore").write_text("*.pdf\n")
+    (tmp_path / ".gitignore").write_text("*.pdf\n", encoding="utf-8")
     publish.ensure_gitignore(tmp_path)
-    content = (tmp_path / ".gitignore").read_text()
+    content = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert content.count("*.pdf") == 1
     assert "*.typ" in content
 

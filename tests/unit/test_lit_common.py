@@ -82,7 +82,7 @@ def test_get_key_env_then_file(tmp_path, monkeypatch):
 
 def test_get_key_never_reads_ancestor_directories(tmp_path, monkeypatch):
     """No directory traversal: a key file above the working directory is not consulted."""
-    (tmp_path / "api-keys.env").write_text("OPENALEX_API_KEY=from-ancestor\n")
+    (tmp_path / "api-keys.env").write_text("OPENALEX_API_KEY=from-ancestor\n", encoding="utf-8")
     deep = tmp_path / "sub" / "dir"
     deep.mkdir(parents=True)
     monkeypatch.chdir(deep)
@@ -116,7 +116,7 @@ def test_search_rejects_unknown_source(tmp_path):
 def test_get_key_explicit_path_overrides_and_resolves_per_key(tmp_path, monkeypatch):
     override = tmp_path / "elsewhere" / "keys.env"
     override.parent.mkdir()
-    override.write_text("OPENALEX_API_KEY=from-override\n")
+    override.write_text("OPENALEX_API_KEY=from-override\n", encoding="utf-8")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "api-keys.env").write_text(

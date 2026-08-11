@@ -13,16 +13,17 @@ import pytest
 from helpers import FIXTURES, REPO, run_check
 
 CLEAN = FIXTURES / "f00-clean-en" / "ml-code-review.md"
-TITLE_CFG = json.loads((REPO / "shared" / "structure.json").read_text())["title"]
+TITLE_CFG = json.loads((REPO / "shared" / "structure.json").read_text(encoding="utf-8"))["title"]
 
 
 def with_title(tmp_path: Path, title: str, name: str = "titled.md") -> Path:
-    source = CLEAN.read_text()
+    source = CLEAN.read_text(encoding="utf-8")
     victim = tmp_path / name
     victim.write_text(
         source.replace(
             "\ntitle: Machine Learning for Automated Code Review", f"\ntitle: {title}", 1
-        )
+        ),
+        encoding="utf-8",
     )
     return victim
 
@@ -76,11 +77,12 @@ def test_block_scalar_title_is_not_judged(tmp_path):
     the indicator itself would report a one-word title that does not exist."""
     victim = tmp_path / "folded.md"
     victim.write_text(
-        CLEAN.read_text().replace(
+        CLEAN.read_text(encoding="utf-8").replace(
             "\ntitle: Machine Learning for Automated Code Review",
             "\ntitle: >-\n  Validity of Unsupervised Drift Alerts Against Delayed-Label Decay",
             1,
-        )
+        ),
+        encoding="utf-8",
     )
     assert "title runs" not in run_check(victim).stdout
 
@@ -90,13 +92,14 @@ def test_german_minimum_is_lower_than_the_english_one(tmp_path):
     assert TITLE_CFG["min_words"]["de"] < TITLE_CFG["min_words"]["en"]
     victim = tmp_path / "de.md"
     victim.write_text(
-        CLEAN.read_text()
+        CLEAN.read_text(encoding="utf-8")
         .replace("\nlang: en", "\nlang: de", 1)
         .replace(
             "\ntitle: Machine Learning for Automated Code Review",
             "\ntitle: Anomalieerkennung in Produktionsnetzwerken",
             1,
-        )
+        ),
+        encoding="utf-8",
     )
     assert "title runs" not in run_check(victim).stdout
 

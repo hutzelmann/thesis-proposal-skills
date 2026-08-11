@@ -9,7 +9,8 @@ import audit_status
 
 REPO = Path(__file__).resolve().parents[2]
 
-SAMPLE = json.loads((Path(__file__).parent / "data" / "agent_scan_sample.json").read_text())
+SAMPLE = json.loads(
+    (Path(__file__).parent / "data" / "agent_scan_sample.json").read_text(encoding="utf-8"))
 
 
 # ---------- audit_scan -------------------------------------------------------
@@ -35,13 +36,14 @@ def test_threshold_separates_noise_from_blockers():
 
 def test_snyk_token_env_wins_then_env_file(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
-    env_file.write_text("# comment\nCONTACT_EMAIL=x@y.z\nSNYK_TOKEN='from-file'\n")
+    env_file.write_text(
+        "# comment\nCONTACT_EMAIL=x@y.z\nSNYK_TOKEN='from-file'\n", encoding="utf-8")
     monkeypatch.setenv("SNYK_TOKEN", "from-env")
     assert audit_scan.snyk_token(env_file) == "from-env"
     monkeypatch.delenv("SNYK_TOKEN")
     assert audit_scan.snyk_token(env_file) == "from-file"
     empty = tmp_path / "empty.env"
-    empty.write_text("SNYK_TOKEN=\n")  # template copied but not filled in
+    empty.write_text("SNYK_TOKEN=\n", encoding="utf-8")  # template copied but not filled in
     assert audit_scan.snyk_token(empty) is None
     assert audit_scan.snyk_token(tmp_path / "missing.env") is None
 

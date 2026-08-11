@@ -151,7 +151,8 @@ def test_order_error_names_the_methodology_as_written(tmp_path):
 def test_non_canonical_headings_do_not_affect_order(tmp_path):
     text = CLEAN.read_text(encoding="utf-8")
     victim = tmp_path / "extra-heading.md"
-    victim.write_text(text.replace("# Timeline\n", "# Acknowledgements\n\nThanks.\n\n# Timeline\n"))
+    victim.write_text(text.replace("# Timeline\n", "# Acknowledgements\n\nThanks.\n\n# Timeline\n"),
+                      encoding="utf-8")
     assert "out of order" not in run_check(victim).stdout
 
 
@@ -161,15 +162,15 @@ def test_override_list_supplies_its_own_order(tmp_path):
     victim = tmp_path / "custom.md"
     victim.write_text(
         "# Beta\n\nSecond by default, first here.\n\n# Alpha\n\nText.\n\n"
-        "---\ntitle: t\nlang: en\nreferences: []\n---\n"
+        "---\ntitle: t\nlang: en\nreferences: []\n---\n", encoding="utf-8"
     )
     (tmp_path / "guidelines.md").write_text(
-        '```toml\n[sections]\nrequired = ["Beta", "Alpha"]\n```\n'
+        '```toml\n[sections]\nrequired = ["Beta", "Alpha"]\n```\n', encoding="utf-8"
     )
     assert "out of order" not in run_check(victim).stdout
 
     (tmp_path / "guidelines.md").write_text(
-        '```toml\n[sections]\nrequired = ["Alpha", "Beta"]\n```\n'
+        '```toml\n[sections]\nrequired = ["Alpha", "Beta"]\n```\n', encoding="utf-8"
     )
     assert "section out of order: `Beta` before `Alpha`" in run_check(victim).stdout
 

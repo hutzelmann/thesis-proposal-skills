@@ -53,37 +53,41 @@ def test_override_workspace_changes_verdicts():
 def test_detailed_timeline_needs_the_override(tmp_path):
     """Same file, without the guidelines.md that selects the detailed mode:
     the phase table under `# Timeline` is then a size-guard error."""
-    source = (FIXTURES / "w02-override-workspace" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "w02-override-workspace" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source)  # no guidelines.md next to it -> [timeline] detail is simple
+    # no guidelines.md next to it -> [timeline] detail is simple
+    victim.write_text(source, encoding="utf-8")
     result = run_check(victim)
     assert "table in `Timeline`" in result.stdout
     assert "forbidden section: `Timeline`" not in result.stdout  # it is a canonical title now
 
 
 def test_detailed_mode_also_unforbids_work_plan_headings(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"))
+    victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"),
+                      encoding="utf-8")
     (tmp_path / "guidelines.md").write_text(
-        '```toml\n[timeline]\ndetail = "detailed"\n```\n')
+        '```toml\n[timeline]\ndetail = "detailed"\n```\n', encoding="utf-8")
     result = run_check(victim)
     assert "matches `milestones`" not in result.stdout
 
 
 def test_work_plan_headings_stay_forbidden_by_default(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"))
+    victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"),
+                      encoding="utf-8")
     result = run_check(victim)
     assert "matches `milestones`" in result.stdout
 
 
 def test_unknown_timeline_detail_is_reported(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source)
-    (tmp_path / "guidelines.md").write_text('```toml\n[timeline]\ndetail = "gantt"\n```\n')
+    victim.write_text(source, encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(
+        '```toml\n[timeline]\ndetail = "gantt"\n```\n', encoding="utf-8")
     result = run_check(victim)
     assert "unknown [timeline] detail `gantt`" in result.stdout
     assert result.returncode == 1
@@ -92,10 +96,11 @@ def test_unknown_timeline_detail_is_reported(tmp_path):
 def test_retired_override_key_is_reported_not_ignored(tmp_path):
     """A workspace whose overrides quietly stopped applying is worse off than one
     that fails: the settings look present and do nothing."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source)
-    (tmp_path / "guidelines.md").write_text("```toml\nmin_references = 8\n```\n")
+    victim.write_text(source, encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(
+        "```toml\nmin_references = 8\n```\n", encoding="utf-8")
     result = run_check(victim)
     assert "`min_references` was replaced by `[references] min_count`" in result.stdout
     assert result.returncode == 1
@@ -104,11 +109,11 @@ def test_retired_override_key_is_reported_not_ignored(tmp_path):
 
 
 def test_unknown_override_key_is_reported(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source)
+    victim.write_text(source, encoding="utf-8")
     (tmp_path / "guidelines.md").write_text(
-        "```toml\n[references]\nmin_cout = 8\n```\n")  # typo
+        "```toml\n[references]\nmin_cout = 8\n```\n", encoding="utf-8")  # typo
     result = run_check(victim)
     assert "unknown workspace override `[references] min_cout`" in result.stdout
 
@@ -144,42 +149,43 @@ def test_workspace_branch_requires_its_own_subsections(tmp_path):
     # CASE_STUDY_TOML replaces the *shipped* case_study branch (same id), so this
     # also proves replace-by-id: the shipped subsections stop applying.
     source = (FIXTURES / "f25-case-study" /
-              "release-readiness-signals.md").read_text()
+              "release-readiness-signals.md").read_text(encoding="utf-8")
     victim = tmp_path / "case.md"
-    victim.write_text(source.replace("## Analysis", "## Findings"))
-    (tmp_path / "guidelines.md").write_text(CASE_STUDY_TOML)
+    victim.write_text(source.replace("## Analysis", "## Findings"), encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(CASE_STUDY_TOML, encoding="utf-8")
     result = run_check(victim)
     assert "methodology subsection missing: `Analysis`" in result.stdout
 
 
 def test_disabled_shipped_branch_becomes_unknown(tmp_path):
-    source = (FIXTURES / "f17-theoretical" / "physical-unit-consistency.md").read_text()
+    source = (FIXTURES / "f17-theoretical" /
+              "physical-unit-consistency.md").read_text(encoding="utf-8")
     victim = tmp_path / "theory.md"
-    victim.write_text(source)
+    victim.write_text(source, encoding="utf-8")
     (tmp_path / "guidelines.md").write_text(
-        "```toml\n[methodologies.theoretical]\nenabled = false\n```\n")
+        "```toml\n[methodologies.theoretical]\nenabled = false\n```\n", encoding="utf-8")
     out = run_check(victim).stdout
     assert "unknown methodology `Theoretical Analysis`" in out
     assert "Theoretical Analysis" not in out.split("must be one of:")[1].split("\n")[0]
 
 
 def test_research_question_bounds_are_overridable(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source)  # three questions
+    victim.write_text(source, encoding="utf-8")  # three questions
     (tmp_path / "guidelines.md").write_text(
-        "```toml\n[research_questions]\nmax_count = 2\n```\n")
+        "```toml\n[research_questions]\nmax_count = 2\n```\n", encoding="utf-8")
     result = run_check(victim)
     assert "3 research questions — at most 2 allowed" in result.stdout
 
 
 def test_level2_sections_still_checked(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     demoted = source.replace("\n# ", "\n## ").replace("\n## Previous", "\n### Previous").replace(
         "\n## Requirements", "\n### Requirements").replace("\n## Evaluation", "\n### Evaluation")
     demoted = demoted.replace("(RQ3)", "")  # break one cross-ref
     victim = tmp_path / "demoted.md"
-    victim.write_text(demoted)
+    victim.write_text(demoted, encoding="utf-8")
     result = run_check(victim)
     assert "(RQ3) never referenced" in result.stdout
 
@@ -204,9 +210,9 @@ def with_extra_research_questions(source: str, count: int) -> str:
 def test_too_many_research_questions_errors(tmp_path):
     """The count bounds scope, and scope is exactly what an over-long list has
     not decided. Six questions is a second thesis hiding in the first."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "six-questions.md"
-    victim.write_text(with_extra_research_questions(source, 6))
+    victim.write_text(with_extra_research_questions(source, 6), encoding="utf-8")
     result = run_check(victim)
     assert result.returncode == 1
     assert "6 research questions — at most 5 allowed" in result.stdout
@@ -214,17 +220,17 @@ def test_too_many_research_questions_errors(tmp_path):
 
 def test_research_questions_at_the_bound_pass(tmp_path):
     """Five is allowed: the rule is an upper bound, not a target of three."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "five-questions.md"
-    victim.write_text(with_extra_research_questions(source, 5))
+    victim.write_text(with_extra_research_questions(source, 5), encoding="utf-8")
     result = run_check(victim)
     assert "research questions — at most" not in result.stdout
 
 
 def test_multiple_metadata_blocks_error(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "double.md"
-    victim.write_text("---\ntitle: front\n---\n\n" + source)
+    victim.write_text("---\ntitle: front\n---\n\n" + source, encoding="utf-8")
     result = run_check(victim)
     assert "additional metadata block" in result.stdout
 
@@ -253,9 +259,10 @@ def with_nameless_references(source: str, sentence: str) -> str:
 
 
 def test_author_in_text_citation_of_authorless_reference_warns(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "nameless.md"
-    victim.write_text(with_nameless_references(source, "@NoName01Standard states this."))
+    victim.write_text(with_nameless_references(source, "@NoName01Standard states this."),
+                      encoding="utf-8")
     result = run_check(victim)
     out = result.stdout
     assert "`@NoName01Standard` is cited author-in-text" in out
@@ -264,26 +271,29 @@ def test_author_in_text_citation_of_authorless_reference_warns(tmp_path):
 
 
 def test_bracketed_citation_of_authorless_reference_is_silent(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "bracketed.md"
-    victim.write_text(with_nameless_references(source, "Reported widely [@NoName01Standard]."))
+    victim.write_text(with_nameless_references(source, "Reported widely [@NoName01Standard]."),
+                      encoding="utf-8")
     result = run_check(victim)
     assert "cited author-in-text" not in result.stdout
 
 
 def test_author_in_text_citation_of_editor_only_reference_is_silent(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "editor.md"
-    victim.write_text(with_nameless_references(source, "@Ed02Collected collects work."))
+    victim.write_text(with_nameless_references(source, "@Ed02Collected collects work."),
+                      encoding="utf-8")
     result = run_check(victim)
     assert "cited author-in-text" not in result.stdout
 
 
 def test_author_metadata_key_warns(tmp_path):
     """Proposals are anonymous; the key renders verbatim on the title page."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "named.md"
-    victim.write_text(source.replace("\ntitle:", "\nauthor: Erika Musterfrau\ntitle:", 1))
+    victim.write_text(source.replace("\ntitle:", "\nauthor: Erika Musterfrau\ntitle:", 1),
+                      encoding="utf-8")
     result = run_check(victim)
     out = result.stdout
     assert "`author:` found — proposals are anonymous by default" in out
@@ -294,9 +304,10 @@ def test_author_metadata_key_warns(tmp_path):
 
 def test_author_placeholder_warns_too(tmp_path):
     """The reported defect: an unfilled placeholder reaching the title page."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "todo-author.md"
-    victim.write_text(source.replace("\ntitle:", "\nauthor: [TODO: add author]\ntitle:", 1))
+    victim.write_text(source.replace("\ntitle:", "\nauthor: [TODO: add author]\ntitle:", 1),
+                      encoding="utf-8")
     assert "`author:` found" in run_check(victim).stdout
 
 
@@ -313,9 +324,9 @@ def with_sentence(source: str, sentence: str) -> str:
 
 def check_sentence(tmp_path, sentence: str, name: str = "typed.md") -> str:
     """f00's first reference is Chen25Learning, authored by Chen and Novak."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / name
-    victim.write_text(with_sentence(source, sentence))
+    victim.write_text(with_sentence(source, sentence), encoding="utf-8")
     return run_check(victim).stdout
 
 
@@ -355,21 +366,22 @@ def test_typed_author_name_of_a_different_reference_is_not_flagged(tmp_path):
 
 
 def test_typed_author_name_never_fails_the_run(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "advisory.md"
-    victim.write_text(with_sentence(source, "Chen et al. [@Chen25Learning] propose a detector."))
+    victim.write_text(with_sentence(source, "Chen et al. [@Chen25Learning] propose a detector."),
+                      encoding="utf-8")
     result = run_check(victim)
     assert "author name typed" in result.stdout
     assert result.returncode == 0, "the typed-name check is advisory, never a failure"
 
 
 def test_first_person_capitalized_caught(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "fp.md"
     victim.write_text(source.replace(
         "Software quality assurance relies heavily",
         "We propose a novel approach. Our contribution relies heavily",
-    ))
+    ), encoding="utf-8")
     result = run_check(victim)
     assert "first-person pronouns" in result.stdout
 
@@ -381,21 +393,21 @@ def test_first_person_capitalized_caught(tmp_path):
     ("2023Survey", "starts with the year"),
 ])
 def test_malformed_reference_key_warns(tmp_path, key, reason):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "keys.md"
     victim.write_text(source.replace("- id: Chen25Learning", f"- id: {key}")
-                            .replace("@Chen25Learning", f"@{key}"))
+                            .replace("@Chen25Learning", f"@{key}"), encoding="utf-8")
     result = run_check(victim)
     assert f"reference id `{key}` does not follow" in result.stdout, reason
     assert result.returncode == 0, "key shape is advisory, never a failure"
 
 
 def test_overlong_reference_key_warns(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     long_key = "Bacchelli13Expectations"
     victim = tmp_path / "long.md"
     victim.write_text(source.replace("- id: Chen25Learning", f"- id: {long_key}")
-                            .replace("@Chen25Learning", f"@{long_key}"))
+                            .replace("@Chen25Learning", f"@{long_key}"), encoding="utf-8")
     out = run_check(victim).stdout
     assert f"`{long_key}` is 23 characters" in out
     assert "does not follow" not in out, "well-formed but long: one complaint, not two"
@@ -407,10 +419,10 @@ def test_overlong_reference_key_warns(tmp_path):
     "vanDerAalst16Mining",  # particle-bearing name, 19 chars
 ])
 def test_conforming_reference_keys_stay_silent(tmp_path, key):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "ok.md"
     victim.write_text(source.replace("- id: Chen25Learning", f"- id: {key}")
-                            .replace("@Chen25Learning", f"@{key}"))
+                            .replace("@Chen25Learning", f"@{key}"), encoding="utf-8")
     out = run_check(victim).stdout
     assert "does not follow" not in out
     assert "characters — keep keys" not in out
@@ -418,9 +430,9 @@ def test_conforming_reference_keys_stay_silent(tmp_path, key):
 
 def test_boolean_literal_key_is_not_also_shape_warned(tmp_path):
     """`on` is already an error; one complaint per key is enough."""
-    source = (FIXTURES / "f15-format-broken" / "broken-format.md").read_text()
+    source = (FIXTURES / "f15-format-broken" / "broken-format.md").read_text(encoding="utf-8")
     victim = tmp_path / "bool.md"
-    victim.write_text(source)
+    victim.write_text(source, encoding="utf-8")
     out = run_check(victim).stdout
     assert "`on` is a YAML boolean literal" in out
     assert "reference id `on` does not follow" not in out
@@ -440,9 +452,9 @@ def inflate(source: str, words: int) -> str:
 def test_length_estimate_warns_over_limit(tmp_path):
     """Default limit 5 pages at 500 words/page; the overrun is a warning, never
     an error (guidance-model spec: default page limit)."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "long.md"
-    victim.write_text(inflate(source, 2600))
+    victim.write_text(inflate(source, 2600), encoding="utf-8")
     result = run_check(victim)
     assert result.returncode == 0, result.stdout
     assert "estimated length" in result.stdout
@@ -457,17 +469,19 @@ def test_length_estimate_stays_silent_within_limit():
 
 def test_length_estimate_respects_override(tmp_path):
     """A workspace page limit both relaxes and tightens the default."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "long.md"
-    victim.write_text(inflate(source, 2600))
-    (tmp_path / "guidelines.md").write_text("```toml\n[length]\npage_limit = 10\n```\n")
+    victim.write_text(inflate(source, 2600), encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(
+        "```toml\n[length]\npage_limit = 10\n```\n", encoding="utf-8")
     assert "estimated length" not in run_check(victim).stdout
 
     tight = tmp_path / "tight"
     tight.mkdir()
     short = tight / "short.md"
-    short.write_text(inflate(source, 600))
-    (tight / "guidelines.md").write_text("```toml\n[length]\npage_limit = 1\n```\n")
+    short.write_text(inflate(source, 600), encoding="utf-8")
+    (tight / "guidelines.md").write_text(
+        "```toml\n[length]\npage_limit = 1\n```\n", encoding="utf-8")
     out = run_check(short).stdout
     assert "estimated length" in out
     assert "1-page limit" in out
@@ -478,11 +492,11 @@ def test_page_limit_override_must_be_a_positive_number(tmp_path, value):
     """A quoted, negative, zero, non-finite, or boolean value degrades to the
     default with an error — never a crash, never a silently disabled rule
     (skill-check spec: advisory reporting)."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "typed.md"
-    victim.write_text(source)
+    victim.write_text(source, encoding="utf-8")
     (tmp_path / "guidelines.md").write_text(
-        f"```toml\n[length]\npage_limit = {value}\n```\n")
+        f"```toml\n[length]\npage_limit = {value}\n```\n", encoding="utf-8")
     result = run_check(victim)
     assert result.returncode == 1
     assert "[length] page_limit must be a positive number" in result.stdout
@@ -493,11 +507,11 @@ def test_page_limit_override_must_be_a_positive_number(tmp_path, value):
 def test_min_references_override_must_be_a_non_negative_integer(tmp_path, value):
     """Same degradation for the reference minimum: error plus the default, which
     the clean fixture satisfies — so no shortfall error alongside."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text()
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "typed.md"
-    victim.write_text(source)
+    victim.write_text(source, encoding="utf-8")
     (tmp_path / "guidelines.md").write_text(
-        f"```toml\n[references]\nmin_count = {value}\n```\n")
+        f"```toml\n[references]\nmin_count = {value}\n```\n", encoding="utf-8")
     result = run_check(victim)
     assert result.returncode == 1
     assert "[references] min_count must be a non-negative integer" in result.stdout

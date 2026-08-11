@@ -154,6 +154,62 @@ def test_relative_paths_render_as_posix(path):
     )
 
 
+# ---------- text I/O encoding -------------------------------------------------
+
+
+TEXT_IO = {"read_text", "write_text", "open"}
+
+
+def unencoded_text_io(tree: ast.AST) -> list[int]:
+    """Line numbers where text is read or written without fixing an encoding.
+
+    Python resolves the default from the locale, so the same call produces UTF-8
+    here and cp1252 on a Windows host. Binary `open` modes are exempt: an
+    encoding is illegal there.
+    """
+    hits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        elif isinstance(node.func, ast.Name):
+            name = node.func.id
+        else:
+            continue
+        if name not in TEXT_IO or any(kw.arg == "encoding" for kw in node.keywords):
+            continue
+        binary = any(
+            isinstance(arg, ast.Constant) and isinstance(arg.value, str) and "b" in arg.value
+            for arg in node.args
+        ) or any(
+            kw.arg == "mode" and isinstance(kw.value, ast.Constant)
+            and isinstance(kw.value.value, str) and "b" in kw.value.value
+            for kw in node.keywords
+        )
+        if not binary:
+            hits.append(node.lineno)
+    return sorted(set(hits))
+
+
+@pytest.mark.parametrize("path", PATH_FILES, ids=lambda p: p.name)
+def test_text_io_fixes_an_encoding(path):
+    """`test_title_tells.py` wrote a proposal with the locale encoding and read it
+    back as UTF-8. On this machine those are the same codec, so it passed for
+    months; on the Windows job it wrote cp1252 and the reader died on `ü`.
+
+    Ruff cannot carry this rule: `PLW1514` is preview-only and resolves a
+    receiver only when it is a literal `Path(...)`, which reports zero of the 98
+    call sites this scan found.
+    """
+    lines = unencoded_text_io(ast.parse(path.read_text(encoding="utf-8")))
+    assert not lines, (
+        f"{path.relative_to(REPO).as_posix()}:{lines} reads or writes text without "
+        "`encoding=`, so the codec is whatever the host's locale says — pass "
+        '`encoding="utf-8"`, or open in binary mode where the bytes are what matter'
+    )
+
+
 # ---------- verdict coverage --------------------------------------------------
 
 

@@ -355,7 +355,8 @@ def test_select_draft_seedless_accepts_a_review_shaped_slug():
 
 
 ORACLE_F15 = REPO / "tests" / "fixtures" / "f15-format-broken" / "expected.json"
-BROKEN_F15 = (REPO / "tests" / "fixtures" / "f15-format-broken" / "broken-format.md").read_text()
+BROKEN_F15 = (REPO / "tests" / "fixtures" / "f15-format-broken" / "broken-format.md").read_text(
+    encoding="utf-8")
 
 
 def test_check_report_counts_a_capitalised_relay():

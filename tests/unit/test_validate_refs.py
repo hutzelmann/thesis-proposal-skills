@@ -34,7 +34,7 @@ def run_main(tmp_path, monkeypatch, capsys, http_json, search):
     monkeypatch.setattr(common, "http_json", http_json)
     monkeypatch.setattr(validate_refs.crossref, "search", search)
     p = tmp_path / "x.md"
-    p.write_text(PROPOSAL)
+    p.write_text(PROPOSAL, encoding="utf-8")
     assert validate_refs.main([str(p)]) == 0
     return capsys.readouterr().out
 
@@ -76,5 +76,5 @@ def test_offline_path(tmp_path, monkeypatch, capsys):
 
 def test_no_references_block(tmp_path):
     p = tmp_path / "y.md"
-    p.write_text("Just text, no metadata.\n")
+    p.write_text("Just text, no metadata.\n", encoding="utf-8")
     assert validate_refs.main([str(p)]) == 2
