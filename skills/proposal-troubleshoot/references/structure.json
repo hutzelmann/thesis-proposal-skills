@@ -116,6 +116,26 @@
           "de": "Analyse"
         }
       ]
+    },
+    "experiment": {
+      "title": {
+        "en": "Controlled Experiment",
+        "de": "Kontrolliertes Experiment"
+      },
+      "subsections": [
+        {
+          "en": "Hypotheses and Variables",
+          "de": "Hypothesen und Variablen"
+        },
+        {
+          "en": "Design and Participants",
+          "de": "Versuchsdesign und Teilnehmende"
+        },
+        {
+          "en": "Statistical Analysis",
+          "de": "Statistische Auswertung"
+        }
+      ]
     }
   },
   "_work_plan_comment": "work_plan_patterns is the subset of heading_patterns dropped when [timeline] detail = detailed. `time plan` and `schedule` stay forbidden even then: they are rival names for the canonical timeline section, not work-plan markers.",

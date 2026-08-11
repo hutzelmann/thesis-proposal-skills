@@ -1,0 +1,14 @@
+{
+  "fixture": "f23-controlled-experiment",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": []
+}
