@@ -58,7 +58,7 @@ function name.
 Registered poe tasks (`[tool.poe.tasks]` in `pyproject.toml`) are the canonical entry points:
 
 ```sh
-uv run poe setup                   # once per clone: dev env + core.hooksPath (pre-commit sync hook)
+uv run poe setup                   # once per clone: dev env + core.hooksPath (pre-commit sync hook) + merge.ours driver
 uv run poe test                    # L0 chain: pytest + ruff + generated-copy drift check — must stay green
 uv run poe test-fast               # inner loop: parallel, without the pandoc/typst builds (~3s)
 uv run poe cov                     # coverage with the 78% floor

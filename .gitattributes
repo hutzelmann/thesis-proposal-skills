@@ -1,0 +1,18 @@
+# BEGIN generated (scripts/sync_shared.py)
+skills/proposal-check/references/structure.json linguist-generated=true merge=ours
+skills/proposal-customize/references/guidelines.md linguist-generated=true merge=ours
+skills/proposal-ideate/references/guidelines.md linguist-generated=true merge=ours
+skills/proposal-import/references/structure.json linguist-generated=true merge=ours
+skills/proposal-import/scripts/check.py linguist-generated=true merge=ours
+skills/proposal-import/scripts/common.py linguist-generated=true merge=ours
+skills/proposal-import/scripts/crossref.py linguist-generated=true merge=ours
+skills/proposal-review/references/guidelines.md linguist-generated=true merge=ours
+skills/proposal-supervise/references/guidelines.md linguist-generated=true merge=ours
+skills/proposal-supervise/references/structure.json linguist-generated=true merge=ours
+skills/proposal-supervise/scripts/check.py linguist-generated=true merge=ours
+skills/proposal-troubleshoot/references/model-support.json linguist-generated=true merge=ours
+skills/proposal-troubleshoot/references/structure.json linguist-generated=true merge=ours
+skills/proposal-write/references/guidelines.md linguist-generated=true merge=ours
+skills/proposal-write/references/structure.json linguist-generated=true merge=ours
+skills/proposal-write/scripts/check.py linguist-generated=true merge=ours
+# END generated

@@ -38,7 +38,11 @@ identify = "python scripts/identify_release.py"
 specs = "npx -y @fission-ai/openspec@1.7.0 validate --all --strict"
 _sync_dev = "uv sync --dev"
 _hooks = "git config core.hooksPath .githooks"
-setup = ["_sync_dev", "_hooks"]
+# generated copies merge to ours and are then regenerated from the source; an
+# unregistered driver is inert, so a clone without `poe setup` just gets an
+# ordinary conflict
+_merge_driver = "git config merge.ours.driver true"
+setup = ["_sync_dev", "_hooks", "_merge_driver"]
 
 [tool.poe.tasks.smoke]
 cmd = "python harness/matrix.py --models claude-haiku-4.5 --core --epochs 1"

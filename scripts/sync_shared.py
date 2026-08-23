@@ -5,6 +5,10 @@ self-contained skill copies.
 One-way, deterministic: the mapped sources are the only place devs edit;
 committed copies inside skills are what skills.sh installs. Run with --check
 (CI/L0) to fail on drift instead of writing.
+
+Also writes the generated-file attributes into .gitattributes, derived from
+SYNC_MAP rather than hand-listed: a hand-written list is a third copy of the
+same knowledge and goes stale the first time a destination is added.
 """
 
 from __future__ import annotations
@@ -91,8 +95,51 @@ def render(source: Path) -> str:
     return text
 
 
+GITATTRIBUTES = REPO / ".gitattributes"
+BEGIN_MARK = "# BEGIN generated (scripts/sync_shared.py)"
+END_MARK = "# END generated"
+# merge=ours: the copy is derived, so the source is what merges. An unregistered
+# driver is inert, which fails open to an ordinary conflict — `poe setup`
+# registers it.
+ATTRIBUTES = "linguist-generated=true merge=ours"
+
+
+def generated_paths() -> list[str]:
+    """Every destination SYNC_MAP writes, repo-relative and sorted."""
+    return sorted(
+        f"{dest_dir}/{Path(src_rel).name}"
+        for src_rel, dest_dirs in SYNC_MAP.items()
+        for dest_dir in dest_dirs
+    )
+
+
+def attribute_block() -> str:
+    lines = [BEGIN_MARK, *(f"{p} {ATTRIBUTES}" for p in generated_paths()), END_MARK]
+    return "\n".join(lines) + "\n"
+
+
+def render_gitattributes(current: str) -> str:
+    """Replace the generated block, keeping hand-written lines around it."""
+    block = attribute_block()
+    if BEGIN_MARK not in current:
+        return current + ("\n" if current and not current.endswith("\n") else "") + block
+    head, _, rest = current.partition(BEGIN_MARK)
+    _, _, tail = rest.partition(END_MARK + "\n")
+    return head + block + tail
+
+
 def sync(check: bool) -> int:
     drift: list[str] = []
+    current = GITATTRIBUTES.read_text(encoding="utf-8") if GITATTRIBUTES.exists() else ""
+    expected_attrs = render_gitattributes(current)
+    if check:
+        if current != expected_attrs:
+            drift.append(".gitattributes")
+    else:
+        GITATTRIBUTES.write_text(expected_attrs, encoding="utf-8")
+        # exactly "synced <src> -> <dst>": .githooks/pre-commit reads the fourth
+        # field of each line and stages it
+        print("synced SYNC_MAP -> .gitattributes")
     for src_rel, dest_dirs in SYNC_MAP.items():
         source = REPO / src_rel
         expected = render(source)
