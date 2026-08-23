@@ -39,6 +39,10 @@ Order verification, the timeline size constraint, and the research-question coun
 ### Requirement: Warning-class pattern checks
 The skill SHALL report as warnings (never hard failures, false positives acknowledged): first-person pronouns; three consecutive sentences starting with the same word; personal-data patterns (emails, matriculation numbers); an `author` key in the metadata block, since proposals are anonymous by default and the key is rendered verbatim on the title page; confidentiality markers in English and German ("confidential", "internal use only", "do not distribute", "NDA", "vertraulich", "nur für den internen Gebrauch"), because theses get published; author-in-text citations of references that declare neither an author nor an editor, because those render as a quoted title inside the sentence; an author surname of a cited reference typed in the prose immediately before that citation, because the typed name is a copy that stops tracking the reference entry; and a reference id that does not follow the documented key shape or reaches the documented length limit. The metadata `author` warning SHALL name the legitimate exception — a program that requires a named title page — because that exception is declared in workspace guidance prose and is therefore not machine-detectable. The skill SHALL NOT attempt to detect writer names in body prose; the typed-author-name check concerns cited authors only and SHALL be anchored to the surnames of the reference actually cited, never to a general capitalisation pattern.
 
+Every warning in this class SHALL carry the line it fired on, and a warning matched on a pattern rather than a named key SHALL quote the text it matched. Acknowledging false positives is only honest if dismissing one is cheap; without a location, dismissing a warning costs a full read of the document.
+
+The first-person check SHALL NOT read a lone capital `I` following a capitalised word as a pronoun. That shape is a Roman-numeral label — `Type I error` is required vocabulary in the Controlled Experiment subsection contract this project ships.
+
 #### Scenario: Confidentiality stamp
 - **WHEN** the body contains "vertraulich" as a document marker
 - **THEN** the check emits a warning citing the publication rationale
@@ -97,6 +101,14 @@ The skill SHALL report as warnings (never hard failures, false positives acknowl
 
 - **WHEN** a reference id follows the documented shape, including one built from an institutional or particle-bearing author name
 - **THEN** no warning is emitted
+
+#### Scenario: Statistical vocabulary reads as a pronoun
+- **WHEN** the statistical-analysis subsection states that the Type I error rate is controlled
+- **THEN** no first-person warning is emitted
+
+#### Scenario: A long number reads as a matriculation number
+- **WHEN** the body states a corpus size of seven digits
+- **THEN** the warning quotes that number and names its line, so the reader can dismiss it without searching for it
 
 ### Requirement: Title tells reported as warnings
 The deterministic script SHALL inspect the metadata `title:` value and report as warnings, never as errors: an implementation-framing opener in English or German; a term from the closed buzzword list in English or German; a trailing question mark; and a word count outside the documented bounds. Each finding SHALL name the matched tell and state that the title reaches the study certificate. These findings SHALL be warnings because the patterns can fire on a legitimate title and because the script cannot judge whether a named technology is the object of study.
@@ -201,7 +213,7 @@ An agent pass SHALL cover typos/grammar and content-level forbidden material tha
 - **THEN** the agent pass flags it as forbidden work-plan content
 
 ### Requirement: Read-only run enforced without file mutation
-A check run SHALL NOT modify the proposal or any other workspace file — no fixes, no permission changes, no temporary alterations, however obvious the correction. The mechanical report SHALL include a content digest of the checked file. In a non-interactive run the skill SHALL verify the mandate by re-running the mechanical check as its final step and comparing digests; a differing digest SHALL be reported prominently as a violation. The skill SHALL NOT instruct or perform any command that mutates file permissions or content as an enforcement mechanism.
+A check run SHALL NOT modify the proposal or any other workspace file — no fixes, no permission changes, no temporary alterations, however obvious the correction. A request that asks for the check and the fixes together SHALL be treated as two steps rather than as consent to edit during the check: the check ends at the report, and the fixes belong to the write skill and its rules on which findings must not be "fixed". The mechanical report SHALL include a content digest of the checked file. In a non-interactive run the skill SHALL verify the mandate by re-running the mechanical check as the final step of the check — before any editing step, including one the user has already asked for — and comparing digests; a differing digest SHALL be reported prominently as a violation. The skill SHALL NOT instruct or perform any command that mutates file permissions or content as an enforcement mechanism.
 
 #### Scenario: Digest in the mechanical report
 - **WHEN** the mechanical check runs on a proposal
@@ -214,6 +226,10 @@ A check run SHALL NOT modify the proposal or any other workspace file — no fix
 #### Scenario: File changed during a non-interactive run
 - **WHEN** the final re-run reports a different digest than the first
 - **THEN** the report states prominently that the file changed during the check, instead of presenting the results as a clean read-only run
+
+#### Scenario: One request asks for the check and the fixes
+- **WHEN** the user asks to check a proposal and fix whatever the check reports
+- **THEN** the check run reports its findings and leaves the file byte-identical, and any fixing happens as a separate step under the write skill
 
 ### Requirement: Findings carry stable identifiers
 
@@ -303,4 +319,30 @@ The check SHALL report as a configuration error a declared branch that is missin
 #### Scenario: Malformed branch declaration
 - **WHEN** a workspace declares a branch without per-subsection guidance
 - **THEN** the check reports a configuration error naming that branch, and every other rule still runs
+
+### Requirement: Citation scanning excludes code and honours an escape
+The citation scan SHALL ignore `@`-prefixed tokens inside fenced code blocks and inline code spans, and SHALL ignore a token escaped as `\@`. The `citation-undefined` message SHALL name both escapes, so a token the scan read wrongly has a markup remedy.
+
+Marking a token as code is the only remedy the skill offers here: a `@Word` left unmarked in prose remains an undefined citation key, because an unmarked one is indistinguishable from a mistyped key. Rewriting the author's terminology is never the remedy, and the write skill's must-not-fix list carries that half.
+
+#### Scenario: Java annotation written in prose
+- **WHEN** the body contains `@Override` in plain prose and no reference declares that id
+- **THEN** the check reports it as an undefined citation key and the message names the code-span and `\@` escapes
+
+#### Scenario: Java annotation marked as code
+- **WHEN** the same token is written inside an inline code span, inside a fenced code block, or escaped as `\@Override`
+- **THEN** the check reports no citation finding for it
+
+### Requirement: Document-shape defects are named, not only their consequences
+When a document defect makes the parse fail wholesale, the check SHALL name that defect, not only the findings that follow from it. Two shapes SHALL be named: a metadata block placed at the top of the file instead of the end, and headings underlined in setext style instead of prefixed with `#`.
+
+Both shapes arrive from outside this format — top frontmatter is what every other markdown tool expects, and underlined headings are what a word processor exports — so the student who produces one has done nothing careless, and a report of five missing sections or a reference list that is entirely undefined tells them nothing they can act on.
+
+#### Scenario: Metadata block at the top of the file
+- **WHEN** the file opens with a `---` block of metadata keys and does not end with one
+- **THEN** the check reports the block's position and states that the remaining reference findings follow from it
+
+#### Scenario: Headings underlined instead of prefixed
+- **WHEN** the body carries no `#`-prefixed heading and its section titles are underlined with `===` or `---`
+- **THEN** the check reports the heading style as an error naming one of the affected titles, alongside the section findings it causes
 

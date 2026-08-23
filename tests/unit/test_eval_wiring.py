@@ -38,6 +38,7 @@ EXPECTED_SCORERS = {
     "import_messy": ["import_l1"],
     "litsearch_expand": ["litsearch_l1"],
     "review_fixture_de": ["review_de_l1", "review_de_l2"],
+    "check_report_compound": ["check_report_l1"],
     "check_report_hardened": ["check_report_l1"],
     "troubleshoot_model_rung": ["troubleshoot_model_rung_l1", "no_spurious_offer"],
     "supervise_feedback": [

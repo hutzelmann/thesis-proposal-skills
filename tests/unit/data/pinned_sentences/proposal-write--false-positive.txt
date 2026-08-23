@@ -1,0 +1,1 @@
+A finding you can demonstrate is a false positive is reported, never worked around: the author's content is correct and stays as written.
