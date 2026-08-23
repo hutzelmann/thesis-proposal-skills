@@ -70,6 +70,7 @@ RULE_IDS = (
     "override-key-unknown",
     "methodology-branch-invalid",
     # structure
+    "heading-style-setext",
     "timeline-detail-unknown",
     "page-limit-invalid",
     "required-section-missing",
@@ -458,8 +459,25 @@ class Context:
 # than implied by where a block happens to sit in a 250-line procedure.
 
 
+def leading_metadata_block(body: str) -> bool:
+    """A `---` block at the very top — the layout every other markdown tool
+    puts it in, and the one thing that explains an otherwise baffling report:
+    with the block unparsed, every reference in it counts as undefined."""
+    lines = body.split("\n")
+    if not lines or not re.fullmatch(r"---\s*", lines[0]):
+        return False
+    close = next((i for i in range(1, len(lines)) if re.fullmatch(r"---\s*", lines[i])), 0)
+    return bool(close) and bool(
+        re.search(r"^\s*\w[\w-]*\s*:", "\n".join(lines[1:close]), re.MULTILINE))
+
+
 def rule_metadata_present(ctx: Context) -> list[Finding]:
     if not ctx.meta.found:
+        if leading_metadata_block(ctx.body):
+            return [error("metadata-block-missing",
+                          "the `---` metadata block sits at the top of the file — this "
+                          "format puts it at the end, after the body; move it there "
+                          "(every citation and reference finding below follows from this)")]
         return [error("metadata-block-missing",
                       "no trailing metadata block found (file must end with a `---` YAML block)")]
     if not ctx.meta.blank_line_before:
@@ -495,6 +513,27 @@ def rule_single_metadata_block(ctx: Context) -> list[Finding]:
                           "additional metadata block found before the trailing one — "
                           "exactly one trailing block allowed")]
     return []
+
+
+def rule_heading_style(ctx: Context) -> list[Finding]:
+    """Word and LibreOffice exports underline their headings instead of
+    prefixing them. Pandoc reads that as a heading and the section rules do
+    not, so without this the report is five "required section missing" errors
+    on a document whose sections are all present and correctly named."""
+    if ctx.head_texts:
+        return []
+    lines = ctx.body.split("\n")
+    underlined = [
+        lines[i - 1].strip() for i, line in enumerate(lines)
+        if i and re.fullmatch(r"(=|-|~){3,}\s*", line) and lines[i - 1].strip()
+        and not re.match(r"\s*\w[\w-]*\s*:", lines[i - 1])
+    ]
+    if not underlined:
+        return []
+    return [error("heading-style-setext",
+                  f"headings are underlined (`{underlined[0]}` over `===` or `---`) rather "
+                  f"than prefixed with `#` — convert all {len(underlined)} to `#` headings; "
+                  f"the section rules below cannot see them")]
 
 
 def rule_title(ctx: Context) -> list[Finding]:
@@ -633,17 +672,42 @@ def rule_research_questions(ctx: Context) -> list[Finding]:
     return out
 
 
+def mask_code(body: str) -> str:
+    """Blank fenced blocks and inline code spans, preserving every offset.
+
+    A proposal about Java writes `@Override`, and a scanner reading any `@Word`
+    as a citation key calls that an undefined reference. Masking gives the
+    student a markup fix — backticks, or a `\\@` escape — where the alternative
+    was rewriting correct terminology to satisfy a wrong finding. Characters
+    become spaces rather than disappearing so line numbers and the prefix a
+    typed-name check reads stay the ones in the file.
+    """
+    out = []
+    fence = ""
+    for line in body.split("\n"):
+        if m := re.match(r"\s*(`{3,}|~{3,})", line):
+            marker = m.group(1)[0]
+            fence = "" if fence == marker else (fence or marker)
+            out.append("")
+        elif fence:
+            out.append("")
+        else:
+            out.append(re.sub(r"(`+)[^`]*\1", lambda m: " " * len(m.group(0)), line))
+    return "\n".join(out)
+
+
 def scan_citations(ctx: Context) -> tuple[dict[str, int], dict[str, int],
                                           list[tuple[str, int, bool]]]:
     """(cited, author-in-text, typed names) with the line each first occurred on."""
     cited: dict[str, int] = {}
     author_in_text: dict[str, int] = {}
     typed_names: list[tuple[str, int, bool]] = []
-    for lineno, line in enumerate(ctx.body.split("\n"), start=1):
+    for lineno, line in enumerate(mask_code(ctx.body).split("\n"), start=1):
         # a key inside a bracketed group renders as a bare number; one outside
-        # is author-in-text and gets an author label prefixed
+        # is author-in-text and gets an author label prefixed. `\@` is the
+        # escape a student uses for an at-sign that is not a citation.
         depth = 0
-        for m in re.finditer(r"\[|\]|(?<![\w.])@([A-Za-z][\w:.-]*)", line):
+        for m in re.finditer(r"\[|\]|(?<![\w.\\])@([A-Za-z][\w:.-]*)", line):
             if m.group(0) == "[":
                 depth += 1
             elif m.group(0) == "]":
@@ -664,7 +728,8 @@ def rule_citations(ctx: Context) -> list[Finding]:
     defined = set(ctx.meta.reference_ids)
     out = [
         error("citation-undefined",
-              f"cited key `@{key}` not defined in references (line {cited[key]})")
+              f"cited key `@{key}` not defined in references (line {cited[key]}) — "
+              f"if it is code rather than a citation, mark it as code or escape it `\\@{key}`")
         for key in sorted(set(cited) - defined)
     ]
     out += [
@@ -780,24 +845,44 @@ def rule_length(ctx: Context) -> list[Finding]:
     return out
 
 
+# `Type I error` is required vocabulary in the Controlled Experiment contract,
+# and `Phase I` reads the same way: a lone capital I behind a capitalised word
+# is a Roman-numeral label, never the pronoun.
+ROMAN_LABEL = re.compile(r"\b[A-Z][a-z]+ I\b")
+
+
+def blank(m: re.Match) -> str:
+    return " " * len(m.group(0))
+
+
+def at(body: str, m: re.Match) -> str:
+    """`(line N)` for a match in `body`. Every warning in the prose-pattern
+    class carries one: without it, dismissing a false positive means reading
+    the whole file to find what tripped it."""
+    lineno = body.count("\n", 0, m.start()) + 1
+    return f"(line {lineno})"
+
+
 def rule_prose_patterns(ctx: Context) -> list[Finding]:
     out = []
     fp = (r"\b(I|[Ww]e|[Mm]y|[Oo]ur)\b" if ctx.lang == "en"
           else r"\b([Ii]ch|[Ww]ir|[Mm]ein\w*|[Uu]nser\w*)\b")
-    if fps := re.findall(fp, ctx.body):
+    if fps := list(re.finditer(fp, ROMAN_LABEL.sub(blank, ctx.body))):
         out.append(warn("first-person-pronoun",
-                        f"first-person pronouns found ({len(fps)}×) — use third person"))
+                        f"first-person pronouns found ({len(fps)}×) — first "
+                        f"`{fps[0].group(0)}` {at(ctx.body, fps[0])}; use third person"))
     for start_word in repeated_sentence_starts(ctx.body):
         out.append(warn("repeated-sentence-start",
                         f"three consecutive sentences start with `{start_word}`"))
         break
-    if re.search(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b", ctx.body):
-        out.append(warn("email-address", "email address found — personal data is forbidden"))
-    if re.search(r"\b(matriculation|matrikel)", ctx.body, re.IGNORECASE) or re.search(
-        r"(?<!\d)\d{7,8}(?!\d)", ctx.body
-    ):
+    if m := re.search(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b", ctx.body):
+        out.append(warn("email-address",
+                        f"email address found {at(ctx.body, m)} — personal data is forbidden"))
+    if m := (re.search(r"\b(matriculation|matrikel)\w*", ctx.body, re.IGNORECASE)
+             or re.search(r"(?<!\d)\d{7,8}(?!\d)", ctx.body)):
         out.append(warn("matriculation-number",
-                        "possible matriculation number / personal data"))
+                        f"possible matriculation number / personal data: "
+                        f"`{m.group(0)}` {at(ctx.body, m)}"))
     if ctx.meta.has_author_key:
         # the exception (a program requiring a named title page) is declared in
         # workspace guidance prose, which is not machine-readable — so warn always
@@ -807,10 +892,11 @@ def rule_prose_patterns(ctx: Context) -> list[Finding]:
             "unless your program requires a named cover page",
         ))
     for pattern in ctx.structure["forbidden"]["confidentiality_patterns"]:
-        if re.search(rf"\b{re.escape(pattern)}\b", ctx.body, re.IGNORECASE):
+        if m := re.search(rf"\b{re.escape(pattern)}\b", ctx.body, re.IGNORECASE):
             out.append(warn(
                 "confidentiality-marker",
-                f"confidentiality marker `{pattern}` — theses get published, remove it",
+                f"confidentiality marker `{pattern}` {at(ctx.body, m)} — "
+                f"theses get published, remove it",
             ))
             break
     return out
@@ -822,6 +908,7 @@ RULES = (
     rule_metadata_present,
     rule_reference_id_syntax,
     rule_single_metadata_block,
+    rule_heading_style,
     rule_title,
     rule_timeline_mode,
     rule_required_sections,

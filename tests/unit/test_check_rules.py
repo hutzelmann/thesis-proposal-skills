@@ -268,6 +268,101 @@ def test_prose_patterns_rule_reports_personal_data_and_first_person():
     assert "email-address" in found
 
 
+# ---------- false positives found by adversarial probing (2026-08-13) --------
+#
+# Five ordinary documents the checker read wrongly. The expensive one is first:
+# on a proposal about Java annotations, `@Override` in prose was reported as an
+# undefined citation key, and the write skill's "fix every error it reports"
+# turned that into a model rewriting the author's terminology and another
+# deleting a real reference to quiet the fallout. The rest are cheaper but the
+# same shape — a correct document told it is wrong.
+
+ANNOTATIONS = (
+    "# Topic\n\n{token} is excluded because it carries no runtime dispatch "
+    "[@Dyer14Mining].\n\n---\ntitle: T\nlang: en\nreferences:\n"
+    "- id: Dyer14Mining\n  type: paper-conference\n  author:\n  - family: Dyer\n---"
+)
+
+
+@pytest.mark.parametrize("token", ["`@Override`", "``@Override``", "\\@Override"])
+def test_citations_rule_ignores_an_at_word_marked_as_code_or_escaped(token):
+    """Markup is the student's way out: a `@Word` that is code says so, and the
+    checker believes it. Without this the only way out was editing the prose."""
+    assert check.rule_citations(context(ANNOTATIONS.format(token=token))) == []
+
+
+def test_citations_rule_ignores_an_at_word_inside_a_fenced_block():
+    text = ANNOTATIONS.format(token="Dispatch").replace(
+        "# Topic\n", "# Topic\n\n```java\n@Override\npublic void run() {}\n```\n")
+    assert check.rule_citations(context(text)) == []
+
+
+def test_citations_rule_still_reports_a_bare_at_word():
+    """The escape hatch must not weaken the real check: unmarked, it is a key."""
+    ctx = context(ANNOTATIONS.format(token="@Override"))
+    assert rules_of(check.rule_citations(ctx)) == ["citation-undefined"]
+
+
+def test_prose_patterns_rule_does_not_read_type_i_error_as_a_pronoun():
+    """`Type I error` is required vocabulary in the Controlled Experiment
+    subsection contract, so the warning fired on the repo's own branch."""
+    text = ("# Topic\n\nThe Type I error rate is controlled with a Bonferroni "
+            "correction.\n\n---\ntitle: T\nlang: en\nreferences: []\n---")
+    assert check.rule_prose_patterns(context(text)) == []
+
+
+def test_prose_patterns_rule_locates_the_number_it_read_as_a_matriculation():
+    """A seven-digit corpus size trips the matriculation regex. This warning
+    class tolerates false positives — what made this one expensive is that it
+    named neither the token nor the line, so dismissing it meant a full read."""
+    text = ("# Topic\n\nThe corpus holds 2400000 annotated declarations.\n\n"
+            "---\ntitle: T\nlang: en\nreferences: []\n---")
+    findings = check.rule_prose_patterns(context(text))
+    assert rules_of(findings) == ["matriculation-number"]
+    assert "`2400000`" in findings[0].message
+    assert "(line 3)" in findings[0].message
+
+
+def test_prose_patterns_rule_locates_the_first_pronoun_it_counted():
+    text = ("# Topic\n\nBackground.\n\nSmith and I ran the study.\n\n"
+            "---\ntitle: T\nlang: en\nreferences: []\n---")
+    findings = check.rule_prose_patterns(context(text))
+    assert rules_of(findings) == ["first-person-pronoun"]
+    assert "(line 5)" in findings[0].message
+
+
+def test_metadata_present_names_a_block_that_sits_at_the_top():
+    """Frontmatter at the top is what every other markdown tool expects, so a
+    student arrives at it honestly — and gets five errors none of which say so."""
+    text = ("---\ntitle: T\nlang: en\nreferences: []\n---\n\n"
+            "# Introduction to the Topic\n\nbody\n")
+    findings = check.rule_metadata_present(context(text))
+    assert rules_of(findings) == ["metadata-block-missing"]
+    assert "top of the file" in findings[0].message
+
+
+def test_heading_style_rule_names_underlined_headings():
+    """A Word or LibreOffice export underlines its headings. Pandoc reads them,
+    the section rules do not, and the report was five missing sections."""
+    text = ("Introduction to the Topic\n=========================\n\nbody\n\n"
+            "Timeline\n--------\n\nApril 2027 to September 2027.\n")
+    findings = check.rule_heading_style(context(text))
+    assert rules_of(findings) == ["heading-style-setext"]
+    assert "Introduction to the Topic" in findings[0].message
+
+
+def test_heading_style_rule_is_silent_on_prefixed_headings():
+    assert check.rule_heading_style(context(CLEAN)) == []
+
+
+def test_heading_style_rule_does_not_read_a_metadata_block_as_a_heading():
+    """The closing `---` of a metadata block underlines the line above it. That
+    line is a key, not a heading, and a document with no headings at all must
+    not be told its headings are the wrong style."""
+    text = "no headings here\n\n---\ntitle: T\nlang: en\nreferences: []\n---"
+    assert check.rule_heading_style(context(text)) == []
+
+
 def test_length_rejects_a_non_positive_or_non_numeric_page_limit():
     """Bad override degrades to the default with an error — the clean fixture
     stays under the default, so the error is the only finding."""
@@ -304,6 +399,7 @@ COVERED_BY_UNIT_TESTS = {
     "methodology-multiple",
     "methodology-unknown",
     "methodology-subsection-missing",
+    "heading-style-setext",
     "metadata-block-multiple",
     "guidelines-toml-parse",
     "research-questions-not-a-list",
