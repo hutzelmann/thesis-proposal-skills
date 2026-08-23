@@ -1,0 +1,20 @@
+{
+  "skill_name": "proposal-write",
+  "generated": "GENERATED from the harness (models.toml task map, skill_evals.py, l1_checks.py) — edit those, then run: uv run python harness/eval_export.py",
+  "evals": [
+    {
+      "id": 1,
+      "task": "write_from_seed",
+      "prompt": "Please turn my idea notes into a full proposal draft. The file is ws/data-drift-detection.md. Keep my idea, mark anything missing as TODO.",
+      "files": [
+        "ws/data-drift-detection.md"
+      ],
+      "expected_output": "A complete proposal draft grown from the seed idea, mechanically sound apart from a tolerated reference shortfall, with gaps marked TODO.",
+      "assertions": [
+        "write_from_seed: draft survives and check is clean apart from tolerated errors.",
+        "All research questions analytical, self-contained, non-overlapping, not yes/no.",
+        "Every sentence carries information essential to this specific thesis; no scene-setting openers, truisms, restated obvious facts, or sentences that would fit any thesis in the area. Length itself is never a defect."
+      ]
+    }
+  ]
+}

@@ -17,10 +17,13 @@ dev = [
 ]
 
 [tool.poe.tasks]
-test = ["_pytest", "_lint", "_drift"]
+test = ["_pytest", "_lint", "_drift", "conform"]
 _pytest = "pytest"
 _lint = "ruff check ."
 _drift = "python3 scripts/sync_shared.py --check"
+# the standard's own validator, pinned inside the script (scripts/conform.py);
+# first run needs network for the npx cache, afterwards it works offline
+conform = "python3 scripts/conform.py"
 # inner loop: parallel, without the pandoc/typst builds. `test` stays the
 # complete gate — never narrow it to this set.
 # loadgroup honours @pytest.mark.xdist_group, which keeps the tests that edit

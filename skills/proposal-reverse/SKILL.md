@@ -1,6 +1,7 @@
 ---
 name: proposal-reverse
 description: Derive the proposal a finished thesis should have had — read the thesis, cut everything only its results made knowable, and write it forward as a plan. Use when a completed thesis needs its missing proposal reconstructed, or when a supervisor turns a supervised thesis into a teaching exemplar.
+license: MIT
 ---
 
 # Proposal Reverse

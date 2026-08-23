@@ -27,6 +27,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SKILLS_PREFIX = "skills/"
 FIELD_RE = re.compile(r"(\w+)=([0-9a-f]+|\d+)")
+# The publish pipeline stamps `metadata.version` into every SKILL.md — the
+# suite's semantic version, sourced from pyproject.toml (skill-packaging spec).
+# A report that carries the stamp names its snapshot outright, and the tree
+# comparison degrades to a verification step. The frontmatter line shape is
+# required, not a bare X.Y.Z: version-looking numbers occur all over bug
+# reports (tool versions, dates), the stamped line only in a SKILL.md snapshot.
+STAMP_RE = re.compile(r"^\s*version:\s*(\d+\.\d+\.\d+)\s*$", re.MULTILINE)
 
 # which checkout the lookups run against; --repo overrides it so the resolver can
 # be exercised against a purpose-built history instead of this one
@@ -66,6 +73,34 @@ def tree_blobs(rev: str) -> dict[str, str]:
         if len(fields) >= 3 and fields[1] == "blob":
             out[path] = fields[2]
     return out
+
+
+def find_stamp(report: Path) -> str | None:
+    """First publish stamp found in the report's text files, hashes.txt included."""
+    files = sorted(report.rglob("*")) if report.is_dir() else [report]
+    for f in files:
+        if not f.is_file() or f.suffix not in (".txt", ".md", ".json"):
+            continue
+        if m := STAMP_RE.search(f.read_text(encoding="utf-8", errors="replace")):
+            return m.group(1)
+    return None
+
+
+def stamped_revision(stamp: str) -> str | None:
+    """The commit that introduced this stamp under skills/ — the publish commit."""
+    raw = git("log", "--reverse", "--format=%h", f"-Sversion: {stamp}", "--", SKILLS_PREFIX)
+    lines = raw.splitlines()
+    return lines[0] if lines else None
+
+
+def prioritize(
+    revisions: list[tuple[str, str, str]], sha: str | None
+) -> list[tuple[str, str, str]]:
+    """Try the stamped revision first; the full-match short-circuit does the rest."""
+    if not sha:
+        return revisions
+    hit = [r for r in revisions if r[0] == sha]
+    return hit + [r for r in revisions if r[0] != sha] if hit else revisions
 
 
 def candidate_revisions() -> list[tuple[str, str, str]]:
@@ -201,7 +236,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: no hash entries parsed from {path}", file=sys.stderr)
         return 2
 
-    text, code = render(entries, candidate_revisions())
+    revisions = candidate_revisions()
+    if stamp := find_stamp(args.target):
+        sha = stamped_revision(stamp)
+        print(f"publish stamp {stamp} -> {sha or 'no commit introduces it here'}")
+        revisions = prioritize(revisions, sha)
+
+    text, code = render(entries, revisions)
     print(text, end="")
     return code
 

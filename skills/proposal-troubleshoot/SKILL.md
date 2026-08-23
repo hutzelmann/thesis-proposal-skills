@@ -1,6 +1,7 @@
 ---
 name: proposal-troubleshoot
 description: Diagnose a problem with the proposal skills themselves — a script that fails, a rule applied wrongly, output that contradicts the skill's own stated mandate — and assemble a bug report when it turns out to be a real defect. Use when a skill misbehaved, not when the proposal needs improving.
+license: MIT
 ---
 
 # Troubleshooting

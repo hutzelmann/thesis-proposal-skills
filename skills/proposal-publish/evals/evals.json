@@ -1,0 +1,18 @@
+{
+  "skill_name": "proposal-publish",
+  "generated": "GENERATED from the harness (models.toml task map, skill_evals.py, l1_checks.py) — edit those, then run: uv run python harness/eval_export.py",
+  "evals": [
+    {
+      "id": 1,
+      "task": "publish_build",
+      "prompt": "Please build a PDF of my proposal.",
+      "files": [
+        "ws/ml-code-review.md"
+      ],
+      "expected_output": "A built PDF in the workspace and a maintained .gitignore covering it.",
+      "assertions": [
+        "publish_build: a PDF was produced and the workspace .gitignore covers it."
+      ]
+    }
+  ]
+}

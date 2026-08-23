@@ -1,6 +1,7 @@
 ---
 name: proposal-ideate
 description: Socratic development of a thesis idea — refine a vague topic into an academically grounded starting point scoped to the study program and target research group, keep durable session notes, and seed the proposal file. Use when the user has a rough idea, does not know what to write about or their research questions yet, wants to talk a topic through or weigh whether it is worth pursuing, asks where to start, or wants to resume an earlier ideation session.
+license: MIT
 ---
 
 # Proposal Ideate

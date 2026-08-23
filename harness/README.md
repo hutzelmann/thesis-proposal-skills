@@ -20,6 +20,16 @@ View transcripts: `uv run inspect view --log-dir logs/evals`.
 
 Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `review_fixture` (f05; L1 review file + untouched proposal, L2 review rubric), `review_fixture_de` (f04; German review), `review_hollow` (f22; a buzzword-generic proposal with no viable thesis core — L1 review file + untouched proposal, L2 rubric: verdict stated outright, failed substance tests named, never softened into needs-revision phrasing), `title_alarm` (f21; the agent-judgment half of the title rule — L1 title raised in writing and never rewritten in the proposal, L2 title rubric: certificate consequence named, one to three abstracted alternatives, decision left with the student), `check_report` (f15; L1 report fidelity + untouched proposal), `ideate_longrun` (~18-round scripted composite dialogue: preamble → hesitant → extraction probe → pivot → convergence → seeding; L1 seed + notes-growth snapshots + provenance, L2 phase-aware Socratic rubric), `ideate_stonewall` (early stop fires: notes saved, no proposal generated), `ideate_noidea` (hints stay few and sourced, never a topic menu; live DBLP noise must read as weak scoping), `ideate_outofscope` (one chat-only warning, ideation continues), `ideate_probing` (agreeable extractor offering only generalities plus pressure to "just write it"; the genericity gate must hold — swap test voiced, impasse named, no seed), `customize_override` (f00; supervisor requirements to valid TOML overrides), `publish_build` (f00; real pandoc/typst pipeline to PDF), `import_messy` (pasted messy text to standard format, personal data stripped), `troubleshoot_model_rung` (user on haiku with rung 0 already closed; the run must resolve rung 1 from the vendored verdicts and assemble no bundle), `litsearch_expand` (w03; live academic APIs — network-dependent, expect flakiness), `supervise_feedback` (s01; a raw student email to a supervisor feedback package — L1: letter present, at most five curated points, verdict tier stated, no fixture personal data in the send-package, every named skill real; extended set until the next big matrix run). The former 5-round cooperative dialogues (`ideate_socratic`, `ideate_anecdote`) are retired — their coverage lives in `ideate_longrun`'s hesitant phase, and their cooperative-only personas were the blind spot the probes close.
 
+## Eval projection (`skills/*/evals/evals.json`)
+
+Each skill ships its eval definitions in the Agent Skills standard's format (standard-conformance spec). The files are GENERATED: the task→skill map comes from `models.toml` `[tasks.skills]`, prompts and staged files from the task definitions above, L2 assertions verbatim from `skill_evals.CRITERIA`, and L1 assertions from the verdict docstrings in `l1_checks.py`. After changing any of those, regenerate with
+
+```sh
+uv run python harness/eval_export.py         # or --check for the drift verdict
+```
+
+`tests/unit/test_eval_projection.py` fails the L0 chain while a projection is stale or hand-edited.
+
 ## Model-support matrix (metered, cost-gated)
 
 `harness/models.toml` pins the nine-model roster (exact OpenRouter IDs, family, price tier, cached $/Mtok pricing, enabled flag) plus the task policy: the scorable `matrix` set, the `core` smoke subset, `heavy` tasks (1 epoch on frontier tier), `excluded_l1` tasks whose `*_l1*` scorers are the environment-fidelity probes (structural score ignored, `*_l2*` rubric counts), `excluded` tasks (env probes without a rubric, live-network tasks), per-tier default epochs, and token priors for the estimate.
@@ -58,10 +68,10 @@ Fast, free on the subscription, highest execution fidelity — but no L2 judging
 
 ## Skill routing (real selector, Max subscription)
 
-Every task above hands the agent a skill body and measures what it does with it. `uv run poe routing` measures the step before that: with all ten skills installed and nothing else, which one does the host actually select for a user utterance? The decision is made from the frontmatter `description` alone — no body is loaded — so this is the only place the descriptions are under test.
+Every task above hands the agent a skill body and measures what it does with it. `uv run poe routing` measures the step before that: with all eleven skills installed and nothing else, which one does the host actually select for a user utterance? The decision is made from the frontmatter `description` alone — no body is loaded — so this is the only place the descriptions are under test.
 
 ```sh
-uv run poe routing                              # 40 cases, sonnet, 3 epochs on the collision kind
+uv run poe routing                              # 44 cases, sonnet, 3 epochs on the collision kind
 uv run poe routing -- --model haiku             # the stress run: the weakest reader
 uv run poe routing -- --kind collision --jobs 1
 uv run poe routing -- --case review-canonical
@@ -81,7 +91,7 @@ Claude-only by construction. Other hosts read the same `description` but select 
 
 ## Audit pre-flight (publish pipeline)
 
-Order: L0 suite (includes `tests/unit/test_audit_invariants.py`) → `uv run python scripts/audit_scan.py` (the real Snyk Agent Scan engine against the repo's skills, staged in an isolated HOME/XDG so the developer's own agent configs are never touched; needs `SNYK_TOKEN` in the environment or in the repo-root `.env`; fails at risk ≥ 0.5 — calibrated 2026-08-02, risk ≤ 0.3 findings exist on skills skills.sh reports clean) → publish on explicit request → `uv run python scripts/audit_status.py` (skills.sh verdicts vs `audit-baseline.json`; `--update` after review).
+Order: L0 suite (includes `tests/unit/test_audit_invariants.py`) → `uv run python scripts/audit_scan.py` (the real Snyk Agent Scan engine against the repo's skills, staged in an isolated HOME/XDG so the developer's own agent configs are never touched; needs `SNYK_TOKEN` in the environment or in the repo-root `.env`; fails at risk ≥ 0.5 — calibrated 2026-08-02, risk ≤ 0.3 findings exist on skills skills.sh reports clean) → bump `[project] version` in `pyproject.toml` (the suite's one semver source: patch for fixes, minor for new behavior or skills, major for breaking workspace-facing changes), run `python3 scripts/stamp_version.py`, and commit the stamp (`chore(publish): stamp <version>` — writes `metadata.version` into every SKILL.md so installs identify their snapshot; re-stamping an already-published version is refused, and `poe identify` reads the stamp back as a fast path) → publish on explicit request → `uv run python scripts/audit_status.py` (skills.sh verdicts vs `audit-baseline.json`; `--update` after review).
 
 `uv run python harness/audit_llm_preflight.py [--model haiku]` approximates the Gen Agent Trust Hub categories with one headless `claude -p` call per skill (subscription-billed). Advisory only: ATH's ruleset is unknown and model verdicts vary — never treat a clean run as a guaranteed ATH pass.
 

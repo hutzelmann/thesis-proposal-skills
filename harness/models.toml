@@ -131,9 +131,17 @@ excluded = [
   "ideate_noidea", "litsearch_expand",
 ]
 
-# Task -> skill under test; verdict notes name skills, not harness task ids.
+# Task -> skill under test; verdict notes name skills, not harness task ids,
+# and the eval projection (harness/eval_export.py) groups tasks by this map —
+# every task defined in skill_evals.py must appear here, excluded ones included.
 [tasks.skills]
 write_from_seed = "proposal-write"
+check_report = "proposal-check"
+check_report_compound = "proposal-check"
+check_report_hardened = "proposal-check"
+ideate_noidea = "proposal-ideate"
+litsearch_expand = "proposal-lit-search"
+troubleshoot_model_rung = "proposal-troubleshoot"
 review_fixture = "proposal-review"
 review_fixture_de = "proposal-review"
 review_hollow = "proposal-review"

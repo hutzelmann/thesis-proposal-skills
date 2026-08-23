@@ -1,6 +1,8 @@
 ---
 name: proposal-publish
 description: Build a PDF (or docx fallback) from a proposal file via pandoc — compact layout, typst-first, with install guidance when tools are missing. Also offers a stripped hand-in export, and hands over to a workspace build script where one exists. Use when the user wants a PDF or something to email, print or hand to their supervisor, wants the proposal out of markdown, has a faculty document template to build with, or asks how to install the build tools.
+license: MIT
+compatibility: Building documents needs pandoc plus typst or a LaTeX engine; the skill guides installation when they are missing.
 ---
 
 # Proposal Publish

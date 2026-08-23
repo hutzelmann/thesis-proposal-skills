@@ -136,6 +136,12 @@ Two invariants carry that surface, and both are the kind a well-meaning change u
 
 User-facing documentation of both lives in README "For supervisors", `skills/proposal-customize/SKILL.md`, and `skills/proposal-publish/SKILL.md`; the working examples are `tests/fixtures/w04-methodology-branch/` and `tests/fixtures/w05-workspace-build/`.
 
+## The Agent Skills standard
+
+The skills conform to the Agent Skills standard (agentskills.io; spec at `https://agentskills.io/specification`). Conformance is enforced, not aspirational: `poe conform` (part of `poe test` and CI) runs the standard's reference validator at the version pinned in `scripts/conform.py` — bumping that pin is the reviewed step by which movement in the standard arrives here — and the constants in `tests/unit/test_skill_frontmatter.py` name the spec as their source. Each skill ships a generated `evals/evals.json` projection of its harness evals (`harness/eval_export.py`; drift-gated); edit the harness, never the projection.
+
+**A divergence from the standard that is not on the README's deliberate-divergence list ("The Agent Skills standard" section) is a defect, not a choice.** Before "fixing" a listed divergence, read its reason — the workspace-root script paths, for instance, exist because bare skill-relative paths failed under the real host (dev-runner findings, 2026-07-31). Frontmatter admits exactly `name`, `description`, `license`, `compatibility` (only on skills with genuine environment requirements), and the publish-stamped `metadata.version` — per-field rules in `test_skill_frontmatter.py`, still no general YAML parsing.
+
 ## Editing guidance content
 
 `shared/structure.json` holds only the mechanically checkable skeleton (canonical titles en+de, methodology table, forbidden patterns); semantic rules stay prose in `shared/guidelines/guidelines.md`. Every structured title must appear verbatim in the prose (drift-guarded by an L0 test). The formalization boundary is deliberate — do not encode semantic quality rules as data.

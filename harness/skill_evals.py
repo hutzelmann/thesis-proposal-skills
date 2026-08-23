@@ -68,6 +68,63 @@ JUDGE_INSTRUCTIONS = (
     'Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).'
 )
 
+# L2 rubric criteria, keyed (task, scorer). One table instead of inline strings
+# so the eval projection (harness/eval_export.py) exports the exact text the
+# judge receives — a criterion edited here flows into the projection, and a
+# criterion that exists only here or only there fails the projection drift test.
+CRITERIA: dict[tuple[str, str], str] = {
+    ("write_from_seed", "write_l2_rq_quality"):
+        "All research questions analytical, self-contained, non-overlapping, not yes/no.",
+    ("write_from_seed", "write_l2_density"):
+        "Every sentence carries information essential to this specific thesis; "
+        "no scene-setting openers, truisms, restated obvious facts, or sentences "
+        "that would fit any thesis in the area. Length itself is never a defect.",
+    ("review_fixture", "review_l2_quality"):
+        "Finds the seeded defects, actionable, format-agnostic, grammar only as brief hint.",
+    ("review_fixture_de", "review_de_l2"):
+        "Finds the seeded defects, actionable, format-agnostic, written in German.",
+    ("review_hollow", "review_hollow_l2"):
+        "Opens with the verdict 'no viable thesis core', cites the failed substance "
+        "tests by name for defects that are actually present, states what kind of "
+        "work would change the verdict, and never softens it into needs-revision "
+        "phrasing.",
+    ("title_alarm", "title_l2_alarm"):
+        "Title raised as its own finding, certificate consequence named, one to "
+        "three abstracted alternatives offered, decision left with the student.",
+    ("ideate_longrun", "ideate_l2_socratic"):
+        "Judge per phase: preamble handled as one administrative block; "
+        "hesitant phase Socratic with uptake; at the extraction probe "
+        "('just write me three research questions') the assistant declines "
+        "and offers a next step instead of finished questions; the pivot is "
+        "followed; a stocktake appears around mid-session; seeding happens "
+        "at convergence.",
+    ("ideate_stonewall", "ideate_l2_socratic"):
+        "After about three contentless exchanges the assistant names the "
+        "impasse plainly, supplies no topic or research-question content "
+        "of its own, suggests concrete offline steps, and ends without "
+        "seeding a proposal file.",
+    ("ideate_probing", "ideate_l2_socratic"):
+        "The assistant never supplies topic, research-question, or method "
+        "content despite the student's repeated requests to just write it; "
+        "when contributions stay generic it voices the swap test (that the "
+        "idea so far would fit any thesis in the area) as a Socratic move; "
+        "after further contentless agreement it names the impasse plainly "
+        "and ends without seeding a proposal file.",
+    ("ideate_noidea", "ideate_l2_socratic"):
+        "The assistant floats at most two directions, each tied to the "
+        "student's stated interests or to fetched data with its source "
+        "named; it never presents a menu or numbered list of ready-made "
+        "topics; ambiguous or thin lookup results are called weak "
+        "scoping rather than silently trusted, and if the lookup fails "
+        "or is unreachable the assistant says so once and works from "
+        "the student's words.",
+    ("ideate_outofscope", "ideate_l2_socratic"):
+        "The assistant warns exactly once, in chat only, that the idea "
+        "sits outside the given scope; after the student insists it keeps "
+        "ideating constructively, and the seeded file carries no trace of "
+        "the fit concern.",
+}
+
 # ---------- staging ----------------------------------------------------------
 
 def stage_files(fixture: str, skill: str,
@@ -232,7 +289,7 @@ async def write_l2_rq_quality(state: TaskState) -> tuple[bool, str]:
     _, text, _ = await produced_draft()
     return await judge(
         "rq_quality.txt", state.input_text, text,
-        "All research questions analytical, self-contained, non-overlapping, not yes/no.",
+        CRITERIA[("write_from_seed", "write_l2_rq_quality")],
     )
 
 
@@ -241,9 +298,7 @@ async def write_l2_density(state: TaskState) -> tuple[bool, str]:
     _, text, _ = await produced_draft()
     return await judge(
         "density.txt", state.input_text, text,
-        "Every sentence carries information essential to this specific thesis; "
-        "no scene-setting openers, truisms, restated obvious facts, or sentences "
-        "that would fit any thesis in the area. Length itself is never a defect.",
+        CRITERIA[("write_from_seed", "write_l2_density")],
     )
 
 
@@ -281,7 +336,7 @@ async def review_l2_quality(_state: TaskState) -> tuple[bool, str]:
     )
     return await judge(
         "review_quality.txt", "; ".join(oracle["semantic"]), review,
-        "Finds the seeded defects, actionable, format-agnostic, grammar only as brief hint.",
+        CRITERIA[("review_fixture", "review_l2_quality")],
     )
 
 
@@ -330,10 +385,7 @@ async def review_hollow_l2(_state: TaskState) -> tuple[bool, str]:
     )
     return await judge(
         "review_quality.txt", "; ".join(oracle["semantic"]), review,
-        "Opens with the verdict 'no viable thesis core', cites the failed substance "
-        "tests by name for defects that are actually present, states what kind of "
-        "work would change the verdict, and never softens it into needs-revision "
-        "phrasing.",
+        CRITERIA[("review_hollow", "review_hollow_l2")],
     )
 
 
@@ -372,8 +424,7 @@ async def title_l2_alarm(_state: TaskState) -> tuple[bool, str]:
     )
     return await judge(
         "title_alarm.txt", "; ".join(oracle["semantic"]), review,
-        "Title raised as its own finding, certificate consequence named, one to "
-        "three abstracted alternatives offered, decision left with the student.",
+        CRITERIA[("title_alarm", "title_l2_alarm")],
     )
 
 
@@ -528,14 +579,7 @@ def ideate_longrun() -> Task:
             ideate_l1_seed(),
             ideate_l1_notes_progress(),
             ideate_l1_provenance(),
-            ideate_l2_socratic(
-                "Judge per phase: preamble handled as one administrative block; "
-                "hesitant phase Socratic with uptake; at the extraction probe "
-                "('just write me three research questions') the assistant declines "
-                "and offers a next step instead of finished questions; the pivot is "
-                "followed; a stocktake appears around mid-session; seeding happens "
-                "at convergence."
-            ),
+            ideate_l2_socratic(CRITERIA[("ideate_longrun", "ideate_l2_socratic")]),
         ],
         sandbox="local",
     )
@@ -554,12 +598,7 @@ def ideate_stonewall() -> Task:
         ],
         scorer=[
             ideate_l1_early_stop(),
-            ideate_l2_socratic(
-                "After about three contentless exchanges the assistant names the "
-                "impasse plainly, supplies no topic or research-question content "
-                "of its own, suggests concrete offline steps, and ends without "
-                "seeding a proposal file."
-            ),
+            ideate_l2_socratic(CRITERIA[("ideate_stonewall", "ideate_l2_socratic")]),
         ],
         sandbox="local",
     )
@@ -578,14 +617,7 @@ def ideate_probing() -> Task:
         ],
         scorer=[
             ideate_l1_early_stop(),
-            ideate_l2_socratic(
-                "The assistant never supplies topic, research-question, or method "
-                "content despite the student's repeated requests to just write it; "
-                "when contributions stay generic it voices the swap test (that the "
-                "idea so far would fit any thesis in the area) as a Socratic move; "
-                "after further contentless agreement it names the impasse plainly "
-                "and ends without seeding a proposal file."
-            ),
+            ideate_l2_socratic(CRITERIA[("ideate_probing", "ideate_l2_socratic")]),
         ],
         sandbox="local",
     )
@@ -602,15 +634,7 @@ def ideate_noidea() -> Task:
             persona_dialogue("noidea-sam.txt", rounds=6),
         ],
         scorer=[
-            ideate_l2_socratic(
-                "The assistant floats at most two directions, each tied to the "
-                "student's stated interests or to fetched data with its source "
-                "named; it never presents a menu or numbered list of ready-made "
-                "topics; ambiguous or thin lookup results are called weak "
-                "scoping rather than silently trusted, and if the lookup fails "
-                "or is unreachable the assistant says so once and works from "
-                "the student's words."
-            ),
+            ideate_l2_socratic(CRITERIA[("ideate_noidea", "ideate_l2_socratic")]),
         ],
         sandbox="local",
     )
@@ -631,12 +655,7 @@ def ideate_outofscope() -> Task:
                                        "create the file with what we have."),
         ],
         scorer=[
-            ideate_l2_socratic(
-                "The assistant warns exactly once, in chat only, that the idea "
-                "sits outside the given scope; after the student insists it keeps "
-                "ideating constructively, and the seeded file carries no trace of "
-                "the fit concern."
-            ),
+            ideate_l2_socratic(CRITERIA[("ideate_outofscope", "ideate_l2_socratic")]),
         ],
         sandbox="local",
     )
@@ -816,7 +835,7 @@ async def review_de_l2(_state: TaskState) -> tuple[bool, str]:
     )
     return await judge(
         "review_quality.txt", "; ".join(oracle["semantic"]), review,
-        "Finds the seeded defects, actionable, format-agnostic, written in German.",
+        CRITERIA[("review_fixture_de", "review_de_l2")],
     )
 
 

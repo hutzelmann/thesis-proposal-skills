@@ -1,0 +1,60 @@
+{
+  "skill_name": "proposal-review",
+  "generated": "GENERATED from the harness (models.toml task map, skill_evals.py, l1_checks.py) — edit those, then run: uv run python harness/eval_export.py",
+  "evals": [
+    {
+      "id": 1,
+      "task": "review_fixture",
+      "prompt": "Please review my proposal ws/microservice-technical-debt.md — is it ready for my supervisor?",
+      "files": [
+        "ws/microservice-technical-debt.md"
+      ],
+      "expected_output": "An enumerated review file beside the proposal, finding the seeded defects; the proposal itself byte-identical.",
+      "assertions": [
+        "review_fixture: review file exists, enumerated, proposal untouched.",
+        "Finds the seeded defects, actionable, format-agnostic, grammar only as brief hint.",
+        "A run that completed and reported findings must NOT offer a bug report."
+      ]
+    },
+    {
+      "id": 2,
+      "task": "review_fixture_de",
+      "prompt": "Bitte begutachte mein Exposé ws/zero-trust-referenzmodell.md — ist es bereit für die Abgabe?",
+      "files": [
+        "ws/zero-trust-referenzmodell.md"
+      ],
+      "expected_output": "An enumerated review file in German, finding the seeded defects; the proposal itself byte-identical.",
+      "assertions": [
+        "`verdict_review` plus a cheap language check on the review file.",
+        "Finds the seeded defects, actionable, format-agnostic, written in German."
+      ]
+    },
+    {
+      "id": 3,
+      "task": "review_hollow",
+      "prompt": "Please review my proposal ws/software-quality-ml.md — is it ready for my supervisor?",
+      "files": [
+        "ws/software-quality-ml.md"
+      ],
+      "expected_output": "A review opening with the no-viable-thesis-core verdict and citing the failed substance tests by name; the proposal untouched.",
+      "assertions": [
+        "review_hollow: on a mechanically clean but generic proposal, the review opens with the no-viable-core verdict and cites at least two substance tests by name (skill-review spec: three-tier substance verdict). Whether the review says what would change the verdict is judged by the L2 rubric. Case-insensitive like every prose-relaying verdict.",
+        "Opens with the verdict 'no viable thesis core', cites the failed substance tests by name for defects that are actually present, states what kind of work would change the verdict, and never softens it into needs-revision phrasing.",
+        "A run that completed and reported findings must NOT offer a bug report."
+      ]
+    },
+    {
+      "id": 4,
+      "task": "title_alarm",
+      "prompt": "Please review my proposal ws/kubernetes-build-dashboard.md — is it ready for my supervisor?",
+      "files": [
+        "ws/kubernetes-build-dashboard.md"
+      ],
+      "expected_output": "A review raising the tool-shaped title as its own finding with the certificate consequence and abstracted alternatives; the title itself left to the student.",
+      "assertions": [
+        "title_alarm: the title was raised in writing and never silently rewritten.",
+        "Title raised as its own finding, certificate consequence named, one to three abstracted alternatives offered, decision left with the student."
+      ]
+    }
+  ]
+}

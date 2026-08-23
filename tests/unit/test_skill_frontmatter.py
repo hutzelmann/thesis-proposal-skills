@@ -28,10 +28,14 @@ TRIGGER_TERMS = json.loads(
     (Path(__file__).parent / "data" / "trigger_terms.json").read_text(encoding="utf-8")
 )
 
-# The skill format's own limits, quoted from Anthropic's skill-authoring
-# guidance: name ≤ 64 characters, description ≤ 1024, body under 500 lines.
+# The skill format's own limits, mirrored from the Agent Skills specification
+# (https://agentskills.io/specification): name ≤ 64 characters, description
+# ≤ 1024, compatibility ≤ 500 characters, body under 500 lines. `poe conform`
+# runs the standard's own validator beside these; the constants stay annotated
+# so the two sources cannot drift apart unnoticed (standard-conformance spec).
 NAME_LIMIT = 64
 DESCRIPTION_FORMAT_LIMIT = 1024
+COMPATIBILITY_LIMIT = 500
 BODY_LINE_LIMIT = 500
 
 # Tighter than the format allows, because these are ours to spend. Every skill's
@@ -49,7 +53,23 @@ METADATA_BUDGET = 4500
 # content into reference files a selector never reads.
 BODY_PROPORTION = 2.0
 
-FRONTMATTER_KEYS = {"name", "description"}
+# Admission is per field, not a free set (skill-packaging spec): the two
+# required keys, plus exactly the three optional keys the Agent Skills standard
+# defines, each under its own rule below. Anything else still fails.
+REQUIRED_KEYS = {"name", "description"}
+# `license` travels with the installed folder; the root LICENSE.txt does not.
+LICENSE_ID = "MIT"
+# `compatibility` keeps signal by staying rare: only genuine environment
+# requirements beyond a standard agent setup earn the field.
+COMPATIBILITY = {
+    "proposal-publish": ("pandoc", "typst"),
+    "proposal-lit-search": ("network",),
+}
+# `metadata.version` is the suite's semantic version, written by the publish
+# pipeline from its single source of truth (`[project] version` in
+# pyproject.toml — see scripts/stamp_version.py), never by hand. Absent until
+# the first stamped publish.
+VERSION_STAMP = re.compile(r"\d+\.\d+\.\d+")
 
 # Third person by exclusion: "the user", "their", "a student" is the register.
 # The official guidance warns that a mixed point of view degrades discovery.
@@ -59,22 +79,34 @@ TRIGGER_CLAUSE = "use when"
 MIN_WHAT_CLAUSE = 30
 
 
-def frontmatter(skill_md: Path) -> dict[str, str]:
+def frontmatter(skill_md: Path) -> dict[str, str | dict[str, str]]:
     """The `key: value` block between the opening and closing `---`.
 
-    Deliberately not a YAML parser: the contract is that frontmatter stays two
-    flat keys, and a general parser would quietly permit general frontmatter.
+    Deliberately not a YAML parser: the contract is flat `key: value` lines
+    plus at most the one nested map the standard defines (`metadata:`), and a
+    general parser would quietly permit general frontmatter. Indented lines are
+    legal only directly under `metadata:` and land in a sub-dict.
     """
     lines = skill_md.read_text(encoding="utf-8").splitlines()
     assert lines, f"{skill_md} is empty"
     assert lines[0] == "---", f"{skill_md} does not open with frontmatter"
-    fields = {}
+    fields: dict[str, str | dict[str, str]] = {}
+    in_metadata = False
     for line in lines[1:]:
         if line == "---":
             return fields
         key, separator, value = line.partition(":")
         assert separator, f"{skill_md}: frontmatter line is not `key: value`: {line!r}"
-        fields[key.strip()] = value.strip()
+        if line.startswith((" ", "\t")):
+            assert in_metadata, f"{skill_md}: indented frontmatter outside `metadata:`: {line!r}"
+            fields["metadata"][key.strip()] = value.strip()  # type: ignore[index]
+            continue
+        in_metadata = key.strip() == "metadata"
+        if in_metadata:
+            assert not value.strip(), f"{skill_md}: `metadata:` must open a nested map"
+            fields["metadata"] = {}
+        else:
+            fields[key.strip()] = value.strip()
     raise AssertionError(f"{skill_md}: frontmatter is never closed")
 
 
@@ -113,7 +145,42 @@ def test_name_within_the_format_limit(skill_md):
 
 @pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
 def test_frontmatter_carries_no_unknown_keys(skill_md):
-    assert set(frontmatter(skill_md)) == FRONTMATTER_KEYS
+    keys = set(frontmatter(skill_md))
+    assert keys >= REQUIRED_KEYS, f"missing: {REQUIRED_KEYS - keys}"
+    unknown = keys - REQUIRED_KEYS - {"license", "compatibility", "metadata"}
+    assert not unknown, f"{skill_md.parent.name}: unknown frontmatter keys {unknown}"
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
+def test_license_travels_with_the_skill(skill_md):
+    assert frontmatter(skill_md).get("license") == LICENSE_ID
+    root_license = (REPO / "LICENSE.txt").read_text(encoding="utf-8").splitlines()[0]
+    assert LICENSE_ID in root_license, (
+        f"frontmatter says {LICENSE_ID} but LICENSE.txt opens with {root_license!r}"
+    )
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
+def test_compatibility_only_where_the_environment_demands_it(skill_md):
+    name = skill_md.parent.name
+    value = frontmatter(skill_md).get("compatibility")
+    if name not in COMPATIBILITY:
+        assert value is None, f"{name}: compatibility on a skill with no special requirements"
+        return
+    assert value, f"{name}: compatibility field missing"
+    assert 1 <= len(value) <= COMPATIBILITY_LIMIT
+    for term in COMPATIBILITY[name]:
+        assert term in value.lower(), f"{name}: compatibility does not mention {term!r}"
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
+def test_metadata_is_only_the_publish_stamp(skill_md):
+    metadata = frontmatter(skill_md).get("metadata")
+    if metadata is None:  # absent until the first stamped publish
+        return
+    assert set(metadata) == {"version"}, f"metadata carries {set(metadata)}"
+    stamp = metadata["version"].strip("\"'")
+    assert VERSION_STAMP.fullmatch(stamp), f"not a publish stamp: {stamp!r}"
 
 
 # ---------- description contract --------------------------------------------

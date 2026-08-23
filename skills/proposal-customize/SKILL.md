@@ -1,6 +1,7 @@
 ---
 name: proposal-customize
 description: Adapt the proposal guidance to a supervisor's or program's requirements by managing the workspace guidelines.md override file. Use when the user says their supervisor wants something different — a detailed work plan, page limit, more references, different sections.
+license: MIT
 ---
 
 # Proposal Customize

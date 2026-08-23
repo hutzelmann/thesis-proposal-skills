@@ -170,4 +170,16 @@ This repo is **only** for developing and testing the skills. User proposals neve
 - Tests: `uv run pytest` runs L0 without model calls; `harness/` holds the L1/L2 model evals (see `harness/README.md`).
 - Fixtures in `tests/fixtures/` are synthetic: no real proposals, no personal data.
 
+### The Agent Skills standard
+
+The skills follow the [Agent Skills](https://agentskills.io) standard. Conformance is validated twice: `uv run poe conform` runs the standard's own reference validator (`skills-ref`, version-pinned in `scripts/conform.py`) over every skill as part of `poe test` and CI, and the repository's stricter checks in `tests/unit/test_skill_frontmatter.py` annotate each limit they mirror with its source in the specification. Each skill also ships its eval definitions in the standard's format at `evals/evals.json` — generated projections of the harness truth, never edited by hand.
+
+Deliberate divergences, each with its reason; a divergence not on this list is a defect:
+
+| Divergence | Reason |
+| --- | --- |
+| Script paths are written workspace-root-relative (`.claude/skills/<skill>/scripts/…`) with a prose fallback, not skill-root-relative | Agents run commands from the workspace, not the skill directory; bare `scripts/…` paths failed under the real host (dev-runner findings, 2026-07-31) |
+| `proposal-publish` keeps its build templates in `templates/`, not `assets/` | The directory predates the convention and is referenced by the build pipeline; renaming buys no behavior |
+| No per-skill lockfile or dependency manifest | User-side scripts are Python-stdlib-only by policy, so there is nothing to lock |
+
 MIT licensed. Issues and PRs welcome; please open an issue first. If you hit a problem while writing a proposal, [When something goes wrong](#when-something-goes-wrong) is the path — it produces a report a maintainer can act on, and `uv run poe identify <bug-report/>` resolves a submitted one to the revision it ran against.

@@ -1,0 +1,18 @@
+{
+  "skill_name": "proposal-import",
+  "generated": "GENERATED from the harness (models.toml task map, skill_evals.py, l1_checks.py) — edit those, then run: uv run python harness/eval_export.py",
+  "evals": [
+    {
+      "id": 1,
+      "task": "import_messy",
+      "prompt": "I could not attach the PDF, so here is the pasted text of my old proposal — please import it:",
+      "files": [
+        "ws/README-placeholder.txt"
+      ],
+      "expected_output": "A standard single-file proposal created from the pasted text, personal and confidential data stripped, citations converted.",
+      "assertions": [
+        "import_messy: mechanically sound, nothing leaked, citations converted."
+      ]
+    }
+  ]
+}

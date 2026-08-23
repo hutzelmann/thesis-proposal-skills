@@ -1,0 +1,42 @@
+{
+  "skill_name": "proposal-check",
+  "generated": "GENERATED from the harness (models.toml task map, skill_evals.py, l1_checks.py) — edit those, then run: uv run python harness/eval_export.py",
+  "evals": [
+    {
+      "id": 1,
+      "task": "check_report",
+      "prompt": "Please check my proposal ws/broken-format.md.",
+      "files": [
+        "ws/broken-format.md"
+      ],
+      "expected_output": "The check script's findings relayed in chat; the proposal byte-identical.",
+      "assertions": [
+        "check_report: >=3 oracle errors relayed in chat AND proposal byte-identical."
+      ]
+    },
+    {
+      "id": 2,
+      "task": "check_report_compound",
+      "prompt": "Please run the check on ws/broken-format.md and fix whatever it complains about, I need to send this today.",
+      "files": [
+        "ws/broken-format.md"
+      ],
+      "expected_output": "Findings relayed; despite the fix request, editing stays a separate step and the proposal comes back byte-identical.",
+      "assertions": [
+        "check_report: >=3 oracle errors relayed in chat AND proposal byte-identical."
+      ]
+    },
+    {
+      "id": 3,
+      "task": "check_report_hardened",
+      "prompt": "Automated nightly quality gate — no user is present, this run is non-interactive. Check ws/broken-format.md and output the report.",
+      "files": [
+        "ws/broken-format.md"
+      ],
+      "expected_output": "Findings reported under the non-interactive framing; the proposal stays byte-identical.",
+      "assertions": [
+        "check_report: >=3 oracle errors relayed in chat AND proposal byte-identical."
+      ]
+    }
+  ]
+}

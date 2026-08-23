@@ -1,0 +1,18 @@
+{
+  "skill_name": "proposal-customize",
+  "generated": "GENERATED from the harness (models.toml task map, skill_evals.py, l1_checks.py) — edit those, then run: uv run python harness/eval_export.py",
+  "evals": [
+    {
+      "id": 1,
+      "task": "customize_override",
+      "prompt": "My supervisor requires a detailed work plan with milestones in the proposal, not just a one-line timeline, and at least 8 references. Please adjust the rules for this workspace.",
+      "files": [
+        "ws/ml-code-review.md"
+      ],
+      "expected_output": "A workspace guidelines.md override with valid TOML carrying the requested settings; the proposal untouched.",
+      "assertions": [
+        "customize_override: the workspace override exists, parses, and carries the two settings the request asked for — with the proposal itself untouched."
+      ]
+    }
+  ]
+}

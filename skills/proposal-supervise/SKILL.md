@@ -1,6 +1,7 @@
 ---
 name: proposal-supervise
 description: Supervisor-side feedback on a raw student submission — normalize it into the standard proposal format, find the pressing issues via the shared check and review rules, and draft a feedback letter plus a send-package the student can continue from. Use when a professor receives a thesis proposal or idea from a student and wants constructive, high-level feedback to return. Drafts only, never sends.
+license: MIT
 ---
 
 # Proposal Supervise

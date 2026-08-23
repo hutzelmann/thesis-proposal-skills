@@ -20,7 +20,7 @@ jobs:
         run: uv sync --dev
       # The gate is the poe task, not a restatement of its steps: a change to
       # what `poe test` runs reaches CI without editing this file.
-      - name: L0 gate (pytest + ruff + drift)
+      - name: L0 gate (pytest + ruff + drift + conform)
         run: uv run poe test
       - name: Coverage floor
         run: uv run poe cov

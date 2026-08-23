@@ -1,6 +1,7 @@
 ---
 name: proposal-review
 description: High-level content review of a thesis proposal — argument structure, soundness, literature grounding, sharpness. Writes a review file opening with a three-tier verdict (ready / needs revision / no viable thesis core) followed by enumerated actionable findings. Use when the user asks for feedback or a review, doubts whether the argument holds or the thesis core is thin, or asks whether the proposal is ready for their supervisor — including before handing it to a supervisor.
+license: MIT
 ---
 
 # Proposal Review

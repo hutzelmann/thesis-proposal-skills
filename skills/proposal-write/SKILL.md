@@ -1,6 +1,7 @@
 ---
 name: proposal-write
 description: Write a thesis proposal from scratch or refine an existing one, following the proposal guidelines and grounding claims in the literature. Use when the user wants a draft, wants sections improved, wants bullet points turned into prose, or asks to apply review findings.
+license: MIT
 ---
 
 # Proposal Write

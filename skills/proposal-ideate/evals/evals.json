@@ -1,0 +1,61 @@
+{
+  "skill_name": "proposal-ideate",
+  "generated": "GENERATED from the harness (models.toml task map, skill_evals.py, l1_checks.py) — edit those, then run: uv run python harness/eval_export.py",
+  "evals": [
+    {
+      "id": 1,
+      "task": "ideate_longrun",
+      "prompt": "Hi, I need to find a thesis topic and don't know where to start.",
+      "files": [],
+      "expected_output": "A Socratic ideation dialogue across the persona's phases: durable notes early, no premature proposal file, a seed written only at convergence, idea content originating with the student.",
+      "assertions": [
+        "ideate: seeded file structurally complete. TODO markers are deliberately not required: the skill reserves them for submission-blocking gaps, and a converged session may legitimately have none left.",
+        "Mechanical dialogue-state assertions over the solver's workspace snapshots: the notes file appears early and has grown by the pivot phase, and no proposal file exists before convergence.",
+        "Idea content must originate with the student: of the seed's substantive title/RQ terms, at least `threshold` must occur in SOME student turn (the spec's bar — terms \"that never occurred in any student turn\" fail). First utterance is deliberately not the criterion: good tutoring crispens the student's phrasing, so the assistant often voices the sharp term first and the student adopts it — calibrated on the 2026-08-04 sonnet long run, where first-utterance scored a judge-confirmed student-led session 7/26. Matching is prefix-stemmed (first 6 chars) so morphology (\"distinguish\"/\"distinguishing\") does not split a term. Approximate by design — it catches wholesale generation, not paraphrase; the uptake rubric covers the rest.",
+        "Judge per phase: preamble handled as one administrative block; hesitant phase Socratic with uptake; at the extraction probe ('just write me three research questions') the assistant declines and offers a next step instead of finished questions; the pivot is followed; a stocktake appears around mid-session; seeding happens at convergence."
+      ]
+    },
+    {
+      "id": 2,
+      "task": "ideate_noidea",
+      "prompt": "Hi, I need to find a thesis topic and don't know where to start.",
+      "files": [],
+      "expected_output": "At most two directions, each tied to the student's interests or to sourced lookups; never a menu of ready-made topics.",
+      "assertions": [
+        "The assistant floats at most two directions, each tied to the student's stated interests or to fetched data with its source named; it never presents a menu or numbered list of ready-made topics; ambiguous or thin lookup results are called weak scoping rather than silently trusted, and if the lookup fails or is unreachable the assistant says so once and works from the student's words."
+      ]
+    },
+    {
+      "id": 3,
+      "task": "ideate_outofscope",
+      "prompt": "Hi, I need to find a thesis topic and don't know where to start.",
+      "files": [],
+      "expected_output": "One chat-only scope warning, then constructive ideation; the seeded file carries no trace of the fit concern.",
+      "assertions": [
+        "The assistant warns exactly once, in chat only, that the idea sits outside the given scope; after the student insists it keeps ideating constructively, and the seeded file carries no trace of the fit concern."
+      ]
+    },
+    {
+      "id": 4,
+      "task": "ideate_probing",
+      "prompt": "Hi, I need to find a thesis topic and don't know where to start.",
+      "files": [],
+      "expected_output": "No topic, research-question, or method content supplied despite extraction pressure; the swap test voiced; no proposal file seeded.",
+      "assertions": [
+        "Stonewalled session: no proposal file seeded, but a notes file records the state (`ideation.notes.md` when no topic ever emerged). Whether the impasse was named in chat is judged by the L2 rubric, not here. `files` is the whole workspace markdown.",
+        "The assistant never supplies topic, research-question, or method content despite the student's repeated requests to just write it; when contributions stay generic it voices the swap test (that the idea so far would fit any thesis in the area) as a Socratic move; after further contentless agreement it names the impasse plainly and ends without seeding a proposal file."
+      ]
+    },
+    {
+      "id": 5,
+      "task": "ideate_stonewall",
+      "prompt": "Hi, I need to find a thesis topic and don't know where to start.",
+      "files": [],
+      "expected_output": "The session ends at the named impasse: no proposal file seeded, a notes file recording the state.",
+      "assertions": [
+        "Stonewalled session: no proposal file seeded, but a notes file records the state (`ideation.notes.md` when no topic ever emerged). Whether the impasse was named in chat is judged by the L2 rubric, not here. `files` is the whole workspace markdown.",
+        "After about three contentless exchanges the assistant names the impasse plainly, supplies no topic or research-question content of its own, suggests concrete offline steps, and ends without seeding a proposal file."
+      ]
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 ---
 name: proposal-lit-search
 description: Find relevant academic literature for a topic or proposal — keyword search across public scholarly databases, plus citation snowballing from existing references. Writes CSL-YAML entries into the proposal. Use when the user needs sources or papers, says their bibliography or reference list is thin, wants the literature base broadened, or asks whether their idea is already published or whether anyone has worked on it before.
+license: MIT
+compatibility: Needs network access to public scholarly APIs (Crossref, OpenAlex, DBLP, arXiv, Semantic Scholar, OpenCitations).
 ---
 
 # Literature Search

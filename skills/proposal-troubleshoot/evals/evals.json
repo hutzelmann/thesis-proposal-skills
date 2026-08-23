@@ -1,0 +1,19 @@
+{
+  "skill_name": "proposal-troubleshoot",
+  "generated": "GENERATED from the harness (models.toml task map, skill_evals.py, l1_checks.py) — edit those, then run: uv run python harness/eval_export.py",
+  "evals": [
+    {
+      "id": 1,
+      "task": "troubleshoot_model_rung",
+      "prompt": "The write skill produced a draft that ignored half of what I told it. I was running claude-haiku-4.5. I have already re-run `npx skills add hutzelmann/thesis-proposal-skills` and it still happens. Is this a bug I should report?",
+      "files": [
+        "ws/microservice-technical-debt.md"
+      ],
+      "expected_output": "The unsupported model named as the cause with an actionable remedy; no bug report assembled.",
+      "assertions": [
+        "The model rung resolves without a report: an unsupported model is named as the cause and no bundle is written unasked.",
+        "A run that completed and reported findings must NOT offer a bug report."
+      ]
+    }
+  ]
+}
