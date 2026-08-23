@@ -5,9 +5,12 @@ Two halves, and the second matters as much as the first. Every skill that can
 fail carries the offer; `proposal-troubleshoot` carries it nowhere, because it is
 where the offer leads — a skill that offers itself is a loop, not an offer.
 
-The block is pinned here rather than in a data file because its wording is the
-requirement: an offer reworded per skill stops reading as one voice, and an offer
-that drifts toward firing on ordinary findings trains users to ignore it.
+The wording is the requirement: an offer reworded per skill stops reading as one
+voice, and an offer that drifts toward firing on ordinary findings trains users
+to ignore it. It therefore lives once, in `shared/blocks/report-offer.md`, and is
+materialized into each skill by `scripts/sync_shared.py`. This file asserts
+against that source rather than restating it — a literal here would be a tenth
+copy, and the wording would then be decided in two places.
 """
 
 from pathlib import Path
@@ -22,21 +25,13 @@ REPORTER = "proposal-troubleshoot"
 OFFERING_DIRS = [d for d in SKILL_DIRS if d.name != REPORTER]
 
 SECTION_HEADING = "## When this run fails"
-OFFER_BLOCK = (
-    "If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step "
-    "failed repeatedly with no user edit in between, or the state makes no sense — offer a bug "
-    "report once, in these words, and do not raise it again in the same session: \"Something "
-    "here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` "
-    "can diagnose it and, if it is one, assemble a report you can send.\" Ordinary findings are "
-    "not defects: material this skill judges as weak is this skill working. Collect nothing "
-    "unless the user accepts."
-)
+OFFER_BLOCK = (REPO / "shared" / "blocks" / "report-offer.md").read_text(encoding="utf-8").strip()
 # the sentence the user actually hears, kept separately so a test failure says
-# which half drifted
-USER_FACING = (
-    "Something here looks like a defect in the skill rather than in your proposal — "
-    "`proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send."
-)
+# which half drifted. Sliced out of the block rather than restated, so the two
+# cannot disagree; the quotes are what make it sliceable, and a block that lost
+# them fails here rather than silently weakening this half.
+_QUOTED = OFFER_BLOCK.split('"')
+USER_FACING = _QUOTED[1] if len(_QUOTED) > 2 else ""
 
 ids = lambda dirs: [d.name for d in dirs]  # noqa: E731
 
@@ -47,6 +42,11 @@ def body(skill_dir: Path) -> str:
 
 def test_the_reporter_exists_and_the_set_is_not_empty():
     """Both halves below are vacuous if the globs match nothing."""
+    assert OFFER_BLOCK, "shared/blocks/report-offer.md is empty"
+    assert USER_FACING, (
+        "the offer block carries no quoted sentence — the user-facing half is sliced out of "
+        "the quotes, so a block that lost them would make that assertion vacuous"
+    )
     names = {d.name for d in SKILL_DIRS}
     assert REPORTER in names, f"{REPORTER} is not installed in skills/: {sorted(names)}"
     assert len(OFFERING_DIRS) == len(SKILL_DIRS) - 1
@@ -59,8 +59,8 @@ def test_offer_block_present_verbatim_exactly_once(skill_dir):
     count = text.count(OFFER_BLOCK)
     assert count == 1, (
         f"{skill_dir.name}: offer block appears {count}× verbatim (expected 1). The block is "
-        "byte-identical across the set — copy it from tests/unit/test_report_offer.py rather "
-        "than rewording it per skill."
+        "byte-identical across the set — run scripts/sync_shared.py to materialize it from "
+        "shared/blocks/report-offer.md rather than rewording it per skill."
     )
 
 

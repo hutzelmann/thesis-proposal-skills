@@ -68,6 +68,97 @@ SYNC_MAP: dict[str, list[str]] = {
 }
 
 
+BLOCKS = REPO / "shared" / "blocks"
+SKILLS = REPO / "skills"
+# The reporter is where the offer leads, so it carries no offer and no closing
+# section; its absence is not drift (skill-packaging spec).
+REPORTER = "proposal-troubleshoot"
+OFFER_HEADING = "## When this run fails"
+# Positions the skill-packaging spec fixes and test_skill_header_pattern.py
+# already enforces. Anchoring here rather than on inserted markers keeps the
+# rendered page free of banners and keeps the anchor something a contributor
+# cannot silently move.
+WORKFLOW_INDEX = 2
+VOICE_INDEX = 3
+
+
+class AnchorError(RuntimeError):
+    """A region could not be located, so nothing is written for that skill."""
+
+
+def skill_dirs() -> list[Path]:
+    return sorted(d for d in SKILLS.iterdir() if d.is_dir() and d.name.startswith("proposal-"))
+
+
+def split_frontmatter(text: str) -> tuple[str, str]:
+    if not text.startswith("---\n"):
+        raise AnchorError("no frontmatter")
+    end = text.index("\n---\n", 3) + len("\n---\n")
+    return text[:end], text[end:]
+
+
+def header_spans(body: str) -> list[tuple[int, int]]:
+    """Spans of the blank-line-separated blocks before the first `## ` heading."""
+    limit = body.index("\n## ") if "\n## " in body else len(body)
+    spans, start = [], None
+    for pos, line in _lines_with_offsets(body[:limit]):
+        if line.strip():
+            start = pos if start is None else start
+        elif start is not None:
+            spans.append((start, pos - 1))
+            start = None
+    if start is not None:
+        spans.append((start, limit))
+    return spans
+
+
+def _lines_with_offsets(text: str):
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        yield pos, line
+        pos += len(line)
+
+
+def offer_span(body: str) -> tuple[int, int]:
+    """Span of the first paragraph after the closing section's heading."""
+    if OFFER_HEADING not in body:
+        raise AnchorError(f"no {OFFER_HEADING!r} section")
+    after = body.index(OFFER_HEADING) + len(OFFER_HEADING)
+    rest = body[after:]
+    start = after + len(rest) - len(rest.lstrip("\n"))
+    end = body.index("\n\n", start) if "\n\n" in body[start:] else len(body.rstrip("\n"))
+    return start, end
+
+
+def workflow_line(skill: str) -> str:
+    """The shared line with this skill's own name marked."""
+    line = (BLOCKS / "workflow.md").read_text(encoding="utf-8").strip()
+    marked = line.replace(f" {skill} ", f" **{skill}** ").replace(f" {skill}.", f" **{skill}**.")
+    if marked == line:
+        raise AnchorError(f"{skill} is not named in shared/blocks/workflow.md")
+    return marked
+
+
+def render_skill_md(skill_dir: Path) -> str:
+    """The SKILL.md this skill should have, with its shared regions materialized."""
+    text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    front, body = split_frontmatter(text)
+    spans = header_spans(body)
+    if len(spans) <= VOICE_INDEX:
+        raise AnchorError(f"{skill_dir.name}: only {len(spans)} opening blocks")
+    replacements = {
+        spans[WORKFLOW_INDEX]: workflow_line(skill_dir.name),
+        spans[VOICE_INDEX]: (BLOCKS / "voice.md").read_text(encoding="utf-8").strip(),
+    }
+    if skill_dir.name != REPORTER:
+        replacements[offer_span(body)] = (
+            (BLOCKS / "report-offer.md").read_text(encoding="utf-8").strip()
+        )
+    for (start, end), block in sorted(replacements.items(), reverse=True):
+        body = body[:start] + block + body[end:]
+    return front + body
+
+
 def render(source: Path) -> str:
     # Headers are written into committed files, so the path must render the same
     # on every host: .as_posix() or a Windows sync rewrites every generated copy
@@ -128,30 +219,50 @@ def render_gitattributes(current: str) -> str:
     return head + block + tail
 
 
-def sync(check: bool) -> int:
-    drift: list[str] = []
-    current = GITATTRIBUTES.read_text(encoding="utf-8") if GITATTRIBUTES.exists() else ""
-    expected_attrs = render_gitattributes(current)
+def _materialize(dest: Path, expected: str, src_label: str, check: bool) -> str | None:
+    """Write or verify one destination; returns its path when it has drifted.
+
+    The one place the write/check branch lives, so each pass below is a loop over
+    destinations and nothing else. The printed line is exactly
+    "synced <src> -> <dst>": .githooks/pre-commit reads its fourth field and
+    stages it.
+    """
+    rel = dest.relative_to(REPO).as_posix()
     if check:
-        if current != expected_attrs:
-            drift.append(".gitattributes")
-    else:
-        GITATTRIBUTES.write_text(expected_attrs, encoding="utf-8")
-        # exactly "synced <src> -> <dst>": .githooks/pre-commit reads the fourth
-        # field of each line and stages it
-        print("synced SYNC_MAP -> .gitattributes")
+        stale = not dest.exists() or dest.read_text(encoding="utf-8") != expected
+        return rel if stale else None
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(expected, encoding="utf-8")
+    print(f"synced {src_label} -> {rel}")
+    return None
+
+
+def _sync_attributes(check: bool) -> list[str]:
+    current = GITATTRIBUTES.read_text(encoding="utf-8") if GITATTRIBUTES.exists() else ""
+    drifted = _materialize(GITATTRIBUTES, render_gitattributes(current), "SYNC_MAP", check)
+    return [drifted] if drifted else []
+
+
+def _sync_skill_blocks(check: bool) -> list[str]:
+    drift = [
+        _materialize(d / "SKILL.md", render_skill_md(d), "shared/blocks", check)
+        for d in skill_dirs()
+    ]
+    return [rel for rel in drift if rel]
+
+
+def _sync_copies(check: bool) -> list[str]:
+    drift = []
     for src_rel, dest_dirs in SYNC_MAP.items():
         source = REPO / src_rel
         expected = render(source)
         for dest_dir in dest_dirs:
-            dest = REPO / dest_dir / source.name
-            if check:
-                if not dest.exists() or dest.read_text(encoding="utf-8") != expected:
-                    drift.append(dest.relative_to(REPO).as_posix())
-            else:
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(expected, encoding="utf-8")
-                print(f"synced {src_rel} -> {dest.relative_to(REPO).as_posix()}")
+            drift.append(_materialize(REPO / dest_dir / source.name, expected, src_rel, check))
+    return [rel for rel in drift if rel]
+
+
+def sync(check: bool) -> int:
+    drift = _sync_attributes(check) + _sync_skill_blocks(check) + _sync_copies(check)
     if check and drift:
         print("OUT OF SYNC (run scripts/sync_shared.py):", *drift, sep="\n  ")
         return 1

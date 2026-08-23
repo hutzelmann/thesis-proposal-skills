@@ -94,6 +94,59 @@ def test_check_detects_stale_attribute_block(capsys):
         victim.write_text(original, encoding="utf-8")
 
 
+def test_shared_blocks_round_trip_every_skill():
+    """Rendering a SKILL.md from the shared blocks reproduces the committed file.
+
+    This is the adoption gate the change turned on: materialization changed who
+    maintains the three blocks, never what they say.
+    """
+    for skill_dir in sync_shared.skill_dirs():
+        committed = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        assert sync_shared.render_skill_md(skill_dir) == committed, skill_dir.name
+
+
+def test_render_skill_md_is_idempotent():
+    for skill_dir in sync_shared.skill_dirs():
+        once = sync_shared.render_skill_md(skill_dir)
+        assert once == sync_shared.render_skill_md(skill_dir), skill_dir.name
+
+
+def test_reporter_is_excluded_from_the_offer():
+    """The reporter has no closing section, and that absence is not drift."""
+    reporter = REPO / "skills" / sync_shared.REPORTER
+    assert sync_shared.OFFER_HEADING not in (reporter / "SKILL.md").read_text(encoding="utf-8")
+    assert sync_shared.render_skill_md(reporter)  # renders without an offer anchor
+
+
+def test_skill_specific_paragraph_after_the_offer_survives():
+    """Six skills follow the offer with a sentence of their own; only the first
+    paragraph of the closing section is materialized."""
+    victim = REPO / "skills" / "proposal-check"
+    text = (victim / "SKILL.md").read_text(encoding="utf-8")
+    tail = text.split(sync_shared.OFFER_HEADING, 1)[1].strip().split("\n\n")
+    assert len(tail) > 1, "fixture lost its skill-specific paragraph"
+    assert tail[1] in sync_shared.render_skill_md(victim)
+
+
+def test_unresolvable_anchor_raises_instead_of_writing(tmp_path):
+    stub = tmp_path / "proposal-nonsense"
+    stub.mkdir()
+    (stub / "SKILL.md").write_text("---\nname: x\n---\n\n# T\n\nonly one block\n", encoding="utf-8")
+    with pytest.raises(sync_shared.AnchorError):
+        sync_shared.render_skill_md(stub)
+
+
+def test_check_detects_a_tampered_shared_region(capsys):
+    victim = REPO / "skills" / "proposal-review" / "SKILL.md"
+    original = victim.read_text(encoding="utf-8")
+    try:
+        victim.write_text(original.replace("**Voice:**", "**Tone:**", 1), encoding="utf-8")
+        assert sync_shared.main(["--check"]) == 1
+        assert "proposal-review/SKILL.md" in capsys.readouterr().out
+    finally:
+        victim.write_text(original, encoding="utf-8")
+
+
 @pytest.mark.parametrize("victim_rel", [
     "skills/proposal-write/references/guidelines.md",
     "skills/proposal-write/scripts/check.py",

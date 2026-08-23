@@ -41,12 +41,10 @@ VOICE_INDEX = 3
 MANDATE_INDEX = 4
 # Byte-identical in every skill (skill-packaging spec: voice block). Chat
 # conduct only — it carries no operational rules, so it cannot collide with a
-# mandate.
-VOICE_BLOCK = (
-    "**Voice:** neutral and constructive — never praise the user or their "
-    "material, never compliment your own output. Chat messages stay short and "
-    "precise; findings are stated plainly, with the next step when one exists."
-)
+# mandate. Read from the source it is materialized from rather than restated
+# here: a literal in this file would be an eleventh copy of the wording, and the
+# one place the wording is decided is the shared block.
+VOICE_BLOCK = (REPO / "shared" / "blocks" / "voice.md").read_text(encoding="utf-8").strip()
 # "one or two sentences" — a bound on padding, not a style rule.
 PURPOSE_MAX_CHARS = 400
 
@@ -115,10 +113,22 @@ def test_workflow_line_appears_once(skill_md):
 
 
 def test_workflow_line_identical_across_skills():
-    unmarked = {md.parent.name: workflow_line(md).replace("**", "") for md in SKILL_MDS}
-    distinct = set(unmarked.values())
-    assert len(distinct) == 1, "workflow line drifted between skills:\n" + "\n".join(
-        f"  {name}: {line}" for name, line in sorted(unmarked.items())
+    """Identity comes from the shared source, not from comparing copies.
+
+    The unmarked line must equal `shared/blocks/workflow.md` verbatim, so the set
+    named on every page is decided in one file. Comparing the skills only against
+    each other would pass on ten identically stale lines.
+    """
+    source = (REPO / "shared" / "blocks" / "workflow.md").read_text(encoding="utf-8").strip()
+    # unmark only the skill's own name; the `**Workflow:**` label is bold in the
+    # source too, so stripping every `**` would compare against a different line
+    unmarked = {
+        md.parent.name: workflow_line(md).replace(f"**{md.parent.name}**", md.parent.name)
+        for md in SKILL_MDS
+    }
+    drifted = {name: line for name, line in unmarked.items() if line != source}
+    assert not drifted, "workflow line drifted from shared/blocks/workflow.md:\n" + "\n".join(
+        f"  {name}: {line}" for name, line in sorted(drifted.items())
     )
 
 

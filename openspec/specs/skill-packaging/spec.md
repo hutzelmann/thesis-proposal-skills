@@ -20,7 +20,7 @@ Every skill's frontmatter `name` SHALL carry the `proposal-` prefix (the install
 ### Requirement: Functional self-containment
 Each skill SHALL be functional standalone: installed alone, it fulfills its purpose without requiring any sibling skill. Shared guidance, structured data, and cross-skill scripts are provided through one of two declared paths:
 
-1. **Synchronized copy** — the asset is materialized as a committed copy inside the consuming skill from a single dev-side source. Generated copies carry a generated-file marker, and automated verification SHALL fail when copies drift from the source.
+1. **Synchronized copy** — the asset is materialized as a committed copy inside the consuming skill from a single dev-side source. A synchronized copy is either a whole file or a delimited region of a file. Whole-file copies carry a generated-file marker. A materialized region SHALL NOT carry one: the file it sits in is a rendered page, and a marker would appear to readers of that page. A region is instead located by a position this specification already fixes, so that its boundaries do not depend on an annotation a contributor can move or delete. Automated verification SHALL fail when a copy or a region drifts from its source.
 2. **Sibling fallback** — the skill uses a sibling skill's files when that sibling is installed, and its SKILL.md SHALL document the degraded behavior used when the sibling is absent. This path is only permitted where the degraded mode still fulfills the skill's purpose; assets required for a skill's core function SHALL be synchronized copies.
 
 #### Scenario: Shared guidance edited
@@ -34,6 +34,14 @@ Each skill SHALL be functional standalone: installed alone, it fulfills its purp
 #### Scenario: Asset needed for core function
 - **WHEN** a shared asset is required for a skill's core purpose rather than for enrichment
 - **THEN** the skill ships it as a synchronized copy, not as a sibling fallback
+
+#### Scenario: Materialized region in a rendered page
+- **WHEN** a region of a `SKILL.md` is materialized from a shared source
+- **THEN** the rendered page shows no generated-file marker, comment, or banner around it
+
+#### Scenario: Region moved out of its fixed position
+- **WHEN** a materialized region no longer sits at the position this specification fixes for it
+- **THEN** the offline suite fails naming the skill, rather than materializing the block into the wrong place
 
 ### Requirement: Commit-time sync automation
 Materialization of synchronized copies SHALL run automatically at commit time in the development repository, so a commit touching a shared source cannot leave stale copies behind. Continuous integration SHALL keep an independent drift check as backstop for bypassed hooks.
@@ -116,9 +124,9 @@ A shipped script SHALL NOT execute a path it discovered in the user's workspace.
 Every shipped `SKILL.md` body SHALL open with exactly four blocks, in this order, before its first section heading:
 
 1. **Purpose** — one or two sentences in the vocabulary of a person who has never read the repository, stating what the skill produces and for whom. It SHALL NOT restate, soften, or paraphrase any rule stated below it, because the first statement of a rule fixes that rule's scope.
-2. **Workflow line** — a single line naming every skill in the set and the order of the main chain, with the containing skill's own name marked. The line SHALL be identical across all skills except for which name is marked, and SHALL mark exactly one name, which SHALL be the name of the skill whose file it appears in.
-3. **Voice block** — a short block, byte-identical across all skills, fixing the agent's tone: neutral and constructive, never praising the user or their artifacts, never complimenting its own output, chat messages short and precise with findings stated plainly. The block constrains chat conduct only; it SHALL NOT alter what any skill checks, writes, or judges.
-4. **Mandate** — the skill's agent-facing opening paragraph. It SHALL remain immediately followed by the paragraph that already followed it, so that a paragraph which elaborates or enforces a mandate is never separated from it.
+2. **Workflow line** — a single line naming every skill in the set and the order of the main chain, with the containing skill's own name marked. The line SHALL be identical across all skills except for which name is marked, and SHALL mark exactly one name, which SHALL be the name of the skill whose file it appears in. It SHALL be materialized from a single source, which carries the set and leaves the marked name to be filled per skill.
+3. **Voice block** — a short block, byte-identical across all skills, fixing the agent's tone: neutral and constructive, never praising the user or their artifacts, never complimenting its own output, chat messages short and precise with findings stated plainly. The block constrains chat conduct only; it SHALL NOT alter what any skill checks, writes, or judges. It SHALL be materialized from a single source.
+4. **Mandate** — the skill's agent-facing opening paragraph. It SHALL remain immediately followed by the paragraph that already followed it, so that a paragraph which elaborates or enforces a mandate is never separated from it. It is per-skill wording and SHALL NOT be materialized.
 
 The workflow line is orientation, not a dependency declaration: a skill SHALL remain functional when the siblings it names are not installed.
 
@@ -140,7 +148,7 @@ The workflow line is orientation, not a dependency declaration: a skill SHALL re
 #### Scenario: Skill added to the set
 
 - **WHEN** a new skill joins the package
-- **THEN** it opens with the same four blocks, and every existing skill's workflow line is updated so the set named on each page stays complete
+- **THEN** it opens with the same four blocks, and the set named on every page stays complete because each page's workflow line is materialized from the one source that was edited
 
 #### Scenario: Skill installed without its siblings
 
@@ -154,7 +162,9 @@ The workflow line is orientation, not a dependency declaration: a skill SHALL re
 
 ### Requirement: Opening structure and mandate wording enforced offline
 
-The opening structure SHALL be enforced by the offline test suite rather than by convention. The suite SHALL fail when the workflow line differs between skills, when the marked name does not match the skill it appears in, when the voice block is missing from any skill or differs between skills, when the block order or the bounded length of the purpose block is violated, when a mandate is separated from the paragraph beneath it, or when a mandate's wording differs from a committed pinned copy of that mandate.
+The opening structure SHALL be enforced by the offline test suite rather than by convention. The suite SHALL fail when the workflow line differs from its source or marks a name other than the skill it appears in, when the voice block is missing from any skill or differs from its source, when the block order or the bounded length of the purpose block is violated, when a mandate is separated from the paragraph beneath it, or when a mandate's wording differs from a committed pinned copy of that mandate.
+
+For the materialized blocks, identity across skills SHALL be established by materialization from a single source and verified against that source, not by comparison against a copy embedded in a test. The source is the one place the wording is stated, so a change to it is reviewable as one diff.
 
 Changing a mandate SHALL therefore require editing its pinned copy, so the reword appears as an explicit diff under review instead of passing silently.
 
@@ -201,9 +211,9 @@ Beyond mandates, sentences whose exact wording carries security or behavioral we
 
 ### Requirement: Uniform failure-path report offer
 
-Every shipped skill except the one that assembles reports SHALL end a run that failed in a way it cannot resolve with a single offer to assemble a bug report. The offer SHALL be worded identically across those skills, SHALL appear at most once in a session, and SHALL be an offer: no skill SHALL collect, assemble, or write report material without the user accepting.
+Every shipped skill except the one that assembles reports SHALL end a run that failed in a way it cannot resolve with a single offer to assemble a bug report. The offer SHALL be worded identically across those skills, SHALL be materialized from a single source, SHALL appear at most once in a session, and SHALL be an offer: no skill SHALL collect, assemble, or write report material without the user accepting.
 
-The assembling skill SHALL NOT carry the offer at all. It is where the offer leads, so referring itself would be a loop rather than an offer, and its own unresolvable failure — a collector it cannot locate — is covered by the script-location rules that already bind every skill.
+The assembling skill SHALL NOT carry the offer at all. It is where the offer leads, so referring itself would be a loop rather than an offer, and its own unresolvable failure — a collector it cannot locate — is covered by the script-location rules that already bind every skill. Materialization SHALL therefore skip that skill rather than treat its absent offer as drift.
 
 The offer SHALL fire on a script exiting non-zero, on a read-only skill detecting that the file it examined changed during its run, on a diagnostic failing repeatedly with no intervening user edit, and on a state the skill cannot proceed from. It SHALL NOT fire on ordinary findings: a proposal with errors is the diagnostic working, not a defect in it, and a skill that treats its own correct output as a bug trains users to ignore the offer.
 
@@ -224,13 +234,46 @@ The offer SHALL fire on a script exiting non-zero, on a read-only skill detectin
 
 #### Scenario: Offer wording drifts
 
-- **WHEN** one skill's offer wording differs from the set's
+- **WHEN** one skill's offer wording differs from the source it is materialized from
 - **THEN** the offline test suite fails naming that skill
 
 #### Scenario: The assembling skill carries the offer
 
 - **WHEN** the skill that assembles reports contains the offer wording
 - **THEN** the offline test suite fails, because that skill is the offer's destination
+
+#### Scenario: Skill-specific sentence added after the offer
+
+- **WHEN** a skill adds its own sentence about a defect particular to it in the closing section
+- **THEN** the materialized offer remains byte-identical and the added sentence sits outside it
+
+### Requirement: Cross-skill identical blocks materialized from one source
+
+A block of `SKILL.md` prose that this specification requires to be identical across skills SHALL exist once as a dev-side source and be materialized into each skill's `SKILL.md` by the same automation that materializes synchronized file copies. The workflow line, the voice block, and the failure-path report offer SHALL be materialized this way.
+
+Materialization SHALL be byte-preserving on adoption: converting a hand-maintained block into a materialized one SHALL leave every shipped `SKILL.md` unchanged, so that the change is provably a change of authorship and not of content.
+
+Per-skill wording SHALL NOT be materialized, even where a committed copy of it exists. A mandate, a mandate's successor block, and a load-bearing pinned sentence are pinned precisely so that revising them requires a deliberate paired edit; generating them from the prose would make the pin restate whatever the prose says and confirm any reword, including an unintended one.
+
+#### Scenario: Shared block reworded
+
+- **WHEN** the voice block's source is reworded and the sync is run
+- **THEN** every skill's voice block is rewritten from it, and the reword is reviewable as a single source diff
+
+#### Scenario: Skill joins the set
+
+- **WHEN** a new skill is added to the package
+- **THEN** the set named in the workflow line is edited in one source, and every skill's workflow line is materialized from it
+
+#### Scenario: Adoption leaves content unchanged
+
+- **WHEN** a previously hand-maintained identical block is first materialized
+- **THEN** no shipped `SKILL.md` changes content
+
+#### Scenario: Per-skill wording proposed for materialization
+
+- **WHEN** a mandate, mandate successor, or pinned sentence is proposed to be generated from the skill's prose
+- **THEN** it remains hand-maintained, because a pin derived from what it guards guards nothing
 
 ### Requirement: Descriptions state what the skill does and when to use it
 Every skill's frontmatter `description` SHALL be written in the third person and SHALL carry both what the skill produces and the situations that should trigger it. Trigger clauses SHALL name the situations in the vocabulary a user would use to describe their own position, not only the vocabulary this package uses for the task, and SHALL cover the languages the intended users write in. A description SHALL NOT be the only place a rule is stated, and SHALL NOT promise behaviour the skill does not implement.

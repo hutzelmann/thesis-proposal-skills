@@ -147,13 +147,17 @@ Default methodology branches carry provenance: a citation for the taxonomy the b
 Every `SKILL.md` is read twice: by the agent that loads it as instructions, and by anyone who lands on its page at skills.sh, which renders the frontmatter and the body and nothing else. Each body therefore opens with the same four blocks, in this order, before the first `##` heading:
 
 1. **Purpose** — one or two sentences, impersonal, in the vocabulary of someone who has never read this repo. States the deliverable. It must never restate, soften, or paraphrase a rule stated below it: the first statement of a rule fixes that rule's scope. Where the mandate is already purpose-shaped, the purpose block adds the user-facing outcome the mandate omits rather than re-saying it.
-2. **Workflow line** — byte-identical in all ten files, with only the containing skill's own name wrapped in `**`. It is the only way a visitor who lands on one page learns the other nine exist.
-3. **Voice block** — byte-identical in all ten files (its bytes live as a constant in `tests/unit/test_skill_header_pattern.py`): neutral constructive tone, no praise of the user or their material, no self-praise, short precise chat messages. Chat conduct only — it carries no operational rules.
+2. **Workflow line** — byte-identical in all ten files, with only the containing skill's own name wrapped in `**`. It is the only way a visitor who lands on one page learns the other nine exist. Materialized from `shared/blocks/workflow.md`.
+3. **Voice block** — byte-identical in all ten files: neutral constructive tone, no praise of the user or their material, no self-praise, short precise chat messages. Chat conduct only — it carries no operational rules. Materialized from `shared/blocks/voice.md`.
 4. **Mandate** — the skill's agent-facing opening paragraph, verbatim, pinned in `tests/unit/data/skill_mandates/<skill>.txt`.
 
 No file gets an exception, and nothing is inserted between a mandate and the paragraph beneath it. `tests/unit/test_skill_header_pattern.py` enforces all of it; rewording a mandate means editing its pinned copy in the same change, so the reword shows up as a diff under review.
 
-Adding a skill means updating the workflow line in every existing skill, since each page names the whole set. Every skill except `proposal-troubleshoot` also carries the bug-report offer block verbatim once, in a closing `## When this run fails` section — `proposal-troubleshoot` is where the offer leads, so it does not refer itself. `tests/unit/test_report_offer.py` enforces both halves.
+Every skill except `proposal-troubleshoot` also carries the bug-report offer block verbatim once, in a closing `## When this run fails` section — `proposal-troubleshoot` is where the offer leads, so it does not refer itself. `tests/unit/test_report_offer.py` enforces both halves.
+
+**Three of those blocks are materialized, not retyped.** The workflow line, the voice block, and the report offer live once under `shared/blocks/` and are written into every `SKILL.md` by `scripts/sync_shared.py` — the same script, hook, and `--check` that materialize the file copies. Edit the block in `shared/blocks/`, run the sync; never edit one of those three regions in a `SKILL.md` directly, and never add a marker or banner around them (the file is a rendered page). Adding a skill therefore means editing `shared/blocks/workflow.md` once, not ten files. The regions are located by the positions this section fixes, so a `SKILL.md` whose opening blocks are out of order fails the offline suite rather than getting a block written into the wrong place.
+
+Per-skill wording stays hand-maintained on purpose: mandates, their pinned successors, and the load-bearing sentences in `tests/unit/data/pinned_sentences/`. A pin generated from the prose it guards would confirm any reword, including an unintended one.
 
 ## History
 
