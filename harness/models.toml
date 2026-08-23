@@ -104,6 +104,7 @@ matrix = [
   "customize_override",
   "publish_build",
   "import_messy",
+  "reverse_from_harvest",
 ]
 # Skill-guidance edge probes: cross-model they mostly re-measure the
 # edge-instruction-following that ideate_longrun's extraction phase already
@@ -144,6 +145,7 @@ ideate_outofscope = "proposal-ideate"
 customize_override = "proposal-customize"
 publish_build = "proposal-publish"
 import_messy = "proposal-import"
+reverse_from_harvest = "proposal-reverse"
 supervise_feedback = "proposal-supervise"
 
 # Default epochs per price tier (flakiness statistics where re-runs are cheap).
@@ -166,6 +168,7 @@ ideate_stonewall = { input = 200000, output = 8000 }
 ideate_probing = { input = 250000, output = 9000 }
 ideate_outofscope = { input = 200000, output = 8000 }
 import_messy = { input = 150000, output = 6000 }
+reverse_from_harvest = { input = 160000, output = 6000 }
 
 # Judge overhead per cell-epoch (fixed haiku judge), added to every estimate.
 [tasks.judge]

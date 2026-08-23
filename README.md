@@ -85,6 +85,7 @@ Whichever skill is running, six rules apply:
 | `proposal-lit-search` | Finds real, relevant literature (DBLP, Crossref, arXiv, OpenCitations, Semantic Scholar, OpenAlex), by topic or by snowballing from papers you already have, and verifies every entry before adding it. |
 | `proposal-write` | Turns your material into proposal prose following proven structure and writing rules. Thin material becomes a TODO, never invented filler. |
 | `proposal-import` | Converts an existing proposal (usually a PDF) into the workable format and strips personal data. |
+| `proposal-reverse` | Derives the proposal a finished thesis should have had — for a thesis whose proposal was never filed, or for a supervisor turning a thesis they supervised into an exemplar. Writes the plan the thesis started from, without the results it ended with. |
 | `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs, estimated length. |
 | `proposal-review` | Supervisor-style content review: a verdict on whether there is a thesis here (ready / needs revision / no viable thesis core), then every weak point with a concrete suggestion. |
 | `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. Where your program prescribes its own document, a build script in your folder takes over instead. A plain markdown hand-in is fine too. |

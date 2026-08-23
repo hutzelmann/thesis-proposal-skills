@@ -21,6 +21,7 @@ from l1_checks import (
     verdict_notes_progress,
     verdict_provenance,
     verdict_publish,
+    verdict_reverse,
     verdict_review,
     verdict_review_localized,
     verdict_seed,
@@ -96,6 +97,91 @@ BROKEN_CHECK = (
     "- ERROR: no trailing metadata block found (file must end with a `---` YAML block)\n"
     "- ERROR: no ordered-list research questions found in the research-questions section\n"
 )
+
+
+GOOD_REVERSE = """\
+# Introduction to the Topic
+
+Irrigation schedules ignore soil data [@Rivera23Survey].
+Calibration drift is a known problem in field sensor networks [@Okafor21Drift].
+
+# Methodology for Research: Prototype Implementation
+
+The prototype builds on the sensing approach of @Tanaka22Sensors.
+The field trial runs on the Agrarmesse open sensor corpus named at registration.
+
+---
+title: Soil-Moisture-Driven Irrigation Scheduling
+lang: en
+references:
+- id: Rivera23Survey
+  type: article-journal
+  issued:
+    year: 2023
+- id: Okafor21Drift
+  type: article-journal
+  issued:
+    year: 2021
+- id: Tanaka22Sensors
+  type: article-journal
+  issued:
+    year: 2022
+---
+"""
+
+
+def test_verdict_reverse_accepts_a_plan_tense_proposal():
+    passed, why = verdict_reverse(GOOD_REVERSE, CLEAN_CHECK, "soil-moisture.md")
+    assert passed, why
+    assert "soil-moisture.md" in why
+    assert "pre-settled material kept" in why
+
+
+def test_verdict_reverse_requires_a_produced_file():
+    passed, why = verdict_reverse(None)
+    assert not passed
+    assert "no proposal file produced" in why
+
+
+@pytest.mark.parametrize(("mutation", "needle"), [
+    (lambda t: t.replace("soil data", "soil data, and the panel held 41 farms"),
+     "41 farms"),
+    (lambda t: t.replace("soil data", "soil data; water use fell by 18 %"), "18 %"),
+    (lambda t: t.replace("Rivera", "Erika Musterfrau and Rivera"), "Erika Musterfrau"),
+])
+def test_verdict_reverse_reports_what_only_the_finished_work_knew(mutation, needle):
+    passed, why = verdict_reverse(mutation(GOOD_REVERSE), CLEAN_CHECK, "x.md")
+    assert not passed
+    assert needle in why
+
+
+def test_verdict_reverse_rejects_a_results_only_reference():
+    text = GOOD_REVERSE.replace("- id: Tanaka22Sensors", "- id: Lindqvist24Yield")
+    passed, why = verdict_reverse(text, CLEAN_CHECK, "x.md")
+    assert not passed
+    assert "Lindqvist24Yield" in why
+
+
+def test_verdict_reverse_rejects_an_invented_reference():
+    text = GOOD_REVERSE.replace("- id: Okafor21Drift", "- id: Fabricated26Study")
+    passed, why = verdict_reverse(text, CLEAN_CHECK, "x.md")
+    assert not passed
+    assert "Fabricated26Study" in why
+
+
+def test_verdict_reverse_does_not_tolerate_a_reference_shortfall():
+    """Unlike import: the source carries enough framing citations to reach the
+    minimum, so a shortfall means the contribution section was left thin."""
+    passed, why = verdict_reverse(GOOD_REVERSE, SHORT_REFS_CHECK, "x.md")
+    assert not passed
+    assert "at least 3 required" in why
+
+
+def test_verdict_reverse_fails_on_a_hindsight_warning():
+    check_output = "- WARNING: `demonstrated` (line 3) states the work as already done\n"
+    passed, why = verdict_reverse(GOOD_REVERSE, check_output, "x.md")
+    assert not passed
+    assert "hindsight" in why
 
 
 def test_verdict_import_accepts_a_clean_import():

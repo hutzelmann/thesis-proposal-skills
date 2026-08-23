@@ -36,6 +36,7 @@ EXPECTED_SCORERS = {
     "customize_override": ["customize_l1"],
     "publish_build": ["publish_l1"],
     "import_messy": ["import_l1"],
+    "reverse_from_harvest": ["reverse_l1"],
     "litsearch_expand": ["litsearch_l1"],
     "review_fixture_de": ["review_de_l1", "review_de_l2"],
     "check_report_compound": ["check_report_l1"],

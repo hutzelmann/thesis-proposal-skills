@@ -7,7 +7,7 @@ description: Write a thesis proposal from scratch or refine an existing one, fol
 
 Produces the actual proposal text — a first draft from a seed file, sharper prose from bullet points, or a revision that works through a review's findings one by one, with every claim tied to something in the literature.
 
-**Workflow:** proposal-ideate → proposal-lit-search → **proposal-write** → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), proposal-supervise (supervisor-side feedback on a raw submission), proposal-troubleshoot (diagnose a skill that misbehaved).
+**Workflow:** proposal-ideate → proposal-lit-search → **proposal-write** → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-reverse (derive a proposal from a finished thesis), proposal-customize (adapt the rules to a supervisor's requirements), proposal-supervise (supervisor-side feedback on a raw submission), proposal-troubleshoot (diagnose a skill that misbehaved).
 
 **Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 

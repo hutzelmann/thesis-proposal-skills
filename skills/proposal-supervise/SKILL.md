@@ -7,7 +7,7 @@ description: Supervisor-side feedback on a raw student submission — normalize 
 
 Turns a raw student submission — PDF, Word export, or pasted text — into a curated draft feedback letter and a standard-format proposal file the student can continue from. The full findings stay on the supervisor's side; the send-package carries only what the student should receive.
 
-**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-customize (adapt the rules to a supervisor's requirements), **proposal-supervise** (supervisor-side feedback on a raw submission), proposal-troubleshoot (diagnose a skill that misbehaved).
+**Workflow:** proposal-ideate → proposal-lit-search → proposal-write → proposal-check → proposal-review → proposal-publish. Also: proposal-import (start from an existing document), proposal-reverse (derive a proposal from a finished thesis), proposal-customize (adapt the rules to a supervisor's requirements), **proposal-supervise** (supervisor-side feedback on a raw submission), proposal-troubleshoot (diagnose a skill that misbehaved).
 
 **Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 

@@ -155,6 +155,39 @@ expected = "proposal-import"
 kind = "collision"
 lang = "en"
 
+# ---------- proposal-reverse -------------------------------------------------
+
+[[cases]]
+id = "reverse-canonical"
+utterance = "My thesis is finished but the program never got a proposal. Can you derive one from the thesis?"
+expected = "proposal-reverse"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "reverse-oblique"
+utterance = "I supervised this thesis and I want to show next year's students what its proposal should have looked like."
+expected = "proposal-reverse"
+kind = "oblique"
+lang = "en"
+
+# collides with import: both take a finished document in and write the standard
+# format out. What separates them is that a thesis knows its results and a
+# proposal must not.
+[[cases]]
+id = "reverse-collision"
+utterance = "Here is the finished thesis as a PDF — turn it into the standard proposal format."
+expected = "proposal-reverse"
+kind = "collision"
+lang = "en"
+
+[[cases]]
+id = "reverse-de"
+utterance = "Die Masterarbeit ist abgegeben, aber es gibt kein Exposé. Kannst du eins aus der Arbeit ableiten?"
+expected = "proposal-reverse"
+kind = "canonical"
+lang = "de"
+
 # ---------- proposal-publish -------------------------------------------------
 
 [[cases]]

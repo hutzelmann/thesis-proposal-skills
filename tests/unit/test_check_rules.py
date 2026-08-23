@@ -331,6 +331,66 @@ def test_prose_patterns_rule_locates_the_first_pronoun_it_counted():
     assert "(line 5)" in findings[0].message
 
 
+def hindsight(prose: str, lang: str = "en") -> list[str]:
+    text = (f"# Topic\n\n{prose}\n\n---\ntitle: T\nlang: {lang}\nreferences: []\n---")
+    return rules_of(check.rule_hindsight_leakage(context(text)))
+
+
+def test_hindsight_rule_reports_an_uncited_result_claim():
+    findings = check.rule_hindsight_leakage(context(
+        "# Topic\n\nThe evaluation demonstrated that scheduling cuts water use.\n\n"
+        "---\ntitle: T\nlang: en\nreferences: []\n---"))
+    assert rules_of(findings) == ["hindsight-leakage"]
+    assert "`demonstrated`" in findings[0].message
+    assert "(line 3)" in findings[0].message
+
+
+def test_hindsight_rule_ignores_a_result_attributed_to_prior_work():
+    """Reporting what prior work established is what the contribution section
+    is for. Without the citation anchor the rule fires on every correct
+    proposal, which is the whole reason it is anchored there."""
+    assert hindsight("@Rivera23Survey demonstrated that scheduling cuts water use.") == []
+    assert hindsight("Scheduling cuts water use [@Rivera23Survey], as shown there.") == []
+
+
+def test_hindsight_rule_ignores_a_planned_measurement():
+    assert hindsight(
+        "A field trial compares water use under scheduling against a fixed timetable."
+    ) == []
+
+
+def test_hindsight_rule_ignores_present_tense_passive():
+    """A review fixture states what it will look for — `the conditions under
+    which faithfulness is actually demonstrated`. Present-tense passive names a
+    property the work goes looking for; the past tense states a result it has."""
+    assert hindsight(
+        "The comparison identifies the conditions under which faithfulness to "
+        "the classifier is actually demonstrated (RQ2)."
+    ) == []
+    assert hindsight("Faithfulness was demonstrated for every model.") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_reports_a_quantified_outcome():
+    assert hindsight("Scheduling reduced water use by 14 %.") == ["hindsight-leakage"]
+
+
+def test_hindsight_rule_ignores_a_bare_number_without_a_change_word():
+    """A planned threshold is a plan detail, not a finding."""
+    assert hindsight("Significance is tested at the 5 % level.") == []
+
+
+def test_hindsight_rule_reads_german_result_verbs():
+    assert hindsight("Die Auswertung zeigte einen deutlichen Effekt.", "de") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_ignores_prose_inside_a_code_block():
+    assert hindsight("```\nWe demonstrated the effect.\n```") == []
+
+
 def test_metadata_present_names_a_block_that_sits_at_the_top():
     """Frontmatter at the top is what every other markdown tool expects, so a
     student arrives at it honestly — and gets five errors none of which say so."""
@@ -411,6 +471,9 @@ COVERED_BY_UNIT_TESTS = {
     "reference-id-too-long",
     "email-address",
     "first-person-pronoun",
+    # no fixture states its own results: a proposal that did would be a
+    # fixture defect, so the rule is reachable only from this file
+    "hindsight-leakage",
     "repeated-sentence-start",
     "length-over-limit",
     "page-limit-invalid",

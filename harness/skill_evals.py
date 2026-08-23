@@ -44,6 +44,7 @@ from l1_checks import (
     verdict_notes_progress,
     verdict_provenance,
     verdict_publish,
+    verdict_reverse,
     verdict_review,
     verdict_review_localized,
     verdict_seed,
@@ -740,6 +741,36 @@ def import_messy() -> Task:
             "skill/references/structure.json": str(
                 SKILLS / "proposal-import" / "references" / "structure.json"),
         },
+    )
+
+
+# ---------- task: reverse a finished thesis from its harvest record ----------
+
+W06_HARVEST = "soil-moisture-irrigation.harvest.md"
+REVERSE_REQUEST = (
+    "The thesis this record came from is finished and submitted, and no proposal "
+    "was ever filed for it. The harvest record beside this message is what you "
+    f"read out of the thesis — `{W06_HARVEST}`. Write the proposal from it."
+)
+
+
+@verdict_scorer("reverse_l1")
+async def reverse_l1(_state: TaskState) -> tuple[bool, str]:
+    files = await workspace_markdown()
+    produced, _ = select_draft({
+        name: text for name, text in files.items() if not name.endswith(".harvest.md")
+    })
+    if not produced:
+        return verdict_reverse(None)
+    return verdict_reverse(files[produced], await run_check(produced), produced)
+
+
+@task
+def reverse_from_harvest() -> Task:
+    # the harvest record is the seam: it stands in for the thesis, so the write
+    # step is exercised without a hundred-page copyrighted document in the repo
+    return proposal_task(
+        "proposal-reverse", "w06-reverse-harvest", REVERSE_REQUEST, [reverse_l1()],
     )
 
 

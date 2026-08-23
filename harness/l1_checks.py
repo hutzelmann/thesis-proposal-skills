@@ -687,6 +687,67 @@ def verdict_supervise_package(package: dict[str, str], forbidden: tuple[str, ...
     return True, "; ".join(why for _, why in results)
 
 
+REVERSE_LEAKS = (
+    "Erika Musterfrau", "00000000", "prof@example.org", "Prof. Example",
+    "INTERNAL USE ONLY",
+)
+# Outcomes of doing the work, recorded in the harvest fixture precisely so that
+# carrying one across is visible. A proposal cannot know any of them.
+REVERSE_RESIDUE = ("41 farms", "18 %", "18%", "eleven weeks", "Kalman")
+# Named in the registration document, so a planner could have known it.
+REVERSE_PRESETTLED = "Agrarmesse"
+REVERSE_FRAMING_REFS = ("Rivera23Survey", "Tanaka22Sensors", "Okafor21Drift")
+REVERSE_RESULTS_ONLY_REFS = ("Lindqvist24Yield", "Baumgartner20Timetables")
+
+
+def verdict_reverse(proposal_text: str | None, check_output: str = "",
+                    filename: str = "") -> tuple[bool, str]:
+    """reverse_from_harvest: a plan, not a report.
+
+    The harvest fixture is the seam this task exists to exercise — it carries an
+    execution outcome, a pre-settled specific, references cited only in the
+    results discussion, and the cover-page data of someone who is not the person
+    running the skill. Every assertion below reads one of those back out of the
+    written proposal.
+
+    The reference minimum is not tolerated here, unlike on import: the source
+    carries enough framing citations to reach it, so a shortfall means the
+    contribution section was left underwritten rather than that the source was
+    thin.
+    """
+    if not proposal_text:
+        return False, "no proposal file produced"
+    problems = [
+        line.removeprefix("- ERROR:").strip()
+        for line in disallowed_errors(check_output)
+    ]
+    if "hindsight-leakage" in check_output or "already done" in check_output:
+        problems.append("check reports hindsight leakage")
+    for leak in REVERSE_LEAKS:
+        if leak in proposal_text:
+            problems.append(f"third-party or confidential data leaked: {leak}")
+    for residue in REVERSE_RESIDUE:
+        if residue in proposal_text:
+            problems.append(f"execution outcome carried across: {residue}")
+    for ref in REVERSE_RESULTS_ONLY_REFS:
+        if ref in proposal_text:
+            problems.append(f"reference cited only in the results discussion kept: {ref}")
+    if not any(ref in proposal_text for ref in REVERSE_FRAMING_REFS):
+        problems.append("no framing reference survived into the proposal")
+    invented = [
+        key for key in re.findall(r"^- id:\s*(\S+)", proposal_text, re.MULTILINE)
+        if key not in REVERSE_FRAMING_REFS + REVERSE_RESULTS_ONLY_REFS
+    ]
+    if invented:
+        problems.append(f"reference not present in the source: {invented[0]}")
+    if problems:
+        return False, "; ".join(problems[:4])
+    kept = [r for r in REVERSE_FRAMING_REFS if r in proposal_text]
+    presettled = "kept" if REVERSE_PRESETTLED in proposal_text else "dropped"
+    return True, (f"plan-tense proposal {filename or ''}, {len(kept)} framing "
+                  f"references kept, pre-settled material {presettled}").replace("  ", " ")
+
+
 def verdict_early_stop(files: dict[str, str]) -> tuple[bool, str]:
     """Stonewalled session: no proposal file seeded, but a notes file records
     the state (`ideation.notes.md` when no topic ever emerged). Whether the

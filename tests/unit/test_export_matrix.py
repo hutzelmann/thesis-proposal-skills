@@ -24,8 +24,11 @@ FIXTURES = REPO / "tests" / "fixtures"
 # a fixture's proposal is its markdown file; guidelines.md is a workspace
 # override that w02 ships alongside one, and README.md documents the corpus
 NOT_PROPOSALS = {"README.md", "guidelines.md"}
+# a harvest record is what the reverse skill reads out of a finished thesis, so
+# it stands where the thesis would: an input to a skill, never a document to build
 PROPOSALS = sorted(
-    p for p in FIXTURES.glob("*/*.md") if p.name not in NOT_PROPOSALS
+    p for p in FIXTURES.glob("*/*.md")
+    if p.name not in NOT_PROPOSALS and not p.name.endswith(".harvest.md")
 )
 
 

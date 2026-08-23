@@ -106,6 +106,7 @@ RULE_IDS = (
     "matriculation-number",
     "metadata-author-key",
     "confidentiality-marker",
+    "hindsight-leakage",
 )
 
 
@@ -902,6 +903,71 @@ def rule_prose_patterns(ctx: Context) -> list[Finding]:
     return out
 
 
+# Result verbs with the work as subject, and the change words a reported number
+# attaches to. A proposal describes work that has not happened, so a sentence in
+# this shape is either a draft written after the work began or a proposal
+# derived from a finished thesis.
+RESULT_VERBS = {
+    "en": r"\b(showed|shown|demonstrated|proved|proven|outperformed|revealed|"
+          r"confirmed|achieved)\b",
+    "de": r"\b(zeigte[n]?|gezeigt|nachgewiesen|bewiesen|übertraf[en]?|"
+          r"bestätigte[n]?|erreichte[n]?)\b",
+}
+CHANGE_WORDS = {
+    "en": r"\b(reduced|increased|decreased|lowered|raised|improved|faster|"
+          r"slower|better|worse)\b",
+    "de": r"\b(reduzierte[n]?|senkte[n]?|erhöhte[n]?|verbesserte[n]?|"
+          r"schneller|langsamer|besser|schlechter)\b",
+}
+QUANTITY = r"\d+(?:[.,]\d+)?\s*(?:%|percent|Prozent)"
+# `… the conditions under which faithfulness is actually demonstrated` is a plan
+# sentence: present-tense passive states a property the work will look for,
+# where the past tense (`was demonstrated`) states a result it already has.
+PRESENT_PASSIVE = {
+    "en": r"\b(is|are|be|being|am)\b(?:\s+\w+)?\s*$",
+    "de": r"\b(ist|sind|wird|werden|sein)\b(?:\s+\w+)?\s*$",
+}
+
+
+def prose_sentences(body: str):
+    """(sentence, line number) for every prose sentence, headings skipped."""
+    for lineno, line in enumerate(mask_code(body).split("\n"), start=1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        for sentence in re.split(r"(?<=[.!?])\s+", line.strip()):
+            if sentence:
+                yield sentence, lineno
+
+
+def rule_hindsight_leakage(ctx: Context) -> list[Finding]:
+    """Results the proposal cannot have yet, in sentences that cite nobody.
+
+    The citation anchor is the whole rule: reporting what prior work
+    established is exactly what the contribution section does, so a check that
+    could not tell `@Rivera23 showed …` from `we showed …` would fire on every
+    correctly written proposal.
+    """
+    verbs = RESULT_VERBS[ctx.lang]
+    change = CHANGE_WORDS[ctx.lang]
+    for sentence, lineno in prose_sentences(ctx.body):
+        if re.search(r"(?<![\w.\\])@[A-Za-z]", sentence):
+            continue
+        m = re.search(verbs, sentence, re.IGNORECASE)
+        if m is None and re.search(QUANTITY, sentence):
+            m = re.search(change, sentence, re.IGNORECASE)
+        if m is None:
+            continue
+        if re.search(PRESENT_PASSIVE[ctx.lang], sentence[:m.start()], re.IGNORECASE):
+            continue
+        return [warn(
+            "hindsight-leakage",
+            f"`{m.group(0)}` (line {lineno}) states the work as already done, "
+            f"in a sentence citing no source — a proposal plans work that has "
+            f"not happened; attribute the result or write it as a plan",
+        )]
+    return []
+
+
 # Report order. Errors and warnings are rendered in separate buckets, so what
 # this sequence fixes is the order within each bucket.
 RULES = (
@@ -923,6 +989,7 @@ RULES = (
     rule_todo_markers,
     rule_length,
     rule_prose_patterns,
+    rule_hindsight_leakage,
 )
 
 
