@@ -29,10 +29,10 @@ Choose a content-derived idea slug; the file sits in the working directory besid
 Run the shipped check over the normalized file (Windows: `py` instead of `python3`):
 
 ```
-python3 .claude/skills/proposal-supervise/scripts/check.py <slug>.md
+python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <slug>.md
 ```
 
-Paths are relative to the workspace root for a standard install; the script really lives in `scripts/` next to this SKILL.md. If you cannot find it, say the mechanical check did not run and name what is therefore unverified.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md. If you cannot find it, say the mechanical check did not run and name what is therefore unverified.
 
 Then apply the review rules from `references/guidelines.md` — plus any workspace `guidelines.md` override, which carries the professor's own requirements and wins — exactly as the review skill would: the five substance tests (delta, falsifiability, swap, method-fit, executability) decide the verdict; title, research questions, contribution delta, argument soundness, single methodology, and sentence-level density are the dimensions. Do not invent a separate quality bar: what check and review would tell the student is what you work from.
 

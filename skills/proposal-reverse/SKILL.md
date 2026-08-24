@@ -102,11 +102,11 @@ A thesis carries a cover page. The author's name, matriculation number, postal a
 Run the reference validation, then the check, over the file you just wrote (Windows: `py` instead of `python3`):
 
 ```
-python3 .claude/skills/proposal-reverse/scripts/validate_refs.py <slug>.md
-python3 .claude/skills/proposal-reverse/scripts/check.py <slug>.md
+python3 ${CLAUDE_SKILL_DIR}/scripts/validate_refs.py <slug>.md
+python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <slug>.md
 ```
 
-Paths are relative to the workspace root for a standard install; the scripts really live in `scripts/` next to this SKILL.md. If you cannot find them, say they did not run and name what is therefore unverified — never present your own reading of the file as a script's result.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the scripts really live in `scripts/` next to this SKILL.md. If you cannot find them, say they did not run and name what is therefore unverified — never present your own reading of the file as a script's result.
 
 Apply the CSL-YAML the validator prints for entries it identified, keep every UNVERIFIABLE entry with a `[TODO: verify reference …]` beside its first citation, and fix everything the check reports except two findings that are not yours to fix: a reference shortfall the thesis genuinely cannot cover, and open `[TODO: …]` markers.
 

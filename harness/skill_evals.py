@@ -176,7 +176,11 @@ def plain_prompt(request: str) -> str:
 
 
 def skill_prompt(skill: str, request: str) -> str:
+    # the real host substitutes ${CLAUDE_SKILL_DIR} before the model sees the
+    # body; here the skill's assets are staged under `skill/`, so the same
+    # substitution keeps every documented script path resolvable in the sandbox
     text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
+    text = text.replace("${CLAUDE_SKILL_DIR}", "skill")
     return (
         "You are an AI agent operating a skill inside a user's proposal workspace.\n"
         "The workspace is the `ws/` directory (work there). The skill's reference "

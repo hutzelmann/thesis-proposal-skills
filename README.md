@@ -178,7 +178,7 @@ Deliberate divergences, each with its reason; a divergence not on this list is a
 
 | Divergence | Reason |
 | --- | --- |
-| Script paths are written workspace-root-relative (`.claude/skills/<skill>/scripts/…`) with a prose fallback, not skill-root-relative | Agents run commands from the workspace, not the skill directory; bare `scripts/…` paths failed under the real host (dev-runner findings, 2026-07-31) |
+| `proposal-troubleshoot` addresses the sibling check script by the standard install path (`.claude/skills/proposal-check/…`), not `${CLAUDE_SKILL_DIR}/../…` | The variable covers only the skill's own directory, and `../<sibling>/scripts/` is a cross-skill execution shape flagged by the security audits (remediated 2026-08-02) |
 | `proposal-publish` keeps its build templates in `templates/`, not `assets/` | The directory predates the convention and is referenced by the build pipeline; renaming buys no behavior |
 | No per-skill lockfile or dependency manifest | User-side scripts are Python-stdlib-only by policy, so there is nothing to lock |
 
