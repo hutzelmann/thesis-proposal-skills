@@ -24,6 +24,9 @@ _drift = "python3 scripts/sync_shared.py --check"
 # the standard's own validator, pinned inside the script (scripts/conform.py);
 # first run needs network for the npx cache, afterwards it works offline
 conform = "python3 scripts/conform.py"
+# end-to-end install of the tracked tree via the README command (networked,
+# CLI deliberately unpinned) — CI job + weekly schedule, not part of `test`
+install-check = "python3 scripts/install_check.py"
 # inner loop: parallel, without the pandoc/typst builds. `test` stays the
 # complete gate — never narrow it to this set.
 # loadgroup honours @pytest.mark.xdist_group, which keeps the tests that edit

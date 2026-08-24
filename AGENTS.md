@@ -69,6 +69,7 @@ uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # mo
 uv run poe report                  # regenerate README model-support summary + docs/model-support.md from logs
 uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
 uv run poe audit-status            # post-publish: skills.sh verdicts vs audit-baseline.json
+uv run poe install-check           # README install command vs tracked tree (networked; own CI workflow + weekly)
 uv run poe identify <bug-report/>  # resolve a submitted report's hashes.txt to the revision it ran
 ```
 
