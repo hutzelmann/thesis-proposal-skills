@@ -180,6 +180,7 @@ Deliberate divergences, each with its reason; a divergence not on this list is a
 | --- | --- |
 | `proposal-troubleshoot` addresses the sibling check script by the standard install path (`.claude/skills/proposal-check/…`), not `${CLAUDE_SKILL_DIR}/../…` | The variable covers only the skill's own directory, and `../<sibling>/scripts/` is a cross-skill execution shape flagged by the security audits (remediated 2026-08-02) |
 | `proposal-publish` keeps its build templates in `templates/`, not `assets/` | The directory predates the convention and is referenced by the build pipeline; renaming buys no behavior |
+| `evals/evals.json` references input files by workspace name instead of copying them into `evals/files/` | The inputs are the repository's synthetic fixtures, maintained beside their `expected.json` oracles; copying them into every skill would fork the corpus and bloat installs |
 | No per-skill lockfile or dependency manifest | User-side scripts are Python-stdlib-only by policy, so there is nothing to lock |
 
 MIT licensed. Issues and PRs welcome; please open an issue first. If you hit a problem while writing a proposal, [When something goes wrong](#when-something-goes-wrong) is the path — it produces a report a maintainer can act on, and `uv run poe identify <bug-report/>` resolves a submitted one to the revision it ran against.

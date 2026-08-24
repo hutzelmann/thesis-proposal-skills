@@ -150,11 +150,16 @@ def stage(scenario: dict, ws: Path, install_skill: bool = True) -> None:
                 shutil.copytree(f, ws / "img")
     if not install_skill:  # baseline arm: same workspace, no skill discovered
         return
+    # evals/ stays out: a model that can read its own eval assertions is not
+    # being measured (testing-harness spec: Measured environments carry no
+    # eval definitions). User installs legitimately carry it; measured ones not.
+    no_evals = shutil.ignore_patterns("evals")
     skill_home = ws / ".claude" / "skills" / scenario["skill"]
-    shutil.copytree(SKILLS / scenario["skill"], skill_home)
+    shutil.copytree(SKILLS / scenario["skill"], skill_home, ignore=no_evals)
     # Sibling skills the scenario relies on (e.g. ideate's lit-search fallback).
     for sibling in scenario.get("siblings", ()):
-        shutil.copytree(SKILLS / sibling, ws / ".claude" / "skills" / sibling)
+        shutil.copytree(SKILLS / sibling, ws / ".claude" / "skills" / sibling,
+                        ignore=no_evals)
 
 
 def run_claude(ws: Path, request: str, model: str, timeout: int) -> str:

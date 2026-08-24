@@ -378,11 +378,18 @@ def files_named(utterance: str) -> list[str]:
     return named
 
 
-def stage_workspace(ws: Path, case: Case | None = None) -> None:
-    skill_home = ws / ".claude" / "skills"
+def install_skills(skill_home: Path) -> None:
+    """Install the whole set for measurement — without `evals/`: a selector
+    that can read assertion text is not choosing from the metadata alone
+    (testing-harness spec: Measured environments carry no eval definitions)."""
     skill_home.mkdir(parents=True, exist_ok=True)
     for name in installed_skills():
-        shutil.copytree(SKILLS / name, skill_home / name)
+        shutil.copytree(SKILLS / name, skill_home / name,
+                        ignore=shutil.ignore_patterns("evals"))
+
+
+def stage_workspace(ws: Path, case: Case | None = None) -> None:
+    install_skills(ws / ".claude" / "skills")
     wanted = files_named(case.utterance) if case else []
     for filename in wanted or [DEFAULT_PROPOSAL]:
         fixture = next(f for f, name in WORKSPACE_FIXTURES if name == filename)
