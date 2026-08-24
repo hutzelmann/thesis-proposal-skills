@@ -13,8 +13,11 @@ that name an argument rather than a function name, which is exactly the kind of
 indirection this pins down.
 """
 
+from pathlib import Path
+
 import pytest
 import skill_evals
+import support
 from inspect_ai._util.registry import registry_info
 
 # The full task set with the scorer names each one registers. Update this map
@@ -78,3 +81,31 @@ def test_l1_scorers_keep_the_marker_the_classifier_reads():
         if "l1" not in name and name != "no_spurious_offer"
     }
     assert not unmarked, f"deterministic scorers missing the `l1` marker: {sorted(unmarked)}"
+
+
+# ---------- baseline arm wiring (testing-harness spec) ------------------------
+
+REGISTRY = support.parse_registry(
+    (Path(__file__).resolve().parents[2] / "harness" / "models.toml").read_text(encoding="utf-8")
+)
+
+
+def test_dialogue_tasks_reject_the_baseline_parameter():
+    """The registry's dialogue list and the builders' signatures are the same
+    fact twice; this test keeps them from drifting apart."""
+    for task_name in REGISTRY.tasks.dialogue:
+        with pytest.raises(TypeError):
+            getattr(skill_evals, task_name)(baseline=True)
+
+
+def test_single_turn_tasks_build_a_skill_free_baseline():
+    eligible = [
+        t for t in (*REGISTRY.tasks.matrix, *REGISTRY.tasks.extended)
+        if t not in REGISTRY.tasks.dialogue
+    ]
+    assert eligible, "no baseline-eligible task found"
+    for task_name in eligible:
+        task = getattr(skill_evals, task_name)(baseline=True)
+        prompt = task.dataset[0].input
+        assert "SKILL INSTRUCTIONS" not in prompt, f"{task_name}: baseline still carries the skill"
+        assert "User request:" in prompt

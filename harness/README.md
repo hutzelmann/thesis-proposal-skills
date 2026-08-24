@@ -46,6 +46,19 @@ Every metered invocation prints a cost estimate (registry pricing × token prior
 
 Classification per model×task cell: 3 epochs (per-tier policy in the registry), all pass = solid, mixed = flaky, none = fail. Per model: any fail → warning naming the affected skills (via the registry's task→skill map), any flaky → "flaky on <skills>", all cells solid → supported, solid-but-incomplete coverage → partial (untested count disclosed), no logs at all → untested. Disabled registry models keep their row, marked as disabled. `poe report` derives both the README summary table (pinned ID, verdict, run date) and the full grid with pass rates and per-model run cost from the newest log per cell — nothing in either artifact is hand-written.
 
+## Baseline arm (without-skill control)
+
+The standard's with/without comparison (testing-harness spec): the same single-turn task, staging, and verdicts, with the skill instructions removed. On-demand and cost-gated — never part of the default matrix, and baseline logs never count toward support verdicts.
+
+```sh
+uv run poe matrix --baseline --models claude-haiku-4.5 --tasks write_from_seed
+uv run --env-file .env inspect eval harness/skill_evals.py@check_report \
+    -T baseline=true --model openrouter/anthropic/claude-haiku-4.5 --log-dir logs/evals
+uv run poe dev check_report --no-skill --model haiku    # dev-loop eyeballing, no logs
+```
+
+Persona-dialogue tasks have no baseline arm (a without-skill control of a skill-shaped conversation measures nothing); the registry's `dialogue` list drops them from `--baseline` selections and their builders take no `baseline` parameter. When baseline and with-skill logs exist for the same (model, task), `poe report` appends a "Baseline delta" section to `docs/model-support.md`: pass rate bought vs tokens and time spent, plus per-scorer flags — a scorer passing in both arms is a dead-assertion candidate, one failing in both arms a too-hard candidate.
+
 ## Dev runs (real Claude Code binary, Max subscription)
 
 Stages a fixture into a temp workspace, installs the skill into `.claude/skills/` (real skill discovery), runs headless `claude -p`, applies the same L1 verdicts:

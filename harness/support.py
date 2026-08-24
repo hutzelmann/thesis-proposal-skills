@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass, field
+from datetime import datetime
 
 START_MARKER = "<!-- model-support:start -->"
 END_MARKER = "<!-- model-support:end -->"
@@ -44,6 +45,7 @@ class TaskConfig:
     judge_tokens: tuple[int, int]
     skills: dict[str, str] = field(default_factory=dict)
     tier_epochs: dict[str, int] = field(default_factory=dict)
+    dialogue: tuple[str, ...] = ()  # persona-driven tasks; no baseline arm exists
 
 
 @dataclass(frozen=True)
@@ -114,6 +116,7 @@ def parse_registry(text: str) -> Registry:
         judge_tokens=(int(judge["input"]), int(judge["output"])),
         skills=dict(t.get("skills", {})),
         tier_epochs={tier: int(n) for tier, n in t.get("epochs", {}).items()},
+        dialogue=tuple(t.get("dialogue", ())),
     )
     for tier in tasks.tier_epochs:
         if tier not in TIERS:
@@ -159,6 +162,18 @@ def select_tasks(
     return list(names)
 
 
+def select_baseline_tasks(
+    registry: Registry, tasks: list[str], explicit: bool = False
+) -> list[str]:
+    """The subset of a selection that has a baseline arm. A dialogue task named
+    explicitly is an error (there is no meaningful without-skill control for a
+    persona conversation); one merely present in a default selection is dropped."""
+    rejected = [t for t in tasks if t in registry.tasks.dialogue]
+    if rejected and explicit:
+        raise ValueError(f"no baseline arm exists for dialogue task(s): {rejected}")
+    return [t for t in tasks if t not in registry.tasks.dialogue]
+
+
 def epochs_for(task: str, tier: str, cfg: TaskConfig, default: int = DEFAULT_EPOCHS) -> int:
     if task in cfg.heavy and tier == "frontier":
         return 1
@@ -167,6 +182,11 @@ def epochs_for(task: str, tier: str, cfg: TaskConfig, default: int = DEFAULT_EPO
 
 def scorer_counts(scorer_name: str, task: str, cfg: TaskConfig) -> bool:
     return not (task in cfg.excluded_l1 and "l1" in scorer_name)
+
+
+def score_passes(value: object) -> bool:
+    """One scorer value's verdict, shared by cell classification and arm stats."""
+    return value in _PASS_VALUES
 
 
 def epoch_pass(scores: dict[str, object], task: str, cfg: TaskConfig) -> bool | None:
@@ -390,15 +410,107 @@ def export_support(
     }
 
 
+def duration_seconds(started_at: str | None, completed_at: str | None) -> float | None:
+    """Wall-clock span between two ISO timestamps from a log's stats, if both exist."""
+    if not started_at or not completed_at:
+        return None
+    try:
+        span = datetime.fromisoformat(completed_at) - datetime.fromisoformat(started_at)
+    except ValueError:
+        return None
+    return span.total_seconds()
+
+
+@dataclass(frozen=True)
+class ArmStats:
+    """One arm (with-skill or baseline) of a task on one model, from its newest log."""
+
+    passes: tuple[bool, ...]  # task-level verdict per epoch
+    scorer_passes: dict[str, tuple[bool, ...]]  # raw per-scorer results, unfiltered
+    tokens: int  # total input+output across the run, judge included
+    duration_s: float | None = None
+
+    @property
+    def pass_rate(self) -> float:
+        return sum(self.passes) / len(self.passes) if self.passes else 0.0
+
+
+def _scorer_flags(with_arm: ArmStats, base_arm: ArmStats) -> list[str]:
+    """The standard's pattern analysis: a scorer passing in both arms measures
+    nothing the skill adds (dead-assertion candidate); one failing in both arms
+    measures something no arm can do (too-hard candidate)."""
+    flags = []
+    for name in sorted(set(with_arm.scorer_passes) & set(base_arm.scorer_passes)):
+        w, b = with_arm.scorer_passes[name], base_arm.scorer_passes[name]
+        if w and b and all(w) and all(b):
+            flags.append(f"`{name}` passes in both arms — dead-assertion candidate")
+        elif w and b and not any(w) and not any(b):
+            flags.append(f"`{name}` fails in both arms — too-hard candidate")
+    return flags
+
+
+def render_baseline_delta(
+    pairs: dict[tuple[str, str], tuple[ArmStats, ArmStats]],
+    skills: dict[str, str] | None = None,
+) -> str:
+    """Markdown section for (model, task) cells measured in both arms:
+    what the skill buys (pass rate) against what it costs (tokens, time).
+    Empty string when no pair exists — the baseline arm is on-demand."""
+    if not pairs:
+        return ""
+    skills = skills or {}
+    lines = [
+        "## Baseline delta",
+        "",
+        "With-skill vs without-skill, from the newest log of each arm "
+        "(baseline runs are on-demand — missing rows were simply not run):",
+        "",
+        "| Model | Task | Pass rate (with / without / Δ) | Tokens (with / without / Δ) "
+        "| Runtime s (with / without) |",
+        "|---|---|---|---|---|",
+    ]
+    flags_by_cell = []
+    for (model_id, task), (with_arm, base_arm) in sorted(pairs.items()):
+        short = model_id.removeprefix("openrouter/")
+        delta = with_arm.pass_rate - base_arm.pass_rate
+        tok_delta = with_arm.tokens - base_arm.tokens
+        dur = tuple(
+            f"{a.duration_s:.0f}" if a.duration_s is not None else "—"
+            for a in (with_arm, base_arm)
+        )
+        lines.append(
+            f"| `{short}` | {task} "
+            f"| {with_arm.pass_rate:.2f} / {base_arm.pass_rate:.2f} / {delta:+.2f} "
+            f"| {with_arm.tokens} / {base_arm.tokens} / {tok_delta:+d} "
+            f"| {dur[0]} / {dur[1]} |"
+        )
+        cell_flags = _scorer_flags(with_arm, base_arm)
+        if cell_flags:
+            name = skills.get(task, task)
+            flags_by_cell.append((short, name, cell_flags))
+    for short, name, cell_flags in flags_by_cell:
+        lines.append("")
+        lines.append(f"Assertion flags for `{short}` on {name}:")
+        lines.extend(f"- {flag}" for flag in cell_flags)
+    return "\n".join(lines) + "\n"
+
+
 def render_grid(
     models: list[Model],
     tasks: list[str],
     cells: dict[tuple[str, str], Cell],
     costs: dict[str, float],
     timestamp: str,
+    durations: dict[str, float] | None = None,
 ) -> str:
+    """`durations` (seconds per model, summed over its newest logs) adds a
+    runtime column beside run cost — the timing half of the standard's
+    benchmark shape. Omitted, the grid keeps its historical columns."""
+    timing = durations is not None
     header = "| Model | " + " | ".join(tasks) + " | run cost |"
-    sep = "|---" * (len(tasks) + 2) + "|"
+    if timing:
+        header += " runtime |"
+    sep = "|---" * (len(tasks) + 2 + int(timing)) + "|"
     lines = [
         "# Model support grid",
         "",
@@ -420,5 +532,8 @@ def render_grid(
                 row.append(f"{cell.passes}/{cell.epochs}{mark}")
         cost = costs.get(m.id)
         row.append(f"${cost:.2f}" if cost is not None else "—")
+        if timing:
+            secs = (durations or {}).get(m.id)
+            row.append(f"{secs:.0f}s" if secs is not None else "—")
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines) + "\n"

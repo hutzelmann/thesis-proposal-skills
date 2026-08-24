@@ -172,7 +172,6 @@ The shared draft-selection function SHALL treat files ending in `.notes.md` as n
 - **WHEN** the L0 suite runs
 - **THEN** a unit test exercises the `.notes.md` exclusion through the pure selection function
 
-
 ### Requirement: Title-alarm coverage
 The corpus SHALL carry at least one fixture whose title trips several title tells at once, with the tells encoded in its `expected.json` oracle, alongside the existing fixtures whose titles trip none. The agent-judgment half of the title rule — recognising that a proper noun names a tool carried as the instrument, and offering abstracted alternatives — is not reachable by any offline test, so it SHALL be covered by a metered L2 eval task scoring whether the skill raises the title, names the certificate consequence, and offers alternatives without silently rewriting the title.
 
@@ -356,6 +355,7 @@ The harness SHALL carry an L1 task that runs the supervise skill against a synth
 #### Scenario: Headless run does not stall
 - **WHEN** the L1 task or dev runner drives a borderline submission single-turn
 - **THEN** the request's pre-answer resolves the deferral and the run completes
+
 ### Requirement: Skill selection measured through the real host selector
 The harness SHALL measure which skill a host agent selects for a user utterance, using the production skill-discovery path — the installed skill set and the frontmatter metadata a host reads before any skill body is loaded — rather than a reconstruction of that path inside an eval prompt. A routing measurement SHALL install the whole `proposal-*` set, so every case is decided against the same competition set a user's install presents.
 
@@ -448,6 +448,7 @@ The routing rig SHALL be invocable through a registered task and SHALL NOT be pa
 #### Scenario: Dataset guarded by the default chain
 - **WHEN** the dataset is edited to drop a required case kind
 - **THEN** the L0 chain fails
+
 ### Requirement: A routing case is measured in the workspace its utterance implies
 The workspace staged for a routing measurement SHALL contain the files that case's utterance names, and SHALL NOT contain unrelated fixture files staged for other cases. An utterance naming no file SHALL be measured against a single proposal, so the workspace still resembles a user's rather than an empty directory. A measurement whose utterance names a file the suite cannot stage SHALL fail rather than run against a workspace missing it.
 
@@ -489,3 +490,30 @@ The task SHALL sit outside the model-support matrix, alongside the other check-r
 #### Scenario: One utterance asks for both
 - **WHEN** the compound task runs and the agent is asked to check a proposal and fix whatever the check reports
 - **THEN** the verdict passes only if the oracle's errors are relayed in chat and the proposal file is unchanged
+
+### Requirement: Baseline comparison arm
+Both runners SHALL support a without-skill control for single-turn tasks: the same fixture staging, user request, and verdicts, with the skill neither installed nor injected. Baseline runs SHALL be on-demand and cost-gated like every metered run, never part of the default matrix. Where baseline results exist beside with-skill results, the report SHALL show per task what the skill buys (pass-rate delta) against what it costs (token delta), SHALL flag scorers that pass in both arms as dead-assertion candidates, and SHALL flag scorers that fail in both arms as too-hard candidates. Verdict logic SHALL be identical in both arms.
+
+#### Scenario: Baseline run requested
+- **WHEN** a baseline run is invoked on a single-turn task
+- **THEN** the model receives the task's user request and files without any skill instructions, and the run is scored by the same verdicts as the with-skill run
+
+#### Scenario: Delta reported
+- **WHEN** the report finds baseline and with-skill results for the same task and model
+- **THEN** it renders the pass-rate delta beside the token delta, so a skill that buys nothing at double the tokens is visible as such
+
+#### Scenario: Assertion passes in both arms
+- **WHEN** a scorer passes with and without the skill
+- **THEN** the report names it as a dead-assertion candidate rather than counting it silently toward skill value
+
+#### Scenario: Multi-turn task requested as baseline
+- **WHEN** a baseline run is invoked on a persona-dialogue task
+- **THEN** the invocation is rejected with the reason rather than producing a meaningless control
+
+### Requirement: Duration reported beside token usage
+The support report SHALL read wall-clock duration from the run logs and present it alongside token usage, so the cost of a skill is visible in both currencies.
+
+#### Scenario: Report generated from logs
+- **WHEN** the report is regenerated from eval logs
+- **THEN** each run's duration appears beside its token usage and cost
+

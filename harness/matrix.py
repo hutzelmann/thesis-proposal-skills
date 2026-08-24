@@ -61,6 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tasks", nargs="+", help="subset of the scorable matrix set")
     parser.add_argument("--core", action="store_true", help="core (smoke) task set")
     parser.add_argument("--epochs", type=int, default=support.DEFAULT_EPOCHS)
+    parser.add_argument("--baseline", action="store_true",
+                        help="run the without-skill control arm (single-turn tasks only)")
     parser.add_argument("--yes", action="store_true", help="skip the cost confirmation")
     parser.add_argument("--estimate-only", action="store_true", help="print estimate and exit")
     parser.add_argument("--log-dir", default=DEFAULT_LOG_DIR)
@@ -96,7 +98,8 @@ def run_matrix(models, tasks, registry, args) -> list:
             n = support.epochs_for(task, m.tier, registry.tasks, args.epochs)
             by_epochs.setdefault(n, []).append(m.id)
         for n, model_ids in sorted(by_epochs.items()):
-            print(f"\n=== {task} × {len(model_ids)} models × {n} epoch(s) ===")
+            arm = " (baseline arm)" if args.baseline else ""
+            print(f"\n=== {task} × {len(model_ids)} models × {n} epoch(s){arm} ===")
             logs.extend(
                 inspect_eval(
                     f"{EVALS}@{task}",
@@ -106,6 +109,10 @@ def run_matrix(models, tasks, registry, args) -> list:
                     token_limit=TOKEN_LIMIT,
                     fail_on_error=False,
                     retry_on_error=2,
+                    # recorded in the log's task_args — how report.py tells the
+                    # arms apart; a dialogue task never reaches here (filtered
+                    # in main, and its builder takes no such parameter)
+                    task_args={"baseline": True} if args.baseline else {},
                 )
             )
     return logs
@@ -186,6 +193,11 @@ def main(argv: list[str] | None = None) -> int:
         print("no enabled models match the selection", file=sys.stderr)
         return 2
     tasks = support.select_tasks(registry, names=args.tasks, core_only=args.core)
+    if args.baseline:
+        tasks = support.select_baseline_tasks(registry, tasks, explicit=bool(args.tasks))
+        if not tasks:
+            print("no selected task has a baseline arm", file=sys.stderr)
+            return 2
     history = load_history(USAGE_HISTORY)
 
     estimate = support.estimate_cost(models, tasks, registry, args.epochs, history)

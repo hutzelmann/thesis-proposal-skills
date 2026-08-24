@@ -161,6 +161,20 @@ def lit_search_sibling() -> dict[str, str]:
     return files
 
 
+def plain_prompt(request: str) -> str:
+    """The baseline arm's prompt: identical workspace framing and request, no
+    skill instructions. Staging stays identical — `skill/` carries scorer
+    infrastructure (check script, references) the verdicts need either way;
+    what the baseline removes is the instructions, not the files."""
+    return (
+        "You are an AI agent operating in a user's proposal workspace.\n"
+        "The workspace is the `ws/` directory (work there).\n\n"
+        f"User request: {request}\n"
+        "Fulfil exactly this request — nothing beyond it. End with the chat "
+        "answer you would give the user."
+    )
+
+
 def skill_prompt(skill: str, request: str) -> str:
     text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
     return (
@@ -238,13 +252,16 @@ def verdict_scorer(name: str):
 
 def proposal_task(skill: str, fixture: str, request: str, scorers: list,
                   extra_skill_files: dict[str, str] | None = None,
-                  files: dict[str, str] | None = None) -> Task:
+                  files: dict[str, str] | None = None,
+                  baseline: bool = False) -> Task:
     """The shape every single-turn skill task shares: one sample built from a
     fixture workspace and the skill's own assets, the standard agent loop, and a
-    local sandbox. Only `scorers` and the request differ between them."""
+    local sandbox. Only `scorers` and the request differ between them.
+    `baseline` runs the without-skill control arm (testing-harness spec): same
+    staging, same request, same scorers, no skill instructions."""
     return Task(
         dataset=[Sample(
-            input=skill_prompt(skill, request),
+            input=plain_prompt(request) if baseline else skill_prompt(skill, request),
             files=files if files is not None else stage_files(fixture, skill, extra_skill_files),
         )],
         solver=agent_solver(),
@@ -303,7 +320,7 @@ async def write_l2_density(state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def write_from_seed() -> Task:
+def write_from_seed(baseline: bool = False) -> Task:
     # the skill ships its own check.py + structure.json (sync copies), so
     # standard staging serves the model and the scorer alike
     return proposal_task(
@@ -311,6 +328,7 @@ def write_from_seed() -> Task:
         "Please turn my idea notes into a full proposal draft. The file is "
         f"ws/{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
         [write_l1(), write_l2_rq_quality(), write_l2_density()],
+        baseline=baseline,
     )
 
 
@@ -352,11 +370,12 @@ async def no_spurious_offer(state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def review_fixture() -> Task:
+def review_fixture(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "f05-slr-interviews",
         f"Please review my proposal ws/{F05_PROPOSAL} — is it ready for my supervisor?",
         [review_l1(), review_l2_quality(), no_spurious_offer()],
+        baseline=baseline,
     )
 
 
@@ -390,11 +409,12 @@ async def review_hollow_l2(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def review_hollow() -> Task:
+def review_hollow(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "f22-hollow-generic",
         f"Please review my proposal ws/{F22_PROPOSAL} — is it ready for my supervisor?",
         [review_hollow_l1(), review_hollow_l2(), no_spurious_offer()],
+        baseline=baseline,
     )
 
 
@@ -429,11 +449,12 @@ async def title_l2_alarm(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def title_alarm() -> Task:
+def title_alarm(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "f21-bad-title",
         f"Please review my proposal ws/{F21_PROPOSAL} — is it ready for my supervisor?",
         [title_l1(), title_l2_alarm()],
+        baseline=baseline,
     )
 
 
@@ -685,11 +706,12 @@ async def check_report_l1(state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def check_report() -> Task:
+def check_report(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-check", "f15-format-broken",
         f"Please check my proposal ws/{F15_PROPOSAL}.",
         [check_report_l1()],
+        baseline=baseline,
     )
 
 
@@ -704,13 +726,14 @@ async def customize_l1(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def customize_override() -> Task:
+def customize_override(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-customize", "f00-clean-en",
         "My supervisor requires a detailed work plan with milestones in the "
         "proposal, not just a one-line timeline, and at least 8 references. "
         "Please adjust the rules for this workspace.",
         [customize_l1()],
+        baseline=baseline,
     )
 
 
@@ -726,11 +749,12 @@ async def publish_l1(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def publish_build() -> Task:
+def publish_build(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-publish", "f00-clean-en",
         "Please build a PDF of my proposal.",
         [publish_l1()],
+        baseline=baseline,
     )
 
 
@@ -748,11 +772,12 @@ async def import_l1(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def import_messy() -> Task:
+def import_messy(baseline: bool = False) -> Task:
     # no fixture workspace: the source arrives pasted in the request and the
     # skill creates the proposal, choosing its own content-derived filename
     return proposal_task(
         "proposal-import", "", MESSY_REQUEST, [import_l1()],
+        baseline=baseline,
         files={
             "ws/README-placeholder.txt": "workspace",
             "skill/scripts/check.py": str(
@@ -785,11 +810,12 @@ async def reverse_l1(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def reverse_from_harvest() -> Task:
+def reverse_from_harvest(baseline: bool = False) -> Task:
     # the harvest record is the seam: it stands in for the thesis, so the write
     # step is exercised without a hundred-page copyrighted document in the repo
     return proposal_task(
         "proposal-reverse", "w06-reverse-harvest", REVERSE_REQUEST, [reverse_l1()],
+        baseline=baseline,
     )
 
 
@@ -804,12 +830,13 @@ async def litsearch_l1(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def litsearch_expand() -> Task:
+def litsearch_expand(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-lit-search", "w03-snowball-seed",
         f"Please find about three more relevant sources for ws/{W03_PROPOSAL} "
         "and add them to my references.",
         [litsearch_l1()],
+        baseline=baseline,
     )
 
 
@@ -840,18 +867,19 @@ async def review_de_l2(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def review_fixture_de() -> Task:
+def review_fixture_de(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "f04-dsr-vendor-heavy",
         f"Bitte begutachte mein Exposé ws/{F04_PROPOSAL} — ist es bereit für die Abgabe?",
         [review_de_l1(), review_de_l2()],
+        baseline=baseline,
     )
 
 
 # ---------- task: check report, compound check-and-fix request -----------------
 
 @task
-def check_report_compound() -> Task:
+def check_report_compound(baseline: bool = False) -> Task:
     """The phrasing that broke the read-only mandate in adversarial probing
     (2026-08-13): one request asking for the check and the fixes together, on a
     fixture whose errors are genuinely fixable. The mandate scopes editing to a
@@ -861,13 +889,14 @@ def check_report_compound() -> Task:
         f"Please run the check on ws/{F15_PROPOSAL} and fix whatever it "
         "complains about, I need to send this today.",
         [check_report_l1()],
+        baseline=baseline,
     )
 
 
 # ---------- task: check report, hardened non-interactive variant ---------------
 
 @task
-def check_report_hardened() -> Task:
+def check_report_hardened(baseline: bool = False) -> Task:
     """Non-interactive framing: the SKILL.md read-only guard (digest re-run
     comparison) must keep the proposal byte-identical even in an autonomous run."""
     return proposal_task(
@@ -875,6 +904,7 @@ def check_report_hardened() -> Task:
         "Automated nightly quality gate — no user is present, this run is "
         f"non-interactive. Check ws/{F15_PROPOSAL} and output the report.",
         [check_report_l1()],
+        baseline=baseline,
     )
 
 
@@ -898,7 +928,7 @@ async def troubleshoot_model_rung_l1(state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def troubleshoot_model_rung() -> Task:
+def troubleshoot_model_rung(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-troubleshoot", "f05-slr-interviews",
         "The write skill produced a draft that ignored half of what I told it. I was "
@@ -906,6 +936,7 @@ def troubleshoot_model_rung() -> Task:
         "`npx skills add hutzelmann/thesis-proposal-skills` and it still happens. "
         "Is this a bug I should report?",
         [troubleshoot_model_rung_l1(), no_spurious_offer()],
+        baseline=baseline,
     )
 
 
@@ -966,7 +997,7 @@ async def supervise_l1_pointers(_state: TaskState) -> tuple[bool, str]:
 
 
 @task
-def supervise_feedback() -> Task:
+def supervise_feedback(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-supervise", "s01-raw-email",
         f"A student emailed me this thesis idea — I saved it as ws/{S01_SUBMISSION}. "
@@ -975,6 +1006,7 @@ def supervise_feedback() -> Task:
         "needs-revision path.",
         [supervise_l1_letter(), supervise_l1_points(), supervise_l1_tier(),
          supervise_l1_no_personal_data(), supervise_l1_pointers()],
+        baseline=baseline,
         extra_skill_files={
             f"ws/{S01_SUBMISSION}": str(FIXTURES / "s01-raw-email" / S01_SUBMISSION),
         },

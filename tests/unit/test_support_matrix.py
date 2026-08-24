@@ -37,6 +37,7 @@ enabled = false
 matrix = ["alpha", "beta", "dialog"]
 core = ["alpha"]
 heavy = ["dialog"]
+dialogue = ["dialog"]
 excluded_l1 = ["beta"]
 excluded = ["netty"]
 
@@ -433,3 +434,81 @@ def test_matrix_estimate_only_exits_clean(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "inspect_ai", object())
     assert matrix.main(["--estimate-only", "--tier", "cheap"]) == 0
     assert "TOTAL" in capsys.readouterr().out
+
+
+# ---------- baseline arm (testing-harness spec: Baseline comparison arm) ------
+
+
+def test_dialogue_tasks_parsed(registry):
+    assert registry.tasks.dialogue == ("dialog",)
+
+
+def test_select_baseline_tasks_drops_dialogue_from_a_default_selection(registry):
+    assert support.select_baseline_tasks(registry, ["alpha", "beta", "dialog"]) == [
+        "alpha", "beta",
+    ]
+
+
+def test_select_baseline_tasks_rejects_an_explicitly_named_dialogue_task(registry):
+    with pytest.raises(ValueError, match="no baseline arm"):
+        support.select_baseline_tasks(registry, ["alpha", "dialog"], explicit=True)
+
+
+def _arm(passes, scorer_passes, tokens, duration=None):
+    return support.ArmStats(
+        passes=tuple(passes),
+        scorer_passes={k: tuple(v) for k, v in scorer_passes.items()},
+        tokens=tokens,
+        duration_s=duration,
+    )
+
+
+def test_baseline_delta_shows_what_the_skill_buys_and_costs(registry):
+    pairs = {
+        ("openrouter/lab/cheapo-1", "alpha"): (
+            _arm([True, True], {"alpha_l1": [True, True]}, 5000, 60.0),
+            _arm([False, False], {"alpha_l1": [False, False]}, 2000, 30.0),
+        )
+    }
+    text = support.render_baseline_delta(pairs, registry.tasks.skills)
+    assert "1.00 / 0.00 / +1.00" in text
+    assert "5000 / 2000 / +3000" in text
+    assert "60 / 30" in text
+
+
+def test_baseline_delta_flags_dead_and_too_hard_assertions(registry):
+    pairs = {
+        ("openrouter/lab/cheapo-1", "alpha"): (
+            _arm([True], {"dead_l1": [True], "hard_l2": [False], "live_l1": [True]}, 1, 1.0),
+            _arm([False], {"dead_l1": [True], "hard_l2": [False], "live_l1": [False]}, 1, 1.0),
+        )
+    }
+    text = support.render_baseline_delta(pairs, registry.tasks.skills)
+    assert "`dead_l1` passes in both arms" in text
+    assert "`hard_l2` fails in both arms" in text
+    assert "live_l1" not in text.split("Assertion flags")[1]
+
+
+def test_baseline_delta_is_empty_without_pairs():
+    assert support.render_baseline_delta({}) == ""
+
+
+def test_duration_seconds_parses_iso_span():
+    assert support.duration_seconds(
+        "2026-08-24T10:00:00+00:00", "2026-08-24T10:02:30+00:00"
+    ) == 150.0
+    assert support.duration_seconds(None, "2026-08-24T10:00:00+00:00") is None
+    assert support.duration_seconds("not-a-date", "also-not") is None
+
+
+def test_render_grid_runtime_column_only_when_durations_given(registry):
+    models = support.select_models(registry)
+    cells = {("openrouter/lab/cheapo-1", "alpha"): support.Cell("solid", 3, 3)}
+    without = support.render_grid(models, ["alpha"], cells, {}, "2026-08-24")
+    with_timing = support.render_grid(
+        models, ["alpha"], cells, {}, "2026-08-24",
+        durations={"openrouter/lab/cheapo-1": 92.4},
+    )
+    assert "runtime" not in without
+    assert "runtime" in with_timing
+    assert "92s" in with_timing

@@ -121,6 +121,13 @@ extended = [
 ]
 # Smoke subset: cheap, short, high signal.
 core = ["write_from_seed", "import_messy", "customize_override"]
+# Persona-driven dialogue tasks: no baseline arm exists (a without-skill control
+# of a skill-shaped conversation measures nothing). --baseline drops or rejects
+# these; their builders take no `baseline` parameter.
+dialogue = [
+  "ideate_longrun", "ideate_stonewall", "ideate_probing", "ideate_noidea",
+  "ideate_outofscope",
+]
 # Heavy dialogue tasks: reduced to 1 epoch on frontier-tier models.
 heavy = ["ideate_longrun"]
 # Tasks whose *_l1* scorers are environment-fidelity probes (red-by-design on

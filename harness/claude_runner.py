@@ -139,7 +139,7 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
-def stage(scenario: dict, ws: Path) -> None:
+def stage(scenario: dict, ws: Path, install_skill: bool = True) -> None:
     if scenario.get("fixture"):
         fixture = FIXTURES / scenario["fixture"]
         for f in fixture.iterdir():
@@ -148,6 +148,8 @@ def stage(scenario: dict, ws: Path) -> None:
                 shutil.copy(f, ws / f.name)
             if f.is_dir() and f.name == "img":
                 shutil.copytree(f, ws / "img")
+    if not install_skill:  # baseline arm: same workspace, no skill discovered
+        return
     skill_home = ws / ".claude" / "skills" / scenario["skill"]
     shutil.copytree(SKILLS / scenario["skill"], skill_home)
     # Sibling skills the scenario relies on (e.g. ideate's lit-search fallback).
@@ -243,13 +245,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default="haiku")
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep", action="store_true", help="keep the temp workspace")
+    parser.add_argument("--no-skill", action="store_true",
+                        help="baseline arm: same staging and request, skill not installed")
     args = parser.parse_args(argv)
     scenario = SCENARIOS[args.scenario]
 
     ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
     server = None
     try:
-        stage(scenario, ws)
+        stage(scenario, ws, install_skill=not args.no_skill)
         request = scenario["request"]
         if scenario.get("serve"):
             handler = partial(QuietHandler, directory=str(FIXTURES / scenario["serve"]))
@@ -261,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         passed, why = verdict(args.scenario, scenario, ws, chat)
         print(json.dumps({
             "scenario": args.scenario, "model": args.model,
+            "arm": "baseline" if args.no_skill else "with-skill",
             "l1": "PASS" if passed else "FAIL", "why": why,
         }, indent=2))
         print("\n--- chat tail ---\n" + chat[-1200:])
