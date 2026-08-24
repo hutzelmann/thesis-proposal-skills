@@ -15,6 +15,7 @@
         "ideate_longrun": "untested",
         "import_messy": "solid",
         "publish_build": "solid",
+        "reverse_from_harvest": "untested",
         "review_fixture": "fail",
         "review_fixture_de": "solid",
         "review_hollow": "fail",
@@ -26,6 +27,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "solid",
         "proposal-publish": "solid",
+        "proposal-reverse": "untested",
         "proposal-review": "fail",
         "proposal-write": "fail"
       }
@@ -38,6 +40,7 @@
         "ideate_longrun": "untested",
         "import_messy": "untested",
         "publish_build": "untested",
+        "reverse_from_harvest": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
         "review_hollow": "untested",
@@ -49,6 +52,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "untested",
         "proposal-publish": "untested",
+        "proposal-reverse": "untested",
         "proposal-review": "untested",
         "proposal-write": "untested"
       }
@@ -61,6 +65,7 @@
         "ideate_longrun": "untested",
         "import_messy": "untested",
         "publish_build": "untested",
+        "reverse_from_harvest": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
         "review_hollow": "untested",
@@ -72,6 +77,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "untested",
         "proposal-publish": "untested",
+        "proposal-reverse": "untested",
         "proposal-review": "untested",
         "proposal-write": "untested"
       }
@@ -84,6 +90,7 @@
         "ideate_longrun": "untested",
         "import_messy": "untested",
         "publish_build": "untested",
+        "reverse_from_harvest": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
         "review_hollow": "untested",
@@ -95,6 +102,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "untested",
         "proposal-publish": "untested",
+        "proposal-reverse": "untested",
         "proposal-review": "untested",
         "proposal-write": "solid"
       }
@@ -107,6 +115,7 @@
         "ideate_longrun": "untested",
         "import_messy": "untested",
         "publish_build": "untested",
+        "reverse_from_harvest": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
         "review_hollow": "untested",
@@ -118,6 +127,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "untested",
         "proposal-publish": "untested",
+        "proposal-reverse": "untested",
         "proposal-review": "untested",
         "proposal-write": "solid"
       }
@@ -130,6 +140,7 @@
         "ideate_longrun": "untested",
         "import_messy": "untested",
         "publish_build": "untested",
+        "reverse_from_harvest": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
         "review_hollow": "untested",
@@ -141,6 +152,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "untested",
         "proposal-publish": "untested",
+        "proposal-reverse": "untested",
         "proposal-review": "untested",
         "proposal-write": "untested"
       }
@@ -153,6 +165,7 @@
         "ideate_longrun": "untested",
         "import_messy": "untested",
         "publish_build": "untested",
+        "reverse_from_harvest": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
         "review_hollow": "untested",
@@ -164,6 +177,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "untested",
         "proposal-publish": "untested",
+        "proposal-reverse": "untested",
         "proposal-review": "untested",
         "proposal-write": "untested"
       }
@@ -176,6 +190,7 @@
         "ideate_longrun": "untested",
         "import_messy": "untested",
         "publish_build": "untested",
+        "reverse_from_harvest": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
         "review_hollow": "untested",
@@ -187,6 +202,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "untested",
         "proposal-publish": "untested",
+        "proposal-reverse": "untested",
         "proposal-review": "untested",
         "proposal-write": "untested"
       }
@@ -199,6 +215,7 @@
         "ideate_longrun": "untested",
         "import_messy": "untested",
         "publish_build": "untested",
+        "reverse_from_harvest": "untested",
         "review_fixture": "untested",
         "review_fixture_de": "untested",
         "review_hollow": "untested",
@@ -210,6 +227,7 @@
         "proposal-ideate": "untested",
         "proposal-import": "untested",
         "proposal-publish": "untested",
+        "proposal-reverse": "untested",
         "proposal-review": "untested",
         "proposal-write": "untested"
       }

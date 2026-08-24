@@ -138,9 +138,9 @@ Model support, measured by the metered eval matrix on **2026-08-10** (3 epochs p
 | `openai/gpt-5.6-luna` | ❔ untested | the eval harness cannot drive this model (Azure strict tool schemas reject Inspect's tools) — untested is a harness limitation, not a quality signal |
 | `openai/gpt-5.6-terra` | ❔ untested |  |
 | `openai/gpt-5.6-sol` | ❔ untested |  |
-| `deepseek/deepseek-v4-pro` | 🟡 partial | untested on 8 task(s); tested cells solid |
+| `deepseek/deepseek-v4-pro` | 🟡 partial | untested on 9 task(s); tested cells solid |
 | `qwen/qwen3.8-max` | ❔ untested |  |
-| `moonshotai/kimi-k3` | 🟡 partial | untested on 8 task(s); tested cells solid |
+| `moonshotai/kimi-k3` | 🟡 partial | untested on 9 task(s); tested cells solid |
 <!-- model-support:end -->
 
 ## For supervisors
