@@ -46,7 +46,7 @@ EXPECTED_SCORERS = {
     "check_report_hardened": ["check_report_l1"],
     "troubleshoot_model_rung": ["troubleshoot_model_rung_l1", "no_spurious_offer"],
     "supervise_feedback": [
-        "supervise_l1_letter", "supervise_l1_points", "supervise_l1_tier",
+        "supervise_l1_feedback", "supervise_l1_points", "supervise_l1_tier",
         "supervise_l1_no_personal_data", "supervise_l1_pointers",
     ],
 }

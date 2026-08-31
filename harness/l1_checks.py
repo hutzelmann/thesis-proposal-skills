@@ -603,7 +603,7 @@ def verdict_publish(listing: str) -> tuple[bool, str]:
 
 
 # "viable thesis core" / "tragfähiger thesenkern" without the leading no/kein:
-# real letters negate naturally ("does not yet have a viable thesis core"), and
+# real feedback negates naturally ("does not yet have a viable thesis core"), and
 # the assertion is that a tier is stated, not which wording carries the negation.
 # "idea stage" / "ideenphase" is the student-facing rendering of the bottom
 # tier (skill-supervise spec); the blunt phrases stay accepted alongside it.
@@ -614,33 +614,34 @@ SUPERVISE_TIER_PATTERN = re.compile(
 )
 
 
-def verdict_supervise_letter(letter: str | None) -> tuple[bool, str]:
-    """supervise: a letter draft exists as the slug-named letter file and is
-    not empty."""
-    if not letter or not letter.strip():
-        return False, "no letter draft found"
-    return True, "letter present"
+def verdict_supervise_feedback(feedback: str | None) -> tuple[bool, str]:
+    """supervise: a feedback draft exists as the slug-named feedback file and
+    is not empty."""
+    if not feedback or not feedback.strip():
+        return False, "no feedback draft found"
+    return True, "feedback present"
 
 
-def verdict_supervise_points(letter: str | None) -> tuple[bool, str]:
-    """supervise: the letter carries a numbered points list of at most five
+def verdict_supervise_points(feedback: str | None) -> tuple[bool, str]:
+    """supervise: the feedback carries a numbered points list of at most five
     entries (skill-supervise spec: curated to pressing points)."""
-    items = re.findall(r"^\s*\d+[.)]\s", letter or "", re.MULTILINE)
+    items = re.findall(r"^\s*\d+[.)]\s", feedback or "", re.MULTILINE)
     if not items:
-        return False, "no numbered points in the letter"
+        return False, "no numbered points in the feedback"
     if len(items) > 5:
         return False, f"{len(items)} numbered points — at most five survive curation"
     return True, f"{len(items)} curated points"
 
 
-def verdict_supervise_tier(letter: str | None) -> tuple[bool, str]:
-    """supervise: the letter opens with one of the three verdict tiers, English
-    or German, case-insensitive like every prose-relaying verdict. Word-bounded
-    where the tier is a single word ("already" must not count as "ready")."""
-    head = " ".join((letter or "").splitlines()[:5]).lower()
+def verdict_supervise_tier(feedback: str | None) -> tuple[bool, str]:
+    """supervise: the feedback opens with one of the three verdict tiers,
+    English or German, case-insensitive like every prose-relaying verdict.
+    Word-bounded where the tier is a single word ("already" must not count as
+    "ready")."""
+    head = " ".join((feedback or "").splitlines()[:5]).lower()
     hits = sorted(set(SUPERVISE_TIER_PATTERN.findall(head)), key=len, reverse=True)
     if not hits:
-        return False, "no verdict tier in the letter's opening lines"
+        return False, "no verdict tier in the feedback's opening lines"
     # longest first: an incidental "ready" ("before it is ready to write")
     # must not mask the actual tier phrase sitting beside it
     return True, "verdict tier: " + ", ".join(hits)
@@ -649,10 +650,10 @@ def verdict_supervise_tier(letter: str | None) -> tuple[bool, str]:
 def verdict_supervise_no_personal_data(artifacts: dict[str, str],
                                        forbidden: tuple[str, ...]) -> tuple[bool, str]:
     """supervise: no personal-data token from the submission survives anywhere
-    in the student-facing letter (skill-supervise spec: intake strips
+    in the student-facing feedback (skill-supervise spec: intake strips
     identity). `artifacts` maps file names to contents."""
     if not artifacts:
-        return False, "no student-facing letter to scan"
+        return False, "no student-facing feedback to scan"
     leaks = [(name, token) for name, text in sorted(artifacts.items())
              for token in forbidden if token.lower() in text.lower()]
     if leaks:
@@ -661,34 +662,35 @@ def verdict_supervise_no_personal_data(artifacts: dict[str, str],
     return True, f"{len(artifacts)} file(s) free of the submission's personal data"
 
 
-def verdict_supervise_pointers(letter: str | None,
+def verdict_supervise_pointers(feedback: str | None,
                                installed: tuple[str, ...]) -> tuple[bool, str]:
-    """supervise: the letter steers somewhere real — at least one skill named,
-    and every `proposal-*` name it mentions exists in the installed set."""
+    """supervise: the feedback steers somewhere real — at least one skill
+    named, and every `proposal-*` name it mentions exists in the installed
+    set."""
     # the lookbehind keeps repo/install names out: `thesis-proposal-skills` in
     # the getting-started blurb must not read as a skill named proposal-skills
-    named = set(re.findall(r"(?<![\w-])proposal-[a-z][a-z-]*[a-z]", letter or ""))
+    named = set(re.findall(r"(?<![\w-])proposal-[a-z][a-z-]*[a-z]", feedback or ""))
     if not named:
-        return False, "letter names no skill at all"
+        return False, "feedback names no skill at all"
     unknown = sorted(named - set(installed))
     if unknown:
-        return False, "letter names unknown skills: " + ", ".join(unknown)
+        return False, "feedback names unknown skills: " + ", ".join(unknown)
     return True, "pointers resolve: " + ", ".join(sorted(named))
 
 
-def verdict_supervise_letter_contract(artifacts: dict[str, str], forbidden: tuple[str, ...],
-                                      installed: tuple[str, ...]) -> tuple[bool, str]:
-    """Aggregate of the five supervise letter verdicts for single-verdict
+def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tuple[str, ...],
+                                        installed: tuple[str, ...]) -> tuple[bool, str]:
+    """Aggregate of the five supervise feedback verdicts for single-verdict
     runners (the dev runner); the Inspect task scores them separately. Fails on
     the first missing piece but reports every failed aspect."""
-    letter = next((text for name, text in sorted(artifacts.items())
-                   if name.endswith("letter.md")), None)
+    feedback = next((text for name, text in sorted(artifacts.items())
+                     if name.endswith("feedback.md")), None)
     results = [
-        verdict_supervise_letter(letter),
-        verdict_supervise_points(letter),
-        verdict_supervise_tier(letter),
+        verdict_supervise_feedback(feedback),
+        verdict_supervise_points(feedback),
+        verdict_supervise_tier(feedback),
         verdict_supervise_no_personal_data(artifacts, forbidden),
-        verdict_supervise_pointers(letter, installed),
+        verdict_supervise_pointers(feedback, installed),
     ]
     failed = [why for ok, why in results if not ok]
     if failed:

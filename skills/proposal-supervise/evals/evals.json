@@ -5,17 +5,17 @@
     {
       "id": 1,
       "task": "supervise_feedback",
-      "prompt": "A student emailed me this thesis idea — I saved it as ws/submission-email.txt. Prepare my feedback: the letter draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path.",
+      "prompt": "A student emailed me this thesis idea — I saved it as ws/submission-email.txt. Prepare my feedback: the draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path.",
       "files": [
         "ws/submission-email.txt"
       ],
-      "expected_output": "A paste-ready feedback letter: verdict tier stated up front, at most five curated points, skill pointers that resolve, and none of the submission's personal data.",
+      "expected_output": "Paste-ready feedback: verdict tier stated up front, at most five curated points, skill pointers that resolve, and none of the submission's personal data.",
       "assertions": [
-        "supervise: a letter draft exists as the slug-named letter file and is not empty.",
-        "supervise: the letter carries a numbered points list of at most five entries (skill-supervise spec: curated to pressing points).",
-        "supervise: the letter opens with one of the three verdict tiers, English or German, case-insensitive like every prose-relaying verdict. Word-bounded where the tier is a single word (\"already\" must not count as \"ready\").",
-        "supervise: no personal-data token from the submission survives anywhere in the student-facing letter (skill-supervise spec: intake strips identity). `artifacts` maps file names to contents.",
-        "supervise: the letter steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set."
+        "supervise: a feedback draft exists as the slug-named feedback file and is not empty.",
+        "supervise: the feedback carries a numbered points list of at most five entries (skill-supervise spec: curated to pressing points).",
+        "supervise: the feedback opens with one of the three verdict tiers, English or German, case-insensitive like every prose-relaying verdict. Word-bounded where the tier is a single word (\"already\" must not count as \"ready\").",
+        "supervise: no personal-data token from the submission survives anywhere in the student-facing feedback (skill-supervise spec: intake strips identity). `artifacts` maps file names to contents.",
+        "supervise: the feedback steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set."
       ]
     }
   ]

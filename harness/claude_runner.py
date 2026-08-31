@@ -39,7 +39,7 @@ from l1_checks import (
     verdict_ideate_scoped,
     verdict_import,
     verdict_review,
-    verdict_supervise_letter_contract,
+    verdict_supervise_feedback_contract,
 )
 from sources import MESSY_REQUEST
 
@@ -86,18 +86,18 @@ SCENARIOS = {
         "request": MESSY_REQUEST,
         "produces": True,
     },
-    # supervisor-side: raw email fixture (.txt) to a paste-ready letter; import
+    # supervisor-side: raw email fixture (.txt) to paste-ready feedback; import
     # is installed as a sibling, matching a professor's whole-set install
     "supervise_feedback": {
         "fixture": "s01-raw-email",
         "skill": "proposal-supervise",
         "siblings": ("proposal-import",),
-        "letter": True,
+        "feedback": True,
         # the closing sentence pre-answers the borderline deferral: a headless
         # single-turn run has no professor to ask, so it exercises the
         # needs-revision default instead of stalling
         "request": "A student emailed me this thesis idea — I saved it as "
-                   "submission-email.txt. Prepare my feedback: the letter draft "
+                   "submission-email.txt. Prepare my feedback: the draft "
                    "I can send back. If the verdict turns out "
                    "borderline, do not ask me — take the needs-revision path.",
     },
@@ -196,16 +196,17 @@ INSTALLED_SKILLS = tuple(sorted(
 ))
 
 
-def letter_files(ws: Path) -> dict[str, str]:
+def feedback_files(ws: Path) -> dict[str, str]:
     return {
         f.name: f.read_text(encoding="utf-8")
-        for f in sorted(ws.glob("*-letter.md")) if f.is_file()
+        for f in sorted(ws.glob("*-feedback.md")) if f.is_file()
     }
 
 
 def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
-    if scenario.get("letter"):
-        return verdict_supervise_letter_contract(letter_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS)
+    if scenario.get("feedback"):
+        return verdict_supervise_feedback_contract(
+            feedback_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS)
     if name == "ideate_scoped":
         files = workspace_markdown(ws)
         produced, where = select_draft(files)

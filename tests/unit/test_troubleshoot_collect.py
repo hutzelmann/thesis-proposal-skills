@@ -212,18 +212,18 @@ def test_notes_log_extracts_only_the_log_section(workspace):
 
 
 def test_sibling_artifacts_inventoried_at_hash_level(workspace):
-    """Supervise session: review file and letter file appear with sizes and
+    """Supervise session: review file and feedback file appear with sizes and
     hashes under placeholder names, and none of their text (skill-troubleshoot
     spec: companion artifacts inventoried at hash level)."""
-    letter = "Verdict: idea stage. 1. Sharpen the question — proposal-ideate."
+    feedback = "Verdict: idea stage. 1. Sharpen the question — proposal-ideate."
     (workspace / "quantum-basket-weaving-review.md").write_text(
         "no viable thesis core\n1. secret finding text", encoding="utf-8")
-    (workspace / "quantum-basket-weaving-letter.md").write_text(letter, encoding="utf-8")
+    (workspace / "quantum-basket-weaving-feedback.md").write_text(feedback, encoding="utf-8")
 
     lines = sibling_artifacts(workspace / "quantum-basket-weaving.md")
     joined = "\n".join(lines)
     assert "<proposal>-review.md" in joined
-    assert "<proposal>-letter.md" in joined
+    assert "<proposal>-feedback.md" in joined
     assert "quantum-basket-weaving" not in joined
     assert "secret finding text" not in joined
     assert "Sharpen the question" not in joined
@@ -236,12 +236,12 @@ def test_sibling_artifacts_absent_in_student_workspace(workspace):
 
 
 def test_full_level_report_still_excludes_companion_text(workspace):
-    (workspace / "quantum-basket-weaving-letter.md").write_text(
-        "Verdict: idea stage. Unique-letter-phrase.", encoding="utf-8")
+    (workspace / "quantum-basket-weaving-feedback.md").write_text(
+        "Verdict: idea stage. Unique-feedback-phrase.", encoding="utf-8")
     assert run(["--level", "full"]) == 0
     report = (workspace / "bug-report" / "report.md").read_text(encoding="utf-8")
-    assert "<proposal>-letter.md" in report
-    assert "Unique-letter-phrase" not in report
+    assert "<proposal>-feedback.md" in report
+    assert "Unique-feedback-phrase" not in report
 
 
 BUILD_SCRIPT = "# faculty-template-path-nobody-else-should-see\nprint('built')\n"

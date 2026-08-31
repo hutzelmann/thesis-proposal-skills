@@ -1,23 +1,14 @@
-# skill-supervise Specification
+# skill-supervise delta
 
-## Purpose
-Supervisor-side feedback on raw student submissions: normalize whatever arrives, curate the most pressing findings into paste-ready draft feedback, and steer the student into the proposal toolchain.
-## Requirements
-### Requirement: Raw submission intake and normalization
+## RENAMED Requirements
 
-The skill SHALL accept a raw student submission in any form it is handed — PDF, Word export, pasted text, or an already-standard proposal file — and SHALL normalize non-standard input to the standard single-file proposal format with the same guarantees the import skill gives: personal data stripped, gaps marked, references carried over. The normalized file SHALL be named by an idea slug and placed in the professor's workspace beside their other proposals. The skill SHALL NOT build a student registry, SHALL NOT record student identity in any artifact it writes, and SHALL NOT manage artifact lifecycle beyond the single run — retention and deletion stay manual.
+- FROM: `### Requirement: Student-facing letter with disclosure and steering`
+- TO: `### Requirement: Student-facing feedback with disclosure and steering`
 
-#### Scenario: Pasted email fragment
-- **WHEN** the professor hands the skill half a page of pasted email text describing a thesis idea
-- **THEN** the skill produces a slug-named standard-format proposal file with gaps marked, and proceeds to feedback
+- FROM: `### Requirement: Draft-only delivery and letter separation`
+- TO: `### Requirement: Draft-only delivery and feedback separation`
 
-#### Scenario: PDF submission
-- **WHEN** the professor points the skill at a submitted PDF
-- **THEN** the skill runs the import pipeline, strips personal data, and continues from the resulting standard-format file
-
-#### Scenario: No identity professor-side
-- **WHEN** the submission carries the student's name, matriculation number, or contact data
-- **THEN** no artifact the skill writes contains that data — the idea file is identified by slug only
+## MODIFIED Requirements
 
 ### Requirement: Findings reused from check and review, curated to pressing points
 

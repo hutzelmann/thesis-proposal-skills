@@ -48,7 +48,7 @@ from l1_checks import (
     verdict_review,
     verdict_review_localized,
     verdict_seed,
-    verdict_supervise_letter,
+    verdict_supervise_feedback,
     verdict_supervise_no_personal_data,
     verdict_supervise_pointers,
     verdict_supervise_points,
@@ -950,17 +950,17 @@ def troubleshoot_model_rung(baseline: bool = False) -> Task:
 # fixture-wide "every proposal md builds / has an oracle" invariants and is
 # staged explicitly instead of via the .md glob
 S01_SUBMISSION = "submission-email.txt"
-# the fixture's fake identity — none of it may reach the student-facing letter
+# the fixture's fake identity — none of it may reach the student-facing feedback
 S01_FORBIDDEN = ("Musterfrau", "00000000", "erika.musterfrau@example.org", "Musterstraße")
 INSTALLED_SKILLS = tuple(sorted(
     d.name for d in SKILLS.iterdir() if d.is_dir() and d.name.startswith("proposal-")
 ))
 
 
-async def supervise_letter_files() -> dict[str, str]:
-    """The `<slug>-letter.md` draft(s) the skill wrote, keyed by file name."""
+async def supervise_feedback_files() -> dict[str, str]:
+    """The `<slug>-feedback.md` draft(s) the skill wrote, keyed by file name."""
     listing = await sandbox().exec(
-        ["bash", "-c", "ls ws/*-letter.md 2>/dev/null"], timeout=10)
+        ["bash", "-c", "ls ws/*-feedback.md 2>/dev/null"], timeout=10)
     files = {}
     for path in listing.stdout.splitlines():
         name = path.strip().removeprefix("ws/")
@@ -970,34 +970,34 @@ async def supervise_letter_files() -> dict[str, str]:
     return files
 
 
-async def supervise_letter() -> str | None:
-    files = await supervise_letter_files()
-    return next((text for name, text in files.items() if name.endswith("letter.md")), None)
+async def supervise_feedback_text() -> str | None:
+    files = await supervise_feedback_files()
+    return next((text for name, text in files.items() if name.endswith("feedback.md")), None)
 
 
-@verdict_scorer("supervise_l1_letter")
-async def supervise_l1_letter(_state: TaskState) -> tuple[bool, str]:
-    return verdict_supervise_letter(await supervise_letter())
+@verdict_scorer("supervise_l1_feedback")
+async def supervise_l1_feedback(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_feedback(await supervise_feedback_text())
 
 
 @verdict_scorer("supervise_l1_points")
 async def supervise_l1_points(_state: TaskState) -> tuple[bool, str]:
-    return verdict_supervise_points(await supervise_letter())
+    return verdict_supervise_points(await supervise_feedback_text())
 
 
 @verdict_scorer("supervise_l1_tier")
 async def supervise_l1_tier(_state: TaskState) -> tuple[bool, str]:
-    return verdict_supervise_tier(await supervise_letter())
+    return verdict_supervise_tier(await supervise_feedback_text())
 
 
 @verdict_scorer("supervise_l1_no_personal_data")
 async def supervise_l1_no_personal_data(_state: TaskState) -> tuple[bool, str]:
-    return verdict_supervise_no_personal_data(await supervise_letter_files(), S01_FORBIDDEN)
+    return verdict_supervise_no_personal_data(await supervise_feedback_files(), S01_FORBIDDEN)
 
 
 @verdict_scorer("supervise_l1_pointers")
 async def supervise_l1_pointers(_state: TaskState) -> tuple[bool, str]:
-    return verdict_supervise_pointers(await supervise_letter(), INSTALLED_SKILLS)
+    return verdict_supervise_pointers(await supervise_feedback_text(), INSTALLED_SKILLS)
 
 
 @task
@@ -1005,10 +1005,10 @@ def supervise_feedback(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-supervise", "s01-raw-email",
         f"A student emailed me this thesis idea — I saved it as ws/{S01_SUBMISSION}. "
-        "Prepare my feedback: the letter draft I can send back. "
+        "Prepare my feedback: the draft I can send back. "
         "If the verdict turns out borderline, do not ask me — take the "
         "needs-revision path.",
-        [supervise_l1_letter(), supervise_l1_points(), supervise_l1_tier(),
+        [supervise_l1_feedback(), supervise_l1_points(), supervise_l1_tier(),
          supervise_l1_no_personal_data(), supervise_l1_pointers()],
         baseline=baseline,
         extra_skill_files={

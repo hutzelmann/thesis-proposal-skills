@@ -1,6 +1,6 @@
-# Getting-started blurb for the feedback letter
+# Getting-started blurb for the feedback
 
-Quoted verbatim into every letter, in the section matching the letter's language. Keep the two sections translations of each other; the letter carries exactly one of them. One sentence per language: a pointer to the repository and the note that its guide assumes no prior AI-assistant experience — no assistant names, no install commands, no prescribed next step.
+Quoted verbatim into every feedback draft, in the section matching its language. Keep the two sections translations of each other; the feedback carries exactly one of them. One sentence per language: a pointer to the repository and the note that its guide assumes no prior AI-assistant experience — no assistant names, no install commands, no prescribed next step.
 
 ## English
 

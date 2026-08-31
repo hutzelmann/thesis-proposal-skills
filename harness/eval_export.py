@@ -112,7 +112,7 @@ EXPECTED_OUTPUTS = {
         "bug report assembled."
     ),
     "supervise_feedback": (
-        "A paste-ready feedback letter: verdict tier stated up front, at "
+        "Paste-ready feedback: verdict tier stated up front, at "
         "most five curated points, skill pointers that resolve, and none of the "
         "submission's personal data."
     ),
@@ -145,7 +145,7 @@ def _l1_assertions():
         "reverse_l1": c.verdict_reverse,
         "litsearch_l1": c.verdict_litsearch_expanded,
         "troubleshoot_model_rung_l1": c.verdict_troubleshoot_model_rung,
-        "supervise_l1_letter": c.verdict_supervise_letter,
+        "supervise_l1_feedback": c.verdict_supervise_feedback,
         "supervise_l1_points": c.verdict_supervise_points,
         "supervise_l1_tier": c.verdict_supervise_tier,
         "supervise_l1_no_personal_data": c.verdict_supervise_no_personal_data,
