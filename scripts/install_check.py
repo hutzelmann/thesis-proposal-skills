@@ -38,6 +38,7 @@ README = REPO / "README.md"
 SMOKE_FIXTURE = REPO / "tests" / "fixtures" / "f15-format-broken" / "broken-format.md"
 INSTALL_FLAGS = ["-y", "-a", "claude-code", "-s", "*", "--copy"]
 COMMAND_RE = re.compile(r"npx skills add (\S+)")
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 def readme_install_command(text: str) -> tuple[list[str], str]:
@@ -95,6 +96,19 @@ def run_smoke(project: Path) -> tuple[bool, str]:
     return True, "installed check.py found the seeded errors"
 
 
+def verbatim_problems(stdout: str, expected: list[str]) -> list[str]:
+    """Problems in the README command's --list output: every shipped skill
+    offered, count exact. The CLI colorizes the count under CI=true, so escape
+    sequences are stripped before matching."""
+    stdout = ANSI_RE.sub("", stdout)
+    listed = [s for s in expected if s in stdout]
+    if listed != expected:
+        return [f"published repo offers {len(listed)}/{len(expected)} shipped skills"]
+    if f"Found {len(expected)} skills" not in stdout:
+        return ["published repo offers a different skill count than the tracked tree ships"]
+    return []
+
+
 def check_verbatim(command: list[str], env: dict[str, str], cwd: Path,
                    expected: list[str]) -> list[str]:
     """Run the README command unchanged with --list: the published repo must
@@ -105,12 +119,7 @@ def check_verbatim(command: list[str], env: dict[str, str], cwd: Path,
     )
     if result.returncode != 0:
         return [f"verbatim README command failed: {result.stderr[-300:]}"]
-    listed = [s for s in expected if s in result.stdout]
-    if listed != expected:
-        return [f"published repo offers {len(listed)}/{len(expected)} shipped skills"]
-    if f"Found {len(expected)} skills" not in result.stdout:
-        return ["published repo offers a different skill count than the tracked tree ships"]
-    return []
+    return verbatim_problems(result.stdout, expected)
 
 
 def main(argv: list[str] | None = None) -> int:

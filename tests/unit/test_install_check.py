@@ -42,6 +42,34 @@ def test_compare_tree_reports_missing_and_differing(tmp_path):
     assert problems == ["differs: changed.md", "missing: sub/gone.md"]
 
 
+def test_verbatim_problems_sees_through_ansi_color():
+    # Under CI=true the skills CLI colorizes the count ("Found \x1b[32m11\x1b[39m
+    # skills"), which broke the literal match in the first scheduled run.
+    expected = ["proposal-check", "proposal-write"]
+    stdout = (
+        "\x1b[?25l\x1b[1G\x1b[J◇  Found \x1b[32m2\x1b[39m skills\x1b[?25h\n"
+        "│    proposal-check\n"
+        "│    proposal-write\n"
+    )
+    assert install_check.verbatim_problems(stdout, expected) == []
+
+
+def test_verbatim_problems_reports_a_missing_skill():
+    expected = ["proposal-check", "proposal-write"]
+    stdout = "Found 1 skills\n  proposal-check\n"
+    assert install_check.verbatim_problems(stdout, expected) == [
+        "published repo offers 1/2 shipped skills"
+    ]
+
+
+def test_verbatim_problems_reports_a_count_mismatch():
+    expected = ["proposal-check", "proposal-write"]
+    stdout = "Found 3 skills\n  proposal-check\n  proposal-write\n  proposal-extra\n"
+    assert install_check.verbatim_problems(stdout, expected) == [
+        "published repo offers a different skill count than the tracked tree ships"
+    ]
+
+
 def test_isolated_env_strips_claude_and_redirects_home(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDECODE", "1")
     env = install_check.isolated_env(tmp_path)
