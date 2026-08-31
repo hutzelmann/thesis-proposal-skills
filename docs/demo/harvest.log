@@ -7,7 +7,7 @@
 # Synthetic content: fictional student anecdote (churn-model monitoring), no real persons or company data.
 # Turn 7 was re-run in a fresh session after the first attempt surfaced (and fixed) a bug in
 # proposal-publish's rq-filter.lua; a filename suggestion in it is redacted to [name].
-# Source of truth for docs/demo/transcript.jsonl — audit trail (see openspec demo-recording spec).
+# Audit trail for the README demo (the condensed <details> blocks in the top-level README.md); see the user-onboarding spec.
 #
 # Turns 8-9 were recorded on 2026-08-04 (claude -p, model sonnet) after the add-proposal-timeline
 # change made the Timeline a required fifth section. The turn-5 proposal was replayed against the
