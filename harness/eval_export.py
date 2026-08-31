@@ -112,7 +112,7 @@ EXPECTED_OUTPUTS = {
         "bug report assembled."
     ),
     "supervise_feedback": (
-        "A send-package with a feedback letter: verdict tier stated up front, at "
+        "A paste-ready feedback letter: verdict tier stated up front, at "
         "most five curated points, skill pointers that resolve, and none of the "
         "submission's personal data."
     ),

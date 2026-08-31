@@ -950,17 +950,17 @@ def troubleshoot_model_rung(baseline: bool = False) -> Task:
 # fixture-wide "every proposal md builds / has an oracle" invariants and is
 # staged explicitly instead of via the .md glob
 S01_SUBMISSION = "submission-email.txt"
-# the fixture's fake identity — none of it may reach the send-package
+# the fixture's fake identity — none of it may reach the student-facing letter
 S01_FORBIDDEN = ("Musterfrau", "00000000", "erika.musterfrau@example.org", "Musterstraße")
 INSTALLED_SKILLS = tuple(sorted(
     d.name for d in SKILLS.iterdir() if d.is_dir() and d.name.startswith("proposal-")
 ))
 
 
-async def supervise_package() -> dict[str, str]:
-    """Contents of the `<slug>-package/` directory the skill assembled."""
+async def supervise_letter_files() -> dict[str, str]:
+    """The `<slug>-letter.md` draft(s) the skill wrote, keyed by file name."""
     listing = await sandbox().exec(
-        ["bash", "-c", "ls ws/*-package/* 2>/dev/null"], timeout=10)
+        ["bash", "-c", "ls ws/*-letter.md 2>/dev/null"], timeout=10)
     files = {}
     for path in listing.stdout.splitlines():
         name = path.strip().removeprefix("ws/")
@@ -971,7 +971,7 @@ async def supervise_package() -> dict[str, str]:
 
 
 async def supervise_letter() -> str | None:
-    files = await supervise_package()
+    files = await supervise_letter_files()
     return next((text for name, text in files.items() if name.endswith("letter.md")), None)
 
 
@@ -992,7 +992,7 @@ async def supervise_l1_tier(_state: TaskState) -> tuple[bool, str]:
 
 @verdict_scorer("supervise_l1_no_personal_data")
 async def supervise_l1_no_personal_data(_state: TaskState) -> tuple[bool, str]:
-    return verdict_supervise_no_personal_data(await supervise_package(), S01_FORBIDDEN)
+    return verdict_supervise_no_personal_data(await supervise_letter_files(), S01_FORBIDDEN)
 
 
 @verdict_scorer("supervise_l1_pointers")
@@ -1005,7 +1005,7 @@ def supervise_feedback(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-supervise", "s01-raw-email",
         f"A student emailed me this thesis idea — I saved it as ws/{S01_SUBMISSION}. "
-        "Prepare my feedback: the letter draft and the file I can send back. "
+        "Prepare my feedback: the letter draft I can send back. "
         "If the verdict turns out borderline, do not ask me — take the "
         "needs-revision path.",
         [supervise_l1_letter(), supervise_l1_points(), supervise_l1_tier(),

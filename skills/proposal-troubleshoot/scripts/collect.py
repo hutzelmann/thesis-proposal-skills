@@ -415,7 +415,7 @@ def workspace_build_lines(proposal: Path) -> list[str]:
 
 def sibling_artifacts(proposal: Path | None) -> list[str]:
     """Hash-level inventory of the companion artifacts beside the proposal —
-    the review file, the supervise send-package, and any workspace build
+    the review file, the supervise letter file, and any workspace build
     definition. Slug-bearing names are recorded under the placeholder; content
     never enters the report at any level, because the letter derives from a
     student's unpublished submission, the build definition is the user's own
@@ -431,17 +431,13 @@ def sibling_artifacts(proposal: Path | None) -> list[str]:
             f"[measured] review file present as {PROPOSAL_PLACEHOLDER}-review.md "
             f"({h['bytes']} bytes, sha256:{h['sha256']}); content withheld at every level"
         )
-    package = proposal.with_name(proposal.stem + "-package")
-    if package.is_dir():
-        files = sorted(f for f in package.iterdir() if f.is_file())
+    letter = proposal.with_name(proposal.stem + "-letter.md")
+    if letter.is_file():
+        h = file_hashes(letter)
         out.append(
-            f"[measured] send-package present as {PROPOSAL_PLACEHOLDER}-package/ "
-            f"({len(files)} file(s)); content withheld at every level:"
+            f"[measured] supervise letter present as {PROPOSAL_PLACEHOLDER}-letter.md "
+            f"({h['bytes']} bytes, sha256:{h['sha256']}); content withheld at every level"
         )
-        for f in files:
-            shown = f.name if f.name == "letter.md" else PROPOSAL_PLACEHOLDER + f.suffix
-            h = file_hashes(f)
-            out.append(f"  {shown} — {h['bytes']} bytes, sha256:{h['sha256']}")
     return out
 
 

@@ -90,7 +90,7 @@ Whichever skill is running, six rules apply:
 | `proposal-review` | Supervisor-style content review: a verdict on whether there is a thesis here (ready / needs revision / no viable thesis core), then every weak point with a concrete suggestion. |
 | `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. Where your program prescribes its own document, a build script in your folder takes over instead. A plain markdown hand-in is fine too. |
 | `proposal-customize` | Adapts everything to your supervisor's requirements ("detailed work plan required", "max 3 pages", a methodology the defaults do not carry). |
-| `proposal-supervise` | For supervisors: turns a raw student submission into a curated draft feedback letter plus a send-package the student can continue from. Drafts only, never sends. |
+| `proposal-supervise` | For supervisors: turns a raw student submission into a curated, paste-ready draft feedback letter. Drafts only, never sends. |
 | `proposal-troubleshoot` | Diagnoses a skill that misbehaved, and assembles a bug report if it really is a defect. Most problems turn out not to be. |
 
 Your proposal itself lives in **one self-contained file**: readable text on top, literature entries at the bottom. A companion `<slug>.notes.md` beside it keeps the working knowledge the hand-in cannot carry, such as decisions, open points and rejected literature. Many proposals can sit side by side in one folder.

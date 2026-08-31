@@ -615,9 +615,10 @@ SUPERVISE_TIER_PATTERN = re.compile(
 
 
 def verdict_supervise_letter(letter: str | None) -> tuple[bool, str]:
-    """supervise: a letter draft exists in the send-package and is not empty."""
+    """supervise: a letter draft exists as the slug-named letter file and is
+    not empty."""
     if not letter or not letter.strip():
-        return False, "no letter in the send-package"
+        return False, "no letter draft found"
     return True, "letter present"
 
 
@@ -645,19 +646,19 @@ def verdict_supervise_tier(letter: str | None) -> tuple[bool, str]:
     return True, "verdict tier: " + ", ".join(hits)
 
 
-def verdict_supervise_no_personal_data(package: dict[str, str],
+def verdict_supervise_no_personal_data(artifacts: dict[str, str],
                                        forbidden: tuple[str, ...]) -> tuple[bool, str]:
     """supervise: no personal-data token from the submission survives anywhere
-    in the send-package (skill-supervise spec: intake strips identity).
-    `package` maps package-relative names to file contents."""
-    if not package:
-        return False, "send-package is empty or missing"
-    leaks = [(name, token) for name, text in sorted(package.items())
+    in the student-facing letter (skill-supervise spec: intake strips
+    identity). `artifacts` maps file names to contents."""
+    if not artifacts:
+        return False, "no student-facing letter to scan"
+    leaks = [(name, token) for name, text in sorted(artifacts.items())
              for token in forbidden if token.lower() in text.lower()]
     if leaks:
         return False, "personal data survived: " + "; ".join(
             f"{token!r} in {name}" for name, token in leaks)
-    return True, f"{len(package)} package file(s) free of the submission's personal data"
+    return True, f"{len(artifacts)} file(s) free of the submission's personal data"
 
 
 def verdict_supervise_pointers(letter: str | None,
@@ -675,18 +676,18 @@ def verdict_supervise_pointers(letter: str | None,
     return True, "pointers resolve: " + ", ".join(sorted(named))
 
 
-def verdict_supervise_package(package: dict[str, str], forbidden: tuple[str, ...],
-                              installed: tuple[str, ...]) -> tuple[bool, str]:
-    """Aggregate of the five supervise package verdicts for single-verdict
+def verdict_supervise_letter_contract(artifacts: dict[str, str], forbidden: tuple[str, ...],
+                                      installed: tuple[str, ...]) -> tuple[bool, str]:
+    """Aggregate of the five supervise letter verdicts for single-verdict
     runners (the dev runner); the Inspect task scores them separately. Fails on
     the first missing piece but reports every failed aspect."""
-    letter = next((text for name, text in sorted(package.items())
+    letter = next((text for name, text in sorted(artifacts.items())
                    if name.endswith("letter.md")), None)
     results = [
         verdict_supervise_letter(letter),
         verdict_supervise_points(letter),
         verdict_supervise_tier(letter),
-        verdict_supervise_no_personal_data(package, forbidden),
+        verdict_supervise_no_personal_data(artifacts, forbidden),
         verdict_supervise_pointers(letter, installed),
     ]
     failed = [why for ok, why in results if not ok]

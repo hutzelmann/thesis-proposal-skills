@@ -1,4 +1,4 @@
-"""L0: the supervise package verdicts (testing-harness spec: supervise package
+"""L0: the supervise letter verdicts (testing-harness spec: supervise letter
 coverage). Each verdict function is exercised without model calls; the letter
 snippets mirror what the skill's own instructions produce.
 """
@@ -6,8 +6,8 @@ snippets mirror what the skill's own instructions produce.
 import pytest
 from l1_checks import (
     verdict_supervise_letter,
+    verdict_supervise_letter_contract,
     verdict_supervise_no_personal_data,
-    verdict_supervise_package,
     verdict_supervise_pointers,
     verdict_supervise_points,
     verdict_supervise_tier,
@@ -27,7 +27,7 @@ LETTER = """Verdict: needs revision — please address the points below and resu
 
 What to keep: the observed problem is concrete and worth studying.
 
-This feedback was prepared with an AI assistant that follows our proposal guidelines.
+This feedback was prepared with an AI assistant; every decision about your thesis stays yours.
 """
 
 
@@ -89,45 +89,45 @@ def test_tier_ready_is_word_bounded():
 
 
 def test_personal_data_leak_names_file_and_token():
-    package = {"pkg/letter.md": LETTER, "pkg/idea.md": "Erika Musterfrau, 00000000"}
-    ok, why = verdict_supervise_no_personal_data(package, ("Musterfrau", "00000000"))
+    files = {"idea-letter.md": LETTER + "\nErika Musterfrau, 00000000"}
+    ok, why = verdict_supervise_no_personal_data(files, ("Musterfrau", "00000000"))
     assert not ok
-    assert "pkg/idea.md" in why
+    assert "idea-letter.md" in why
     assert "Musterfrau" in why
 
 
-def test_personal_data_clean_and_empty_package():
-    clean = {"pkg/letter.md": LETTER, "pkg/idea.md": "# Introduction to the Topic"}
+def test_personal_data_clean_and_missing_letter():
+    clean = {"idea-letter.md": LETTER}
     assert verdict_supervise_no_personal_data(clean, ("Musterfrau", "00000000"))[0]
     assert not verdict_supervise_no_personal_data({}, ("Musterfrau",))[0]
 
 
 def test_personal_data_match_is_case_insensitive():
-    package = {"pkg/idea.md": "contact: ERIKA.MUSTERFRAU@EXAMPLE.ORG"}
+    files = {"idea-letter.md": "contact: ERIKA.MUSTERFRAU@EXAMPLE.ORG"}
     assert not verdict_supervise_no_personal_data(
-        package, ("erika.musterfrau@example.org",))[0]
+        files, ("erika.musterfrau@example.org",))[0]
 
 
 def test_pointers_ignore_the_repo_name_in_the_install_blurb():
     """Regression (sonnet dev run 2026-08-10): `hutzelmann/thesis-proposal-skills`
     in the getting-started blurb must not read as a skill named proposal-skills."""
-    letter = ("1. Sharpen the question — proposal-ideate.\n\nRun `npx skills add "
-              "hutzelmann/thesis-proposal-skills` to install the tools.")
+    letter = ("1. Sharpen the question — proposal-ideate.\n\nFree writing tools are "
+              "available at https://github.com/hutzelmann/thesis-proposal-skills.")
     ok, why = verdict_supervise_pointers(letter, SKILL_SET)
     assert ok
     assert "proposal-skills" not in why
 
 
-def test_package_aggregate_passes_on_a_complete_package():
-    package = {"pkg/letter.md": LETTER, "pkg/idea.md": "# Introduction to the Topic"}
-    ok, why = verdict_supervise_package(package, ("Musterfrau",), SKILL_SET)
+def test_letter_contract_aggregate_passes_on_a_complete_letter():
+    files = {"idea-letter.md": LETTER}
+    ok, why = verdict_supervise_letter_contract(files, ("Musterfrau",), SKILL_SET)
     assert ok
     assert "3 curated points" in why
 
 
-def test_package_aggregate_reports_every_failed_aspect():
-    package = {"pkg/idea.md": "Erika Musterfrau"}
-    ok, why = verdict_supervise_package(package, ("Musterfrau",), SKILL_SET)
+def test_letter_contract_aggregate_reports_every_failed_aspect():
+    files = {"idea-notes.md": "Erika Musterfrau"}
+    ok, why = verdict_supervise_letter_contract(files, ("Musterfrau",), SKILL_SET)
     assert not ok
     assert "no letter" in why
     assert "Musterfrau" in why

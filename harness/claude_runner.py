@@ -39,7 +39,7 @@ from l1_checks import (
     verdict_ideate_scoped,
     verdict_import,
     verdict_review,
-    verdict_supervise_package,
+    verdict_supervise_letter_contract,
 )
 from sources import MESSY_REQUEST
 
@@ -86,19 +86,19 @@ SCENARIOS = {
         "request": MESSY_REQUEST,
         "produces": True,
     },
-    # supervisor-side: raw email fixture (.txt) to a send-package; import is
-    # installed as a sibling, matching a professor's whole-set install
+    # supervisor-side: raw email fixture (.txt) to a paste-ready letter; import
+    # is installed as a sibling, matching a professor's whole-set install
     "supervise_feedback": {
         "fixture": "s01-raw-email",
         "skill": "proposal-supervise",
         "siblings": ("proposal-import",),
-        "package": True,
+        "letter": True,
         # the closing sentence pre-answers the borderline deferral: a headless
         # single-turn run has no professor to ask, so it exercises the
         # needs-revision default instead of stalling
         "request": "A student emailed me this thesis idea — I saved it as "
                    "submission-email.txt. Prepare my feedback: the letter draft "
-                   "and the file I can send back. If the verdict turns out "
+                   "I can send back. If the verdict turns out "
                    "borderline, do not ask me — take the needs-revision path.",
     },
     # nothing staged: the group page and a canned DBLP-shaped publication list
@@ -196,19 +196,16 @@ INSTALLED_SKILLS = tuple(sorted(
 ))
 
 
-def package_files(ws: Path) -> dict[str, str]:
-    # .as_posix(): the keys are matched against literal `<dir>/<name>` paths in
-    # the verdicts, which a Windows separator would never match.
+def letter_files(ws: Path) -> dict[str, str]:
     return {
-        f.relative_to(ws).as_posix(): f.read_text(encoding="utf-8")
-        for d in sorted(ws.glob("*-package")) if d.is_dir()
-        for f in sorted(d.iterdir()) if f.is_file()
+        f.name: f.read_text(encoding="utf-8")
+        for f in sorted(ws.glob("*-letter.md")) if f.is_file()
     }
 
 
 def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
-    if scenario.get("package"):
-        return verdict_supervise_package(package_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS)
+    if scenario.get("letter"):
+        return verdict_supervise_letter_contract(letter_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS)
     if name == "ideate_scoped":
         files = workspace_markdown(ws)
         produced, where = select_draft(files)
