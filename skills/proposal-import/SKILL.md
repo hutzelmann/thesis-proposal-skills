@@ -12,51 +12,54 @@ Brings a proposal that already exists — PDF, Word, LaTeX — into this workspa
 
 **Voice:** neutral and constructive — never praise the user or their material, never compliment your own output. Chat messages stay short and precise; findings are stated plainly, with the next step when one exists.
 
-Convert an existing proposal document into one `<slug>.md` in the standard format: markdown body, trailing `---` metadata block (blank line before it) with `title`, `subtitle`, `lang`, `references` in CSL-YAML. Never carry an `author` key over from the source — proposals are anonymous.
+Convert an existing proposal document into one `<slug>.md` in the standard format: a leading `# <title>` line as the only H1, the subtitle as an emphasized `*…*` paragraph, the canonical sections at `##`, a closing references heading, and a trailing `---` metadata block (blank line before it) with `references` in CSL-YAML. Never carry an `author` key over from the source — proposals are anonymous.
 
 ## The shape you must produce
 
 A source document rarely resembles the target, so write the target from this shape rather than from the source's structure:
 
 ```markdown
-# Introduction to the Topic
+# Soil-Aware Irrigation Control
+
+*Bachelor's Thesis Proposal*
+
+## Introduction to the Topic
 
 Prose, one sentence per line. Evidence citations look like [@Rivera23Survey].
 
-# Contribution to the State-of-the-Art
+## Contribution to the State-of-the-Art
 
 [TODO: state the delta to prior work]
 
-# Research Focus and Research Questions
+## Research Focus and Research Questions
 
 One paragraph of research focus, then the questions as an ordered list:
 
 1. To what degree does soil-moisture-driven scheduling reduce water use compared to fixed timetables?
 2. Under which soil conditions does sensor drift degrade scheduling quality?
 
-# Methodology for Research: Prototype Implementation
+## Methodology for Research: Prototype Implementation
 
-## Previous Work
+### Previous Work
 
 The prototype builds on the sensing approach of @Rivera23Survey.
 
-## Requirements
+### Requirements
 
 [TODO: state what the prototype must do, and which requirements are out of scope]
 
-## Evaluation
+### Evaluation
 
 A field trial compares water use under soil-moisture-driven scheduling against a fixed timetable (RQ1).
 A season-long measurement records how sensor drift degrades scheduling quality (RQ2).
 
-# Timeline
+## Timeline
 
 The thesis starts in April 2026 and is submitted in September 2026.
 
+## References
+
 ---
-title: Soil-Aware Irrigation Control
-subtitle: Bachelor's Thesis Proposal
-lang: en
 references:
 - id: Rivera23Survey
   type: article-journal
@@ -72,8 +75,9 @@ references:
 
 Non-negotiable in that shape, because a source will not supply them and the check cannot catch them:
 
+- The `# ` title line is the file's first line and its only H1; the emphasized subtitle paragraph sits directly beneath it, and the references heading closes the body with nothing under it — the build renders the bibliography there.
 - An author entry holds **one** person: `- family: Rivera`. "et al." is never part of a name — list the authors the source names and stop.
-- A `[TODO: …]` marker inside the metadata block must be **the value of a key**, quoted: `title: "[TODO: recover the title]"`. A marker on a line of its own has no key, so pandoc rejects the entire block and the file stops building. Prefer keeping the marker in the body beside the reference's first citation.
+- A title the source does not supply is marked in the title line itself: `# [TODO: recover the title]`. A `[TODO: …]` marker never goes into the metadata block: on a line of its own it has no key, so pandoc rejects the entire block and the file stops building. Prefer keeping a reference-related marker in the body beside the reference's first citation.
 
 The rest of the shape — closed metadata block, `references` as a list, reference-key form, one methodology from the closed set with its subsections, research questions as an ordered list referenced as `(RQn)` — is enforced by the check you run before reporting. Follow the example; the check will tell you what you missed.
 
@@ -83,9 +87,10 @@ Read the PDF directly. If you cannot ingest PDFs in this environment, say so pla
 
 ## Mapping content
 
-- Map existing content onto the five canonical sections — titles per the write skill's `../proposal-write/references/guidelines.md`, section "Canonical Section Titles (English / German)"; use the proposal's language. If that file is not installed, use the five canonical English titles named there (Introduction to the Topic; Contribution to the State-of-the-Art; Research Focus and Research Questions; Methodology for Research: <Methodology>; Timeline). Free-form sources rarely map cleanly — place content where it belongs, and mark unfillable sections with `[TODO: …]`.
+- The source's document title becomes the file's leading `# ` line — never a metadata key and never a sixth section. Its subtitle (or the degree level, when the source states one) becomes the emphasized paragraph beneath it; when the source gives neither, write `*[TODO: state the degree level]*`.
+- Map existing content onto the five canonical sections at `##` — titles per the write skill's `../proposal-write/references/guidelines.md`, section "Canonical Section Titles (English / German)"; use the proposal's language. If that file is not installed, use the five canonical English titles named there (Introduction to the Topic; Contribution to the State-of-the-Art; Research Focus and Research Questions; Methodology for Research: <Methodology>; Timeline). Free-form sources rarely map cleanly — place content where it belongs, and mark unfillable sections with `[TODO: …]`.
 - Emit the sections in canonical order whatever order the source used. The check reports an out-of-order section as an error, so a source that puts its methodology before its research questions gets reordered on import, not carried over as-is.
-- Detect the language and set `lang` accordingly.
+- Detect the language and write the canonical subtitle and section titles in it — the language is inferred from those wordings, never declared with a key.
 - Convert the bibliography to CSL-YAML entries (`AuthorYearFirstWord` keys, DOI when present, URL only without DOI). References that cannot be resolved to a real entry become `[TODO: recover reference …]` — never invent metadata.
 - Convert in-text citations by the role they play in their sentence — full rule in the write skill's `../proposal-write/references/guidelines.md`, section "Literature and Citations". Where the source names the authors as the actor ("Smith et al. [1] propose …", "Smith et al. (2020) propose …"), delete the name and the year from the prose and write `@key` alone: the build renders the name back from the reference entry. Where the citation only backs a claim ("… is widely reported [1]."), write `[@key]`. Never leave a typed author name immediately before a bracketed citation (`Smith et al. [@key]`) — it renders correctly today but stops tracking the entry the moment that entry is corrected. If the write skill is not installed, apply that rule as stated here.
 

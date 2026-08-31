@@ -76,13 +76,13 @@ def test_metadata_present_reports_a_missing_block():
 
 
 def test_metadata_present_reports_a_missing_blank_line():
-    ctx = context("# Topic\nbody\n---\ntitle: T\nlang: en\n---")
+    ctx = context("# Topic\nbody\n---\nreferences: []\n---")
     assert rules_of(check.rule_metadata_present(ctx)) == ["metadata-block-blank-line"]
 
 
 def test_reference_id_syntax_reports_boolean_literals_and_duplicates():
     text = (
-        "# Topic\n\nbody\n\n---\ntitle: T\nlang: en\nreferences:\n"
+        "# Topic\n\nbody\n\n---\nreferences:\n"
         "- id: on\n  type: article-journal\n"
         "- id: Dup24One\n  type: article-journal\n"
         "- id: Dup24One\n  type: article-journal\n---"
@@ -90,11 +90,6 @@ def test_reference_id_syntax_reports_boolean_literals_and_duplicates():
     assert rules_of(check.rule_reference_id_syntax(context(text))) == [
         "reference-id-boolean-literal", "duplicate-reference-id",
     ]
-
-
-def test_title_rule_reports_a_missing_title():
-    text = "# Topic\n\nbody\n\n---\nlang: en\nreferences: []\n---"
-    assert rules_of(check.rule_title(context(text))) == ["metadata-title-missing"]
 
 
 @pytest.mark.parametrize(("title", "rule"), [
@@ -106,14 +101,14 @@ def test_title_rule_reports_a_missing_title():
      "title-too-long"),
 ])
 def test_title_rule_reports_each_mechanical_tell(title, rule):
-    text = f"# Topic\n\nbody\n\n---\ntitle: {title}\nlang: en\nreferences: []\n---"
+    text = f"# {title}\n\nbody\n\n---\nreferences: []\n---"
     assert rule in rules_of(check.rule_title(context(text)))
 
 
-def test_title_rule_says_nothing_about_a_block_scalar():
-    """A folded value continues on lines the narrow extraction never reads, so
-    judging it would mean judging a fragment."""
-    text = "# Topic\n\nbody\n\n---\ntitle: >\nlang: en\nreferences: []\n---"
+def test_title_rule_says_nothing_about_a_todo_title():
+    """An unsettled title is the sanctioned incomplete state — the todo-marker
+    finding already covers it, and tells on the placeholder text are noise."""
+    text = "# [TODO: working title naming the contribution]\n\nbody\n\n---\nreferences: []\n---"
     assert check.rule_title(context(text)) == []
 
 
@@ -126,7 +121,7 @@ def test_timeline_mode_reports_an_unknown_value():
 
 def test_timeline_size_is_skipped_in_detailed_mode():
     with_table = CLEAN.replace(
-        "# Timeline\n", "# Timeline\n\n| Phase | Weeks |\n|---|---|\n| One | 4 |\n"
+        "## Timeline\n", "## Timeline\n\n| Phase | Weeks |\n|---|---|\n| One | 4 |\n"
     )
     assert "timeline-table" in rules_of(check.rule_timeline_size(context(with_table)))
     assert check.rule_timeline_size(
@@ -135,7 +130,7 @@ def test_timeline_size_is_skipped_in_detailed_mode():
 
 
 def test_required_sections_names_each_missing_title():
-    text = "# Introduction to the Topic\n\nbody\n\n---\ntitle: T\nlang: en\nreferences: []\n---"
+    text = "# Introduction to the Topic\n\nbody\n\n---\nreferences: []\n---"
     findings = check.rule_required_sections(context(text))
     assert set(rules_of(findings)) == {"required-section-missing"}
     assert len(findings) > 1
@@ -143,25 +138,25 @@ def test_required_sections_names_each_missing_title():
 
 def test_methodology_rule_reports_an_unknown_methodology():
     text = CLEAN.replace(
-        "# Methodology for Research: Prototype Implementation",
-        "# Methodology for Research: Vibes-Driven Inquiry",
+        "## Methodology for Research: Prototype Implementation",
+        "## Methodology for Research: Vibes-Driven Inquiry",
     )
     assert rules_of(check.rule_methodology(context(text))) == ["methodology-unknown"]
 
 
 def test_methodology_rule_reports_a_missing_and_a_duplicated_section():
-    without = CLEAN.replace("# Methodology for Research: Prototype Implementation", "# Approach")
+    without = CLEAN.replace("## Methodology for Research: Prototype Implementation", "## Approach")
     assert rules_of(check.rule_methodology(context(without))) == ["methodology-missing"]
     twice = CLEAN.replace(
-        "# Methodology for Research: Prototype Implementation",
-        "# Methodology for Research: Prototype Implementation\n\ntext\n\n"
-        "# Methodology for Research: Case Study",
+        "## Methodology for Research: Prototype Implementation",
+        "## Methodology for Research: Prototype Implementation\n\ntext\n\n"
+        "## Methodology for Research: Case Study",
     )
     assert rules_of(check.rule_methodology(context(twice))) == ["methodology-multiple"]
 
 
 def test_methodology_rule_reports_a_missing_subsection():
-    without_sub = CLEAN.replace("## Requirements", "## Groundwork")
+    without_sub = CLEAN.replace("### Requirements", "### Groundwork")
     assert rules_of(check.rule_methodology(context(without_sub))) == [
         "methodology-subsection-missing"
     ]
@@ -223,7 +218,7 @@ def test_methodology_rule_is_silent_when_the_workspace_overrides_the_sections():
 
 def test_citations_rule_separates_undefined_keys_from_uncited_references():
     text = (
-        "# Topic\n\nA claim [@Ghost99Missing].\n\n---\ntitle: T\nlang: en\nreferences:\n"
+        "# Topic\n\nA claim [@Ghost99Missing].\n\n---\nreferences:\n"
         "- id: Real24Work\n  type: article-journal\n  author:\n  - family: Doe\n---"
     )
     findings = check.rule_citations(context(text))
@@ -235,7 +230,7 @@ def test_citations_rule_separates_undefined_keys_from_uncited_references():
 def test_citations_rule_flags_a_name_typed_before_its_own_citation():
     text = (
         "# Topic\n\nRivera et al. [@Rivera23Survey] surveyed it.\n\n"
-        "---\ntitle: T\nlang: en\nreferences:\n"
+        "---\nreferences:\n"
         "- id: Rivera23Survey\n  type: article-journal\n  author:\n  - family: Rivera\n---"
     )
     assert "author-name-typed-bracketed" in rules_of(check.rule_citations(context(text)))
@@ -245,7 +240,7 @@ def test_reference_id_shape_rule_catches_a_missing_year():
     """The observed defect: an eval produced `RiveraYearSurvey`, the literal
     word "Year" where the two-digit year belongs, and nothing caught it."""
     text = (
-        "# Topic\n\nA claim [@RiveraYearSurvey].\n\n---\ntitle: T\nlang: en\nreferences:\n"
+        "# Topic\n\nA claim [@RiveraYearSurvey].\n\n---\nreferences:\n"
         "- id: RiveraYearSurvey\n  type: article-journal\n---"
     )
     assert "reference-id-shape" in rules_of(check.rule_reference_id_shape(context(text)))
@@ -261,7 +256,7 @@ def test_min_references_respects_a_workspace_override():
 def test_prose_patterns_rule_reports_personal_data_and_first_person():
     text = (
         "# Topic\n\nI ran the study myself and you can reach me at a.b@example.org.\n\n"
-        "---\ntitle: T\nlang: en\nreferences: []\n---"
+        "---\nreferences: []\n---"
     )
     found = rules_of(check.rule_prose_patterns(context(text)))
     assert "first-person-pronoun" in found
@@ -279,7 +274,7 @@ def test_prose_patterns_rule_reports_personal_data_and_first_person():
 
 ANNOTATIONS = (
     "# Topic\n\n{token} is excluded because it carries no runtime dispatch "
-    "[@Dyer14Mining].\n\n---\ntitle: T\nlang: en\nreferences:\n"
+    "[@Dyer14Mining].\n\n---\nreferences:\n"
     "- id: Dyer14Mining\n  type: paper-conference\n  author:\n  - family: Dyer\n---"
 )
 
@@ -307,7 +302,7 @@ def test_prose_patterns_rule_does_not_read_type_i_error_as_a_pronoun():
     """`Type I error` is required vocabulary in the Controlled Experiment
     subsection contract, so the warning fired on the repo's own branch."""
     text = ("# Topic\n\nThe Type I error rate is controlled with a Bonferroni "
-            "correction.\n\n---\ntitle: T\nlang: en\nreferences: []\n---")
+            "correction.\n\n---\nreferences: []\n---")
     assert check.rule_prose_patterns(context(text)) == []
 
 
@@ -316,7 +311,7 @@ def test_prose_patterns_rule_locates_the_number_it_read_as_a_matriculation():
     class tolerates false positives — what made this one expensive is that it
     named neither the token nor the line, so dismissing it meant a full read."""
     text = ("# Topic\n\nThe corpus holds 2400000 annotated declarations.\n\n"
-            "---\ntitle: T\nlang: en\nreferences: []\n---")
+            "---\nreferences: []\n---")
     findings = check.rule_prose_patterns(context(text))
     assert rules_of(findings) == ["matriculation-number"]
     assert "`2400000`" in findings[0].message
@@ -325,21 +320,23 @@ def test_prose_patterns_rule_locates_the_number_it_read_as_a_matriculation():
 
 def test_prose_patterns_rule_locates_the_first_pronoun_it_counted():
     text = ("# Topic\n\nBackground.\n\nSmith and I ran the study.\n\n"
-            "---\ntitle: T\nlang: en\nreferences: []\n---")
+            "---\nreferences: []\n---")
     findings = check.rule_prose_patterns(context(text))
     assert rules_of(findings) == ["first-person-pronoun"]
     assert "(line 5)" in findings[0].message
 
 
 def hindsight(prose: str, lang: str = "en") -> list[str]:
-    text = (f"# Topic\n\n{prose}\n\n---\ntitle: T\nlang: {lang}\nreferences: []\n---")
+    # the subtitle wording is what fixes the language now that `lang` is inferred
+    subtitle = "*Exposé zur Masterarbeit*" if lang == "de" else "*Master's Thesis Proposal*"
+    text = (f"# Topic\n\n{subtitle}\n\n{prose}\n\n---\nreferences: []\n---")
     return rules_of(check.rule_hindsight_leakage(context(text)))
 
 
 def test_hindsight_rule_reports_an_uncited_result_claim():
     findings = check.rule_hindsight_leakage(context(
         "# Topic\n\nThe evaluation demonstrated that scheduling cuts water use.\n\n"
-        "---\ntitle: T\nlang: en\nreferences: []\n---"))
+        "---\nreferences: []\n---"))
     assert rules_of(findings) == ["hindsight-leakage"]
     assert "`demonstrated`" in findings[0].message
     assert "(line 3)" in findings[0].message
@@ -394,7 +391,7 @@ def test_hindsight_rule_ignores_prose_inside_a_code_block():
 def test_metadata_present_names_a_block_that_sits_at_the_top():
     """Frontmatter at the top is what every other markdown tool expects, so a
     student arrives at it honestly — and gets five errors none of which say so."""
-    text = ("---\ntitle: T\nlang: en\nreferences: []\n---\n\n"
+    text = ("---\nreferences: []\n---\n\n"
             "# Introduction to the Topic\n\nbody\n")
     findings = check.rule_metadata_present(context(text))
     assert rules_of(findings) == ["metadata-block-missing"]
@@ -419,8 +416,130 @@ def test_heading_style_rule_does_not_read_a_metadata_block_as_a_heading():
     """The closing `---` of a metadata block underlines the line above it. That
     line is a key, not a heading, and a document with no headings at all must
     not be told its headings are the wrong style."""
-    text = "no headings here\n\n---\ntitle: T\nlang: en\nreferences: []\n---"
+    text = "no headings here\n\n---\nreferences: []\n---"
     assert check.rule_heading_style(context(text)) == []
+
+
+# ---------- document frame, references section, language inference -----------
+
+FRAMED = ("# Adaptive Irrigation Scheduling for Greenhouses\n\n"
+          "*Master's Thesis Proposal*\n\n"
+          "## Introduction to the Topic\n\nbody\n\n"
+          "## References\n\n---\nreferences: []\n---")
+
+
+def test_frame_rule_accepts_the_canonical_frame():
+    assert check.rule_frame(context(FRAMED)) == []
+
+
+def test_frame_rule_reports_a_missing_title_line():
+    text = "body without a title\n\n---\nreferences: []\n---"
+    assert rules_of(check.rule_frame(context(text))) == ["title-line-missing"]
+
+
+def test_frame_rule_reports_content_above_the_title():
+    """pandoc promotes the H1 to the document title only as the first block;
+    anything above it silently builds a document without a title."""
+    text = FRAMED.replace("# Adaptive", "A stray import artifact.\n\n# Adaptive")
+    assert "title-not-first" in rules_of(check.rule_frame(context(text)))
+
+
+def test_frame_rule_reports_a_second_h1():
+    text = FRAMED.replace("## Introduction to the Topic", "# Introduction to the Topic")
+    assert "multiple-h1" in rules_of(check.rule_frame(context(text)))
+
+
+def test_frame_rule_reports_a_missing_subtitle():
+    text = FRAMED.replace("*Master's Thesis Proposal*\n\n", "")
+    assert rules_of(check.rule_frame(context(text))) == ["subtitle-missing"]
+
+
+def test_frame_rule_reports_an_unemphasized_subtitle():
+    text = FRAMED.replace("*Master's Thesis Proposal*", "Master's Thesis Proposal")
+    assert rules_of(check.rule_frame(context(text))) == ["subtitle-not-emphasized"]
+
+
+def test_references_section_must_exist_be_last_and_stay_empty():
+    missing = FRAMED.replace("## References\n\n", "")
+    assert rules_of(check.rule_references_section(context(missing))) == [
+        "references-section-missing"
+    ]
+    not_last = FRAMED.replace(
+        "## Introduction to the Topic\n\nbody\n\n## References",
+        "## References\n\n## Introduction to the Topic\n\nbody",
+    )
+    assert "references-section-not-last" in rules_of(
+        check.rule_references_section(context(not_last)))
+    filled = FRAMED.replace("## References\n", "## References\n\nHand-written entry.\n")
+    assert "references-section-not-empty" in rules_of(
+        check.rule_references_section(context(filled)))
+
+
+def test_references_section_expects_the_german_title_for_a_german_proposal():
+    text = ("# Typprüfung von Einheiten in wissenschaftlicher Software\n\n"
+            "*Exposé zur Masterarbeit*\n\n## Einführung in das Thema\n\nbody\n\n"
+            "## Literatur\n\n---\nreferences: []\n---")
+    assert check.rule_references_section(context(text)) == []
+
+
+def test_retired_keys_are_reported_individually():
+    text = FRAMED.replace("references: []",
+                          "title: T\nsubtitle: S\nlang: en\nreferences: []")
+    findings = check.rule_retired_keys(context(text))
+    assert rules_of(findings) == ["retired-metadata-key"] * 3
+
+
+def test_legacy_format_is_named_as_a_shape():
+    """The retired layout of this very toolchain must be named, not reported as
+    a cascade of missing sections and flagged keys."""
+    text = ("# Introduction to the Topic\n\nbody\n\n# Timeline\n\nOne line.\n\n"
+            "---\ntitle: Automated Index Selection\nlang: en\nreferences: []\n---")
+    findings = check.rule_legacy_format(context(text))
+    assert rules_of(findings) == ["legacy-format"]
+    assert "Automated Index Selection" in findings[0].message
+
+
+def test_language_is_inferred_from_the_subtitle_first():
+    """Subtitle wording beats section titles: here every section is English and
+    the subtitle alone is German."""
+    de = FRAMED.replace("*Master's Thesis Proposal*", "*Exposé zur Bachelorarbeit*")
+    ctx = context(de)
+    assert ctx.lang == "de"
+    assert ctx.lang_determined
+    assert check.rule_language(ctx) == []
+
+
+def test_language_falls_back_to_a_section_title_majority():
+    text = ("# Titel der Arbeit über Softwaretechnik\n\n"
+            "*[TODO: state the degree level]*\n\n"
+            "## Einführung in das Thema\n\nbody\n\n## Literatur\n\n"
+            "---\nreferences: []\n---")
+    ctx = context(text)
+    assert ctx.lang == "de"
+    assert ctx.lang_determined
+
+
+def test_undeterminable_language_warns_and_defaults_to_english():
+    text = ("# Topic Title Here Now\n\n*Something Else Entirely*\n\n"
+            "## Freeform\n\nbody\n\n---\nreferences: []\n---")
+    ctx = context(text)
+    assert ctx.lang == "en"
+    assert not ctx.lang_determined
+    assert rules_of(check.rule_language(ctx)) == ["language-undeterminable"]
+
+
+def test_the_title_heading_is_not_a_section():
+    """A title colliding with section machinery must trip nothing: it is not a
+    heading in `head_texts`, so forbidden patterns, the methodology prefix, and
+    required-section matching never see it."""
+    text = ("# Methodology for Research: Milestones and Gantt Planning\n\n"
+            "*Master's Thesis Proposal*\n\n"
+            "## Introduction to the Topic\n\nbody\n\n"
+            "## References\n\n---\nreferences: []\n---")
+    ctx = context(text)
+    assert check.rule_forbidden_sections(ctx) == []
+    assert rules_of(check.rule_methodology(ctx)) == ["methodology-missing"]
+    assert "Methodology for Research" not in ctx.head_texts
 
 
 def test_length_rejects_a_non_positive_or_non_numeric_page_limit():
@@ -447,7 +566,17 @@ COVERED_BY_UNIT_TESTS = {
     "override-key-unknown",
     "methodology-branch-invalid",
     "metadata-block-missing",
-    "metadata-title-missing",
+    "title-line-missing",
+    "title-not-first",
+    "multiple-h1",
+    "subtitle-missing",
+    "subtitle-not-emphasized",
+    "references-section-missing",
+    "references-section-not-last",
+    "references-section-not-empty",
+    "retired-metadata-key",
+    "legacy-format",
+    "language-undeterminable",
     "title-question-form",
     "title-too-long",
     "timeline-detail-unknown",
@@ -487,7 +616,7 @@ def test_json_mode_matches_the_human_report(tmp_path):
     """Same run, two renderings: the exit code and the finding count must agree,
     or a consumer reading one would disagree with a student reading the other."""
     proposal = tmp_path / "p.md"
-    proposal.write_text(CLEAN.replace("# Timeline", "# Timeline and Milestones"),
+    proposal.write_text(CLEAN.replace("## Timeline", "## Timeline and Milestones"),
                         encoding="utf-8")
     human = run_check(proposal)
     findings = check.check_findings(proposal, STRUCTURE, {})

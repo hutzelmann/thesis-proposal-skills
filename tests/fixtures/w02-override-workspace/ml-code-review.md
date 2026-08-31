@@ -1,16 +1,20 @@
-# Introduction to the Topic
+# Machine Learning for Automated Code Review
+
+*Master's Thesis Proposal*
+
+## Introduction to the Topic
 
 Software quality assurance relies heavily on code review processes [@Miller23Review].
 Manual code review is time-consuming and prone to human error.
 Machine learning approaches offer potential to automate aspects of code review and improve efficiency [@Chen25Learning].
 
-# Contribution to the State-of-the-Art
+## Contribution to the State-of-the-Art
 
 Existing tools focus on style violations and syntactic issues [@Miller23Review].
 This work extends automated code review to detect semantic bugs and architectural violations.
 The proposed approach combines static analysis with deep learning models trained on historical code review data.
 
-# Research Focus and Research Questions
+## Research Focus and Research Questions
 
 This thesis investigates how machine learning models can effectively identify code issues that require human attention in the review process.
 The focus is on balancing accuracy with false-positive rates to create a practical tool for developers.
@@ -19,29 +23,29 @@ The focus is on balancing accuracy with false-positive rates to create a practic
 2. Which code features are most predictive of issues that human reviewers identify?
 3. How does model performance vary across different programming languages and project domains?
 
-# Methodology for Research: Prototype Implementation
+## Methodology for Research: Prototype Implementation
 
-## Previous Work
+### Previous Work
 
 The prototype builds on transformer-based models from the HuggingFace library [@Author24Generic].
 Git repositories are used to extract code changes and associated review comments.
 The implementation leverages PyTorch for model training and scikit-learn for evaluation metrics.
 
-## Requirements
+### Requirements
 
 The prototype must process code diffs and output predictions with confidence scores.
 It should support multiple programming languages, specifically Python and Java.
 Performance requirements are not critical for the prototype; focus lies on prediction quality.
 Real-time inference speed is not a requirement.
 
-## Evaluation
+### Evaluation
 
 Evaluation uses a dataset of reviewed pull requests from open-source projects to measure classification accuracy (RQ1).
 Feature-importance analysis over the trained models identifies the most predictive code features (RQ2).
 Metrics include precision, recall, and F1-score for issue detection.
 A cross-language case study compares model performance between Python and Java projects (RQ3).
 
-# Timeline
+## Timeline
 
 The work spans six months from data collection to evaluation.
 
@@ -53,10 +57,9 @@ The work spans six months from data collection to evaluation.
 | Cross-language study | | | | X | X | |
 | Write-up | | | | | X | X |
 
+## References
+
 ---
-title: Machine Learning for Automated Code Review
-subtitle: "Master's Thesis Proposal"
-lang: en
 references:
 - id: Author24Generic
   type: article-journal

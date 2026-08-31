@@ -179,10 +179,11 @@ def test_research_question_bounds_are_overridable(tmp_path):
     assert "3 research questions — at most 2 allowed" in result.stdout
 
 
-def test_level2_sections_still_checked(tmp_path):
+def test_deeper_sections_still_checked(tmp_path):
+    """Section matching is by title text, not level: a file one level deeper
+    than the convention is still fully checked."""
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    demoted = source.replace("\n# ", "\n## ").replace("\n## Previous", "\n### Previous").replace(
-        "\n## Requirements", "\n### Requirements").replace("\n## Evaluation", "\n### Evaluation")
+    demoted = source.replace("\n### ", "\n#### ").replace("\n## ", "\n### ")
     demoted = demoted.replace("(RQ3)", "")  # break one cross-ref
     victim = tmp_path / "demoted.md"
     victim.write_text(demoted, encoding="utf-8")
@@ -292,7 +293,7 @@ def test_author_metadata_key_warns(tmp_path):
     """Proposals are anonymous; the key renders verbatim on the title page."""
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "named.md"
-    victim.write_text(source.replace("\ntitle:", "\nauthor: Erika Musterfrau\ntitle:", 1),
+    victim.write_text(source.replace("\nreferences:", "\nauthor: Erika Musterfrau\nreferences:", 1),
                       encoding="utf-8")
     result = run_check(victim)
     out = result.stdout
@@ -306,8 +307,8 @@ def test_author_placeholder_warns_too(tmp_path):
     """The reported defect: an unfilled placeholder reaching the title page."""
     source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     victim = tmp_path / "todo-author.md"
-    victim.write_text(source.replace("\ntitle:", "\nauthor: [TODO: add author]\ntitle:", 1),
-                      encoding="utf-8")
+    named = source.replace("\nreferences:", "\nauthor: [TODO: add author]\nreferences:", 1)
+    victim.write_text(named, encoding="utf-8")
     assert "`author:` found" in run_check(victim).stdout
 
 

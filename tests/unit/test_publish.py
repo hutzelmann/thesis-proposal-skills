@@ -23,12 +23,22 @@ def test_engine_resolution_order():
     assert publish.resolve_engine(which_factory(set())) is None
 
 
-def test_proposal_lang_extraction():
-    assert publish.proposal_lang("---\ntitle: T\nlang: de\n---\n") == "de"
-    assert publish.proposal_lang('---\nlang: "de-AT"\n---\n') == "de-at"
-    assert publish.proposal_lang("---\ntitle: T\n---\n") == "en"
-    # a body mention must not match: the pattern is anchored to line starts
-    assert publish.proposal_lang("The word lang: de appears mid-sentence.") == "en"
+STRUCTURE = publish.load_structure()
+
+
+def test_lang_inferred_from_the_subtitle_wording():
+    de = "# Ein Titel für die Arbeit\n\n*Exposé zur Masterarbeit*\n\nText.\n"
+    en = "# A Title for the Thesis\n\n*Master's Thesis Proposal*\n\nText.\n"
+    assert publish.infer_lang(de, STRUCTURE) == "de"
+    assert publish.infer_lang(en, STRUCTURE) == "en"
+
+
+def test_lang_falls_back_to_section_title_majority():
+    de = ("# Ein Titel für die Arbeit\n\n*[TODO: state the degree level]*\n\n"
+          "## Einführung in das Thema\n\nText.\n\n## Literatur\n")
+    assert publish.infer_lang(de, STRUCTURE) == "de"
+    # nothing canonical anywhere: English is the fallback
+    assert publish.infer_lang("# Words\n\nProse only.\n", STRUCTURE) == "en"
 
 
 def test_reference_section_title_localized():
@@ -37,14 +47,19 @@ def test_reference_section_title_localized():
     assert publish.reference_section_title("de-at") == "Literatur"
 
 
-def test_pandoc_command_carries_reference_section_title():
+def test_pandoc_command_carries_lang_and_references_heading():
     for kind in ("typst", "latex", "docx"):
         cmd = publish.pandoc_command(Path("proposal.md"), kind, "de")
-        flag = cmd[cmd.index("-M") + 1]
-        assert flag == "reference-section-title=Literatur"
-        # the headline must exist before citeproc builds the reference list
+        metas = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "-M"]
+        assert "lang=de" in metas
+        assert "references-heading=Literatur" in metas
+        # the headline metadata must exist before citeproc builds the list
         assert cmd.index("-M") < cmd.index("--citeproc")
-    assert "reference-section-title=References" in publish.pandoc_command(Path("p.md"), "typst")
+        # and the subtitle filter must run before every other filter
+        filters = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "--lua-filter"]
+        assert Path(filters[0]).name == "subtitle-filter.lua"
+    en_cmd = publish.pandoc_command(Path("p.md"), "typst")
+    assert "references-heading=References" in en_cmd
 
 
 def test_strip_abstracts_removes_continuations():

@@ -21,7 +21,7 @@ def with_title(tmp_path: Path, title: str, name: str = "titled.md") -> Path:
     victim = tmp_path / name
     victim.write_text(
         source.replace(
-            "\ntitle: Machine Learning for Automated Code Review", f"\ntitle: {title}", 1
+            "# Machine Learning for Automated Code Review", f"# {title}", 1
         ),
         encoding="utf-8",
     )
@@ -72,14 +72,14 @@ def test_decomposed_umlaut_matches_too(tmp_path):
     assert "marketing tone" in run_check(with_title(tmp_path, title)).stdout
 
 
-def test_block_scalar_title_is_not_judged(tmp_path):
-    """`title: >-` continues on lines the narrow extraction never reads; judging
-    the indicator itself would report a one-word title that does not exist."""
-    victim = tmp_path / "folded.md"
+def test_todo_title_is_not_judged(tmp_path):
+    """An unsettled title is the sanctioned incomplete state: the todo-marker
+    finding covers it, and word-count tells on the placeholder would be noise."""
+    victim = tmp_path / "todo.md"
     victim.write_text(
         CLEAN.read_text(encoding="utf-8").replace(
-            "\ntitle: Machine Learning for Automated Code Review",
-            "\ntitle: >-\n  Validity of Unsupervised Drift Alerts Against Delayed-Label Decay",
+            "# Machine Learning for Automated Code Review",
+            "# [TODO: working title naming the contribution]",
             1,
         ),
         encoding="utf-8",
@@ -88,15 +88,16 @@ def test_block_scalar_title_is_not_judged(tmp_path):
 
 
 def test_german_minimum_is_lower_than_the_english_one(tmp_path):
-    """German compounds into one noun what English spreads over three."""
+    """German compounds into one noun what English spreads over three. The
+    language comes from the German fixture's subtitle, not from a lang key."""
     assert TITLE_CFG["min_words"]["de"] < TITLE_CFG["min_words"]["en"]
     victim = tmp_path / "de.md"
     victim.write_text(
-        CLEAN.read_text(encoding="utf-8")
-        .replace("\nlang: en", "\nlang: de", 1)
+        (FIXTURES / "f12-clean-de" / "typsystem-einheitenfehler.md")
+        .read_text(encoding="utf-8")
         .replace(
-            "\ntitle: Machine Learning for Automated Code Review",
-            "\ntitle: Anomalieerkennung in Produktionsnetzwerken",
+            "# Ein Typsystem zur statischen Erkennung von Einheitenfehlern in Simulationssoftware",
+            "# Anomalieerkennung in Produktionsnetzwerken",
             1,
         ),
         encoding="utf-8",

@@ -23,9 +23,6 @@ pytestmark = [
 METADATA = textwrap.dedent("""\
 
     ---
-    title: Test Proposal
-    subtitle: "{subtitle}"
-    lang: en
     references:
     - id: Tan25Flexibl
       type: article-journal
@@ -43,15 +40,22 @@ METADATA = textwrap.dedent("""\
 def convert(
     body: str,
     to: str = "typst",
+    title: str = "Test Proposal",
     subtitle: str = "A Proposal",
     out: Path | None = None,
     template: bool = False,
 ) -> str:
-    """Run the real publish filter chain over a document, return the output."""
+    """Run the real publish filter chain over a new-format document: leading
+    `# <title>`, emphasized subtitle paragraph, sections at H2, references-only
+    trailing metadata block."""
     cmd = [
         "pandoc", "-f", "markdown", "-t", to,
         # unwrapped so assertions can match an annotation on one line
         "--wrap=none",
+        "--shift-heading-level-by=-1",
+        "-M", "lang=en",
+        "-M", "references-heading=References",
+        "--lua-filter", str(TEMPLATES / "subtitle-filter.lua"),
         "--lua-filter", str(TEMPLATES / "author-intext.lua"),
         "--lua-filter", str(TEMPLATES / "cite-split.lua"),
         "--csl", str(TEMPLATES / "compact-numeric.csl"),
@@ -63,8 +67,9 @@ def convert(
         cmd += ["--template", str(TEMPLATES / "proposal.typ")]
     if out is not None:
         cmd += ["-o", str(out)]
+    frame = f"# {title}\n\n*{subtitle}*\n\n"
     result = subprocess.run(
-        cmd, input=body + METADATA.format(subtitle=subtitle),
+        cmd, input=frame + body + METADATA,
         capture_output=True, text=True, check=True,
     )
     return result.stdout
@@ -115,6 +120,19 @@ def test_subtitle_marker_takes_number_one_and_body_continues():
     assert "#todo-inline(2)[body gap]" in out
 
 
+def test_title_marker_takes_number_one_ahead_of_subtitle_and_body():
+    # needs the real template: the title block is where both markers render
+    out = convert(
+        "A gap in the body [TODO: body gap] here.\n",
+        title="[TODO: working title naming the contribution]",
+        subtitle="[TODO: confirm degree level]",
+        template=True,
+    )
+    assert "#todo-inline(1)[working title naming the contribution]" in out
+    assert "#todo-inline(2)[confirm degree level]" in out
+    assert "#todo-inline(3)[body gap]" in out
+
+
 def test_marker_inside_a_reference_is_neither_styled_nor_numbered():
     out = convert("A gap in the body [TODO: body gap] here.\n")
     # the reference abstract holds "[TODO: never numbered]" — it must not
@@ -125,7 +143,7 @@ def test_marker_inside_a_reference_is_neither_styled_nor_numbered():
 
 def test_marker_in_a_research_question_item_degrades_to_inline():
     out = convert(textwrap.dedent("""\
-        # Research Focus and Research Questions
+        ## Research Focus and Research Questions
 
         1. To what degree do drift signals predict decay [@Tan25Flexibl], and
            [TODO: confirm the baseline detector] under delay?

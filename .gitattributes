@@ -6,6 +6,7 @@ skills/proposal-import/references/structure.json linguist-generated=true merge=o
 skills/proposal-import/scripts/check.py linguist-generated=true merge=ours
 skills/proposal-import/scripts/common.py linguist-generated=true merge=ours
 skills/proposal-import/scripts/crossref.py linguist-generated=true merge=ours
+skills/proposal-publish/references/structure.json linguist-generated=true merge=ours
 skills/proposal-reverse/references/structure.json linguist-generated=true merge=ours
 skills/proposal-reverse/scripts/check.py linguist-generated=true merge=ours
 skills/proposal-reverse/scripts/common.py linguist-generated=true merge=ours

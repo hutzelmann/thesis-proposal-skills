@@ -93,7 +93,7 @@ Correcting markup remains permitted where markup is the actual defect — a code
 - **THEN** the skill leaves the document as written, reports which finding it is leaving and why, and names the troubleshoot skill
 
 ### Requirement: Methodology decision under deferred choice
-When the source material leaves the methodology choice open, the skill SHALL decide: it picks the methodology from the closed set that the research questions best support, writes the canonical methodology heading for that choice, and records the uncertainty as `[TODO: confirm methodology choice]` in the section body. A section heading SHALL NOT carry a TODO marker.
+When the source material leaves the methodology choice open, the skill SHALL decide: it picks the methodology from the closed set that the research questions best support, writes the canonical methodology heading for that choice, and records the uncertainty as `[TODO: confirm methodology choice]` in the section body. A section heading SHALL NOT carry a TODO marker; the leading `# <title>` line is not a section heading and MAY carry one, per the file-format contract.
 
 #### Scenario: Seed defers the methodology choice
 - **WHEN** the idea notes contain an open TODO deferring between two methodologies
@@ -102,6 +102,10 @@ When the source material leaves the methodology choice open, the skill SHALL dec
 #### Scenario: User states the methodology in the request
 - **WHEN** the request names the methodology to use
 - **THEN** the skill uses it without adding a confirmation TODO
+
+#### Scenario: Unsettled title carries its marker in the title line
+- **WHEN** the draft's title is not yet settled
+- **THEN** the leading `# ` line carries the TODO marker and no section heading gains one in its place
 
 ### Requirement: Notes file consumed and maintained while writing
 When a companion `<slug>.notes.md` exists for the target proposal, the write skill SHALL read it before drafting and honor its content: recorded decisions steer the draft (they are not re-litigated), and the Next Focus section informs which gaps to work on first. Decisions the writing session itself produces SHALL be recorded in the notes Decisions section. When the session resolves a proposal `[TODO: …]` marker, the skill SHALL move it to the notes Log as a done entry rather than deleting it. When no notes file exists, the skill SHALL proceed as before and MAY create one only when it has decisions to record — never an empty skeleton.
@@ -127,7 +131,7 @@ The skill SHALL judge the proposal's title against the guidance once the researc
 
 #### Scenario: Student picks an alternative
 - **WHEN** the student chooses one of the offered titles
-- **THEN** the metadata `title:` carries that title and the slug is left alone unless the student asks for a rename
+- **THEN** the leading `# ` line carries that title and the slug is left alone unless the student asks for a rename
 
 #### Scenario: Student keeps a named technology
 - **WHEN** the student states that the named technology is the object of study

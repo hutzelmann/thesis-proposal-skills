@@ -1,17 +1,21 @@
-# Context and Motivation
+# Data-Driven Risk Scoring for Supplier Management
+
+*Master's Thesis Proposal*
+
+## Context and Motivation
 
 Manufacturing companies depend on hundreds of suppliers, and a single delayed shipment can halt an entire production line.
 Supplier risk management at Example Logistics AG currently relies on annual self-assessment questionnaires, which capture risk levels months after the underlying situation has changed.
 Recent work shows that operational data such as delivery punctuality and quality-inspection outcomes can predict supplier failures earlier than questionnaire-based ratings.
 This Master's thesis investigates a data-driven risk score that aggregates such operational signals into a single, continuously updated indicator.
 
-# Problem Statement
+## Problem Statement
 
 Existing risk dashboards at the company aggregate data manually and update quarterly at best.
 Purchasing teams therefore escalate supplier issues only after delays have already occurred.
 A continuously computed risk score could support earlier escalation, but it is unclear which signals carry predictive value and how the score should be presented to purchasers.
 
-# Objectives and Research Questions
+## Objectives and Research Questions
 
 The thesis aims to design, implement, and assess a risk-scoring prototype on top of the company's data warehouse.
 
@@ -20,14 +24,14 @@ The thesis aims to design, implement, and assess a risk-scoring prototype on top
 3. To what degree do data-driven risk scores agree with the assessments of experienced purchasers?
 4. Under which conditions does the score fail to reflect actual supplier risk?
 
-# Planned Approach
+## Planned Approach
 
 The prototype extracts delivery, quality, and financial signals, normalises them, and combines them into a weighted score.
 Weights are calibrated on two years of historical supplier data.
 The resulting scores are compared against past supplier incidents and discussed in feedback sessions with the purchasing department.
 Success is assessed primarily through the feedback of the internal stakeholders.
 
-# Work Plan and Phases
+## Work Plan and Phases
 
 | Phase | Content |
 |---|---|
@@ -36,17 +40,16 @@ Success is assessed primarily through the feedback of the internal stakeholders.
 | Phase 3 | Comparison against historical incidents |
 | Phase 4 | Stakeholder feedback and thesis writing |
 
-# Supervisors
+## Supervisors
 
 University supervisor: Prof. Dr. John Public (john.public@example.org)
 Company supervisor: Max Mustermann (max.mustermann@example.org), Head of Procurement Analytics
 
 Confidential — internal use only. This document contains internal supplier information of Example Logistics AG.
 
+## References
+
 ---
-title: Data-Driven Risk Scoring for Supplier Management
-subtitle: "Master's Thesis Proposal"
-lang: en
 references:
 - id: Silva24Early
   type: article-journal

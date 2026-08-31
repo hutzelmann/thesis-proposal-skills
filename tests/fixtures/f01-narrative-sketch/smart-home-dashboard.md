@@ -1,4 +1,8 @@
-# Ziel der Arbeit
+# Ein Dashboard für den Stromverbrauch im Smart Home
+
+*Exposé zur Bachelorarbeit*
+
+## Ziel der Arbeit
 
 Strom ist in den letzten Jahren deutlich teurer geworden, und trotzdem weiß kaum jemand, welches Gerät im Haushalt wie viel verbraucht.
 Ich beschäftige mich seit meinem vierten Semester mit Smart-Home-Technik und habe dabei gemerkt, dass viele Haushalte ihren Stromverbrauch nur über die Jahresabrechnung wahrnehmen.
@@ -10,7 +14,7 @@ Wichtig ist mir außerdem, dass die Bedienung ohne technisches Vorwissen möglic
 Am Ende soll ein System stehen, das sich leicht installieren lässt und einen echten Mehrwert im Alltag bietet.
 Mein Ziel ist erreicht, wenn das Dashboard bei den Nutzern gut ankommt und sie es gerne verwenden.
 
-# Arbeitsplan
+## Arbeitsplan
 
 Zuerst werde ich mich in die gängigen Smart-Home-Protokolle einarbeiten und passende Zwischenstecker auswählen.
 Danach plane ich die Umsetzung des Backends, das die Messwerte einsammelt und in einer Datenbank ablegt.
@@ -19,10 +23,9 @@ Sobald eine erste Version läuft, zeige ich das Dashboard meinen Mitbewohnern un
 Deren Rückmeldungen arbeite ich dann nach und nach ein, bis alle zufrieden sind.
 Für die gesamte Bearbeitung plane ich etwa vier Monate ein, wobei die ersten Wochen für die Einarbeitung reserviert sind.
 
+## Literatur
+
 ---
-title: Ein Dashboard für den Stromverbrauch im Smart Home
-subtitle: "Exposé zur Bachelorarbeit"
-lang: de
 references:
 - id: Weber23Smart
   type: article-journal

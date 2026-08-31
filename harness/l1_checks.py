@@ -136,11 +136,17 @@ def verdict_review(original: str, current: str | None, review: str | None,
 
 
 def title_line(text: str | None) -> str | None:
-    """The metadata `title:` value — the line that reaches the study certificate."""
+    """The leading `# <title>` text — the line that reaches the study certificate.
+
+    Only the file's first content line counts, mirroring check.py's frame rule;
+    a leftover `title:` metadata key is retired and deliberately not read."""
     if not text:
         return None
-    m = re.search(r"^title:\s*(.+)$", text, re.MULTILINE)
-    return m.group(1).strip() if m else None
+    for line in text.split("\n"):
+        if line.strip():
+            m = re.match(r"#\s+(.+)$", line)
+            return m.group(1).strip() if m else None
+    return None
 
 
 def verdict_title_alarm(original: str, current: str | None, review: str | None,
@@ -165,7 +171,7 @@ def verdict_title_alarm(original: str, current: str | None, review: str | None,
     if not raised:
         return False, "review never raises the title as a finding of its own"
     if after is None:
-        return False, "proposal lost its `title:` line"
+        return False, "proposal lost its leading `# ` title line"
     if after != before:
         return False, f"title rewritten in the proposal: `{before}` -> `{after}`"
     return True, "title raised in the review, proposal title left to the student"
@@ -220,9 +226,9 @@ def verdict_import(proposal_text: str | None, check_output: str = "",
         if leak in proposal_text:
             problems.append(f"personal/confidential data leaked: {leak}")
     # a TODO marker as a bare line in the trailing block has no key, so pandoc
-    # rejects the whole block and the file cannot build. Verified: only this
-    # shape breaks — `title: [TODO: …]` and `title: "[TODO: …]"` both parse.
-    # check.py cannot see it, extracting narrowly rather than parsing YAML.
+    # rejects the whole block and the file cannot build (a title gap belongs in
+    # the leading `# ` line instead). check.py cannot see this shape, extracting
+    # narrowly rather than parsing YAML.
     lines = proposal_text.rstrip("\n").split("\n")
     delims = [i for i, line in enumerate(lines) if line.strip() == "---"]
     if len(delims) >= 2 and any(
@@ -248,6 +254,8 @@ def verdict_seed(seed_text: str | None, filename: str = "") -> tuple[bool, str]:
     if not seed_text:
         return False, "no seeded proposal file"
     problems = []
+    if title_line(seed_text) is None:
+        problems.append("no leading `# ` title line")
     if "\n---" not in seed_text:
         problems.append("no metadata block")
     if "references" not in seed_text:
@@ -362,8 +370,8 @@ def _seed_idea_terms(seed_text: str) -> set[str]:
     CSL-YAML reference entries never enter the term set."""
     body = re.split(r"\n\n---\s*\n", seed_text, maxsplit=1)[0]
     lines = [line for line in body.splitlines() if line.lstrip().startswith(("- ", "* "))]
-    if m := re.search(r"^title:\s*[\"']?(.+?)[\"']?$", seed_text, re.MULTILINE):
-        lines.append(m.group(1))
+    if title := title_line(seed_text):
+        lines.append(title)
     words = re.findall(r"[a-zA-Zäöüß][a-zA-Zäöüß-]{4,}", " ".join(lines).lower())
     return {w for w in words if w not in PROVENANCE_STOPWORDS}
 

@@ -3,10 +3,12 @@
 # Edit there, then run scripts/sync_shared.py
 """Deterministic low-level checks for a thesis proposal file.
 
-Stdlib-only (Python >= 3.11). Reads the proposal's markdown, its trailing
-metadata block (narrow extraction — no general YAML parsing), the canonical
-skeleton from references/structure.json, and an optional workspace
-guidelines.md TOML override block.
+Stdlib-only (Python >= 3.11). Reads the proposal's markdown — leading `# ` title
+line, emphasized subtitle paragraph, sections, and the trailing references
+metadata block (narrow extraction — no general YAML parsing) — plus the
+canonical skeleton from references/structure.json and an optional workspace
+guidelines.md TOML override block. The proposal's language is inferred from the
+subtitle wording, falling back to a majority of canonical section titles.
 
 Output: two-bucket report (mechanical errors / mechanical warnings) plus a
 fixed note on what is deferred to the agent pass. Exit 1 only on mechanical
@@ -60,8 +62,19 @@ RULE_IDS = (
     "metadata-block-multiple",
     "reference-id-boolean-literal",
     "duplicate-reference-id",
+    "retired-metadata-key",
+    "legacy-format",
+    # document frame
+    "title-line-missing",
+    "title-not-first",
+    "multiple-h1",
+    "subtitle-missing",
+    "subtitle-not-emphasized",
+    "references-section-missing",
+    "references-section-not-last",
+    "references-section-not-empty",
+    "language-undeterminable",
     # title
-    "metadata-title-missing",
     "title-implementation-opener",
     "title-buzzword",
     "title-question-form",
@@ -259,8 +272,11 @@ class Metadata:
     def __init__(self) -> None:
         self.found = False
         self.blank_line_before = False
-        self.lang = "en"
+        # retired keys (title/subtitle/lang moved into the body; author never
+        # belonged) — kept as evidence for the retired-key and legacy findings
         self.title: str | None = None
+        self.has_subtitle_key = False
+        self.has_lang_key = False
         self.reference_ids: list[str] = []
         # ids whose entry declares neither an author nor an editor: an
         # author-in-text citation of one renders as the quoted title
@@ -317,8 +333,8 @@ def split_proposal(text: str) -> tuple[str, Metadata]:
             meta.found = True
             meta.blank_line_before = start > 0 and lines[start - 1].strip() == ""
             body = "\n".join(lines[:start])
-            if m := re.search(r"^lang:\s*(\S+)", block, re.MULTILINE):
-                meta.lang = m.group(1).strip("'\"")
+            meta.has_lang_key = bool(re.search(r"^lang:", block, re.MULTILINE))
+            meta.has_subtitle_key = bool(re.search(r"^subtitle:", block, re.MULTILINE))
             if m := re.search(r"^title:\s*(.+)$", block, re.MULTILINE):
                 meta.title = m.group(1).strip().strip("'\"")
             # column 0 only: `author:` inside a reference entry is indented
@@ -346,6 +362,69 @@ def headings(body: str) -> list[tuple[int, str]]:
         (len(m.group(1)), m.group(2).strip())
         for m in re.finditer(r"^(#{1,6})\s+(.+)$", body, re.MULTILINE)
     ]
+
+
+# ---------- document frame ----------------------------------------------------
+#
+# The frame is the part of the body that is document, not section: the leading
+# `# <title>` line and the emphasized subtitle paragraph beneath it. pandoc
+# promotes the H1 to the document title only when it is the file's first block —
+# anything above it silently demotes the heading to a paragraph — so the frame
+# rules are what keep that promotion from failing invisibly.
+
+@dataclass(frozen=True)
+class Frame:
+    title: str | None        # text of the first H1, wherever it sits
+    title_is_first: bool     # the H1 is the file's first content line
+    h1_count: int
+    subtitle: str | None     # first paragraph line after the title, emphasis stripped
+    subtitle_emphasized: bool
+
+
+# a paragraph wrapped entirely in single-star emphasis — the one canonical
+# subtitle spelling; `**bold**` and partial emphasis deliberately do not match
+SUBTITLE_EMPHASIS = re.compile(r"\*(?!\*)(.+)(?<!\*)\*")
+
+
+def parse_frame(body: str) -> Frame:
+    lines = body.split("\n")
+    h1s = [(i, m.group(1).strip())
+           for i, line in enumerate(lines) if (m := re.match(r"#\s+(.+)$", line))]
+    first_content = next((i for i, line in enumerate(lines) if line.strip()), None)
+    title = h1s[0][1] if h1s else None
+    title_is_first = bool(h1s) and h1s[0][0] == first_content
+    subtitle = None
+    emphasized = False
+    if title_is_first:
+        after = next((line.strip() for line in lines[h1s[0][0] + 1:] if line.strip()), None)
+        if after is not None and not after.startswith("#"):
+            if m := SUBTITLE_EMPHASIS.fullmatch(after):
+                subtitle, emphasized = m.group(1).strip(), True
+            else:
+                subtitle = after
+    return Frame(title=title, title_is_first=title_is_first, h1_count=len(h1s),
+                 subtitle=subtitle, subtitle_emphasized=emphasized)
+
+
+def infer_language(frame: Frame, head_texts: list[str], structure: dict) -> str | None:
+    """Deterministic language inference: exact subtitle match first, then a
+    majority of canonical section-title matches. None when neither decides."""
+    wordings = structure["subtitle"]["wordings"]
+    if frame.subtitle:
+        for lang in ("en", "de"):
+            if frame.subtitle in wordings[lang]:
+                return lang
+    titles = structure["sections"]["titles"]
+    counts = {}
+    for lang in ("en", "de"):
+        canonical = {titles[key][lang] for key in titles if key != "methodology"}
+        canonical.add(structure["references"]["section_title"][lang])
+        prefix = titles["methodology"][lang].split("{")[0]
+        counts[lang] = sum(1 for h in head_texts
+                           if h in canonical or h.startswith(prefix))
+    if counts["en"] != counts["de"]:
+        return max(counts, key=counts.get)
+    return None
 
 
 def timeline_body_errors(section: str, title: str, max_lines: int) -> list[Finding]:
@@ -376,11 +455,6 @@ def timeline_body_errors(section: str, title: str, max_lines: int) -> list[Findi
     return out
 
 
-# a `title:` whose value is only a YAML block-scalar indicator continues on the
-# following lines, which the narrow one-line extraction never sees
-BLOCK_SCALAR = re.compile(r"^[|>][+-]?\d*$")
-
-
 def title_warnings(title: str, cfg: dict, lang: str = "en") -> list[Finding]:
     """The thesis title is printed on the study certificate — every finding says
     so, because that rationale is what makes a heuristic warning worth acting on.
@@ -388,8 +462,8 @@ def title_warnings(title: str, cfg: dict, lang: str = "en") -> list[Finding]:
     a tool, a product or a vendor is agent judgement, never data."""
     certificate = "the title is printed on the study certificate"
     stripped = unicodedata.normalize("NFC", title.strip())
-    if not stripped or BLOCK_SCALAR.fullmatch(stripped):
-        return []  # folded/literal block: the value is on lines we did not read
+    if not stripped or re.fullmatch(r"\[TODO:[^\]]*\]", stripped):
+        return []  # no title yet: the todo-marker finding already covers it
     low = stripped.lower()
     out = []
 
@@ -442,12 +516,14 @@ class Context:
 
     body: str
     meta: Metadata
+    frame: Frame
     lang: str
+    lang_determined: bool  # False when inference decided nothing and en is a fallback
     structure: dict
     overrides: dict
     methodologies: dict    # shipped set with the workspace declaration applied
     detail: str            # effective timeline mode after validation
-    head_texts: list[str]
+    head_texts: list[str]  # section headings — the leading title H1 is excluded
     titles: dict
     meth_tpl: str
     meth_prefix: str
@@ -539,12 +615,109 @@ def rule_heading_style(ctx: Context) -> list[Finding]:
                   f"the section rules below cannot see them")]
 
 
-def rule_title(ctx: Context) -> list[Finding]:
+def rule_retired_keys(ctx: Context) -> list[Finding]:
+    """title/subtitle/lang left the metadata block for the body. Warning class,
+    like `author`: a student feeding the file to bare pandoc may set `lang`
+    deliberately, and then this finding is expected notice, not breakage."""
     if not ctx.meta.found:
         return []
-    if ctx.meta.title is None:
-        return [warn("metadata-title-missing", "metadata block has no `title:`")]
-    return title_warnings(ctx.meta.title, ctx.structure["title"], ctx.lang)
+    retired = [
+        ("title", ctx.meta.title is not None, "the leading `# ` line"),
+        ("subtitle", ctx.meta.has_subtitle_key, "the emphasized paragraph under the title"),
+        ("lang", ctx.meta.has_lang_key, "inference from the subtitle and section titles"),
+    ]
+    return [
+        warn("retired-metadata-key",
+             f"metadata key `{key}:` is retired — its place is {home}; remove the key")
+        for key, present, home in retired if present
+    ]
+
+
+def rule_legacy_format(ctx: Context) -> list[Finding]:
+    """The retired layout of this very toolchain: title in the metadata block,
+    canonical sections at H1. Without this the report is a cascade of missing
+    sections and flagged keys that never names what actually happened."""
+    if ctx.meta.title is None or ctx.frame.h1_count < 2:
+        return []
+    return [error(
+        "legacy-format",
+        f"this file uses the retired layout (title in the metadata block, sections "
+        f"as `# ` headings) — move `{ctx.meta.title}` to a leading `# ` line, demote "
+        f"every section heading one level, and end the body with the references "
+        f"heading (the findings below follow from the old layout)",
+    )]
+
+
+def rule_frame(ctx: Context) -> list[Finding]:
+    """The leading `# <title>` line must be the file's first content line and its
+    only H1 — pandoc promotes it to the document title only in that position and
+    silently demotes it to a plain paragraph otherwise, which builds a document
+    with no title and no error."""
+    frame = ctx.frame
+    if frame.h1_count == 0:
+        return [error("title-line-missing",
+                      "no `# <title>` line found — the file opens with the thesis "
+                      "title as its only `# ` heading")]
+    out = []
+    if not frame.title_is_first:
+        out.append(error(
+            "title-not-first",
+            f"content precedes the `# {frame.title}` line — the title must be the "
+            f"file's first content line, or the build silently produces a document "
+            f"without a title"))
+    if frame.h1_count > 1:
+        out.append(error(
+            "multiple-h1",
+            f"{frame.h1_count} `# ` headings found — the title is the only H1; "
+            f"sections use `## `"))
+    if frame.title_is_first and frame.h1_count == 1:
+        if frame.subtitle is None:
+            out.append(error(
+                "subtitle-missing",
+                "no subtitle paragraph under the title — expected e.g. "
+                "`*Master's Thesis Proposal*` as the first paragraph"))
+        elif not frame.subtitle_emphasized:
+            out.append(error(
+                "subtitle-not-emphasized",
+                f"subtitle `{frame.subtitle}` is not wrapped in `*…*` emphasis — "
+                f"write it as `*{frame.subtitle}*`"))
+    return out
+
+
+def rule_references_section(ctx: Context) -> list[Finding]:
+    """The body ends with an empty references heading: the rendered bibliography
+    lands beneath it, and the raw file gains a visible marker that the trailing
+    block is the bibliography database."""
+    ref_title = ctx.structure["references"]["section_title"][ctx.lang]
+    if ref_title not in ctx.head_texts:
+        return [error("references-section-missing",
+                      f"closing references section missing — end the body with "
+                      f"`## {ref_title}` above the metadata block")]
+    out = []
+    if ctx.head_texts[-1] != ref_title:
+        out.append(error("references-section-not-last",
+                         f"`{ref_title}` is not the last section — it closes the body"))
+    if section_text(ctx.body, ref_title).strip():
+        out.append(error("references-section-not-empty",
+                         f"`{ref_title}` carries content — the section stays empty; "
+                         f"entries live in the metadata block and the build renders "
+                         f"them here"))
+    return out
+
+
+def rule_language(ctx: Context) -> list[Finding]:
+    if ctx.lang_determined:
+        return []
+    return [warn("language-undeterminable",
+                 "language could not be inferred — neither the subtitle nor a "
+                 "majority of section titles matches the English or German "
+                 "canonical wordings; findings assume English")]
+
+
+def rule_title(ctx: Context) -> list[Finding]:
+    if not ctx.frame.title_is_first:
+        return []
+    return title_warnings(ctx.frame.title, ctx.structure["title"], ctx.lang)
 
 
 def rule_timeline_mode(ctx: Context) -> list[Finding]:
@@ -976,13 +1149,18 @@ RULES = (
     rule_metadata_present,
     rule_reference_id_syntax,
     rule_single_metadata_block,
+    rule_retired_keys,
+    rule_legacy_format,
     rule_heading_style,
+    rule_frame,
+    rule_language,
     rule_title,
     rule_timeline_mode,
     rule_required_sections,
     rule_section_order,
     rule_timeline_size,
     rule_methodology,
+    rule_references_section,
     rule_forbidden_sections,
     rule_research_questions,
     rule_citations,
@@ -998,15 +1176,20 @@ RULES = (
 def build_context(body: str, meta: Metadata, structure: dict, overrides: dict) -> Context:
     """Derive once what every rule reads. An unrecognised timeline mode falls
     back to the default here silently; `rule_timeline_mode` reports it, so the
-    finding keeps its place in the report rather than jumping to the front."""
-    lang = meta.lang if meta.lang in ("en", "de") else "en"
+    finding keeps its place in the report rather than jumping to the front.
+    The leading title H1 is dropped from `head_texts` here: the title is not a
+    section, so it must never satisfy, order, or trip a section rule."""
+    frame = parse_frame(body)
 
     timeline_cfg = structure["timeline"]
     detail = setting(structure, overrides, "timeline", "detail")
     if detail not in timeline_cfg["detail_modes"]:
         detail = timeline_cfg["detail"]
 
-    head_texts = [t for _, t in headings(body)]
+    all_heads = headings(body)
+    head_texts = [t for _, t in (all_heads[1:] if frame.title_is_first else all_heads)]
+    inferred = infer_language(frame, head_texts, structure)
+    lang = inferred or "en"
     titles = structure["sections"]["titles"]
     meth_tpl = titles["methodology"][lang]
     meth_prefix = meth_tpl.split("{")[0]
@@ -1014,7 +1197,9 @@ def build_context(body: str, meta: Metadata, structure: dict, overrides: dict) -
         titles[key][lang] for key in structure["sections"]["order"] if key != "methodology"
     ]
     return Context(
-        body=body, meta=meta, lang=lang, structure=structure, overrides=overrides,
+        body=body, meta=meta, frame=frame, lang=lang,
+        lang_determined=inferred is not None,
+        structure=structure, overrides=overrides,
         methodologies=merge_methodologies(structure, overrides),
         detail=detail, head_texts=head_texts, titles=titles, meth_tpl=meth_tpl,
         meth_prefix=meth_prefix,

@@ -1,11 +1,15 @@
-# Motivation
+# Vergleich statischer Analysewerkzeuge für JavaScript
+
+*Exposé zur Bachelorarbeit*
+
+## Motivation
 
 Statische Analysewerkzeuge prüfen Quelltext auf Fehlermuster, ohne das Programm auszuführen.
 In JavaScript-Projekten ist ihr Einsatz besonders verbreitet, da die dynamische Typisierung viele Fehlerklassen erst zur Laufzeit sichtbar macht.
 Die Auswahl eines geeigneten Werkzeugs fällt Entwicklungsteams jedoch schwer, weil sich die verfügbaren Werkzeuge in Regelumfang, Konfigurierbarkeit und Meldungsqualität deutlich unterscheiden [@Lintfox25Rules].
 Eine fundierte Entscheidungsgrundlage für kleine und mittlere Projekte fehlt bislang.
 
-# Zielsetzung
+## Zielsetzung
 
 Ziel der Bachelorarbeit ist ein systematischer Vergleich von drei verbreiteten statischen Analysewerkzeugen für JavaScript.
 Der Vergleich soll zeigen, welches Werkzeug für kleine bis mittlere Projekte am besten geeignet ist.
@@ -13,14 +17,14 @@ Als Grundlage dienen die offiziellen Regelkataloge und Handbücher der Herstelle
 Bewertet werden unter anderem die Anzahl der gefundenen Probleme, die Rate falsch positiver Meldungen und der Aufwand für die Konfiguration.
 Das Ergebnis der Arbeit ist eine begründete Empfehlung, die Entwicklungsteams bei der Werkzeugauswahl unterstützt.
 
-# Arbeitsschritte
+## Arbeitsschritte
 
 Zunächst wird eine Auswahl von Open-Source-Projekten als Testkorpus zusammengestellt.
 Anschließend werden die drei Werkzeuge mit ihrer Standardkonfiguration auf den Korpus angewendet.
 Die gemeldeten Befunde werden manuell klassifiziert und den Kategorien echter Fehler, Stilfrage und Fehlalarm zugeordnet.
 Abschließend werden die Ergebnisse tabellarisch gegenübergestellt und im Hinblick auf die Projektgröße diskutiert.
 
-# Zeitplan
+## Zeitplan
 
 | Phase | Monat 1 | Monat 2 | Monat 3 | Monat 4 |
 |---|---|---|---|---|
@@ -30,10 +34,9 @@ Abschließend werden die Ergebnisse tabellarisch gegenübergestellt und im Hinbl
 | Klassifikation und Auswertung | | | X | X |
 | Ausarbeitung | | | | X |
 
+## Literatur
+
 ---
-title: Vergleich statischer Analysewerkzeuge für JavaScript
-subtitle: "Exposé zur Bachelorarbeit"
-lang: de
 references:
 - id: Lintfox25Rules
   type: webpage

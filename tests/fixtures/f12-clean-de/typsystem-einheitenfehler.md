@@ -1,18 +1,22 @@
-# Einführung in das Thema
+# Ein Typsystem zur statischen Erkennung von Einheitenfehlern in Simulationssoftware
+
+*Exposé zur Bachelorarbeit*
+
+## Einführung in das Thema
 
 Wissenschaftliche Simulationssoftware verarbeitet physikalische Größen wie Kräfte, Zeiten und Temperaturen in nahezu jeder Berechnung.
 Verwechslungen von Einheiten bleiben dabei oft unbemerkt, weil gängige Programmiersprachen Zahlenwerte ohne Einheiteninformation darstellen [@Berger21Dimensional].
 Solche Fehler haben in der Vergangenheit zu erheblichen Schäden in Forschung und Technik geführt [@Vogel23Static].
 Die vorliegende Arbeit untersucht, wie ein statisches Typsystem Einheitenfehler bereits vor der Ausführung erkennbar macht.
 
-# Beitrag zum Stand der Technik
+## Beitrag zum Stand der Technik
 
 Bestehende Ansätze erweitern einzelne Sprachen um Einheitenannotationen, verlangen dafür jedoch Angaben an nahezu jeder Deklaration [@Berger21Dimensional].
 Dynamische Prüfverfahren erkennen Einheitenfehler erst zur Laufzeit und verursachen messbaren Mehraufwand [@Roth24Runtime].
 Diese Arbeit formalisiert ein Typsystem mit Einheiteninferenz, das Annotationen nur an Modulschnittstellen benötigt und den Programmkern unverändert lässt.
 Gegenüber @Vogel23Static erweitert die Formalisierung die abgedeckten Fehlerklassen um zusammengesetzte und skalierte Einheiten.
 
-# Forschungsfokus und Forschungsfragen
+## Forschungsfokus und Forschungsfragen
 
 Der Forschungsfokus liegt auf der Frage, welchen Anteil realer Einheitenfehler ein inferenzbasiertes Typsystem mit minimalen Annotationen statisch ausschließen kann.
 
@@ -20,33 +24,32 @@ Der Forschungsfokus liegt auf der Frage, welchen Anteil realer Einheitenfehler e
 2. Unter welchen Bedingungen bleibt die Typprüfung für einheitenbehaftete Programme entscheidbar und mit vertretbarem Aufwand durchführbar?
 3. Zu welchem Grad deckt das formalisierte Typsystem die in der Literatur dokumentierten Klassen von Einheitenfehlern ab?
 
-# Forschungsmethodik: Theoretische Analyse
+## Forschungsmethodik: Theoretische Analyse
 
-## Formalisierung
+### Formalisierung
 
 Die Analyse definiert einen Termkalkül, dessen Einheitentypen eine Abelsche Gruppe über Basiseinheiten bilden und der etablierte Kalküle zur Dimensionsanalyse aufgreift [@Klein20Calculi].
 Aufbauend darauf formalisiert die Arbeit Typregeln samt Inferenzalgorithmus und weist deren Ausdrucksmächtigkeit für zusammengesetzte und skalierte Einheiten nach (RQ1).
 Ein Entscheidbarkeitsbeweis grenzt ab, unter welchen Bedingungen der Inferenzalgorithmus terminiert (RQ2).
 
-## Anforderungen
+### Anforderungen
 
 Das Typsystem muss zusammengesetzte, skalierte und dimensionslose Einheiten ausdrücken können.
 Erwartet wird ferner ein Soundness-Beweis für den Kernkalkül.
 Vernachlässigbar sind Nebenläufigkeit, Effekte höherer Ordnung und die Performanz einer späteren Implementierung.
 
-## Beispiel
+### Beispiel
 
 Als durchgängiges Beispiel dient ein vereinfachtes Modul zur Bahnberechnung, das Kräfte, Massen und Beschleunigungen kombiniert.
 Eine Abbildung der in der Literatur dokumentierten Fehlerklassen auf dieses Beispiel zeigt, welche Klassen das Typsystem statisch ausschließt (RQ3).
 
-# Zeitplan
+## Zeitplan
 
 Die Arbeit beginnt im April 2027 und wird im September 2027 eingereicht.
 
+## Literatur
+
 ---
-title: Ein Typsystem zur statischen Erkennung von Einheitenfehlern in Simulationssoftware
-subtitle: "Exposé zur Bachelorarbeit"
-lang: de
 references:
 - id: Berger21Dimensional
   type: article-journal

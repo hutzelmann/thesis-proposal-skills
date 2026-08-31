@@ -47,6 +47,10 @@ SYNC_MAP: dict[str, list[str]] = {
         # backticked span in captured script output is kept only when it is a
         # canonical title, since anything else may be the student's own wording
         "skills/proposal-troubleshoot/references",
+        # publish infers the proposal language from the canonical subtitle
+        # wordings and section titles, and reads the references-section
+        # headline it must leave unnumbered
+        "skills/proposal-publish/references",
     ],
     # import and write run the check over the file they just wrote before
     # reporting, so the script is core to their function and ships as a

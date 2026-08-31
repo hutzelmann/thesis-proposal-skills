@@ -210,7 +210,19 @@ def canonical_titles() -> set[str]:
         titles.update(method.get("title", {}).values())
         for sub in method.get("subsections", []):
             titles.update(sub.values())
-    return titles
+    return titles | _frame_wordings(data)
+
+
+def _frame_wordings(data: dict) -> set[str]:
+    """References-section headlines and canonical subtitle wordings — fixed by
+    the guidance, not user wording, so they survive redaction too."""
+    out: set[str] = set()
+    for title in data.get("references", {}).get("section_title", {}).values():
+        out |= {title, f"## {title}"}
+    for wordings in data.get("subtitle", {}).get("wordings", {}).values():
+        for wording in wordings:
+            out |= {wording, f"*{wording}*"}
+    return out
 
 
 def redact_text(text: str, allowed: set[str], proposal_names: set[str]) -> str:
@@ -269,6 +281,13 @@ def describe_proposal(path: Path, level: str) -> list[str]:
     allowed = canonical_titles()
     h = file_hashes(path)
 
+    # The leading H1 is the student's unpublished thesis title — proposal text,
+    # not structure. It is excluded from the canonical tally (it never matches)
+    # and masked wherever headings are listed; only `full` carries it.
+    first_content = next((ln for ln in lines if ln.strip()), "")
+    title_first = bool(m := HEADING_RE.match(first_content)) and m.group(1) == "#"
+    section_headings = headings[1:] if title_first else headings
+
     out = [
         "[measured] proposal file recorded as " + PROPOSAL_PLACEHOLDER
         + f" ({h['bytes']} bytes, sha256:{h['sha256']})",
@@ -278,15 +297,18 @@ def describe_proposal(path: Path, level: str) -> list[str]:
     ]
 
     if level == "minimal":
-        canonical = sum(1 for _, title in headings if title in allowed)
+        canonical = sum(1 for _, title in section_headings if title in allowed)
         out.append(
-            f"[measured] {canonical} of {len(headings)} headings match a canonical "
-            "title; heading text withheld at this level"
+            f"[measured] {canonical} of {len(section_headings)} section headings "
+            "match a canonical title (the title heading is not counted); "
+            "heading text withheld at this level"
         )
         return out
 
     out.append("[measured] headings, in order:")
-    for hashes, title in headings:
+    if title_first:
+        out.append("  # [title withheld]   (title)")
+    for hashes, title in section_headings:
         mark = "canonical" if title in allowed else "custom"
         out.append(f"  {hashes} {title}   ({mark})")
     if todos:

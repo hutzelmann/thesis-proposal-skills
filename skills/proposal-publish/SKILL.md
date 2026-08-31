@@ -28,7 +28,9 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/publish.py <proposal.md> --handout  # stripp
 
 The script resolves the best pipeline automatically: **typst** (preferred) → **LaTeX engine** → **docx** (last resort, no PDF), using the skill's `templates/` (compact layout, `RQ n:` styling, citeproc). Outputs land next to the proposal; the script also ensures the workspace `.gitignore` covers build artifacts (shared rule: whichever skill first creates an ignorable artifact adds the entry).
 
-Citations render in two forms, both usable in one document: `[@key]` becomes `[1]`, and `@key` becomes `Smith et al. [1]` — the author name derived from the proposal's own reference entry, so it never has to be typed. The filter chain producing this is order-dependent (`author-intext.lua` → `cite-split.lua` → citeproc → `rq-filter.lua` → `todo-filter.lua`); don't reorder it.
+The proposal source carries its title as the leading `# ` line and its subtitle as the emphasized paragraph beneath it. The build maps that frame onto the rendered title block itself — pandoc's `--shift-heading-level-by=-1` plus `subtitle-filter.lua` — and infers the language from the canonical subtitle and section wordings, so `##` sections render as numbered top-level sections and the closing references heading renders unnumbered with the bibliography beneath it.
+
+Citations render in two forms, both usable in one document: `[@key]` becomes `[1]`, and `@key` becomes `Smith et al. [1]` — the author name derived from the proposal's own reference entry, so it never has to be typed. The filter chain producing this is order-dependent (`subtitle-filter.lua` → `author-intext.lua` → `cite-split.lua` → citeproc → `rq-filter.lua` → `todo-filter.lua`); don't reorder it.
 
 `[TODO: …]` markers render as numbered annotations rather than prose — a marker alone on its line becomes a callout block, one inside a sentence becomes a highlight, and a marker carried by the title or subtitle is numbered ahead of the body. There is deliberately no option to render them quietly: the way to a marker-free PDF is to resolve the markers, which `proposal-check` already lists.
 
@@ -47,11 +49,11 @@ When one is found, publish **builds nothing** and exits 3, naming what it found.
 
 Whenever you report a built document, say which pipeline produced it. `--handout` is never delegated: it is a transform of the proposal source, not a rendered document.
 
-A minimal build script, as `proposal-build.sh` beside the proposal:
+A minimal build script, as `proposal-build.sh` beside the proposal (the shift flag matters: the source carries its title as a leading `# ` line and its sections at `##`, so a build without it renders an empty title above off-by-one heading levels):
 
 ```sh
 #!/bin/sh
-pandoc "$PROPOSAL_PATH" --template faculty.typ -o proposal.pdf
+pandoc "$PROPOSAL_PATH" --shift-heading-level-by=-1 --template faculty.typ -o proposal.pdf
 echo "built proposal.pdf with the faculty template"
 ```
 
@@ -59,7 +61,7 @@ The same thing as a `Makefile` target, for a workspace that already has one:
 
 ```make
 proposal-build:
-	pandoc "$(PROPOSAL_PATH)" --template faculty.typ -o proposal.pdf
+	pandoc "$(PROPOSAL_PATH)" --shift-heading-level-by=-1 --template faculty.typ -o proposal.pdf
 ```
 
 ## When tools are missing

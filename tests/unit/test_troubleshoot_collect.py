@@ -28,20 +28,25 @@ from collect import (
 REPO = Path(__file__).resolve().parents[2]
 SKILL = REPO / "skills" / "proposal-troubleshoot"
 
-PROPOSAL = """# Introduction to the Topic
+PROPOSAL = """# Fibre Tension in Low-Gravity Basket Weaving
+
+*Master's Thesis Proposal*
+
+## Introduction to the Topic
 
 Orbital looms are underexplored [@musterfrau2027].
 
-# My Secret Sauce Section
+## My Secret Sauce Section
 
 The topic is fibre tension. [TODO: settle the vendor agreement]
 
-# Timeline
+## Timeline
 
 Start October 2027, submission March 2028.
 
+## References
+
 ---
-title: Fibre Tension in Low-Gravity Basket Weaving
 author: Erika Musterfrau
 references:
   - id: musterfrau2027
@@ -121,6 +126,7 @@ def test_minimal_carries_no_proposal_prose(workspace):
     out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", "minimal"))
     assert "Secret Sauce" not in out
     assert "vendor agreement" not in out
+    assert "Fibre Tension" not in out  # the title heading is proposal text
     assert "fibre tension" not in out.lower()
     assert "10.1000/synthetic.0001" not in out
     assert "1 open TODO marker(s)" in out
@@ -129,21 +135,26 @@ def test_minimal_carries_no_proposal_prose(workspace):
 
 def test_minimal_reports_how_many_headings_are_canonical(workspace):
     out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", "minimal"))
-    assert "2 of 3 headings match a canonical title" in out
+    assert "3 of 4 section headings match a canonical title" in out
+    assert "the title heading is not counted" in out
     assert "heading text withheld" in out
 
 
-def test_structure_adds_headings_todos_and_dois_but_no_body(workspace):
+def test_structure_adds_headings_todos_and_dois_but_masks_the_title(workspace):
     out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", "structure"))
     assert "My Secret Sauce Section" in out
     assert "[TODO: settle the vendor agreement]" in out
     assert "10.1000/synthetic.0001" in out
     assert "Orbital looms are underexplored" not in out
+    # the leading H1 is the unpublished thesis title — masked, never verbatim
+    assert "# [title withheld]   (title)" in out
+    assert "Fibre Tension" not in out
 
 
 def test_full_adds_the_body_with_personal_data_removed(workspace):
     out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", "full"))
     assert "Orbital looms are underexplored" in out
+    assert "Fibre Tension in Low-Gravity Basket Weaving" in out
     assert "Erika" not in out
     assert "Musterfrau" not in out.replace("musterfrau2027", "")
 

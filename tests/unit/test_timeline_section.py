@@ -21,11 +21,13 @@ def with_timeline(tmp_path: Path, body: str, source: Path = CLEAN,
                   heading: str = "Timeline") -> str:
     """Replace the clean fixture's timeline body with `body`."""
     text = source.read_text(encoding="utf-8")
-    head, _, tail = text.partition(f"# {heading}\n")
-    _, sep, rest = tail.partition("\n---\n")
-    assert sep, "fixture layout changed: timeline is no longer the last section"
+    ref_heading = "Literatur" if heading == "Zeitplan" else "References"
+    head, _, tail = text.partition(f"## {heading}\n")
+    _, sep, rest = tail.partition(f"\n## {ref_heading}\n")
+    assert sep, "fixture layout changed: the references heading no longer closes the body"
     victim = tmp_path / source.name
-    victim.write_text(f"{head}# {heading}\n\n{body}\n\n---\n{rest}", encoding="utf-8")
+    victim.write_text(
+        f"{head}## {heading}\n\n{body}\n\n## {ref_heading}\n{rest}", encoding="utf-8")
     return run_check(victim).stdout
 
 
@@ -33,10 +35,11 @@ def with_timeline(tmp_path: Path, body: str, source: Path = CLEAN,
 
 def test_missing_timeline_is_an_error(tmp_path):
     text = CLEAN.read_text(encoding="utf-8")
-    head, sep, tail = text.partition("# Timeline\n")
+    head, sep, tail = text.partition("## Timeline\n")
     assert sep
     victim = tmp_path / "no-timeline.md"
-    victim.write_text(head + tail.partition("\n---\n")[2].join(["---\n", ""]), encoding="utf-8")
+    victim.write_text(head + "## References\n" + tail.partition("\n## References\n")[2],
+                      encoding="utf-8")
     result = run_check(victim)
     assert "required section missing: `Timeline`" in result.stdout
     assert result.returncode == 1
@@ -44,10 +47,11 @@ def test_missing_timeline_is_an_error(tmp_path):
 
 def test_german_proposal_requires_zeitplan(tmp_path):
     text = CLEAN_DE.read_text(encoding="utf-8")
-    head, sep, tail = text.partition("# Zeitplan\n")
+    head, sep, tail = text.partition("## Zeitplan\n")
     assert sep
     victim = tmp_path / "kein-zeitplan.md"
-    victim.write_text(head + "---\n" + tail.partition("\n---\n")[2], encoding="utf-8")
+    victim.write_text(head + "## Literatur\n" + tail.partition("\n## Literatur\n")[2],
+                      encoding="utf-8")
     result = run_check(victim)
     assert "required section missing: `Zeitplan`" in result.stdout
 
@@ -101,7 +105,7 @@ def test_blank_lines_do_not_count(tmp_path):
         ("| Phase | Month |\n|---|---|\n| Setup | 1 |", "table in `Timeline`"),
         ("- Phase 1: literature review\n- Phase 2: implementation", "list in `Timeline`"),
         ("1. Literature review\n2. Implementation", "list in `Timeline`"),
-        ("## Work Packages\n\nWP1 runs first.", "subsection in `Timeline`"),
+        ("### Work Packages\n\nWP1 runs first.", "subsection in `Timeline`"),
     ],
     ids=["table", "bullet-list", "ordered-list", "subsection"],
 )
@@ -123,14 +127,21 @@ def test_canonical_order_passes():
     assert "out of order" not in run_check(CLEAN).stdout
 
 
-def test_timeline_before_methodology_is_an_error(tmp_path):
-    text = CLEAN.read_text(encoding="utf-8")
-    head, sep, tail = text.partition("# Timeline\n")
+def reordered(text: str) -> str:
+    """Move the timeline section in front of the introduction."""
+    head, sep, tail = text.partition("## Timeline\n")
     assert sep
-    timeline_body, _, meta = tail.partition("\n---\n")
-    moved = f"# Timeline\n{timeline_body}\n\n{head}\n---\n{meta}"
+    timeline_body, sep, rest = tail.partition("\n## References\n")
+    assert sep
+    moved = head.replace(
+        "## Introduction to the Topic",
+        f"## Timeline\n{timeline_body}\n\n## Introduction to the Topic", 1)
+    return moved + "## References\n" + rest
+
+
+def test_timeline_before_methodology_is_an_error(tmp_path):
     victim = tmp_path / "reordered.md"
-    victim.write_text(moved, encoding="utf-8")
+    victim.write_text(reordered(CLEAN.read_text(encoding="utf-8")), encoding="utf-8")
     result = run_check(victim)
     assert "section out of order: `Timeline` before" in result.stdout
     assert result.returncode == 1
@@ -138,11 +149,8 @@ def test_timeline_before_methodology_is_an_error(tmp_path):
 
 def test_order_error_names_the_methodology_as_written(tmp_path):
     """Not the `{methodology}` template — the heading the author actually wrote."""
-    text = CLEAN.read_text(encoding="utf-8")
-    head, _, tail = text.partition("# Timeline\n")
-    timeline_body, _, meta = tail.partition("\n---\n")
     victim = tmp_path / "reordered.md"
-    victim.write_text(f"# Timeline\n{timeline_body}\n\n{head}\n---\n{meta}", encoding="utf-8")
+    victim.write_text(reordered(CLEAN.read_text(encoding="utf-8")), encoding="utf-8")
     out = run_check(victim).stdout
     assert "{methodology}" not in out.split("section out of order")[1].split("\n")[0]
     assert "Prototype Implementation" in out
@@ -151,8 +159,9 @@ def test_order_error_names_the_methodology_as_written(tmp_path):
 def test_non_canonical_headings_do_not_affect_order(tmp_path):
     text = CLEAN.read_text(encoding="utf-8")
     victim = tmp_path / "extra-heading.md"
-    victim.write_text(text.replace("# Timeline\n", "# Acknowledgements\n\nThanks.\n\n# Timeline\n"),
-                      encoding="utf-8")
+    victim.write_text(
+        text.replace("## Timeline\n", "## Acknowledgements\n\nThanks.\n\n## Timeline\n"),
+        encoding="utf-8")
     assert "out of order" not in run_check(victim).stdout
 
 
@@ -161,8 +170,9 @@ def test_override_list_supplies_its_own_order(tmp_path):
     and the canonical default no longer applies."""
     victim = tmp_path / "custom.md"
     victim.write_text(
-        "# Beta\n\nSecond by default, first here.\n\n# Alpha\n\nText.\n\n"
-        "---\ntitle: t\nlang: en\nreferences: []\n---\n", encoding="utf-8"
+        "# A Custom Layout Proposal Document\n\n*Master's Thesis Proposal*\n\n"
+        "## Beta\n\nSecond by default, first here.\n\n## Alpha\n\nText.\n\n"
+        "---\nreferences: []\n---\n", encoding="utf-8"
     )
     (tmp_path / "guidelines.md").write_text(
         '```toml\n[sections]\nrequired = ["Beta", "Alpha"]\n```\n', encoding="utf-8"

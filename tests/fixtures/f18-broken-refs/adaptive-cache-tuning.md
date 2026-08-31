@@ -1,43 +1,46 @@
-# Introduction to the Topic
+# Adaptive Cache Tuning for Multi-Tier Services
+
+*Bachelor's Thesis Proposal*
+
+## Introduction to the Topic
 
 Modern services depend on cache layers whose parameters are tuned by hand [@Bacchelli13Expect].
 Static cache configurations waste memory under shifting workloads.
 Adaptive tuning promises better hit rates without manual intervention [@Ghost21Vanished].
 
-# Contribution to the State-of-the-Art
+## Contribution to the State-of-the-Art
 
 Prior work characterizes system behavior through microbenchmarking [@Wong10Demystifying].
 This thesis extends adaptive tuning to multi-tier cache hierarchies under real workload traces [@Unknown22Mystery].
 
-# Research Focus and Research Questions
+## Research Focus and Research Questions
 
 The thesis investigates to what degree workload-aware parameter adaptation improves multi-tier cache performance.
 
 1. To what extent does adaptive parameter tuning improve hit rates compared to static configurations across workload shifts?
 
-# Methodology for Research: Prototype Implementation
+## Methodology for Research: Prototype Implementation
 
-## Previous Work
+### Previous Work
 
 The prototype builds on an open-source caching proxy and replays public workload traces [@Wong10Demystifying].
 
-## Requirements
+### Requirements
 
 The prototype must adapt cache parameters at runtime from observed metrics (RQ1).
 Production-grade fault tolerance is not required.
 
-## Evaluation
+### Evaluation
 
 Replayed traces measure hit-rate deltas between adaptive and static configurations (RQ1).
 
-# Timeline
+## Timeline
 
 The thesis starts as soon as possible.
 
+## References
+
 ---
-title: Adaptive Cache Tuning for Multi-Tier Services
-subtitle: "Bachelor's Thesis Proposal"
-lang: en
 references:
 - id: Bacchelli13Expect
   type: paper-conference

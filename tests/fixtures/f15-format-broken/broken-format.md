@@ -1,38 +1,41 @@
-# Introduction to the Topic
+# Automated Index Selection
+
+*Bachelor's Thesis Proposal*
+
+## Introduction to the Topic
 
 Databases power modern applications [@on].
 This proposal studies index selection [@Ghost99Missing].
 [TODO: sharpen motivation]
 
-# Contribution to the State-of-the-Art
+## Contribution to the State-of-the-Art
 
 Prior work tunes indexes manually [@Lee24Index].
 
-# Research Focus and Research Questions
+## Research Focus and Research Questions
 
 The thesis examines automated index selection.
 
 1. To what degree can workload-driven heuristics match expert index choices?
 
-# Methodology for Research: Prototype Implementation
+## Methodology for Research: Prototype Implementation
 
-## Previous Work
+### Previous Work
 
 The prototype builds on an open-source query planner [@Lee24Index].
 
-## Requirements
+### Requirements
 
 The prototype must propose index sets for a given workload trace (RQ1).
 [TODO: name the workload dataset]
 
-## Evaluation
+### Evaluation
 
 Accuracy against expert-chosen indexes is measured on public workloads (RQ1).
+
+## References
 ---
-title: Automated Index Selection
 author: Erika Musterfrau
-subtitle: "Bachelor's Thesis Proposal"
-lang: en
 references:
 - id: on
   type: article-journal

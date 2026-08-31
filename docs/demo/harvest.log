@@ -1,5 +1,9 @@
 # Demo harvest log
 # Real agent session (claude -p, model sonnet), 2026-07-30, clean config (no user plugins/instructions).
+# Format note (2026-08-31): this log predates the title-as-H1 format — the proposal
+# in it shows the retired layout (H1 sections, title/subtitle/lang in the trailing
+# metadata block). Fixture f19, curated from this log, has been migrated to the
+# current format; this log stays as recorded.
 # Synthetic content: fictional student anecdote (churn-model monitoring), no real persons or company data.
 # Turn 7 was re-run in a fresh session after the first attempt surfaced (and fixed) a bug in
 # proposal-publish's rq-filter.lua; a filename suggestion in it is redacted to [name].

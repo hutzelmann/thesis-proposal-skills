@@ -1,3 +1,7 @@
+# Automated Compliance Auditing of Cloud Configurations
+
+*Bachelor's Thesis Proposal*
+
 Bachelor's Thesis Proposal
 
 Submitted by: Erika Musterfrau
@@ -6,7 +10,7 @@ Address: Musterstraße 12, 12345 Musterstadt
 Email: erika@example.org
 Study programme: B.Sc. Computer Science
 
-# 1 Introduction and Motivation
+## 1 Introduction and Motivation
 
 Cloud deployments change daily, and every change can silently violate regulatory requirements.
 Compliance audits in most organisations still happen quarterly and rely on manual spreadsheet reviews [@Weber24Policy].
@@ -14,7 +18,7 @@ By the time an auditor discovers a misconfigured storage bucket, the violation m
 Automated compliance auditing promises to close this gap by evaluating configuration snapshots against a machine-readable rule catalogue [@Tanaka23Drift].
 The proposed thesis develops and evaluates such an automated audit pipline for infrastructure-as-code repositories.
 
-# 2 Objectives and Work Packages
+## 2 Objectives and Work Packages
 
 The overall objective is a working audit pipeline that flags non-compliant configurations before they reach production.
 The project is organised into the following work packages, which also serve as the guiding questions of the thesis:
@@ -23,14 +27,14 @@ The project is organised into the following work packages, which also serve as t
 2. How can the audit engine be integrated into the continous integration pipeline?
 3. How can audit findings be exported into a report that compliance officers can act on?
 
-# 3 Approach
+## 3 Approach
 
 The audit engine builds on an open-source policy language and evaluates configuration files at commit time [@Osei25Benchmarks].
 A rule catalogue derived from a public cloud-security benchmark serves as ground truth.
 Detected violations are ranked by severity and written to a summary report.
 The approach is validated on a set of intentionally misconfigured example repositories.
 
-# 4 Preliminary Chapter Structure
+## 4 Preliminary Chapter Structure
 
 1. Introduction
 2. Background and Related Work
@@ -39,7 +43,7 @@ The approach is validated on a set of intentionally misconfigured example reposi
 5. Evaluation
 6. Conclusion and Outlook
 
-# 5 Timetable and Milestones
+## 5 Timetable and Milestones
 
 | Month | Milestone |
 |---|---|
@@ -48,10 +52,9 @@ The approach is validated on a set of intentionally misconfigured example reposi
 | Month 3 | Audit engine integrated into the pipeline |
 | Month 4 | Evaluation finished, thesis submitted |
 
+## References
+
 ---
-title: Automated Compliance Auditing of Cloud Configurations
-subtitle: "Bachelor's Thesis Proposal"
-lang: en
 references:
 - id: Weber24Policy
   type: article-journal

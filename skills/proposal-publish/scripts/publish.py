@@ -15,6 +15,7 @@ itself -- executing workspace code is the agent's job, not a shipped script's.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -23,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
+REFERENCES = Path(__file__).resolve().parent.parent / "references"
 LATEX_ENGINES = ("tectonic", "xelatex", "lualatex", "pdflatex")
 GITIGNORE_MARKER = "# proposal build artifacts (managed by proposal-publish)"
 GITIGNORE_ENTRIES = ("*.pdf", "*.typ", "*.tex", "*.docx")
@@ -133,14 +135,42 @@ def report_handover(found: list[WorkspaceBuild], proposal: Path) -> int:
     return HANDOVER_EXIT
 
 
-def proposal_lang(text: str) -> str:
-    """Narrow extraction of the metadata `lang` value (not YAML parsing)."""
-    m = re.search(r"^lang:\s*[\"']?([A-Za-z-]+)", text, re.MULTILINE)
-    return m.group(1).lower() if m else "en"
+def load_structure() -> dict:
+    return json.loads((REFERENCES / "structure.json").read_text(encoding="utf-8"))
+
+
+SUBTITLE_EMPHASIS = re.compile(r"\*(?!\*)(.+)(?<!\*)\*")
+
+
+def infer_lang(text: str, structure: dict) -> str:
+    """Deterministic language inference, mirroring check.py: exact subtitle
+    wording first, then a majority of canonical section titles; English when
+    neither decides. The result is injected as `-M lang=…`, so localization is
+    unchanged from the retired `lang:` metadata key."""
+    content = [line.strip() for line in text.split("\n") if line.strip()]
+    subtitle = None
+    if (len(content) > 1 and content[0].startswith("# ")
+            and (m := SUBTITLE_EMPHASIS.fullmatch(content[1]))):
+        subtitle = m.group(1).strip()
+    wordings = structure["subtitle"]["wordings"]
+    for lang in ("en", "de"):
+        if subtitle and subtitle in wordings[lang]:
+            return lang
+    titles = structure["sections"]["titles"]
+    heads = [m.group(1).strip() for line in text.split("\n")
+             if (m := re.match(r"#{1,6}\s+(.+)$", line))]
+    counts = {}
+    for lang in ("en", "de"):
+        canonical = {titles[key][lang] for key in titles if key != "methodology"}
+        canonical.add(structure["references"]["section_title"][lang])
+        prefix = titles["methodology"][lang].split("{")[0]
+        counts[lang] = sum(1 for h in heads if h in canonical or h.startswith(prefix))
+    return "de" if counts["de"] > counts["en"] else "en"
 
 
 def reference_section_title(lang: str) -> str:
-    return "Literatur" if lang.startswith("de") else "References"
+    titles = load_structure()["references"]["section_title"]
+    return titles["de" if lang.startswith("de") else "en"]
 
 
 def strip_abstracts(text: str) -> str:
@@ -196,6 +226,18 @@ def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
     """
     base = [
         "pandoc", str(proposal),
+        # the body carries the document frame. subtitle-filter (which runs
+        # before the shift is applied) promotes the leading `# <title>` and the
+        # emphasized subtitle paragraph into metadata and leaves the closing
+        # references heading unnumbered; the shift then puts the H2 sections
+        # back on level 1, so the templates see what they always saw
+        "--shift-heading-level-by=-1",
+        # the language is inferred (subtitle wording, then section titles) —
+        # injected so citeproc locale, hyphenation, and templates localize
+        # exactly as under the retired `lang:` key
+        "-M", f"lang={lang}",
+        "-M", f"references-heading={reference_section_title(lang)}",
+        "--lua-filter", str(TEMPLATES / "subtitle-filter.lua"),
         # order matters: author-intext expands "@key [see @other]" into a name
         # plus the intact two-citation group, which cite-split then brackets
         # before citeproc: @key gets its author name
@@ -203,7 +245,6 @@ def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
         # before citeproc: one bracket per citation
         "--lua-filter", str(TEMPLATES / "cite-split.lua"),
         "--csl", str(TEMPLATES / "compact-numeric.csl"),
-        "-M", f"reference-section-title={reference_section_title(lang)}",
         "--citeproc",
         "--lua-filter", str(TEMPLATES / "rq-filter.lua"),
         # last: numbers and styles [TODO: …] markers. After citeproc so a hint
@@ -225,7 +266,7 @@ def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
 
 def build(proposal: Path, kind: str, tool: str) -> list[Path]:
     stem = proposal.with_suffix("")
-    lang = proposal_lang(proposal.read_text(encoding="utf-8"))
+    lang = infer_lang(proposal.read_text(encoding="utf-8"), load_structure())
     cmd = pandoc_command(proposal, kind, lang)
     if kind == "typst":
         typ, pdf = stem.with_suffix(".typ"), stem.with_suffix(".pdf")

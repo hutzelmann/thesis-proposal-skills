@@ -19,6 +19,10 @@ def all_titles():
         for sub in meth["subsections"]:
             for lang in ("en", "de"):
                 yield f"subsection of {key} ({lang})", sub[lang]
+    for lang in ("en", "de"):
+        yield f"references section ({lang})", STRUCTURE["references"]["section_title"][lang]
+        for wording in STRUCTURE["subtitle"]["wordings"][lang]:
+            yield f"subtitle wording ({lang})", wording
 
 
 def test_titles_present_in_prose():

@@ -1,4 +1,8 @@
-# Introduction to the Topic
+# Closing the Loop: Evaluating the Validity of Unsupervised Drift Alerts Against Delayed-Label Performance Decay
+
+*Master's Thesis Proposal*
+
+## Introduction to the Topic
 
 Machine learning models deployed in production operate in non-stationary environments, where the statistical relationship between input features and the target variable changes over time, a phenomenon known as concept drift [@Krempl14Open].
 This drift can manifest in different forms, ranging from abrupt to gradual shifts in the joint distribution of inputs and targets [@Webb18Analyzi].
@@ -9,7 +13,7 @@ During this delay, practitioners commonly rely on unsupervised drift-detection s
 These signals are frequently decoupled from the actual severity of performance decay: they can fire on harmless distribution shifts as readily as on shifts that genuinely degrade the model, which produces frequent, low-value alerts and erodes practitioners' trust in the monitoring system.
 This thesis studies whether unsupervised drift-detection signals, once evaluated against the delayed ground-truth labels that eventually arrive, actually predict the performance decay they are meant to warn about.
 
-# Contribution to the State-of-the-Art
+## Contribution to the State-of-the-Art
 
 Existing work on concept-drift detection under delayed or absent labels falls into two largely separate strands.
 The first strand designs unsupervised drift detectors that operate without any labels at prediction time, using signals such as margin density [@Sethi15Don; @Sethi17Reliabl], statistical process control on distributional statistics [@Tan25Flexibl], the gradient of the model's log-likelihood [@Zhang23Concept], or approaches that distinguish input-space from target-concept drift under scarcely labeled or fully unlabeled data [@Lughofer16Recogni].
@@ -19,7 +23,7 @@ Related work compares the accuracy-energy trade-off of several drift detectors u
 What this body of work has in common is that it evaluates drift detectors on their internal detection quality, how well they flag a change relative to a known ground-truth drift point, rather than on whether their alerts correspond to a real, measurable drop in downstream performance once labels eventually arrive.
 This thesis closes that loop: it evaluates unsupervised drift-detection signals against the realized performance decay measured once delayed labels become available, and studies whether alert thresholds can be calibrated against this delayed ground truth to reduce false alarms without missing genuine degradation.
 
-# Research Focus and Research Questions
+## Research Focus and Research Questions
 
 The thesis focuses on the empirical validity of unsupervised drift-detection signals as an early-warning proxy for real performance decay under delayed ground-truth labels, using public streaming and tabular datasets with an artificially simulated label delay to approximate settings such as customer churn prediction where company data cannot be used.
 
@@ -27,15 +31,15 @@ The thesis focuses on the empirical validity of unsupervised drift-detection sig
 2. To what extent can drift-alert thresholds calibrated against historical delayed-label outcomes reduce the false-positive alert rate without missing genuine performance degradation, compared to existing label-less drift detectors designed for false-positive control [@Tan25Flexibl]?
 3. How does the length of the label delay affect the reliability of unsupervised drift-detection signals as an early-warning proxy for performance decay?
 
-# Methodology for Research: Prototype Implementation
+## Methodology for Research: Prototype Implementation
 
-## Previous Work
+### Previous Work
 
 The prototype builds on open-source streaming machine learning libraries that provide reference implementations of classifiers and unsupervised drift detectors, including margin-density-based [@Sethi17Reliabl] and statistical-process-control-based [@Tan25Flexibl] detectors.
 It further draws on the drift-simulation and evaluation protocol of Cerqueira et al., which injects controlled distributional changes into real-world datasets and derives timing-aware detection metrics [@Cerqueira26Framewo].
 [TODO: name the specific streaming ML library/libraries chosen, e.g. River]
 
-## Requirements
+### Requirements
 
 The prototype must compute a representative set of unsupervised drift-detection signals at prediction time on a streaming dataset, without access to the true label.
 It must simulate a configurable label delay, releasing the true label for each prediction only after a fixed or distributed number of subsequent time steps.
@@ -45,7 +49,7 @@ Real-time or production-grade deployment of the prototype is out of scope, since
 Exhaustive coverage of every published drift-detection method is out of scope as well; the prototype instead implements a representative sample spanning distributional-distance-based, margin-density-based, and score-based signal families.
 [TODO: finalize which drift-detection methods form the representative sample]
 
-## Evaluation
+### Evaluation
 
 The evaluation runs the prototype on public datasets that admit a streaming replay with a simulated label delay.
 [TODO: select specific dataset(s), e.g. streaming concept-drift benchmarks or a public churn-style tabular dataset replayed as a stream]
@@ -54,16 +58,15 @@ A second analysis compares the false-positive alert rate and the missed-degradat
 A third analysis varies the simulated label-delay length and measures how the correlation and calibration results change as the delay grows (RQ3).
 [TODO: define the precise operationalization of "performance decay" — accuracy, calibration error, or a business-relevant metric]
 
-# Timeline
+## Timeline
 
 The thesis starts as soon as the supervisor signs off on the proposal, with [TODO: state target submission month] as the submission month.
 
 <!-- markdownlint-disable -->
 
+## References
+
 ---
-title: "Closing the Loop: Evaluating the Validity of Unsupervised Drift Alerts Against Delayed-Label Performance Decay"
-subtitle: "Master's Thesis Proposal"
-lang: en
 references:
   - id: Xu21Concept
     type: paper-conference

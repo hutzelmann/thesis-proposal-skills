@@ -7,10 +7,10 @@
       "required section missing: `Timeline`",
       "required section missing: `Contribution to the State-of-the-Art`",
       "forbidden section: `Work Plan` (matches `work plan`)",
-      "methodology subsection missing: `Quality Assessment and Extracted Information`"
+      "methodology subsection missing: `Quality Assessment and Extracted Information`",
+      "no `# <title>` line found"
     ],
     "warnings_contain": [
-      "metadata block has no `title:`",
       "reference `Beck23Compliance` defined but never cited",
       "reference `Iyer25Prompting` defined but never cited",
       "reference `Novak24Auditing` defined but never cited",
@@ -20,10 +20,10 @@
       "errors": [
         "forbidden-section",
         "methodology-subsection-missing",
-        "required-section-missing"
+        "required-section-missing",
+        "title-line-missing"
       ],
       "warnings": [
-        "metadata-title-missing",
         "reference-uncited",
         "repeated-sentence-start"
       ]

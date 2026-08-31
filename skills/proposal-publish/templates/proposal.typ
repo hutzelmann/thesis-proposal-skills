@@ -85,9 +85,11 @@
 // Links plain black (legacy: hidelinks)
 #show link: set text(fill: black)
 
-// Compact title block (legacy: titling with negative droptitle, italic subtitle, no date)
+// Compact title block (legacy: titling with negative droptitle, italic subtitle, no date).
+// The title conditional guards against a source whose leading H1 was silently
+// demoted (content above it): better no title block than an empty bold one.
 #align(center)[
-  #block(text(size: 15pt, weight: "bold")[$title$])
+  $if(title)$#block(text(size: 15pt, weight: "bold")[$title$])$endif$
   $if(subtitle)$#block(above: 1.1em, text(size: 11pt, style: "italic")[$subtitle$])$endif$
   $if(author)$#block(above: 0.65em, text(size: 11pt)[$for(author)$$author$$sep$, $endfor$])$endif$
 ]

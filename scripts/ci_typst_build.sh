@@ -26,10 +26,13 @@ for proposal in tests/fixtures/*/*.md; do
     source="${staged%.md}.typ"
 
     if ! pandoc "$staged" \
+        --shift-heading-level-by=-1 \
+        -M lang=en \
+        -M references-heading=References \
+        --lua-filter "$TEMPLATES/subtitle-filter.lua" \
         --lua-filter "$TEMPLATES/author-intext.lua" \
         --lua-filter "$TEMPLATES/cite-split.lua" \
         --csl "$TEMPLATES/compact-numeric.csl" \
-        -M reference-section-title=References \
         --citeproc \
         --lua-filter "$TEMPLATES/rq-filter.lua" \
         --lua-filter "$TEMPLATES/todo-filter.lua" \

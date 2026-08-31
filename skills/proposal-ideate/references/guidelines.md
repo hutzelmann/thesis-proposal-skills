@@ -26,6 +26,8 @@ The alarm is raised, never enforced: an agent tells you which class your title f
 
 ## Proposal Structure
 
+The file opens with the document itself, not with metadata: the first line is the thesis title as the file's only `# ` heading, followed by the subtitle as one emphasized paragraph — `*Bachelor's Thesis Proposal*` or `*Master's Thesis Proposal*` in English, `*Exposé zur Bachelorarbeit*` or `*Exposé zur Masterarbeit*` in German. The five canonical sections sit at `##` (methodology subsections at `###`), and the body closes with an empty references heading — `## References` in English, `## Literatur` in German — under which the built document renders the bibliography. The trailing metadata block carries only the `references` entries; the proposal's language is inferred from the canonical subtitle and section wordings, never declared.
+
 A proposal consists of exactly the five canonical sections, in this order (titles per `structure.json`). The order is checked, not only the presence of each section.
 
 1. **Introduction to the Topic** — Introduce the topic and explain why it is important and relevant. Stay on a high level: no deep background, no technical details. The section closes with one or two sentences stating what this thesis tries to achieve — the first and only place the introduction refers to the thesis itself, and the purpose the rest of the proposal unfolds. An introduction that motivates a topic but never states this purpose is unfinished.
@@ -183,4 +185,4 @@ The same advisory style applies to work on mined, scraped, or third-party data �
 - Text is fluent, non-repetitive, free of grammar and spelling errors.
 - All citations resolve; the literature is relevant and scientific.
 - No TODO markers remain.
-- The file renders cleanly (valid trailing metadata block, blank line before it).
+- The file renders cleanly (leading `# ` title line, emphasized subtitle paragraph, closing references heading, valid trailing metadata block with a blank line before it).

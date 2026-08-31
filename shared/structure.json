@@ -2,7 +2,18 @@
   "_comment": "Single source of truth for the mechanically checkable proposal skeleton. Semantic rules live in shared/guidelines/guidelines.md. Synced into skills by scripts/sync_shared.py.",
   "_override_comment": "A workspace guidelines.md overrides a value by naming the same key path it has here — [references] min_count, [length] page_limit, and so on. One rule, no aliases: a key that does not resolve to an overridable leaf is reported as an error rather than ignored.",
   "references": {
-    "min_count": 3
+    "min_count": 3,
+    "section_title": {
+      "en": "References",
+      "de": "Literatur"
+    }
+  },
+  "_subtitle_comment": "Canonical subtitle wordings, one per degree level and language. The subtitle paragraph is the primary language signal: language inference matches it exactly before falling back to a majority of canonical section titles.",
+  "subtitle": {
+    "wordings": {
+      "en": ["Bachelor's Thesis Proposal", "Master's Thesis Proposal"],
+      "de": ["Exposé zur Bachelorarbeit", "Exposé zur Masterarbeit"]
+    }
   },
   "sections": {
     "order": [

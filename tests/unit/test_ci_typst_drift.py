@@ -50,6 +50,13 @@ def test_script_keeps_citation_processing():
     assert "--citeproc" in SCRIPT
 
 
+def test_script_keeps_the_heading_shift():
+    """Without the shift the leading H1 title and H2 sections render one level
+    off — a silent layout break, not a build failure."""
+    assert "--shift-heading-level-by=-1" in COMMAND
+    assert "--shift-heading-level-by=-1" in SCRIPT
+
+
 def test_script_covers_the_same_fixture_corpus():
     # both sides must exclude the non-proposal markdown files
     assert "README.md" in SCRIPT

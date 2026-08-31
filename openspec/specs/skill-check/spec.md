@@ -4,7 +4,7 @@
 Low-level advisory quality gate: deterministic mechanical checks plus an agent pass, reported honestly in two buckets, results in chat only.
 ## Requirements
 ### Requirement: Deterministic mechanical checks
-The skill SHALL verify deterministically, driven by the structured guidance data plus workspace overrides: required sections present with canonical titles; canonical sections appearing in the declared order; exactly one methodology from the closed set with its required subsections; forbidden headings absent; the timeline section staying within its size constraint; the number of declared research questions staying within the configured bounds; every declared research question referenced as `(RQn)` in the methodology section; citation-key consistency in both directions (cited-but-undefined is an error, defined-but-uncited a warning); duplicate reference ids; `min_references` satisfied; leftover `[TODO: …]` markers; and file-format guardrails (blank line before the trailing metadata block, exactly one metadata block, no boolean-literal keys).
+The skill SHALL verify deterministically, driven by the structured guidance data plus workspace overrides: required sections present with canonical titles; canonical sections appearing in the declared order; exactly one methodology from the closed set with its required subsections; forbidden headings absent; the timeline section staying within its size constraint; the number of declared research questions staying within the configured bounds; every declared research question referenced as `(RQn)` in the methodology section; citation-key consistency in both directions (cited-but-undefined is an error, defined-but-uncited a warning); duplicate reference ids; `min_references` satisfied; leftover `[TODO: …]` markers; and file-format guardrails (the leading `# <title>` line as the file's first content line and only H1; the emphasized subtitle paragraph beneath it; the closing references section present, last, and empty; blank line before the trailing metadata block, exactly one metadata block, no boolean-literal keys; retired metadata keys — `title`, `subtitle`, `lang`, `author` — flagged when present). The title heading SHALL be excluded from required-section, ordering, forbidden-pattern, and methodology matching. The proposal's language SHALL be inferred per the file-format contract; when it is undeterminable the check SHALL report that as a finding and emit its own messages in English.
 
 Order verification, the timeline size constraint, and the research-question count bound SHALL be errors, not warnings, matching the severity of a missing section. The timeline size constraint SHALL NOT be applied when the workspace selects the detailed timeline mode.
 
@@ -35,6 +35,18 @@ Order verification, the timeline size constraint, and the research-question coun
 #### Scenario: Detailed timeline mode selected
 - **WHEN** the workspace sets the detailed timeline mode and the timeline section carries a phase table
 - **THEN** the check reports no timeline size error
+
+#### Scenario: Second H1 in the body
+- **WHEN** the body carries a second H1 heading below the title line
+- **THEN** the check reports it as an error naming the leading-H1 rule
+
+#### Scenario: Title heading resembles a methodology heading
+- **WHEN** the title line begins with the methodology heading prefix
+- **THEN** no methodology-multiple finding is produced, because the title heading is excluded from methodology matching
+
+#### Scenario: Subtitle paragraph missing or unemphasized
+- **WHEN** the block after the title line is absent, is not a paragraph, or is not wrapped entirely in `*…*` emphasis
+- **THEN** the check reports the subtitle finding naming the expected shape
 
 ### Requirement: Warning-class pattern checks
 The skill SHALL report as warnings (never hard failures, false positives acknowledged): first-person pronouns; three consecutive sentences starting with the same word; personal-data patterns (emails, matriculation numbers); an `author` key in the metadata block, since proposals are anonymous by default and the key is rendered verbatim on the title page; confidentiality markers in English and German ("confidential", "internal use only", "do not distribute", "NDA", "vertraulich", "nur für den internen Gebrauch"), because theses get published; author-in-text citations of references that declare neither an author nor an editor, because those render as a quoted title inside the sentence; an author surname of a cited reference typed in the prose immediately before that citation, because the typed name is a copy that stops tracking the reference entry; and a reference id that does not follow the documented key shape or reaches the documented length limit. The metadata `author` warning SHALL name the legitimate exception — a program that requires a named title page — because that exception is declared in workspace guidance prose and is therefore not machine-detectable. The skill SHALL NOT attempt to detect writer names in body prose; the typed-author-name check concerns cited authors only and SHALL be anchored to the surnames of the reference actually cited, never to a general capitalisation pattern.
@@ -111,7 +123,7 @@ The first-person check SHALL NOT read a lone capital `I` following a capitalised
 - **THEN** the warning quotes that number and names its line, so the reader can dismiss it without searching for it
 
 ### Requirement: Title tells reported as warnings
-The deterministic script SHALL inspect the metadata `title:` value and report as warnings, never as errors: an implementation-framing opener in English or German; a term from the closed buzzword list in English or German; a trailing question mark; and a word count outside the documented bounds. Each finding SHALL name the matched tell and state that the title reaches the study certificate. These findings SHALL be warnings because the patterns can fire on a legitimate title and because the script cannot judge whether a named technology is the object of study.
+The deterministic script SHALL inspect the title carried by the leading `# ` line and report as warnings, never as errors: an implementation-framing opener in English or German; a term from the closed buzzword list in English or German; a trailing question mark; and a word count outside the documented bounds. Each finding SHALL name the matched tell and state that the title reaches the study certificate. These findings SHALL be warnings because the patterns can fire on a legitimate title and because the script cannot judge whether a named technology is the object of study.
 
 #### Scenario: Implementation opener
 - **WHEN** the title opens with an implementation-framing phrase such as an English development opener or its German equivalent
@@ -130,12 +142,16 @@ The deterministic script SHALL inspect the metadata `title:` value and report as
 - **THEN** the check emits a warning naming the count, the bound it crossed, and the certificate rationale
 
 #### Scenario: German title at the German minimum
-- **WHEN** a `lang: de` proposal carries a compound title shorter than the English minimum but at or above the German one
+- **WHEN** a German proposal carries a compound title shorter than the English minimum but at or above the German one
 - **THEN** no word-count warning is emitted
 
+#### Scenario: Title line absent
+- **WHEN** the file carries no leading `# ` title line
+- **THEN** the check reports the missing title as its own finding and applies no title tells, because there is no title to inspect
+
 #### Scenario: Title written as a block scalar
-- **WHEN** the metadata `title:` carries a YAML folded or literal block indicator and its text continues on the following lines
-- **THEN** no title tell is applied, because the value the check can read is not the title
+- **WHEN** the metadata block still carries a retired `title:` key whose value is a YAML folded or literal block indicator
+- **THEN** no title tell is applied to that value — the title is read from the leading `# ` line, and the key only produces the retired-key finding
 
 #### Scenario: Clean academic title
 - **WHEN** the title names a contribution and its object within the bounds and matches no tell
@@ -334,17 +350,25 @@ Marking a token as code is the only remedy the skill offers here: a `@Word` left
 - **THEN** the check reports no citation finding for it
 
 ### Requirement: Document-shape defects are named, not only their consequences
-When a document defect makes the parse fail wholesale, the check SHALL name that defect, not only the findings that follow from it. Two shapes SHALL be named: a metadata block placed at the top of the file instead of the end, and headings underlined in setext style instead of prefixed with `#`.
+When a document defect makes the parse fail wholesale, the check SHALL name that defect, not only the findings that follow from it. Four shapes SHALL be named: a metadata block placed at the top of the file instead of the end, headings underlined in setext style instead of prefixed with `#`, content preceding the leading `# <title>` line, and the retired layout with the title in the metadata block and canonical sections at H1.
 
-Both shapes arrive from outside this format — top frontmatter is what every other markdown tool expects, and underlined headings are what a word processor exports — so the student who produces one has done nothing careless, and a report of five missing sections or a reference list that is entirely undefined tells them nothing they can act on.
+These shapes arrive from outside this format — top frontmatter is what every other markdown tool expects, underlined headings are what a word processor exports, a stray line above the title is what an import leaves behind, and the retired layout is what this toolchain itself used to produce — so the student who produces one has done nothing careless, and a report of five missing sections or a reference list that is entirely undefined tells them nothing they can act on.
 
 #### Scenario: Metadata block at the top of the file
 - **WHEN** the file opens with a `---` block of metadata keys and does not end with one
 - **THEN** the check reports the block's position and states that the remaining reference findings follow from it
 
 #### Scenario: Headings underlined instead of prefixed
-- **WHEN** the body carries no `#`-prefixed heading and its section titles are underlined with `===` or `---`
+- **WHEN** the body carries no `#`-prefixed heading beyond the title line and its section titles are underlined with `===` or `---`
 - **THEN** the check reports the heading style as an error naming one of the affected titles, alongside the section findings it causes
+
+#### Scenario: Content above the title line
+- **WHEN** a paragraph or comment precedes the leading `# <title>` line
+- **THEN** the check names the misplaced title as the defect and states that the build would silently produce a document without a title
+
+#### Scenario: Retired layout diagnosed
+- **WHEN** a file carries a `title:` key in its metadata block and its canonical sections at H1
+- **THEN** the check names the retired layout and the new locations, rather than reporting only a missing title line and flagged keys
 
 ### Requirement: Hindsight leakage reported as a warning
 The skill SHALL report as warnings (never hard failures, false positives acknowledged) prose that states the proposal's own work as already done: result verbs in the first person or with the work as subject — showed, found, demonstrated, outperformed, and their German equivalents — and quantitative outcomes stated as findings. A proposal describes work that has not happened, so such a sentence is either a draft written after the work began or a proposal derived from a finished thesis.

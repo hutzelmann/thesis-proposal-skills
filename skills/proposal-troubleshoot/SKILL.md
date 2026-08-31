@@ -91,9 +91,9 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py <proposal.md> --dry-run
 
 | Level | What the report carries |
 |---|---|
-| `minimal` (default) | No proposal prose at all: counts, hashes, how many headings are canonical, the environment, and script output with the user's own wording redacted |
-| `structure` | Adds headings, `[TODO: …]` texts and reference DOIs verbatim. Still no body prose |
-| `full` | Adds the proposal text, with names, addresses and numbers removed |
+| `minimal` (default) | No proposal prose at all: counts, hashes, how many section headings are canonical (the title heading is never counted), the environment, and script output with the user's own wording redacted |
+| `structure` | Adds section headings, `[TODO: …]` texts and reference DOIs verbatim. The leading `# ` line is the unpublished thesis title — it appears masked, never verbatim. Still no body prose |
+| `full` | Adds the proposal text, title included, with names, addresses and numbers removed |
 
 State what the chosen level includes and what the next one up would add. The proposal is an unpublished research idea, so never infer consent to a higher level from the user's eagerness to get the bug fixed. `minimal` is enough for most script defects, because the captured script output travels with it.
 

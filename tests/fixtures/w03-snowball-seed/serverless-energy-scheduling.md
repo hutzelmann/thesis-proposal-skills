@@ -1,11 +1,15 @@
-# Introduction to the Topic
+# Energy-Aware Scheduling for Serverless Functions
+
+*Bachelor's Thesis Proposal*
+
+## Introduction to the Topic
 
 Serverless platforms execute application logic as short-lived functions and bill per invocation [@Farahani23Energy].
 Providers keep large pools of pre-warmed workers idle so that cold starts stay rare, which wastes energy at scale.
 Data centers already consume a notable share of global electricity, so idle capacity is both an environmental and an economic concern [@Okafor24Carbon].
 This thesis investigates how placement decisions on serverless platforms can reduce energy consumption without violating latency expectations.
 
-# Contribution to the State-of-the-Art
+## Contribution to the State-of-the-Art
 
 Current serverless schedulers optimize latency and utilization and treat energy as a byproduct [@Farahani23Energy].
 Carbon-aware load shifting moves batch jobs across time and regions but ignores the millisecond scale of function invocations [@Okafor24Carbon].
@@ -13,7 +17,7 @@ Carbon-aware load shifting moves batch jobs across time and regions but ignores 
 This work contributes a scheduler that co-locates invocations based on measured per-function power profiles.
 It extends pool-based approaches with an admission policy that trades cold-start probability against idle energy.
 
-# Research Focus and Research Questions
+## Research Focus and Research Questions
 
 The research focus lies on the trade-off between idle energy, cold-start latency, and scheduling overhead in serverless worker pools.
 
@@ -21,34 +25,33 @@ The research focus lies on the trade-off between idle energy, cold-start latency
 2. Under which load patterns does energy-aware admission push the cold-start rate beyond common latency budgets?
 3. How does the placement overhead of the proposed scheduler scale with the number of concurrently registered functions?
 
-# Methodology for Research: Prototype Implementation
+## Methodology for Research: Prototype Implementation
 
-## Previous Work
+### Previous Work
 
 The prototype extends an open-source serverless runtime through its pluggable scheduler interface.
 Energy readings come from the hosts' exposed power counters, following the profiling approach of @Farahani23Energy.
 Load generation replays publicly available invocation traces with an established workload replay tool.
 
-## Requirements
+### Requirements
 
 The scheduler must reach each placement decision within a budget of a few milliseconds.
 It must encapsulate the energy model as an exchangeable module so alternative power profiles can be compared.
 Multi-tenant isolation and billing integration are explicitly out of scope for the prototype.
 
-## Evaluation
+### Evaluation
 
 A trace-driven experiment compares idle energy under co-location against a utilization-based baseline (RQ1).
 Synthetic bursty and diurnal load patterns expose how energy-aware admission affects the cold-start rate (RQ2).
 A scalability benchmark with a growing number of registered functions measures placement overhead (RQ3).
 
-# Timeline
+## Timeline
 
 The thesis starts in October 2027 and is submitted in March 2028.
 
+## References
+
 ---
-title: Energy-Aware Scheduling for Serverless Functions
-subtitle: "Bachelor's Thesis Proposal"
-lang: en
 references:
 - id: Farahani23Energy
   type: paper-conference

@@ -32,14 +32,18 @@ from l1_checks import (
 REPO = Path(__file__).resolve().parents[2]
 
 GOOD_IMPORT = """\
-# Introduction to the Topic
+# Soil-Aware Irrigation Control
+
+*Bachelor's Thesis Proposal*
+
+## Introduction to the Topic
 
 Irrigation schedules ignore soil data [@Rivera23Survey].
 @Tanaka24Lora measured LoRa range in field conditions.
 
+## References
+
 ---
-title: Soil-Aware Irrigation Control
-lang: en
 references:
 - id: Rivera23Survey
   type: article-journal
@@ -100,19 +104,23 @@ BROKEN_CHECK = (
 
 
 GOOD_REVERSE = """\
-# Introduction to the Topic
+# Soil-Moisture-Driven Irrigation Scheduling
+
+*Bachelor's Thesis Proposal*
+
+## Introduction to the Topic
 
 Irrigation schedules ignore soil data [@Rivera23Survey].
 Calibration drift is a known problem in field sensor networks [@Okafor21Drift].
 
-# Methodology for Research: Prototype Implementation
+## Methodology for Research: Prototype Implementation
 
 The prototype builds on the sensing approach of @Tanaka22Sensors.
 The field trial runs on the Agrarmesse open sensor corpus named at registration.
 
+## References
+
 ---
-title: Soil-Moisture-Driven Irrigation Scheduling
-lang: en
 references:
 - id: Rivera23Survey
   type: article-journal
@@ -197,7 +205,7 @@ def test_verdict_import_requires_a_produced_file():
 
 
 @pytest.mark.parametrize(("mutation", "needle"), [
-    (lambda t: t.replace("lang: en", "lang: en\nmatriculation: 00000000"), "00000000"),
+    (lambda t: t.replace("references:", "matriculation: 00000000\nreferences:", 1), "00000000"),
     (lambda t: "PROPOSAL - CONFIDENTIAL\n\n" + t, "CONFIDENTIAL"),
 ])
 def test_verdict_import_reports_leaks_the_check_cannot_see(mutation, needle):
@@ -740,16 +748,16 @@ def test_verdict_title_alarm_accepts_a_raised_title():
 
 
 def test_verdict_title_alarm_rejects_a_rewritten_title():
-    rewritten = TITLED.replace("title: Soil-Aware Irrigation Control", "title: Something Else")
+    rewritten = TITLED.replace("# Soil-Aware Irrigation Control", "# Something Else Entirely")
     passed, why = verdict_title_alarm(TITLED, rewritten, GOOD_TITLE_REVIEW, "r.md")
     assert not passed
     assert "rewritten" in why
 
 
 def test_verdict_title_alarm_rejects_a_lost_title_line():
-    passed, why = verdict_title_alarm(TITLED, "# body only\n", GOOD_TITLE_REVIEW, "r.md")
+    passed, why = verdict_title_alarm(TITLED, "body only, no heading\n", GOOD_TITLE_REVIEW, "r.md")
     assert not passed
-    assert "`title:`" in why
+    assert "leading `# ` title line" in why
 
 
 def test_verdict_title_alarm_rejects_a_review_that_never_raises_the_title():

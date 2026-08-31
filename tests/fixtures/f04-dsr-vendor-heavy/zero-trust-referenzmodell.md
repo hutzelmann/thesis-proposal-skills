@@ -1,16 +1,20 @@
+# Ein Referenzmodell für die Einführung von Zero-Trust-Architekturen in KMU
+
+*Exposé zur Masterarbeit*
+
 Erika Musterfrau
 Matrikelnummer: 00000000
 E-Mail: erika@example.org
 Studiengang: Informatik (M. Sc.)
 
-## Betreuer
+### Betreuer
 
 Prof. Dr. Hans Beispiel, Institut für Softwaretechnik
 Dr. Petra Platzhalter, NetSentio GmbH
 
 **Vertraulich** — enthält Angaben zum Praxispartner und ist nicht zur Weitergabe bestimmt.
 
-# Inhaltsverzeichnis
+## Inhaltsverzeichnis
 
 1. Einführung in das Thema
 2. Beitrag zum Stand der Technik
@@ -18,27 +22,27 @@ Dr. Petra Platzhalter, NetSentio GmbH
 4. Gliederung der Arbeit
 5. Forschungsmethodik: Prototypimplementierung
 
-# Abkürzungsverzeichnis
+## Abkürzungsverzeichnis
 
 - IAM: Identity and Access Management
 - KMU: kleine und mittlere Unternehmen
 - ZTA: Zero-Trust-Architektur
 
-# Einführung in das Thema
+## Einführung in das Thema
 
 Klassische Perimetersicherheit verliert in verteilten Unternehmensnetzen zunehmend an Wirksamkeit.
 Zero-Trust-Architektur (ZTA) bezeichnet laut der Produktdokumentation von NetSentio ein Sicherheitsmodell, das keiner Identität und keinem Gerät implizit vertraut [@NetSentio25Zero].
 Gerade kleine und mittlere Unternehmen (KMU) verfügen selten über die personellen Ressourcen, um eine solche Umstellung systematisch zu planen [@Schmidt23Zero].
 Die vorliegende Arbeit entwickelt deshalb ein Referenzmodell, das die Einführung einer ZTA in KMU strukturiert.
 
-# Beitrag zum Stand der Technik
+## Beitrag zum Stand der Technik
 
 Bestehende Reifegradmodelle für ZTA adressieren überwiegend Großunternehmen mit eigenen Sicherheitsabteilungen [@Schmidt23Zero].
 Herstellerleitfäden wie das Zonenmodell von CloudArc beschreiben zwar konkrete Migrationsschritte, bleiben jedoch an das jeweilige Produktportfolio gebunden [@CloudArc24Zone].
 Wissenschaftliche Arbeiten zur Migration von Identitätsinfrastrukturen betrachten bislang vor allem technische Einzelaspekte [@Krause22Identity].
 Diese Arbeit verbindet beide Perspektiven zu einem herstellerneutralen Referenzmodell und ergänzt einen Kriterienkatalog zur Priorisierung einzelner Migrationsschritte [@Weber24Migration].
 
-# Forschungsfokus und Forschungsfragen
+## Forschungsfokus und Forschungsfragen
 
 Der Fokus der Arbeit liegt auf der Frage, wie KMU eine ZTA schrittweise und ressourcenschonend einführen können.
 Die übergeordnete Forschungsfrage lautet: Wie kann ein Referenzmodell für die Einführung von Zero-Trust-Architekturen in KMU gestaltet werden?
@@ -49,7 +53,7 @@ Daraus leiten sich vier Teilfragen ab:
 3. Wie kann eine Priorisierung der Migrationsschritte nach Risiko und Aufwand entworfen werden?
 4. Wie kann das Referenzmodell in einem realen KMU-Umfeld umgesetzt werden?
 
-# Gliederung der Arbeit
+## Gliederung der Arbeit
 
 1. Einleitung
 2. Grundlagen und verwandte Arbeiten
@@ -59,30 +63,29 @@ Daraus leiten sich vier Teilfragen ab:
 6. Evaluation
 7. Fazit und Ausblick
 
-# Forschungsmethodik: Prototypimplementierung
+## Forschungsmethodik: Prototypimplementierung
 
-## Vorarbeiten
+### Vorarbeiten
 
 Der Prototyp setzt auf der Policy-Engine von NetSentio auf und nutzt deren Schnittstellen zur Durchsetzung von Zugriffsregeln [@NetSentio25Zero].
 Für die Modellierung der Migrationsschritte kommt eine leichtgewichtige Beschreibungssprache zum Einsatz, die auf etablierten Notationen für Unternehmensarchitekturen aufbaut [@Weber24Migration].
 
-## Anforderungen
+### Anforderungen
 
 Das Referenzmodell muss die Reifegradstufen eines KMU abbilden und daraus konkrete Migrationsschritte ableiten.
 Der Prototyp muss die Priorisierung der Schritte nach Risiko und Aufwand nachvollziehbar dokumentieren.
 Performanz und Mehrmandantenfähigkeit sind für den Prototyp vernachlässigbar.
 
-## Evaluation
+### Evaluation
 
 Eine Abbildung des Referenzmodells auf drei anonymisierte KMU-Szenarien prüft die Tragfähigkeit des Reifegradmodells (RQ1).
 Die prototypische Anbindung eines bestehenden IAM-Testsystems zeigt, wie sich Identitätsinfrastrukturen in das Modell integrieren lassen (RQ2).
 Ein Vergleich der berechneten Priorisierung mit Einschätzungen erfahrener Administratoren bewertet den Kriterienkatalog (RQ3).
 Eine Fallstudie im Umfeld des Praxispartners untersucht die Umsetzbarkeit des Gesamtmodells (RQ4).
 
+## Literatur
+
 ---
-title: Ein Referenzmodell für die Einführung von Zero-Trust-Architekturen in KMU
-subtitle: "Exposé zur Masterarbeit"
-lang: de
 references:
 - id: NetSentio25Zero
   type: webpage
