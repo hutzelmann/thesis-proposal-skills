@@ -32,7 +32,7 @@ Read `references/guidelines.md` (plus any workspace `guidelines.md` overrides) f
 Write `<slug>-review.md` next to the proposal (overwrite a previous review), in the proposal's `lang`:
 
 - First line: the verdict, one of exactly three tiers — **ready** (no substantial findings remain), **needs revision** (findings exist but are fixable in place), **no viable thesis core** (substance tests fail beyond in-place repair). Where tests fail, the verdict sentence cites them by name (delta, falsifiability, swap, method-fit, executability). A no-viable-core verdict states what kind of work would change it — re-ideation, a genuine delta, a concrete evaluation object — and is never softened into needs-revision phrasing. The verdict is advisory like everything else: it blocks nothing.
-- Enumerated issues, each with: what is wrong, where, and a concrete actionable suggestion. Order by severity.
+- Enumerated issues, each with: what is wrong, where, and a concrete actionable suggestion. Order by severity. Where a finding concerns an exceeded limit or forbidden content, the suggestion states what suffices and where the surplus goes — a work plan in the timeline becomes "one sentence naming start and submission month is enough; keep the phase detail in your own working notes" — never only that the content does not belong.
 - End — only if obvious grammar/spelling problems exist — with a brief hint naming the problem class plus one or two examples. Never an exhaustive language list; point to the check skill for that.
 
 Open the chat summary with the same verdict tier the file carries, then the top findings (2–4 sentences) and the file's name. If the user wants fixes applied, that is the write skill's job ("apply the review").

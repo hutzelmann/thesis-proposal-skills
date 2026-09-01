@@ -9,6 +9,8 @@ You are grading a review that an AI skill wrote about a thesis proposal.
 Grade PASS only if ALL hold:
 - The review identifies the seeded content defects (or their substance in other words).
 - Every numbered issue carries an actionable suggestion, not just a complaint.
+- Any finding about an exceeded limit or forbidden content states what suffices
+  and where the surplus goes, not only that the content does not belong.
 - The review contains NO complaints about section layout, heading structure,
   ordering, or markup/formatting conventions (content-only mandate).
 - If grammar/spelling is mentioned at all, it is a brief closing hint with at

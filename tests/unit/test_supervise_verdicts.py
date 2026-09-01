@@ -23,7 +23,7 @@ FEEDBACK = """Verdict: needs revision — please address the points below and re
 
 1. The idea is a build goal, not yet a research question — proposal-ideate helps sharpen it.
 2. Two blog posts cannot ground a thesis; proposal-lit-search finds citable literature.
-3. The work plan does not belong in a proposal — proposal-check explains the timeline rule.
+3. One sentence with start and submission month is enough — phases go to notes; see proposal-check.
 
 What to keep: the observed problem is concrete and worth studying.
 
