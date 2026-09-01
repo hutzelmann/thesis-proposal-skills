@@ -51,6 +51,11 @@ SYNC_MAP: dict[str, list[str]] = {
         # wordings and section titles, and reads the references-section
         # headline it must leave unnumbered
         "skills/proposal-publish/references",
+        # customize reproduces values from the skeleton verbatim — the default
+        # forbidden list when re-allowing one entry (lists replace), shipped
+        # branch ids when disabling one — and its SKILL.md and shipped
+        # guidelines.md both name the file
+        "skills/proposal-customize/references",
     ],
     # import and write run the check over the file they just wrote before
     # reporting, so the script is core to their function and ships as a
