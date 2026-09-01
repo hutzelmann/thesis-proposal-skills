@@ -6,6 +6,7 @@ keeps the subprocess call, because a broken shebang or a missing
 this script from the command line.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -145,6 +146,43 @@ def test_check_detects_a_tampered_shared_region(capsys):
         assert "proposal-review/SKILL.md" in capsys.readouterr().out
     finally:
         victim.write_text(original, encoding="utf-8")
+
+
+def test_materialize_never_exposes_a_truncated_destination(tmp_path, monkeypatch):
+    """Writes go through a temp file and an atomic replace, so a concurrent
+    reader (an xdist worker, or anything racing the pre-commit hook) sees the
+    old content or the new content, never an empty file mid-truncation."""
+    monkeypatch.setattr(sync_shared, "REPO", tmp_path)
+    dest = tmp_path / "structure.json"
+    dest.write_text("old", encoding="utf-8")
+    dest.chmod(0o640)
+    at_replace = []
+    real_replace = os.replace
+
+    def spying_replace(src, dst):
+        at_replace.append(Path(dst).read_text(encoding="utf-8"))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", spying_replace)
+    assert sync_shared._materialize(dest, "new", "shared/x", check=False) is None
+    assert at_replace == ["old"], "destination was modified before the atomic swap"
+    assert dest.read_text(encoding="utf-8") == "new"
+    assert (dest.stat().st_mode & 0o777) == 0o640
+
+
+def test_materialize_failure_keeps_the_old_copy_and_leaves_no_litter(tmp_path, monkeypatch):
+    monkeypatch.setattr(sync_shared, "REPO", tmp_path)
+    dest = tmp_path / "structure.json"
+    dest.write_text("old", encoding="utf-8")
+
+    def failing_replace(_src, _dst):
+        raise OSError("boom")
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    with pytest.raises(OSError, match="boom"):
+        sync_shared._materialize(dest, "new", "shared/x", check=False)
+    assert dest.read_text(encoding="utf-8") == "old"
+    assert list(tmp_path.iterdir()) == [dest]
 
 
 @pytest.mark.parametrize("victim_rel", [

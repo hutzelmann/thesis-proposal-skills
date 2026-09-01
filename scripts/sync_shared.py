@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -252,7 +254,20 @@ def _materialize(dest: Path, expected: str, src_label: str, check: bool) -> str 
         stale = not dest.exists() or dest.read_text(encoding="utf-8") != expected
         return rel if stale else None
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(expected, encoding="utf-8")
+    # Temp file + os.replace: concurrent readers (xdist workers, anything racing
+    # the pre-commit hook) must never observe the truncation window of an
+    # in-place write.
+    mode = dest.stat().st_mode if dest.exists() else 0o644
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.")
+    tmp_file = Path(tmp)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(expected)
+        tmp_file.chmod(mode)
+        tmp_file.replace(dest)
+    except BaseException:
+        tmp_file.unlink(missing_ok=True)
+        raise
     print(f"synced {src_label} -> {rel}")
     return None
 
