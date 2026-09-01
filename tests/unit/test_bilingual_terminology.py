@@ -10,8 +10,10 @@ URLs, backtick spans, and the identifiers `thesis-proposal-skills` /
 import re
 from pathlib import Path
 
+from l1_checks import CLOSING_NOTE_LANGUAGES, closing_note_sections
+
 REPO = Path(__file__).resolve().parents[2]
-BLURB = REPO / "skills" / "proposal-supervise" / "references" / "getting-started.md"
+BLURB = REPO / "skills" / "proposal-supervise" / "references" / "closing-note.md"
 SUPERVISE_SKILL = REPO / "skills" / "proposal-supervise" / "SKILL.md"
 IDEATE_SKILL = REPO / "skills" / "proposal-ideate" / "SKILL.md"
 
@@ -19,14 +21,11 @@ IDENTIFIER = re.compile(r"https?://\S+|`[^`]*`|thesis-proposal-skills|proposal-[
 
 
 def blurb_sections() -> dict[str, str]:
-    text = BLURB.read_text(encoding="utf-8")
-    sections = {}
-    for heading in ("English", "Deutsch"):
-        match = re.search(rf"^## {heading}\n(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
-        assert match, f"{BLURB.name}: section '## {heading}' not found"
-        body = match.group(1).strip()
-        assert body, f"{BLURB.name}: section '## {heading}' is empty"
-        sections[heading] = body
+    """Shares the parser with the shape guard and the verbatim verdict — three
+    guards reading one file must agree on what a section is."""
+    sections = closing_note_sections(BLURB.read_text(encoding="utf-8"))
+    missing = [name for name in CLOSING_NOTE_LANGUAGES if name not in sections]
+    assert not missing, f"{BLURB.name}: section(s) missing or empty: {', '.join(missing)}"
     return sections
 
 

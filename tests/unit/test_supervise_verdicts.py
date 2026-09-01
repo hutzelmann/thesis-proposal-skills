@@ -3,8 +3,13 @@ feedback coverage). Each verdict function is exercised without model calls; the
 feedback snippets mirror what the skill's own instructions produce.
 """
 
+from pathlib import Path
+
 import pytest
 from l1_checks import (
+    CLOSING_NOTE_LANGUAGES,
+    load_closing_note,
+    verdict_supervise_closing,
     verdict_supervise_feedback,
     verdict_supervise_feedback_contract,
     verdict_supervise_no_personal_data,
@@ -13,11 +18,17 @@ from l1_checks import (
     verdict_supervise_tier,
 )
 
+REPO = Path(__file__).resolve().parents[2]
+
 SKILL_SET = (
     "proposal-check", "proposal-customize", "proposal-ideate", "proposal-import",
     "proposal-lit-search", "proposal-publish", "proposal-review",
     "proposal-supervise", "proposal-troubleshoot", "proposal-write",
 )
+
+# the shipped snippet, so a reworded reference file cannot leave these tests
+# asserting against a copy that no longer exists
+CLOSING = load_closing_note(REPO / "skills")
 
 FEEDBACK = """Verdict: needs revision — please address the points below and resubmit.
 
@@ -110,7 +121,7 @@ def test_personal_data_match_is_case_insensitive():
 
 def test_pointers_ignore_the_repo_name_in_the_install_blurb():
     """Regression (sonnet dev run 2026-08-10): `hutzelmann/thesis-proposal-skills`
-    in the getting-started blurb must not read as a skill named proposal-skills."""
+    in the closing note must not read as a skill named proposal-skills."""
     feedback = ("1. Sharpen the question — proposal-ideate.\n\nFree writing tools are "
                 "available at https://github.com/hutzelmann/thesis-proposal-skills.")
     ok, why = verdict_supervise_pointers(feedback, SKILL_SET)
@@ -143,3 +154,74 @@ def test_pointers_resolve_against_installed_set(feedback, ok, fragment):
     got_ok, why = verdict_supervise_pointers(feedback, SKILL_SET)
     assert got_ok == ok
     assert fragment in why
+
+
+def test_closing_note_sections_parse_and_load_from_the_shipped_file():
+    sections = load_closing_note(REPO / "skills")
+    assert set(sections) == set(CLOSING_NOTE_LANGUAGES)
+    assert sections["English"].startswith("Note:")
+    assert sections["Deutsch"].startswith("Hinweis:")
+    assert load_closing_note(REPO / "no-such-dir") == {}
+
+
+def test_closing_note_carried_verbatim_passes():
+    feedback = FEEDBACK + "\n" + CLOSING["English"]
+    ok, why = verdict_supervise_closing(feedback, CLOSING, "English")
+    assert ok
+    assert "English" in why
+
+
+def test_closing_note_survives_a_different_line_wrap():
+    """The reference file wraps for readability; a produced feedback need not.
+    Only the words are the contract."""
+    rewrapped = " ".join(CLOSING["English"].split())
+    ok, _ = verdict_supervise_closing(FEEDBACK + "\n" + rewrapped, CLOSING, "English")
+    assert ok
+
+
+def test_closing_note_paraphrase_fails():
+    paraphrased = CLOSING["English"].replace("Free writing tools", "Some writing tools")
+    ok, why = verdict_supervise_closing(FEEDBACK + "\n" + paraphrased, CLOSING, "English")
+    assert not ok
+    assert "verbatim" in why
+
+
+def test_closing_note_in_the_wrong_language_fails():
+    ok, why = verdict_supervise_closing(
+        FEEDBACK + "\n" + CLOSING["Deutsch"], CLOSING, "English")
+    assert not ok
+    assert "Deutsch" in why
+    assert "English" in why
+
+
+def test_closing_note_both_languages_fails():
+    both = FEEDBACK + "\n" + CLOSING["English"] + "\n" + CLOSING["Deutsch"]
+    ok, why = verdict_supervise_closing(both, CLOSING, "English")
+    assert not ok
+    assert "both languages" in why
+
+
+def test_closing_note_missing_feedback_or_sections():
+    assert not verdict_supervise_closing(None, CLOSING, "English")[0]
+    assert not verdict_supervise_closing("   ", CLOSING, "English")[0]
+    ok, why = verdict_supervise_closing(FEEDBACK, {}, "English")
+    assert not ok
+    assert "no closing-note sections" in why
+
+
+def test_closing_note_without_an_expected_language_accepts_either():
+    assert verdict_supervise_closing(FEEDBACK + CLOSING["Deutsch"], CLOSING)[0]
+
+
+def test_feedback_contract_aggregate_includes_the_closing_note():
+    files = {"idea-feedback.md": FEEDBACK + "\n" + CLOSING["English"]}
+    ok, why = verdict_supervise_feedback_contract(
+        files, ("Musterfrau",), SKILL_SET, CLOSING, "English")
+    assert ok
+    assert "closing note carried verbatim" in why
+
+    stale = {"idea-feedback.md": FEEDBACK}
+    ok, why = verdict_supervise_feedback_contract(
+        stale, ("Musterfrau",), SKILL_SET, CLOSING, "English")
+    assert not ok
+    assert "verbatim" in why
