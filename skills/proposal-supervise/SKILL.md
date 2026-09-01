@@ -36,6 +36,8 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <slug>.md
 
 Then apply the review rules from `references/guidelines.md` — plus any workspace `guidelines.md` override, which carries the professor's own requirements and wins — exactly as the review skill would: the five substance tests (delta, falsifiability, swap, method-fit, executability) decide the verdict; title, research questions, contribution delta, argument soundness, single methodology, and sentence-level density are the dimensions. Do not invent a separate quality bar: what check and review would tell the student is what you work from.
 
+The degree level the submission's subtitle states calibrates that bar per the guidelines' Degree Level section, and the calibration reaches the feedback: a Master's proposal whose contribution close never says what will be new is always asked for that statement; a Bachelor's proposal is never asked for a novelty claim, and one it makes is engaged on its merits, not removed. Research-question origin, literature stance, and scope-for-the-months grade the same way. A submission that states no level is judged against the level-independent bar, and the feedback carries one line asking the student to state the degree level in the subtitle — a point for the student, never a guess.
+
 Write the complete findings to `<slug>-review.md` beside the proposal: verdict first, every finding enumerated with a concrete suggestion, ordered by severity. This file keeps the review skill's blunt vocabulary — ready / needs revision / no viable thesis core — is for the professor only, and none of it enters the feedback. Refer to it as the review, never as feedback — the professor must never mistake it for the text to paste.
 
 ## Decide the tier
