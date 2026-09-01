@@ -1,6 +1,7 @@
 # BEGIN generated (scripts/sync_shared.py)
 skills/proposal-check/references/structure.json linguist-generated=true merge=ours
 skills/proposal-customize/references/guidelines.md linguist-generated=true merge=ours
+skills/proposal-customize/references/structure.json linguist-generated=true merge=ours
 skills/proposal-ideate/references/guidelines.md linguist-generated=true merge=ours
 skills/proposal-import/references/structure.json linguist-generated=true merge=ours
 skills/proposal-import/scripts/check.py linguist-generated=true merge=ours

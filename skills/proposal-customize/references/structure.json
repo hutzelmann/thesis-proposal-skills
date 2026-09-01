@@ -1,0 +1,316 @@
+{
+  "_generated": "from shared/structure.json — edit there, then run scripts/sync_shared.py",
+  "_comment": "Single source of truth for the mechanically checkable proposal skeleton. Semantic rules live in shared/guidelines/guidelines.md. Synced into skills by scripts/sync_shared.py.",
+  "_override_comment": "A workspace guidelines.md overrides a value by naming the same key path it has here — [references] min_count, [length] page_limit, and so on. One rule, no aliases: a key that does not resolve to an overridable leaf is reported as an error rather than ignored.",
+  "_references_comment": "min_count is a floor catching an empty bibliography. min_per_1000_words is an estimation constant like words_per_page, not semantic data: the density warning fires below ceil(body words * min_per_1000_words / 1000). The default 4 is the lower edge of the coverage-derived 4-6/1000 range (two sources per thematic cluster, grounded research questions), which reproduces the prose's ten-to-fifteen at the default five-page length. 0 disables the advisory.",
+  "references": {
+    "min_count": 3,
+    "min_per_1000_words": 4,
+    "section_title": {
+      "en": "References",
+      "de": "Literatur"
+    }
+  },
+  "_subtitle_comment": "Canonical subtitle wordings, one per degree level and language. The subtitle paragraph is the primary language signal: language inference matches it exactly before falling back to a majority of canonical section titles.",
+  "subtitle": {
+    "wordings": {
+      "en": [
+        "Bachelor's Thesis Proposal",
+        "Master's Thesis Proposal"
+      ],
+      "de": [
+        "Exposé zur Bachelorarbeit",
+        "Exposé zur Masterarbeit"
+      ]
+    }
+  },
+  "sections": {
+    "order": [
+      "introduction",
+      "contribution",
+      "research_questions",
+      "methodology",
+      "timeline"
+    ],
+    "titles": {
+      "introduction": {
+        "en": "Introduction to the Topic",
+        "de": "Einführung in das Thema"
+      },
+      "contribution": {
+        "en": "Contribution to the State-of-the-Art",
+        "de": "Beitrag zum Stand der Technik"
+      },
+      "research_questions": {
+        "en": "Research Focus and Research Questions",
+        "de": "Forschungsfokus und Forschungsfragen"
+      },
+      "methodology": {
+        "en": "Methodology for Research: {methodology}",
+        "de": "Forschungsmethodik: {methodology}"
+      },
+      "timeline": {
+        "en": "Timeline",
+        "de": "Zeitplan"
+      }
+    }
+  },
+  "methodologies": {
+    "prototype": {
+      "title": {
+        "en": "Prototype Implementation",
+        "de": "Prototypimplementierung"
+      },
+      "subsections": [
+        {
+          "en": "Previous Work",
+          "de": "Vorarbeiten"
+        },
+        {
+          "en": "Requirements",
+          "de": "Anforderungen"
+        },
+        {
+          "en": "Evaluation",
+          "de": "Evaluation"
+        }
+      ]
+    },
+    "theoretical": {
+      "title": {
+        "en": "Theoretical Analysis",
+        "de": "Theoretische Analyse"
+      },
+      "subsections": [
+        {
+          "en": "Formalization",
+          "de": "Formalisierung"
+        },
+        {
+          "en": "Requirements",
+          "de": "Anforderungen"
+        },
+        {
+          "en": "Example",
+          "de": "Beispiel"
+        }
+      ]
+    },
+    "slr": {
+      "title": {
+        "en": "Systematic Literature Review",
+        "de": "Systematische Literaturrecherche"
+      },
+      "subsections": [
+        {
+          "en": "Search Strategy and Selection Criteria",
+          "de": "Suchstrategie und Auswahlkriterien"
+        },
+        {
+          "en": "Quality Assessment and Extracted Information",
+          "de": "Qualitätsbewertung und extrahierte Informationen"
+        },
+        {
+          "en": "Synthesis",
+          "de": "Synthese"
+        }
+      ]
+    },
+    "user_study": {
+      "title": {
+        "en": "User Study",
+        "de": "Nutzerstudie"
+      },
+      "subsections": [
+        {
+          "en": "Preparation",
+          "de": "Vorbereitung"
+        },
+        {
+          "en": "Procedure",
+          "de": "Durchführung"
+        },
+        {
+          "en": "Analysis",
+          "de": "Analyse"
+        }
+      ]
+    },
+    "experiment": {
+      "title": {
+        "en": "Controlled Experiment",
+        "de": "Kontrolliertes Experiment"
+      },
+      "subsections": [
+        {
+          "en": "Hypotheses and Variables",
+          "de": "Hypothesen und Variablen"
+        },
+        {
+          "en": "Design and Participants",
+          "de": "Versuchsdesign und Teilnehmende"
+        },
+        {
+          "en": "Statistical Analysis",
+          "de": "Statistische Auswertung"
+        }
+      ]
+    },
+    "model_evaluation": {
+      "title": {
+        "en": "Empirical Model Evaluation",
+        "de": "Empirische Modellevaluation"
+      },
+      "subsections": [
+        {
+          "en": "Data and Baselines",
+          "de": "Daten und Baselines"
+        },
+        {
+          "en": "Experimental Setup",
+          "de": "Versuchsaufbau"
+        },
+        {
+          "en": "Analysis",
+          "de": "Auswertung"
+        }
+      ]
+    },
+    "case_study": {
+      "title": {
+        "en": "Case Study",
+        "de": "Fallstudie"
+      },
+      "subsections": [
+        {
+          "en": "Case and Units of Analysis",
+          "de": "Fall und Analyseeinheiten"
+        },
+        {
+          "en": "Data Collection",
+          "de": "Datenerhebung"
+        },
+        {
+          "en": "Analysis",
+          "de": "Auswertung"
+        }
+      ]
+    }
+  },
+  "_work_plan_comment": "work_plan_patterns is the subset of heading_patterns dropped when [timeline] detail = detailed. `time plan` and `schedule` stay forbidden even then: they are rival names for the canonical timeline section, not work-plan markers.",
+  "forbidden": {
+    "heading_patterns": [
+      "time plan",
+      "schedule",
+      "workplan",
+      "work plan",
+      "milestones",
+      "gantt",
+      "work package",
+      "workpackage",
+      "arbeitsplan",
+      "meilensteine",
+      "arbeitspaket",
+      "expected results",
+      "erwartete ergebnisse",
+      "thesis structure",
+      "preliminary structure",
+      "chapter structure",
+      "gliederung",
+      "supervisor",
+      "betreuer",
+      "deliverables"
+    ],
+    "work_plan_patterns": [
+      "workplan",
+      "work plan",
+      "milestones",
+      "gantt",
+      "work package",
+      "workpackage",
+      "arbeitsplan",
+      "meilensteine",
+      "arbeitspaket"
+    ],
+    "confidentiality_patterns": [
+      "confidential",
+      "internal use only",
+      "do not distribute",
+      "non-disclosure",
+      "NDA",
+      "vertraulich",
+      "nur für den internen gebrauch",
+      "geheim"
+    ]
+  },
+  "timeline": {
+    "max_body_lines": 3,
+    "detail_modes": [
+      "simple",
+      "detailed"
+    ],
+    "detail": "simple"
+  },
+  "_paths_comment": "Workspace layout. proposals is the directory holding each proposal and its whole family (notes, harvest, img/, review, feedback, built outputs), relative to the workspace root — the directory of the governing guidelines.md. The default '.' is the flat layout. guidelines.md, api-keys.env, and bug-report/ stay at the root regardless.",
+  "paths": {
+    "proposals": "."
+  },
+  "_length_comment": "Estimation constants only, not semantic data: checks estimate rendered pages as body words / words_per_page and warn above page_limit. The substance and density rules stay prose in guidelines.md.",
+  "length": {
+    "page_limit": 5,
+    "words_per_page": 500
+  },
+  "_title_comment": "Mechanically matchable tells for the thesis title only. Openers match at the start of the title, buzzwords anywhere, both case-insensitively and regardless of the proposal's lang. min_words is per lang because German compounds one noun where English needs three. Tool, product and vendor names are deliberately absent: the set is unbounded and stays agent judgement per guidelines.md.",
+  "title": {
+    "min_words": {
+      "en": 4,
+      "de": 3
+    },
+    "max_words": 20,
+    "implementation_openers": [
+      "implementing",
+      "implementation of",
+      "development of",
+      "developing",
+      "building a",
+      "building an",
+      "design and implementation of",
+      "entwicklung von",
+      "entwicklung einer",
+      "entwicklung eines",
+      "implementierung von",
+      "implementierung einer",
+      "umsetzung von",
+      "umsetzung einer",
+      "konzeption und umsetzung",
+      "konzept für",
+      "realisierung",
+      "erstellung von",
+      "erstellung einer"
+    ],
+    "buzzwords": [
+      "revolutioniz",
+      "next-gen",
+      "cutting-edge",
+      "ai-powered",
+      "game-chang",
+      "seamless",
+      "disruptive",
+      "bahnbrechend",
+      "revolutionär",
+      "zukunftsweisend",
+      "wegweisend"
+    ]
+  },
+  "_rq_comment": "Counts only. Whether the questions are distinct, non-overlapping and analytically phrased stays prose in guidelines.md — a count is checkable, a judgement is not.",
+  "research_questions": {
+    "format": "ordered list under the research_questions section",
+    "label": "RQ",
+    "min_count": 1,
+    "max_count": 5,
+    "methodology_reference_pattern": "\\(RQ\\d+\\)"
+  },
+  "todo": {
+    "marker": "\\[TODO:[^\\]]*\\]"
+  }
+}
