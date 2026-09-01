@@ -84,6 +84,8 @@ RULE_IDS = (
     "override-key-retired",
     "override-key-unknown",
     "methodology-branch-invalid",
+    "paths-proposals-invalid",
+    "proposal-misplaced",
     # structure
     "heading-style-setext",
     "timeline-detail-unknown",
@@ -145,6 +147,7 @@ OVERRIDABLE = {
     ("forbidden", "heading_patterns"),
     ("timeline", "detail"),
     ("length", "page_limit"),
+    ("paths", "proposals"),
     ("research_questions", "min_count"),
     ("research_questions", "max_count"),
 }
@@ -256,9 +259,22 @@ def override_key_findings(overrides: dict) -> list[Finding]:
     return out
 
 
+def resolve_guidelines(proposal: Path, explicit: Path | None) -> Path | None:
+    """The governing override file: an explicit path, else `guidelines.md`
+    beside the proposal, else in the working directory — the workspace root
+    when the proposal lives in a configured subdirectory. The first file found
+    governs the whole run; deliberately no ancestor search."""
+    if explicit is not None:
+        return explicit
+    for candidate in (proposal.parent / "guidelines.md", Path.cwd() / "guidelines.md"):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def load_overrides(proposal: Path, explicit: Path | None) -> dict:
-    candidate = explicit or proposal.parent / "guidelines.md"
-    if not candidate.exists():
+    candidate = resolve_guidelines(proposal, explicit)
+    if candidate is None or not candidate.exists():
         return {}
     match = re.search(r"```toml\n(.*?)```", candidate.read_text(encoding="utf-8"), re.DOTALL)
     if not match:
@@ -267,6 +283,51 @@ def load_overrides(proposal: Path, explicit: Path | None) -> dict:
         return tomllib.loads(match.group(1))
     except tomllib.TOMLDecodeError as exc:
         return {"_parse_error": str(exc)}
+
+
+def paths_value_problem(value: object) -> str | None:
+    """Why this [paths] proposals value cannot be applied, or None. The
+    constraint is a relative directory inside the workspace: layout is
+    workspace-internal, so a value must never reach outside the root."""
+    if not isinstance(value, str) or not value.strip():
+        return "must be a directory name"
+    if value.startswith("~"):
+        return "must not be home-anchored"
+    if Path(value).is_absolute() or value.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", value):
+        return "must be relative, not absolute"
+    if ".." in Path(value).parts:
+        return "must stay inside the workspace (no `..`)"
+    return None
+
+
+def paths_findings(proposal: Path, overrides: dict, guidelines: Path | None) -> list[Finding]:
+    """Value and placement findings for the configured proposal location.
+
+    The workspace root is the governing guidelines.md's own directory, so the
+    placement comparison is well-defined for every position in the resolution
+    chain. Skills honor only the configured location; a proposal outside it
+    fails loudly here instead of half the skills silently disagreeing."""
+    if not overridden(overrides, "paths", "proposals"):
+        return []
+    value = overrides["paths"]["proposals"]
+    problem = paths_value_problem(value)
+    if problem is not None:
+        return [error(
+            "paths-proposals-invalid",
+            f"guidelines.md: [paths] proposals {problem}, not `{value}` — "
+            "the default location applies",
+        )]
+    if guidelines is None:
+        return []
+    expected = (guidelines.resolve().parent / value).resolve()
+    if proposal.resolve().parent != expected:
+        return [error(
+            "proposal-misplaced",
+            f"`{proposal.name}` is outside the configured proposal location: "
+            f"`{guidelines}` sets [paths] proposals = `{value}` — move the "
+            "proposal and its companion files there",
+        )]
+    return []
 
 
 # ---------- narrow metadata extraction ---------------------------------------
@@ -1277,7 +1338,8 @@ def build_context(body: str, meta: Metadata, structure: dict, overrides: dict) -
     )
 
 
-def check_findings(proposal_path: Path, structure: dict, overrides: dict) -> list[Finding]:
+def check_findings(proposal_path: Path, structure: dict, overrides: dict,
+                   guidelines: Path | None = None) -> list[Finding]:
     """Every mechanical finding for one proposal, in report order."""
     body, meta = split_proposal(proposal_path.read_text(encoding="utf-8"))
 
@@ -1291,6 +1353,7 @@ def check_findings(proposal_path: Path, structure: dict, overrides: dict) -> lis
     # before the rules: a key that will not be honoured explains every verdict
     # below it, and reading those first would waste the user's time.
     findings += override_key_findings(overrides)
+    findings += paths_findings(proposal_path, overrides, guidelines)
 
     ctx = build_context(body, meta, structure, overrides)
     for rule in RULES:
@@ -1384,8 +1447,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     structure = load_structure(args.structure)
+    guidelines = resolve_guidelines(args.proposal, args.guidelines)
     overrides = load_overrides(args.proposal, args.guidelines)
-    findings = check_findings(args.proposal, structure, overrides)
+    findings = check_findings(args.proposal, structure, overrides, guidelines)
     digest = hashlib.sha256(args.proposal.read_bytes()).hexdigest()
     exit_code = 1 if any(f.level == "error" for f in findings) else 0
 

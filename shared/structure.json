@@ -131,6 +131,10 @@
     "detail_modes": ["simple", "detailed"],
     "detail": "simple"
   },
+  "_paths_comment": "Workspace layout. proposals is the directory holding each proposal and its whole family (notes, harvest, img/, review, feedback, built outputs), relative to the workspace root — the directory of the governing guidelines.md. The default '.' is the flat layout. guidelines.md, api-keys.env, and bug-report/ stay at the root regardless.",
+  "paths": {
+    "proposals": "."
+  },
   "_length_comment": "Estimation constants only, not semantic data: checks estimate rendered pages as body words / words_per_page and warn above page_limit. The substance and density rules stay prose in guidelines.md.",
   "length": {
     "page_limit": 5,

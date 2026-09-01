@@ -252,7 +252,14 @@ def _materialize(dest: Path, expected: str, src_label: str, check: bool) -> str 
         stale = not dest.exists() or dest.read_text(encoding="utf-8") != expected
         return rel if stale else None
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(expected, encoding="utf-8")
+    if dest.exists() and dest.read_text(encoding="utf-8") == expected:
+        print(f"synced {src_label} -> {rel}")
+        return None
+    # atomic replace: a concurrent reader (parallel tests, an agent mid-run)
+    # must never observe a truncated file
+    tmp = dest.with_name(dest.name + ".sync-tmp")
+    tmp.write_text(expected, encoding="utf-8")
+    tmp.replace(dest)
     print(f"synced {src_label} -> {rel}")
     return None
 

@@ -76,7 +76,7 @@ The guidance SHALL state, in one place, that omitting work plans, expected-resul
 ### Requirement: Workspace override file
 A user-owned `guidelines.md` in the workspace SHALL override/extend defaults. It consists of a machine-readable fenced TOML block plus freeform prose. Absent file means pure defaults.
 
-Every override key SHALL be the same key path the value occupies in the structured guidance data. There SHALL be exactly one naming rule: no hand-named aliases, and no flat spelling accepted alongside a nested one. The overridable set SHALL cover the reference minimum, the reference-density constant, the required-section list, the forbidden-heading list, the timeline detail mode, the page limit, and the research-question count bounds.
+Every override key SHALL be the same key path the value occupies in the structured guidance data. There SHALL be exactly one naming rule: no hand-named aliases, and no flat spelling accepted alongside a nested one. The overridable set SHALL cover the reference minimum, the reference-density constant, the required-section list, the forbidden-heading list, the timeline detail mode, the page limit, the research-question count bounds, and the proposal-location path.
 
 Merge semantics: a user key wins over the default per key; list values replace defaults entirely; a default-forbidden section may be allowed again by omitting it from the replacement list.
 
@@ -101,6 +101,35 @@ The timeline detail mode SHALL accept `simple` (the default) or `detailed`. Unde
 #### Scenario: Override key mirrors the structure path
 - **WHEN** a value is nested in the structured guidance data
 - **THEN** the override key for it is nested identically, and no alternative spelling is honoured
+
+#### Scenario: Proposal location overridden at its structure path
+- **WHEN** `guidelines.md` sets the proposal-location path at the key path it occupies in the structured guidance data
+- **THEN** the workspace's proposal directory is the configured one, and no alternative spelling of the key is honoured
+
+### Requirement: Workspace layout and the proposal location
+The workspace root SHALL be the directory containing the governing `guidelines.md` — the working directory the skills already operate from. The proposal-location path SHALL be resolved relative to that root and SHALL default to the root itself, so an unset key reproduces the flat layout exactly.
+
+A configured proposal-location value SHALL be a relative directory inside the workspace: not absolute, not home-anchored, and not escaping the root through parent references.
+
+The proposal's family SHALL travel with it into the configured directory: the proposal file, its companion notes file, its harvest record, its figure directory, its review and feedback files, and its built outputs all sit beside the proposal wherever it lives. Workspace-level files SHALL stay at the root regardless of the configured proposal location: the `guidelines.md` itself, the workspace key file, and the bug-report bundle.
+
+Skills that create or locate proposals SHALL honor only the configured location: a skill SHALL NOT fall back to searching the default location when the configured directory is empty, and SHALL NOT write a proposal or a family member outside the configured directory. A proposal sitting outside the configured location is a reportable condition, never a silently accepted alternative.
+
+#### Scenario: Proposals collected in a subdirectory
+- **WHEN** the workspace `guidelines.md` sets the proposal-location path to a subdirectory and a skill creates a proposal
+- **THEN** the proposal and its companion files are created in that subdirectory, and `guidelines.md` stays at the workspace root
+
+#### Scenario: Unset key preserves the flat layout
+- **WHEN** the workspace sets no proposal-location path
+- **THEN** proposals and their families live directly in the workspace root, byte-identical to the behavior before the key existed
+
+#### Scenario: Family follows the proposal
+- **WHEN** the proposal lives in the configured subdirectory and a skill writes its review, feedback, notes, harvest record, or built output
+- **THEN** the file lands beside the proposal in that subdirectory, not in the workspace root
+
+#### Scenario: No fallback search
+- **WHEN** the configured proposal directory holds no proposals but the workspace root does
+- **THEN** a skill locating a proposal does not silently adopt the root copy; the mismatch surfaces as a reported condition
 
 ### Requirement: Thesis title quality
 The guidance SHALL govern the proposal's own thesis title, stating that it is printed on the student's final study certificate and therefore outlives the document. A title SHALL name what is contributed and what it is contributed about, at a level of abstraction that stays true when the tool used to produce it is replaced. It SHALL stand on its own: the rendered title page carries title and subtitle, but the certificate carries the title alone, so the title SHALL NOT depend on the subtitle or on any surrounding context to be understood. It SHALL state its subject rather than pose a question, and SHALL stay within the documented word bounds, whose minimum is per language because German compounds into one noun what English spreads over several. A concrete technology, product, vendor, or company name MAY appear only as a scope qualifier, and only once the student has stated why that technology is the object of study rather than the instrument of it.

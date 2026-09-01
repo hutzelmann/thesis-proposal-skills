@@ -25,9 +25,11 @@ FIXTURES = REPO / "tests" / "fixtures"
 # override that w02 ships alongside one, and README.md documents the corpus
 NOT_PROPOSALS = {"README.md", "guidelines.md"}
 # a harvest record is what the reverse skill reads out of a finished thesis, so
-# it stands where the thesis would: an input to a skill, never a document to build
+# it stands where the thesis would: an input to a skill, never a document to build.
+# w07 keeps its proposal one level down, in the subdirectory its workspace
+# guidelines.md configures — the corpus covers both layouts.
 PROPOSALS = sorted(
-    p for p in FIXTURES.glob("*/*.md")
+    p for p in list(FIXTURES.glob("*/*.md")) + list(FIXTURES.glob("*/proposals/*.md"))
     if p.name not in NOT_PROPOSALS and not p.name.endswith(".harvest.md")
 )
 
@@ -63,7 +65,8 @@ def build_in(proposal: Path, tmp_path: Path, tier: str) -> list[Path]:
 
 @pytest.mark.slow
 @pytest.mark.parametrize("tier", sorted(TIERS))
-@pytest.mark.parametrize("proposal", PROPOSALS, ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("proposal", PROPOSALS,
+                         ids=lambda p: p.relative_to(FIXTURES).parts[0])
 def test_fixture_builds_on_every_tier(proposal, tier, tmp_path):
     outputs = build_in(proposal, tmp_path, tier)
     assert outputs, f"{tier} tier declared no outputs"
@@ -77,7 +80,7 @@ def test_fixture_builds_on_every_tier(proposal, tier, tmp_path):
 
 
 def test_discovery_covers_the_whole_corpus():
-    fixtures = {p.parent.name for p in PROPOSALS}
+    fixtures = {p.relative_to(FIXTURES).parts[0] for p in PROPOSALS}
     expected = {p.parent.name for p in FIXTURES.glob("*/expected.json")}
     assert fixtures == expected, (
         f"fixture proposals and oracles disagree: {fixtures ^ expected}"

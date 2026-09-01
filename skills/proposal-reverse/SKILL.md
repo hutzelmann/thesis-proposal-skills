@@ -33,6 +33,8 @@ Read the PDF directly. If you cannot ingest PDFs in this environment, say so pla
 
 ## The harvest record
 
+The `<slug>.md` and everything beside it are created in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory. Nothing is written beside the source thesis, and nothing into this skill's install directory.
+
 Before you write a line of proposal prose, write `<slug>.harvest.md` beside it and tell the user it is there to check. It holds what you took out of the thesis:
 
 - title, degree level, language

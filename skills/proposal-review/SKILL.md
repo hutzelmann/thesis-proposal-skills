@@ -16,6 +16,8 @@ Content review only. You judge arguments and substance — never formatting, sec
 
 ## What to assess
 
+The draft is the file the user names, else the proposal in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory; look only there.
+
 Read `references/guidelines.md` (plus any workspace `guidelines.md` overrides) for the semantic rules, then review:
 
 - **Substance, by the five named tests** — the guidelines' delta, falsifiability, swap, method-fit, and executability tests decide the verdict. Concreteness and executability count as much as depth: does the proposal name its objects of study (dataset, system, population, corpus), state a concrete evaluation, and give goals a student could act on within the stated months?

@@ -23,16 +23,26 @@ def fixture_id(path: Path) -> str:
     return path.parent.name
 
 
+def fixture_proposals(fixture_dir: Path) -> list[Path]:
+    """The fixture's proposal markdown, top-level or one directory down —
+    w07 keeps its proposal in a configured `proposals/` subdirectory. The
+    one-proposal-per-fixture invariant holds across both levels."""
+    return [
+        p for p in sorted(fixture_dir.glob("*.md")) + sorted(fixture_dir.glob("*/*.md"))
+        if p.name not in ("guidelines.md",) and not p.name.endswith("-handout.md")
+    ]
+
+
 @pytest.mark.parametrize("oracle_path", ORACLES, ids=fixture_id)
 def test_oracle_holds(oracle_path: Path):
     oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
-    proposals = [
-        p for p in oracle_path.parent.glob("*.md")
-        if p.name not in ("guidelines.md",) and not p.name.endswith("-handout.md")
-    ]
+    proposals = fixture_proposals(oracle_path.parent)
     assert len(proposals) == 1, f"expected exactly one proposal md in {oracle_path.parent}"
+    # the fixture directory is the workspace root: the check's guidelines
+    # chain ends at the working directory, which is where w07 keeps its file
     result = subprocess.run(
-        [sys.executable, str(CHECK), str(proposals[0])], capture_output=True, text=True
+        [sys.executable, str(CHECK), str(proposals[0])], capture_output=True, text=True,
+        cwd=oracle_path.parent,
     )
     expected = oracle["check"]
     assert result.returncode == expected["exit_code"], result.stdout
@@ -66,13 +76,10 @@ def test_oracle_rule_identifiers_hold(oracle_path: Path):
     oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
     expected = oracle["check"].get("rules")
     assert expected is not None, f"{fixture_id(oracle_path)}: oracle has no `rules` block"
-    proposals = [
-        p for p in oracle_path.parent.glob("*.md")
-        if p.name not in ("guidelines.md",) and not p.name.endswith("-handout.md")
-    ]
+    proposals = fixture_proposals(oracle_path.parent)
     result = subprocess.run(
         [sys.executable, str(CHECK), str(proposals[0]), "--json"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, cwd=oracle_path.parent,
     )
     assert result.returncode == oracle["check"]["exit_code"]
     data = json.loads(result.stdout)

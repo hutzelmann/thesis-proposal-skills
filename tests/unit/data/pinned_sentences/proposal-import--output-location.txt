@@ -1,1 +1,1 @@
-The imported `<slug>.md` is written into the working directory even when the source document lives elsewhere — nothing is written beside the source, and nothing into this skill's install directory.
+The imported `<slug>.md` is written into the workspace's proposal location even when the source document lives elsewhere — nothing is written beside the source, and nothing into this skill's install directory.

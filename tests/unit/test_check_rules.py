@@ -655,6 +655,8 @@ COVERED_BY_UNIT_TESTS = {
     "override-key-retired",
     "override-key-unknown",
     "methodology-branch-invalid",
+    "paths-proposals-invalid",
+    "proposal-misplaced",
     "metadata-block-missing",
     "title-line-missing",
     "title-not-first",

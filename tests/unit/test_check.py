@@ -118,6 +118,95 @@ def test_unknown_override_key_is_reported(tmp_path):
     assert "unknown workspace override `[references] min_cout`" in result.stdout
 
 
+def workspace_with_subdir(tmp_path, toml: str, subdir: str = "proposals"):
+    """A workspace root holding guidelines.md, with the proposal one level down."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(f"```toml\n{toml}```\n", encoding="utf-8")
+    home = tmp_path / subdir
+    home.mkdir()
+    victim = home / "ml-code-review.md"
+    victim.write_text(source, encoding="utf-8")
+    return victim
+
+
+def test_root_guidelines_governs_proposal_in_configured_subdirectory(tmp_path, monkeypatch):
+    """The working-directory chain position: the workspace root's guidelines.md
+    is found and honoured although nothing sits beside the proposal."""
+    victim = workspace_with_subdir(
+        tmp_path, '[paths]\nproposals = "proposals/"\n[references]\nmin_count = 8\n')
+    monkeypatch.chdir(tmp_path)
+    result = run_check(victim)
+    assert "at least 8 required" in result.stdout
+    assert "outside the configured proposal location" not in result.stdout
+
+
+def test_guidelines_beside_the_proposal_governs_the_whole_run(tmp_path, monkeypatch):
+    """First file found wins whole-file: the working-directory position is not
+    consulted to fill in keys the beside-the-proposal file lacks."""
+    victim = workspace_with_subdir(tmp_path, "[references]\nmin_count = 8\n")
+    (victim.parent / "guidelines.md").write_text(
+        "```toml\n[references]\nmin_count = 9\n```\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = run_check(victim)
+    assert "at least 9 required" in result.stdout
+    assert "at least 8 required" not in result.stdout
+
+
+def test_no_guidelines_anywhere_means_pure_defaults(tmp_path, monkeypatch):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = run_check(victim)
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.parametrize("value", ['"/srv/proposals"', '"../elsewhere"', '"~/proposals"', "5"])
+def test_invalid_paths_value_is_reported_and_default_applies(tmp_path, value):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source, encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(
+        f"```toml\n[paths]\nproposals = {value}\n```\n", encoding="utf-8")
+    result = run_check(victim)
+    assert "guidelines.md: [paths] proposals" in result.stdout
+    assert result.returncode == 1
+    # the invalid value is not applied: no placement comparison happens
+    assert "outside the configured proposal location" not in result.stdout
+
+
+def test_unknown_paths_leaf_is_reported(tmp_path):
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source, encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(
+        '```toml\n[paths]\nproposal = "proposals/"\n```\n', encoding="utf-8")  # typo
+    result = run_check(victim)
+    assert "unknown workspace override `[paths] proposal`" in result.stdout
+
+
+def test_misplaced_proposal_is_an_error(tmp_path):
+    """A straggler beside guidelines.md after the workspace configured a
+    subdirectory: skills honour only the configured location, so the check
+    says so instead of half the skills silently disagreeing."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+    victim = tmp_path / "ml-code-review.md"
+    victim.write_text(source, encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(
+        '```toml\n[paths]\nproposals = "proposals/"\n```\n', encoding="utf-8")
+    result = run_check(victim)
+    assert "outside the configured proposal location" in result.stdout
+    assert "[paths] proposals = `proposals/`" in result.stdout
+    assert result.returncode == 1
+
+
+def test_unset_paths_key_never_raises_a_location_finding(tmp_path, monkeypatch):
+    victim = workspace_with_subdir(tmp_path, "[references]\nmin_count = 8\n")
+    monkeypatch.chdir(tmp_path)
+    result = run_check(victim)
+    assert "outside the configured proposal location" not in result.stdout
+
+
 CASE_STUDY_TOML = """```toml
 [methodologies.case_study.title]
 en = "Case Study"

@@ -1,0 +1,21 @@
+{
+  "fixture": "w07-paths-workspace",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "at least 8 required"
+    ],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [
+        "min-references"
+      ],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "the proposal lives in `proposals/` because the root `guidelines.md` sets `[paths] proposals = \"proposals/\"` — the override reaches it through the working-directory chain position, with nothing beside the proposal itself",
+    "location oracle: the raised `min_count` biting (3 < 8) proves the root guidelines.md governs a proposal one directory down; no `proposal-misplaced` finding may fire, because the proposal sits exactly where the workspace configured it"
+  ]
+}

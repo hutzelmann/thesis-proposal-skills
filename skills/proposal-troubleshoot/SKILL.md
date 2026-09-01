@@ -18,7 +18,7 @@ Naming the rung is part of the answer. A report that says "it did not work" cost
 
 ## Target
 
-Establish two things before diagnosing: which skill misbehaved, and what the user expected instead. If the problem concerns a proposal file, resolve it the way the other skills do — explicit mention wins; exactly one markdown file ending in a `---` metadata block auto-picks; several candidates means listing them and asking. Never treat `<slug>.notes.md` or anything inside `bug-report/` as the proposal.
+Establish two things before diagnosing: which skill misbehaved, and what the user expected instead. If the problem concerns a proposal file, resolve it the way the other skills do — explicit mention wins; exactly one markdown file ending in a `---` metadata block auto-picks; several candidates means listing them and asking. The search space is the workspace's proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory. Never treat `<slug>.notes.md` or anything inside `bug-report/` as the proposal.
 
 A problem need not concern a proposal at all. An ideation session that crashed before seeding anything is still reportable.
 

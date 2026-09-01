@@ -43,6 +43,8 @@ Terminal-based agent by Anthropic. Paid subscription or API billing.
 - `guidelines.md` appears if you customize the rules for your supervisor.
 - `img/` appears only if your proposal uses figures.
 
+Everything sits flat in the folder by default. If your `guidelines.md` sets `[paths] proposals` to a subfolder, the proposal and everything named after it live there instead, and `guidelines.md` stays at the top.
+
 Useful prompts: *"Find literature for my proposal"*, *"Check my proposal"*, *"Review it like a supervisor would"*, *"My supervisor wants a detailed work plan, adjust the rules"*, *"Build a PDF"* (the agent tells you what to install, if anything).
 
 ## Notes

@@ -20,7 +20,7 @@ Deterministic low-level checks plus a language pass for one proposal file. Resul
 
 ## Target
 
-Resolve the proposal file: explicit user mention wins; exactly one markdown file ending in a `---` metadata block → auto-pick; several candidates → list them and ask. A `<slug>.notes.md` is never a candidate, and neither is anything under `bug-report/`: a reduced reproduction left there by the troubleshoot skill is a structurally valid proposal, so it would otherwise win the pick and quietly redirect the check away from the real draft.
+Resolve the proposal file: explicit user mention wins; exactly one markdown file ending in a `---` metadata block → auto-pick; several candidates → list them and ask. The search space is the workspace's proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then look only there, never in both. A `<slug>.notes.md` is never a candidate, and neither is anything under `bug-report/`: a reduced reproduction left there by the troubleshoot skill is a structurally valid proposal, so it would otherwise win the pick and quietly redirect the check away from the real draft.
 
 ## Step 1 — deterministic script
 
@@ -33,7 +33,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <proposal.md>
 `${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
 
 - Requires Python ≥ 3.11. If Python is missing, tell the user how to install it (python.org, or `winget install Python.Python.3.12` / `brew install python`) and perform the script's checks yourself as well as possible, stating that determinism is reduced.
-- The script reads `references/structure.json` (canonical skeleton) and the workspace `guidelines.md` TOML override automatically.
+- The script reads `references/structure.json` (canonical skeleton) and the workspace `guidelines.md` TOML override automatically — first beside the proposal, else in the working directory (the workspace root when proposals live in a configured subdirectory). Run it from the workspace root so that second position resolves.
 - Relay its two buckets verbatim: mechanical errors, mechanical warnings (possible false positives — say so). Never claim semantic rules passed.
 
 ## Step 2 — agent pass
