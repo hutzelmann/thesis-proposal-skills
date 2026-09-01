@@ -150,6 +150,7 @@ def _l1_assertions():
         "supervise_l1_tier": c.verdict_supervise_tier,
         "supervise_l1_no_personal_data": c.verdict_supervise_no_personal_data,
         "supervise_l1_pointers": c.verdict_supervise_pointers,
+        "supervise_l1_closing": c.verdict_supervise_closing,
         "no_spurious_offer": c.verdict_no_spurious_offer,
     }
 

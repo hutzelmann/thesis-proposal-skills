@@ -613,6 +613,69 @@ SUPERVISE_TIER_PATTERN = re.compile(
     r"|überarbeitung erforderlich|tragfähiger thesenkern"
 )
 
+# The closing note's two language sections, named by their headings in
+# `skills/proposal-supervise/references/closing-note.md`.
+CLOSING_NOTE_LANGUAGES = ("English", "Deutsch")
+
+
+def closing_note_sections(text: str) -> dict[str, str]:
+    """The closing note's per-language paragraphs, keyed by section heading.
+
+    One definition of "a section" for every guard that reads that file — the L0
+    shape guard, the bilingual-terminology guard, and the verbatim verdict
+    below. Three parsers would eventually disagree about what they are
+    checking, and the disagreement would surface as a guard that quietly stopped
+    covering half the file.
+    """
+    sections: dict[str, str] = {}
+    for heading in CLOSING_NOTE_LANGUAGES:
+        match = re.search(rf"^## {heading}\n(.*?)(?=^## |\Z)", text,
+                          re.MULTILINE | re.DOTALL)
+        if match and match.group(1).strip():
+            sections[heading] = match.group(1).strip()
+    return sections
+
+
+def load_closing_note(skills_dir: Path) -> dict[str, str]:
+    """The shipped closing note's sections, or `{}` when the file is absent.
+
+    Both runners need the same snippet to compare a produced feedback against,
+    and neither should hard-code the path twice.
+    """
+    path = skills_dir / "proposal-supervise" / "references" / "closing-note.md"
+    if not path.is_file():
+        return {}
+    return closing_note_sections(path.read_text(encoding="utf-8"))
+
+
+def _collapse(text: str) -> str:
+    """Whitespace-insensitive form: the reference file wraps its paragraphs for
+    readability and a produced feedback may wrap differently or not at all."""
+    return " ".join(text.split())
+
+
+def verdict_supervise_closing(feedback: str | None, sections: dict[str, str],
+                              expected: str | None = None) -> tuple[bool, str]:
+    """supervise: the feedback carries the shared closing note verbatim, in the
+    language it was written in (skill-supervise spec: the closing note is quoted
+    whole). Paraphrase is the failure this exists to catch — it is the path by
+    which the disclosure acquires a claim it is forbidden to make."""
+    if not feedback or not feedback.strip():
+        return False, "no feedback draft to check the closing note against"
+    if not sections:
+        return False, "no closing-note sections to compare against"
+    body = _collapse(feedback)
+    carried = [name for name in CLOSING_NOTE_LANGUAGES
+               if name in sections and _collapse(sections[name]) in body]
+    if not carried:
+        return False, ("closing note not carried verbatim — the shared snippet is quoted "
+                       "whole, never paraphrased or re-translated")
+    if len(carried) > 1:
+        return False, "feedback carries both languages' closing notes: " + ", ".join(carried)
+    if expected and carried[0] != expected:
+        return False, f"closing note is the {carried[0]} snippet; the feedback is {expected}"
+    return True, f"closing note carried verbatim ({carried[0]})"
+
 
 def verdict_supervise_feedback(feedback: str | None) -> tuple[bool, str]:
     """supervise: a feedback draft exists as the slug-named feedback file and
@@ -668,7 +731,7 @@ def verdict_supervise_pointers(feedback: str | None,
     named, and every `proposal-*` name it mentions exists in the installed
     set."""
     # the lookbehind keeps repo/install names out: `thesis-proposal-skills` in
-    # the getting-started blurb must not read as a skill named proposal-skills
+    # the closing note must not read as a skill named proposal-skills
     named = set(re.findall(r"(?<![\w-])proposal-[a-z][a-z-]*[a-z]", feedback or ""))
     if not named:
         return False, "feedback names no skill at all"
@@ -679,10 +742,14 @@ def verdict_supervise_pointers(feedback: str | None,
 
 
 def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tuple[str, ...],
-                                        installed: tuple[str, ...]) -> tuple[bool, str]:
-    """Aggregate of the five supervise feedback verdicts for single-verdict
-    runners (the dev runner); the Inspect task scores them separately. Fails on
-    the first missing piece but reports every failed aspect."""
+                                        installed: tuple[str, ...],
+                                        closing: dict[str, str] | None = None,
+                                        expected_language: str | None = None,
+                                        ) -> tuple[bool, str]:
+    """Aggregate of the supervise feedback verdicts for single-verdict runners
+    (the dev runner); the Inspect task scores them separately. Fails on the
+    first missing piece but reports every failed aspect. The closing-note
+    verdict is skipped when the caller cannot supply the shared snippet."""
     feedback = next((text for name, text in sorted(artifacts.items())
                      if name.endswith("feedback.md")), None)
     results = [
@@ -692,6 +759,8 @@ def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tu
         verdict_supervise_no_personal_data(artifacts, forbidden),
         verdict_supervise_pointers(feedback, installed),
     ]
+    if closing:
+        results.append(verdict_supervise_closing(feedback, closing, expected_language))
     failed = [why for ok, why in results if not ok]
     if failed:
         return False, "; ".join(failed)

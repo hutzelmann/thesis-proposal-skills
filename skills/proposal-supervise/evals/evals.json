@@ -15,7 +15,8 @@
         "supervise: the feedback carries a numbered points list of at most five entries (skill-supervise spec: curated to pressing points).",
         "supervise: the feedback opens with one of the three verdict tiers, English or German, case-insensitive like every prose-relaying verdict. Word-bounded where the tier is a single word (\"already\" must not count as \"ready\").",
         "supervise: no personal-data token from the submission survives anywhere in the student-facing feedback (skill-supervise spec: intake strips identity). `artifacts` maps file names to contents.",
-        "supervise: the feedback steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set."
+        "supervise: the feedback steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set.",
+        "supervise: the feedback carries the shared closing note verbatim, in the language it was written in (skill-supervise spec: the closing note is quoted whole). Paraphrase is the failure this exists to catch — it is the path by which the disclosure acquires a claim it is forbidden to make."
       ]
     }
   ]

@@ -32,6 +32,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 from l1_checks import (
+    load_closing_note,
     select_draft,
     verdict_check_report,
     verdict_draft,
@@ -191,6 +192,9 @@ def workspace_markdown(ws: Path) -> dict[str, str]:
 
 
 S01_FORBIDDEN = ("Musterfrau", "00000000", "erika.musterfrau@example.org", "Musterstraße")
+# the fixture email is written in English, so the feedback — and its closing
+# note — must be too
+S01_LANGUAGE = "English"
 INSTALLED_SKILLS = tuple(sorted(
     d.name for d in SKILLS.iterdir() if d.is_dir() and d.name.startswith("proposal-")
 ))
@@ -206,7 +210,8 @@ def feedback_files(ws: Path) -> dict[str, str]:
 def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
     if scenario.get("feedback"):
         return verdict_supervise_feedback_contract(
-            feedback_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS)
+            feedback_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS,
+            load_closing_note(SKILLS), S01_LANGUAGE)
     if name == "ideate_scoped":
         files = workspace_markdown(ws)
         produced, where = select_draft(files)

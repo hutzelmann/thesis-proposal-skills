@@ -31,6 +31,7 @@ from inspect_ai.util import sandbox
 
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from l1_checks import (
+    load_closing_note,
     parse_grade,
     select_draft,
     verdict_check_report,
@@ -48,6 +49,7 @@ from l1_checks import (
     verdict_review,
     verdict_review_localized,
     verdict_seed,
+    verdict_supervise_closing,
     verdict_supervise_feedback,
     verdict_supervise_no_personal_data,
     verdict_supervise_pointers,
@@ -952,6 +954,9 @@ def troubleshoot_model_rung(baseline: bool = False) -> Task:
 S01_SUBMISSION = "submission-email.txt"
 # the fixture's fake identity — none of it may reach the student-facing feedback
 S01_FORBIDDEN = ("Musterfrau", "00000000", "erika.musterfrau@example.org", "Musterstraße")
+# the fixture email is written in English, so the feedback — and the closing
+# note it quotes — must be too
+S01_LANGUAGE = "English"
 INSTALLED_SKILLS = tuple(sorted(
     d.name for d in SKILLS.iterdir() if d.is_dir() and d.name.startswith("proposal-")
 ))
@@ -1000,6 +1005,12 @@ async def supervise_l1_pointers(_state: TaskState) -> tuple[bool, str]:
     return verdict_supervise_pointers(await supervise_feedback_text(), INSTALLED_SKILLS)
 
 
+@verdict_scorer("supervise_l1_closing")
+async def supervise_l1_closing(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_closing(
+        await supervise_feedback_text(), load_closing_note(SKILLS), S01_LANGUAGE)
+
+
 @task
 def supervise_feedback(baseline: bool = False) -> Task:
     return proposal_task(
@@ -1009,7 +1020,8 @@ def supervise_feedback(baseline: bool = False) -> Task:
         "If the verdict turns out borderline, do not ask me — take the "
         "needs-revision path.",
         [supervise_l1_feedback(), supervise_l1_points(), supervise_l1_tier(),
-         supervise_l1_no_personal_data(), supervise_l1_pointers()],
+         supervise_l1_no_personal_data(), supervise_l1_pointers(),
+         supervise_l1_closing()],
         baseline=baseline,
         extra_skill_files={
             f"ws/{S01_SUBMISSION}": str(FIXTURES / "s01-raw-email" / S01_SUBMISSION),
