@@ -155,7 +155,8 @@ def test_materialize_never_exposes_a_truncated_destination(tmp_path, monkeypatch
     monkeypatch.setattr(sync_shared, "REPO", tmp_path)
     dest = tmp_path / "structure.json"
     dest.write_text("old", encoding="utf-8")
-    dest.chmod(0o640)
+    if os.name == "posix":  # Windows chmod only toggles read-only; st_mode is 0o666
+        dest.chmod(0o640)
     at_replace = []
     real_replace = os.replace
 
@@ -167,7 +168,8 @@ def test_materialize_never_exposes_a_truncated_destination(tmp_path, monkeypatch
     assert sync_shared._materialize(dest, "new", "shared/x", check=False) is None
     assert at_replace == ["old"], "destination was modified before the atomic swap"
     assert dest.read_text(encoding="utf-8") == "new"
-    assert (dest.stat().st_mode & 0o777) == 0o640
+    if os.name == "posix":
+        assert (dest.stat().st_mode & 0o777) == 0o640
 
 
 def test_materialize_failure_keeps_the_old_copy_and_leaves_no_litter(tmp_path, monkeypatch):
