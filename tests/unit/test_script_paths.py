@@ -45,3 +45,12 @@ def test_fallback_prose_names_the_unexpanded_case(skill_md):
     text = skill_md.read_text(encoding="utf-8")
     assert "leaves it unexpanded" in text, "fallback for non-substituting hosts missing"
     assert "next to this SKILL.md" in text
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
+def test_fallback_prose_does_not_relocate_the_work(skill_md):
+    """The fallback resolves a script path, never a place to work from:
+    "so use that location" sent agents into the install directory, misplacing
+    CWD-dependent output (skill-packaging spec: User-side script constraints,
+    change 2026-08-31-fix-import-output-location)."""
+    assert "so use that location" not in skill_md.read_text(encoding="utf-8")

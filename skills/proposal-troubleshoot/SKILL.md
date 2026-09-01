@@ -85,7 +85,7 @@ Only for rungs 3 and 4, for an unidentified cause, or for optional model evidenc
 python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py <proposal.md> --dry-run
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that location. The check invocation above names the standard install path because it belongs to the sibling skill proposal-check — if that skill is installed elsewhere, its script likewise lives in `scripts/` next to its own SKILL.md. If you cannot find a script, say it did not run and name what is therefore unverified — never assemble a report by hand and present it as the collector's output.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory, where the report bundle is written: the fallback changes where the script is found, never where you work or write. The check invocation above names the standard install path because it belongs to the sibling skill proposal-check — if that skill is installed elsewhere, its script likewise lives in `scripts/` next to its own SKILL.md. If you cannot find a script, say it did not run and name what is therefore unverified — never assemble a report by hand and present it as the collector's output.
 
 **2. Take the disclosure decision from the user, not from yourself.** Three levels, and the default is the most protective:
 

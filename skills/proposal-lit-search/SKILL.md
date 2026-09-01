@@ -23,7 +23,7 @@ Academic literature only. You judge relevance — the scripts only gather candid
 python3 ${CLAUDE_SKILL_DIR}/scripts/search.py "distributed consensus energy efficiency" --limit 10
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that location. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory, where `api-keys.env` is looked up: the fallback changes where the script is found, never where you work. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
 
 **Snowballing** (expand from the proposal's existing references — the systematic way to deepen a literature base; prefer it over keywords once seeds exist):
 
