@@ -253,6 +253,96 @@ def test_min_references_respects_a_workspace_override():
     assert rules_of(check.rule_min_references(raised)) == ["min-references"]
 
 
+def sized_proposal(refs: int, words: int) -> str:
+    """A proposal whose only interesting properties are its body word count and
+    its number of defined references — the two inputs of the density rule."""
+    entries = "".join(f"- id: Ref{i:02d}Topic\n  type: article-journal\n"
+                      for i in range(refs))
+    block = f"---\nreferences:\n{entries}---" if refs else "---\nreferences: []\n---"
+    return "# Topic\n\n" + ("word " * words).strip() + "\n\n" + block
+
+
+def test_reference_density_warns_on_a_full_length_thin_bibliography():
+    # 2000 words at the default 4/1000 expect 8; 5 defined references fall short
+    ctx = context(sized_proposal(refs=5, words=2000))
+    found = check.rule_reference_density(ctx)
+    assert rules_of(found) == ["reference-density-low"]
+    assert "5 references" in found[0].message
+    assert "(8 here)" in found[0].message
+
+
+def test_reference_density_leaves_short_drafts_alone():
+    # 300 words expect ceil(1.2) = 2 — at or below the floor, nothing to say
+    assert check.rule_reference_density(context(sized_proposal(refs=3, words=300))) == []
+
+
+def test_reference_density_meets_the_expectation_exactly():
+    # 1000 words expect exactly 4: the bound is strict shortfall, not <=
+    assert check.rule_reference_density(context(sized_proposal(refs=4, words=1000))) == []
+
+
+def test_reference_density_is_suppressed_while_the_floor_error_fires():
+    # 2 references sit under the floor of 3: min-references already names the
+    # defect, so the advisory stays silent — one finding per defect
+    assert check.rule_reference_density(context(sized_proposal(refs=2, words=2000))) == []
+
+
+def test_reference_density_respects_a_workspace_override():
+    text = sized_proposal(refs=5, words=1000)
+    assert check.rule_reference_density(context(text)) == []  # 5 >= ceil(4)
+    raised = context(text, {"references": {"min_per_1000_words": 8}})
+    assert rules_of(check.rule_reference_density(raised)) == ["reference-density-low"]
+
+
+def test_reference_density_zero_disables_the_advisory():
+    ctx = context(sized_proposal(refs=3, words=5000),
+                  {"references": {"min_per_1000_words": 0}})
+    assert check.rule_reference_density(ctx) == []
+
+
+def test_reference_density_rejects_a_negative_or_non_numeric_override():
+    for bad in ("4", -1, True, float("inf")):
+        ctx = context(sized_proposal(refs=3, words=300),
+                      {"references": {"min_per_1000_words": bad}})
+        assert rules_of(check.rule_reference_density(ctx)) == \
+            ["reference-density-invalid"], bad
+
+
+def test_reference_density_survives_extreme_but_valid_overrides():
+    # 1e308 is a finite TOML float and a 400-digit TOML integer is a finite
+    # int: both pass the validity gate, and neither may crash the run — the
+    # cap at one reference per word keeps the arithmetic in range
+    for huge in (1.0e308, 10**400):
+        ctx = context(sized_proposal(refs=3, words=100),
+                      {"references": {"min_per_1000_words": huge}})
+        assert rules_of(check.rule_reference_density(ctx)) == \
+            ["reference-density-low"], huge
+
+
+def test_reference_density_fractional_override_met_exactly_stays_silent():
+    # 12500 * 4.4 / 1000 lands a hair above 55 in IEEE doubles; the epsilon
+    # round keeps an exactly-met configured density from tripping the warning
+    ctx = context(sized_proposal(refs=55, words=12500),
+                  {"references": {"min_per_1000_words": 4.4}})
+    assert check.rule_reference_density(ctx) == []
+
+
+def test_reference_density_is_off_when_the_structure_predates_the_constant():
+    # an older references/structure.json has no min_per_1000_words: the
+    # advisory disables rather than crashing on the missing default
+    structure = json.loads(json.dumps(STRUCTURE))
+    del structure["references"]["min_per_1000_words"]
+    body, meta = check.split_proposal(sized_proposal(refs=3, words=5000))
+    ctx = check.build_context(body, meta, structure, {})
+    assert check.rule_reference_density(ctx) == []
+    # an invalid override on top of the old structure still degrades: the
+    # error is reported and the missing default falls back to disabled
+    invalid = check.build_context(
+        body, meta, structure, {"references": {"min_per_1000_words": -1}})
+    assert rules_of(check.rule_reference_density(invalid)) == \
+        ["reference-density-invalid"]
+
+
 def test_prose_patterns_rule_reports_personal_data_and_first_person():
     text = (
         "# Topic\n\nI ran the study myself and you can reach me at a.b@example.org.\n\n"
@@ -607,6 +697,11 @@ COVERED_BY_UNIT_TESTS = {
     "length-over-limit",
     "page-limit-invalid",
     "min-references-invalid",
+    # every fixture defines at least as many references as its length expects
+    # (the 995-word f19 carries 15 against an expectation of 4), so the
+    # advisory never fires in the corpus; both ids are produced only from here
+    "reference-density-low",
+    "reference-density-invalid",
     "forbidden-section",
     "section-out-of-order",
 }

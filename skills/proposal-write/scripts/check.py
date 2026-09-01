@@ -112,6 +112,8 @@ RULE_IDS = (
     "reference-id-too-long",
     "min-references",
     "min-references-invalid",
+    "reference-density-low",
+    "reference-density-invalid",
     # content
     "todo-marker",
     "length-over-limit",
@@ -138,6 +140,7 @@ def load_structure(path: Path | None) -> dict:
 # reported rather than ignored, so both maps below exist to produce errors.
 OVERRIDABLE = {
     ("references", "min_count"),
+    ("references", "min_per_1000_words"),
     ("sections", "required"),
     ("forbidden", "heading_patterns"),
     ("timeline", "detail"),
@@ -978,9 +981,77 @@ def rule_min_references(ctx: Context) -> list[Finding]:
     return out
 
 
+def bad_density(value: object) -> bool:
+    """True when a value cannot drive the density expectation: wrong type,
+    negative, or non-finite. `isfinite` only ever sees a float here — handing
+    it a huge TOML integer would overflow the implicit conversion and crash
+    the report this function exists to protect."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return True
+    if isinstance(value, float) and not math.isfinite(value):
+        return True
+    return value < 0
+
+
+def rule_reference_density(ctx: Context) -> list[Finding]:
+    """The floor catches an empty bibliography; this scales with the document.
+
+    The expectation derives from coverage, not a quota — see the guidance's
+    Literature section — so it grows with the body's actual length: a short
+    draft is never nagged, and a workspace with a larger page limit gets the
+    scaled expectation without a second override.
+    """
+    default = ctx.structure.get("references", {}).get("min_per_1000_words")
+    density = setting(ctx.structure, ctx.overrides, "references", "min_per_1000_words")
+    if density is None:
+        return []  # structure predates the constant, no override: advisory off
+    out = []
+    if bad_density(density):
+        # degrade like a bad page_limit: report, use the default — 0 is valid
+        # here (a program may opt out of the advisory), a negative is not
+        out.append(error(
+            "reference-density-invalid",
+            f"guidelines.md: [references] min_per_1000_words must be a "
+            f"finite non-negative number, not `{density}`",
+        ))
+        density = default if not bad_density(default) else 0
+    floor = setting(ctx.structure, ctx.overrides, "references", "min_count")
+    if isinstance(floor, bool) or not isinstance(floor, int) or floor < 0:
+        floor = ctx.structure["references"]["min_count"]  # its own rule reports this
+    defined = len(set(ctx.meta.reference_ids))
+    if defined < floor:
+        return out  # the floor error already names this defect; one finding per defect
+    # one reference per word is where meaning ends: the cap keeps an absurd yet
+    # finite density (1e308 is a valid TOML float) from overflowing the ceil
+    density = min(density, 1000)
+    words = body_words(ctx)
+    # the epsilon round keeps IEEE noise (12500 * 4.4 / 1000 lands a hair above
+    # 55) from demanding one reference more than the configured density
+    expected = math.ceil(round(words * density / 1000, 9))
+    if defined < expected:
+        out.append(warn(
+            "reference-density-low",
+            f"{defined} references for ~{words} body words — the coverage "
+            f"this length asks for needs at least {density:g} per 1000 words "
+            f"({expected} here): ground each thematic cluster and research "
+            f"question in the literature",
+        ))
+    return out
+
+
 def rule_todo_markers(ctx: Context) -> list[Finding]:
     return [warn("todo-marker", f"open {todo}")
             for todo in re.findall(ctx.structure["todo"]["marker"], ctx.body)]
+
+
+def body_words(ctx: Context) -> int:
+    """The one definition of 'body words': the length estimate and the
+    reference-density expectation must never disagree about it."""
+    return sum(
+        len(line.split())
+        for line in ctx.body.split("\n")
+        if line.strip() and not line.lstrip().startswith("#")
+    )
 
 
 def rule_length(ctx: Context) -> list[Finding]:
@@ -1004,11 +1075,7 @@ def rule_length(ctx: Context) -> list[Finding]:
             f"not `{page_limit}`",
         ))
         page_limit = length_cfg["page_limit"]
-    words = sum(
-        len(line.split())
-        for line in ctx.body.split("\n")
-        if line.strip() and not line.lstrip().startswith("#")
-    )
+    words = body_words(ctx)
     estimated = words / length_cfg["words_per_page"]
     if estimated > page_limit:
         out.append(warn(
@@ -1166,6 +1233,7 @@ RULES = (
     rule_citations,
     rule_reference_id_shape,
     rule_min_references,
+    rule_reference_density,
     rule_todo_markers,
     rule_length,
     rule_prose_patterns,

@@ -21,6 +21,7 @@ You translate supervisor/program requirements into the workspace `guidelines.md`
 ```toml
 [references]
 min_count = 8
+min_per_1000_words = 4         # density advisory scales with length; 0 disables it
 
 [length]
 page_limit = 3

@@ -1,8 +1,10 @@
 {
   "_comment": "Single source of truth for the mechanically checkable proposal skeleton. Semantic rules live in shared/guidelines/guidelines.md. Synced into skills by scripts/sync_shared.py.",
   "_override_comment": "A workspace guidelines.md overrides a value by naming the same key path it has here — [references] min_count, [length] page_limit, and so on. One rule, no aliases: a key that does not resolve to an overridable leaf is reported as an error rather than ignored.",
+  "_references_comment": "min_count is a floor catching an empty bibliography. min_per_1000_words is an estimation constant like words_per_page, not semantic data: the density warning fires below ceil(body words * min_per_1000_words / 1000). The default 4 is the lower edge of the coverage-derived 4-6/1000 range (two sources per thematic cluster, grounded research questions), which reproduces the prose's ten-to-fifteen at the default five-page length. 0 disables the advisory.",
   "references": {
     "min_count": 3,
+    "min_per_1000_words": 4,
     "section_title": {
       "en": "References",
       "de": "Literatur"

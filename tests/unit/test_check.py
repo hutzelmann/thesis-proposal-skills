@@ -519,6 +519,21 @@ def test_min_references_override_must_be_a_non_negative_integer(tmp_path, value)
     assert "references — at least" not in result.stdout
 
 
+@pytest.mark.parametrize("value", ['"4"', "-5", "true"])
+def test_reference_density_override_must_be_a_non_negative_number(tmp_path, value):
+    """Same degradation for the density constant: error plus the default, which
+    the short clean fixture satisfies — so no shortfall warning alongside."""
+    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+    victim = tmp_path / "typed.md"
+    victim.write_text(source, encoding="utf-8")
+    (tmp_path / "guidelines.md").write_text(
+        f"```toml\n[references]\nmin_per_1000_words = {value}\n```\n", encoding="utf-8")
+    result = run_check(victim)
+    assert result.returncode == 1
+    assert "[references] min_per_1000_words must be a finite non-negative number" in result.stdout
+    assert "per 1000 words" not in result.stdout
+
+
 def test_footer_scopes_clean_verdict():
     """A clean result must say substance was not judged (skill-check spec:
     two-bucket honest reporting)."""
