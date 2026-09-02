@@ -13,6 +13,15 @@ Usage:
   uv run python harness/claude_runner.py write_from_seed
   uv run python harness/claude_runner.py import_messy
   uv run python harness/claude_runner.py ideate_scoped --model sonnet
+  uv run python harness/claude_runner.py review_fixture --isolated --max-budget-usd 2
+
+Every run reads the host's stream-json events and prints, beside the L1
+verdict, the run's cost, turns, duration, token counts, any helper-agent
+tool calls (Agent/Task/Workflow) and an advisory single-context verdict —
+the probe for the fan-out class of failure, which no other harness path can
+see. `--isolated` runs against a fresh host configuration (the routing rig's
+`prepare_config`), so a run measures the default host rather than the
+operator's session mode; the summary says which (`config`).
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
 workspace so file edits and script calls work headlessly.
@@ -22,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -32,6 +42,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 from l1_checks import (
+    HELPER_TOOLS,
     load_closing_note,
     select_draft,
     verdict_check_report,
@@ -40,8 +51,10 @@ from l1_checks import (
     verdict_ideate_scoped,
     verdict_import,
     verdict_review,
+    verdict_single_context,
     verdict_supervise_feedback_contract,
 )
+from routing import prepare_config, tool_calls
 from sources import MESSY_REQUEST
 
 HARNESS = Path(__file__).resolve().parent
@@ -163,17 +176,103 @@ def stage(scenario: dict, ws: Path, install_skill: bool = True) -> None:
                         ignore=no_evals)
 
 
-def run_claude(ws: Path, request: str, model: str, timeout: int) -> str:
+def run_claude(ws: Path, request: str, model: str, timeout: int,
+               budget: float | None = None, config: Path | None = None) -> list[dict]:
+    """Run the host headless and return its stream-json events.
+
+    The stream, not the plain text, is what a run is judged on: the final
+    `result` event carries the chat text plus cost, turns and token usage, and
+    the assistant events carry every tool call — including a helper-agent
+    spawn, which plain text output never shows.
+    """
+    command = [
+        "claude", "-p", request, "--model", model, "--dangerously-skip-permissions",
+        "--output-format", "stream-json", "--verbose",
+    ]
+    if budget is not None:
+        command += ["--max-budget-usd", str(budget)]
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config)) if config else None
     result = subprocess.run(
-        ["claude", "-p", request, "--model", model, "--dangerously-skip-permissions"],
+        command,
         # stdin must be closed: with an inherited non-tty stdin (backgrounded or
         # redirected runs) claude blocks waiting for piped input, warns, and can
         # exit non-zero — a runner failure that looks like a skill failure
-        cwd=ws, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
+        cwd=ws, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        timeout=timeout,
     )
     if result.returncode != 0:
         sys.exit(f"claude failed: {result.stderr.strip()[-800:]}")
-    return result.stdout
+    return parse_events(result.stdout)
+
+
+def parse_events(stdout: str) -> list[dict]:
+    """One JSON object per non-empty line; lines that are not JSON are skipped."""
+    events = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+def result_event(events: list[dict]) -> dict:
+    return next((e for e in reversed(events) if e.get("type") == "result"), {})
+
+
+def final_text(events: list[dict]) -> str:
+    """The chat the verdicts read: the result event's text, else the assistant turns joined."""
+    text = result_event(events).get("result")
+    if isinstance(text, str) and text:
+        return text
+    parts = []
+    for event in events:
+        if event.get("type") != "assistant":
+            continue
+        for block in event.get("message", {}).get("content", []) or []:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+    return "\n".join(parts)
+
+
+def telemetry(events: list[dict]) -> dict:
+    """Cost, turns, duration and tokens from the result event; None where absent.
+
+    `tokens_in` is the uncached input only; the bulk of a run's input is the
+    cache pair, and the 2026-09-02 fan-out was a cache-write story (~45K per
+    helper), so both cache counts travel too.
+    """
+    result = result_event(events)
+    usage = result.get("usage") or {}
+    return {
+        "cost_usd": result.get("total_cost_usd"),
+        "num_turns": result.get("num_turns"),
+        "duration_ms": result.get("duration_ms"),
+        "tokens_in": usage.get("input_tokens"),
+        "tokens_out": usage.get("output_tokens"),
+        "tokens_cache_read": usage.get("cache_read_input_tokens"),
+        "tokens_cache_write": usage.get("cache_creation_input_tokens"),
+    }
+
+
+def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict],
+            config: Path | None) -> dict:
+    """The run's L1 verdict plus the probe: telemetry and the advisory
+    single-context verdict, which never changes the exit status."""
+    names = [name for name, _ in tool_calls(events)]
+    single, single_why = verdict_single_context(names)
+    return {
+        "scenario": args.scenario, "model": args.model,
+        "arm": "baseline" if args.no_skill else "with-skill",
+        "l1": "PASS" if passed else "FAIL", "why": why,
+        "config": "isolated" if config else "ambient",
+        **telemetry(events),
+        "helper_calls": [name for name in names if name in HELPER_TOOLS],
+        "single_context": f"{'PASS' if single else 'FAIL'}: {single_why}",
+    }
 
 
 def run_check(ws: Path, proposal: str) -> str:
@@ -255,10 +354,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--keep", action="store_true", help="keep the temp workspace")
     parser.add_argument("--no-skill", action="store_true",
                         help="baseline arm: same staging and request, skill not installed")
+    parser.add_argument("--max-budget-usd", type=float, default=None,
+                        help="hard cost cap passed through to the host")
+    parser.add_argument("--isolated", action="store_true",
+                        help="run against a fresh host configuration (settings emptied, "
+                             "credentials linked) instead of the operator's ambient one")
     args = parser.parse_args(argv)
     scenario = SCENARIOS[args.scenario]
 
     ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
+    # the isolated config lives outside the workspace: it links the credentials
+    # file, and the agent under test must never be able to read that
+    config_base = Path(tempfile.mkdtemp(prefix="devrun-config-")) if args.isolated else None
+    config = prepare_config(config_base) if config_base else None
     server = None
     try:
         stage(scenario, ws, install_skill=not args.no_skill)
@@ -269,18 +377,18 @@ def main(argv: list[str] | None = None) -> int:
             threading.Thread(target=server.serve_forever, daemon=True).start()
             base = f"http://127.0.0.1:{server.server_port}"
             request = request.format(url=f"{base}/group.html", dblp=f"{base}/dblp.json")
-        chat = run_claude(ws, request, args.model, args.timeout)
+        events = run_claude(ws, request, args.model, args.timeout,
+                            budget=args.max_budget_usd, config=config)
+        chat = final_text(events)
         passed, why = verdict(args.scenario, scenario, ws, chat)
-        print(json.dumps({
-            "scenario": args.scenario, "model": args.model,
-            "arm": "baseline" if args.no_skill else "with-skill",
-            "l1": "PASS" if passed else "FAIL", "why": why,
-        }, indent=2))
+        print(json.dumps(summary(args, passed, why, events, config), indent=2))
         print("\n--- chat tail ---\n" + chat[-1200:])
         return 0 if passed else 1
     finally:
         if server:
             server.shutdown()
+        if config_base:
+            shutil.rmtree(config_base, ignore_errors=True)
         if args.keep:
             print(f"\nworkspace kept: {ws}")
         else:

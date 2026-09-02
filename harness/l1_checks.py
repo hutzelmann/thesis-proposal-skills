@@ -842,3 +842,21 @@ def verdict_early_stop(files: dict[str, str]) -> tuple[bool, str]:
     if problems:
         return False, "; ".join(problems)
     return True, "no proposal seeded, notes file present"
+
+
+# Tools by which a host spawns helper agents. The routing rig denies `Task`;
+# newer hosts name the same capability `Agent`; workflows are their own tool. A
+# name missing here would pass silently, so all three are listed, and this
+# constant is what a future host rename edits.
+HELPER_TOOLS = ("Agent", "Task", "Workflow")
+
+
+def verdict_single_context(tool_names: list[str]) -> tuple[bool, str]:
+    """Advisory probe for the fan-out class of failure: the run spawned no
+    helper agent. `tool_names` are the tool_use names of a host event stream,
+    in order; the verdict names the spawning calls when there are any."""
+    spawned = [name for name in tool_names if name in HELPER_TOOLS]
+    if spawned:
+        return False, (f"{len(spawned)} helper-agent call(s): "
+                       f"{', '.join(sorted(set(spawned)))}")
+    return True, "no helper agents spawned"

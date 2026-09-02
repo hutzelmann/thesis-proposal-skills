@@ -15,3 +15,4 @@ silently reporting every case unrouted.
 | `chained-sibling.jsonl` | synthetic | the selected skill invoking a sibling; the first pick still owns the route |
 | `foreign-skill-first.jsonl` | synthetic | somebody else's skill selected first; not our route, and not fatal |
 | `malformed-skill-call.jsonl` | synthetic | a `Skill` call carrying no skill name — the shape change that must raise |
+| `helper-fanout.jsonl` | synthetic | a `Task` spawn plus a `result` event with cost fields — the dev-runner probe's failing case and its telemetry source (`harness/claude_runner.py`) |
