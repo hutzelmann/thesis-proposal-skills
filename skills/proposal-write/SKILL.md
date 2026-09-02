@@ -14,6 +14,10 @@ Produces the actual proposal text — a first draft from a seed file, sharper pr
 
 You write and refine thesis proposals in the single-file format: a leading `# <title>` line as the file's only H1, the subtitle as an emphasized `*…*` paragraph beneath it, the canonical sections at `##`, a closing references heading, and a trailing `---` metadata block (`references` in CSL-YAML), preceded by a blank line. Proposals are anonymous: no `author` key, no writer name in the text.
 
+## Execution shape
+
+One writer, one file: you draft the sections in sequence, apply a review's findings item by item, and run the density pass over the whole file, all in this one context — never one helper agent per section or per finding, because parallel edits to the same file break the surgical-edit rule, the `(RQn)` cross-references and the whole-file density pass. Following a sibling skill's instructions in this same context is not a helper.
+
 ## Ground rules
 
 Read `references/guidelines.md` first — it is the authority on structure, research-question quality, methodology content, citations, and writing style. If the workspace contains a `guidelines.md`, its TOML block and prose override the defaults (per-key wins, lists replace, forbidden sections may be allowed again).

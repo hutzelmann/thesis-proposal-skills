@@ -18,6 +18,10 @@ The script prints a `digest:` line — the SHA-256 of the exact content it check
 
 Deterministic low-level checks plus a language pass for one proposal file. Results go to chat only — never write a report file. This check is advisory: it gates nothing; other skills may run it first but proceed on user confirmation.
 
+## Execution shape
+
+Two steps, one agent: the script runs once, and the agent pass below is one reading of the file by you — nothing here is handed to helper agents, not per finding category, per section, or per finding, and both steps report in the one chat message. When Python is missing and you perform the script's checks yourself, that is the same single reading.
+
 ## Target
 
 Resolve the proposal file: explicit user mention wins; exactly one markdown file ending in a `---` metadata block → auto-pick; several candidates → list them and ask. The search space is the workspace's proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then look only there, never in both. A `<slug>.notes.md` is never a candidate, and neither is anything under `bug-report/`: a reduced reproduction left there by the troubleshoot skill is a structurally valid proposal, so it would otherwise win the pick and quietly redirect the check away from the real draft.

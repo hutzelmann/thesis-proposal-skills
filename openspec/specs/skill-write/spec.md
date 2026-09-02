@@ -174,7 +174,6 @@ The write skill SHALL take the acceptable methodologies and their required subse
 - **WHEN** the workspace has disabled a shipped methodology
 - **THEN** the skill does not offer it when the methodology is chosen
 
-
 ### Requirement: Level-aware contribution close and research questions
 The skill SHALL read the degree level from the subtitle wording — the same inference path as language, no other source — and honor it when drafting the contribution section's close and the research questions: at Master's level the close names what will be new and for whom; at Bachelor's level a promise to apply or evaluate something competently in a named setting is a complete close, and the skill SHALL NOT push a novelty claim into it, while preserving one the author states. Research questions follow the same grading: deriving them from a given topic is level-appropriate at Bachelor's level; at Master's level they are grounded in the gap the contribution section argues. When the subtitle carries a TODO marker, the skill SHALL ask for the level exactly once, at the moment it first drafts the contribution close, and SHALL proceed level-neutrally if the author declines.
 
@@ -189,3 +188,16 @@ The skill SHALL read the degree level from the subtitle wording — the same inf
 #### Scenario: Level TODO triggers one deferred question
 - **WHEN** the subtitle is a TODO marker and the skill reaches the contribution close
 - **THEN** it asks for the degree level once, writes the canonical subtitle on an answer, and continues level-neutrally without repeating the question if the author declines
+
+### Requirement: One writer per file
+
+A writing pass SHALL be performed by one agent in one context: the canonical sections are drafted in sequence, review findings are applied item by item by the same agent, and the density pass reads the whole file. The skill SHALL NOT spawn one helper agent per section or per review finding, because parallel edits to one file break the surgical-edit rule, the `(RQn)` cross-references, and the whole-file density pass. Following a sibling skill's instructions in the same context is not a helper. The SKILL.md SHALL state this shape before its ground rules, and its opening sentence SHALL be pinned offline.
+
+#### Scenario: Host runs tasks as workflows by default
+- **WHEN** the host's mode would draft the five sections or apply a review's findings through parallel helpers
+- **THEN** the pass is written by one agent in sequence, and the file is never edited by more than one agent
+
+#### Scenario: Section survives a rewrite
+- **WHEN** a change rewords the execution-shape section without updating its pinned copy
+- **THEN** the offline suite fails naming the skill and the sentence
+
