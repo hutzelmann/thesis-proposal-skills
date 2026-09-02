@@ -1,0 +1,1 @@
+{"type": "result", "subtype": "success", "is_error": false, "duration_ms": 16575, "num_turns": 8, "result": "I found three separate proposal drafts in your working directory.", "stop_reason": "end_turn", "total_cost_usd": 0.15239159999999996, "usage": {"input_tokens": 8, "cache_creation_input_tokens": 16636, "cache_read_input_tokens": 116892, "output_tokens": 1126}}

@@ -176,6 +176,38 @@ def stage(scenario: dict, ws: Path, install_skill: bool = True) -> None:
                         ignore=no_evals)
 
 
+def host_command(request: str, model: str, budget: float | None = None) -> list[str]:
+    """The headless invocation: stream-json emits events only with --verbose,
+    and the budget cap is added only when one was given."""
+    command = [
+        "claude", "-p", request, "--model", model, "--dangerously-skip-permissions",
+        "--output-format", "stream-json", "--verbose",
+    ]
+    if budget is not None:
+        command += ["--max-budget-usd", str(budget)]
+    return command
+
+
+def host_failure(events: list[dict], returncode: int, stderr: str) -> str | None:
+    """Why the run is a runner failure, or None. Checked in this order: an error
+    result event (a budget overrun is one — it exits non-zero with nothing on
+    stderr in stream mode, and carries the subtype, errors and cost so far), a
+    non-zero exit without one (the stderr tail), and a zero exit with no result
+    event at all, which the host allows and which would otherwise judge the L1
+    over partial narration with empty telemetry."""
+    result = result_event(events)
+    if result.get("is_error"):
+        errors = "; ".join(str(e) for e in result.get("errors") or []) or "no detail"
+        return (f"claude failed: {result.get('subtype', 'error')}: {errors} "
+                f"(cost so far {result.get('total_cost_usd')} USD, "
+                f"{result.get('num_turns')} turns)")
+    if returncode != 0:
+        return f"claude failed: {stderr.strip()[-800:] or 'no stderr'}"
+    if not result:
+        return "claude emitted no result event"
+    return None
+
+
 def run_claude(ws: Path, request: str, model: str, timeout: int,
                budget: float | None = None, config: Path | None = None) -> list[dict]:
     """Run the host headless and return its stream-json events.
@@ -185,24 +217,20 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
     the assistant events carry every tool call — including a helper-agent
     spawn, which plain text output never shows.
     """
-    command = [
-        "claude", "-p", request, "--model", model, "--dangerously-skip-permissions",
-        "--output-format", "stream-json", "--verbose",
-    ]
-    if budget is not None:
-        command += ["--max-budget-usd", str(budget)]
     env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config)) if config else None
     result = subprocess.run(
-        command,
+        host_command(request, model, budget),
         # stdin must be closed: with an inherited non-tty stdin (backgrounded or
         # redirected runs) claude blocks waiting for piped input, warns, and can
         # exit non-zero — a runner failure that looks like a skill failure
         cwd=ws, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
         timeout=timeout,
     )
-    if result.returncode != 0:
-        sys.exit(f"claude failed: {result.stderr.strip()[-800:]}")
-    return parse_events(result.stdout)
+    events = parse_events(result.stdout)
+    failure = host_failure(events, result.returncode, result.stderr)
+    if failure:
+        sys.exit(failure)
+    return events
 
 
 def parse_events(stdout: str) -> list[dict]:
@@ -224,18 +252,10 @@ def result_event(events: list[dict]) -> dict:
 
 
 def final_text(events: list[dict]) -> str:
-    """The chat the verdicts read: the result event's text, else the assistant turns joined."""
+    """The chat the verdicts read: the result event's final text — what the
+    plain output mode printed — and nothing else."""
     text = result_event(events).get("result")
-    if isinstance(text, str) and text:
-        return text
-    parts = []
-    for event in events:
-        if event.get("type") != "assistant":
-            continue
-        for block in event.get("message", {}).get("content", []) or []:
-            if isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-    return "\n".join(parts)
+    return text if isinstance(text, str) else ""
 
 
 def telemetry(events: list[dict]) -> dict:
@@ -269,6 +289,7 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
         "arm": "baseline" if args.no_skill else "with-skill",
         "l1": "PASS" if passed else "FAIL", "why": why,
         "config": "isolated" if config else "ambient",
+        "config_dir": str(config) if config else None,
         **telemetry(events),
         "helper_calls": [name for name in names if name in HELPER_TOOLS],
         "single_context": f"{'PASS' if single else 'FAIL'}: {single_why}",
@@ -363,12 +384,15 @@ def main(argv: list[str] | None = None) -> int:
     scenario = SCENARIOS[args.scenario]
 
     ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
-    # the isolated config lives outside the workspace: it links the credentials
-    # file, and the agent under test must never be able to read that
+    # the isolated config is a sibling temp directory, not inside the workspace,
+    # so staging and the verdicts' `*.md` glob never see it; the credentials it
+    # links are as reachable for the child as ~/.claude is in ambient mode
     config_base = Path(tempfile.mkdtemp(prefix="devrun-config-")) if args.isolated else None
-    config = prepare_config(config_base) if config_base else None
+    config = None
     server = None
     try:
+        if config_base:
+            config = prepare_config(config_base)  # exits when no credentials exist
         stage(scenario, ws, install_skill=not args.no_skill)
         request = scenario["request"]
         if scenario.get("serve"):
