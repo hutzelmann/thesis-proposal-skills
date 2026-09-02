@@ -14,6 +14,10 @@ Brings a proposal that already exists — PDF, Word, LaTeX — into this workspa
 
 Convert an existing proposal document into one `<slug>.md` in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — in the standard format: a leading `# <title>` line as the only H1, the subtitle as an emphasized `*…*` paragraph, the canonical sections at `##`, a closing references heading, and a trailing `---` metadata block (blank line before it) with `references` in CSL-YAML. Never carry an `author` key over from the source — proposals are anonymous.
 
+## Execution shape
+
+One reader, one file: you read the source once, map its content onto the canonical sections, convert the references, and write `<slug>.md` and the notes file yourself, all in this one context — never one helper agent per section, per reference, per citation, or per figure, because reordering into canonical order and the personal-data strip need the whole document in view, every helper would read the source again, and both files have one writer.
+
 ## The shape you must produce
 
 A source document rarely resembles the target, so write the target from this shape rather than from the source's structure:

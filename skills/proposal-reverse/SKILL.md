@@ -16,6 +16,10 @@ A thesis reports results; a proposal states a plan. Nothing that only doing the 
 
 The person running this is often not the thesis's author: a supervisor turning a thesis they supervised into an exemplar for the next cohort, as much as a student whose proposal was never filed. Say once, plainly, that the proposal was derived from a finished thesis, and treat everything about its author as third-party data.
 
+## Execution shape
+
+One reader, one record, one writer: you read the thesis's framing and closing yourself, write the harvest record from that reading, and write the proposal from the record, all in this one context — never one helper agent per chapter, per harvest item, or per section, because the knowledge cut is judged by seeing a plan sentence and its outcome sentence side by side, and every helper would read the whole thesis again. Following the import sibling's conversion rules in this same context is not a helper.
+
 ## What you read
 
 Read the framing and the closing, not the middle:

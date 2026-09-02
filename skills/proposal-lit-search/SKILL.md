@@ -15,6 +15,10 @@ Finds sources for a topic or a draft and merges the accepted entries into the pr
 
 Academic literature only. You judge relevance — the scripts only gather candidates. Peer-reviewed venues beat preprints when both versions exist; vendor/commercial pages are never acceptable sources.
 
+## Execution shape
+
+One search, one judge, one merge: the scripts gather the candidates, and you judge the whole set together and merge the accepted entries yourself, in this one context — never one helper agent per candidate, per source, or per research question, because a preprint and its published version are recognised only side by side, key uniqueness is a property of the whole references block, and the proposal and the notes file have one writer.
+
 ## Modes
 
 **Keyword search** (topic or full proposal as context):

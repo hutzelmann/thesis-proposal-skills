@@ -1,0 +1,3 @@
+## Execution shape
+
+One reader, one file: you read the source once, map its content onto the canonical sections, convert the references, and write `<slug>.md` and the notes file yourself, all in this one context — never one helper agent per section, per reference, per citation, or per figure, because reordering into canonical order and the personal-data strip need the whole document in view, every helper would read the source again, and both files have one writer.
