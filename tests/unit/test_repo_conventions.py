@@ -154,6 +154,43 @@ def test_relative_paths_render_as_posix(path):
     )
 
 
+def absolute_posix_path_literals(tree: ast.AST) -> list[int]:
+    """Line numbers where `Path(...)` is handed an absolute POSIX string literal.
+
+    `PurePosixPath("/…")` states POSIX semantics on purpose and is not matched,
+    and neither is an f-string or a joined value: those carry the platform of
+    whatever produced them, which is the producer's business, not the literal's.
+    """
+    return sorted({
+        node.lineno for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        and node.func.id == "Path" and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)
+        and node.args[0].value.startswith("/")
+    })
+
+
+@pytest.mark.parametrize("path", PATH_FILES, ids=lambda p: p.name)
+def test_no_absolute_posix_path_literal(path):
+    r"""`test_dev_runner_probe.py` passed `Path("/tmp/cfg")` into `summary()` and
+    compared the returned string against `/tmp/cfg`. `summary()` renders the
+    native separator, so on Windows the field reads `\tmp\cfg` and the l0-windows
+    job was the only observer of a one-line mistake (CI run 33669408189). Such a
+    literal is either compared as text, where no POSIX expectation matches on
+    Windows, or opened, where the directory is not there.
+
+    A path literal that must be POSIX belongs in `PurePosixPath`; a real
+    directory belongs in `tmp_path`. If neither fits, name the exemption here
+    with the change that introduced it, the way `per-file-ignores` would.
+    """
+    lines = absolute_posix_path_literals(ast.parse(path.read_text(encoding="utf-8")))
+    assert not lines, (
+        f"{path.relative_to(REPO).as_posix()}:{lines} hands an absolute POSIX literal to "
+        "Path() — use `tmp_path` for a real directory, or `PurePosixPath` where POSIX "
+        "semantics are the point"
+    )
+
+
 # ---------- text I/O encoding -------------------------------------------------
 
 

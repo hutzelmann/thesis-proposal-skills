@@ -158,10 +158,11 @@ def test_summary_labels_an_ambient_run_and_lists_helpers():
     assert out["single_context"] == "FAIL: 1 helper-agent call(s): Task"
 
 
-def test_summary_labels_an_isolated_run():
-    out = summary(ARGS, False, "bad", events("recorded-result"), Path("/tmp/cfg"))
+def test_summary_labels_an_isolated_run(tmp_path):
+    config = tmp_path / "cfg"
+    out = summary(ARGS, False, "bad", events("recorded-result"), config)
     assert out["l1"] == "FAIL"
     assert out["config"] == "isolated"
-    assert out["config_dir"] == "/tmp/cfg"
+    assert out["config_dir"] == str(config)
     assert out["helper_calls"] == []
     assert out["single_context"] == "PASS: no helper agents spawned"
