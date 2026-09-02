@@ -18,7 +18,7 @@ The person running this is often not the thesis's author: a supervisor turning a
 
 ## Execution shape
 
-One reader, one record, one writer: you read the thesis's framing and closing yourself, write the harvest record from that reading, and write the proposal from the record, all in this one context — never one helper agent per chapter, per harvest item, or per section, because the knowledge cut is judged by seeing a plan sentence and its outcome sentence side by side, and every helper would read the whole thesis again. Following the import sibling's conversion rules in this same context is not a helper.
+One reader, one record, one writer: the reading, the harvest record and the proposal are all yours in this one context — never one helper agent per chapter, per harvest item, or per section, because the knowledge cut is judged by seeing a plan sentence and its outcome sentence side by side, and every helper would read the whole thesis again. Following the import sibling's conversion rules in this same context is not a helper.
 
 ## What you read
 

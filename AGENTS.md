@@ -166,6 +166,8 @@ Every skill except `proposal-troubleshoot` also carries the bug-report offer blo
 
 Per-skill wording stays hand-maintained on purpose: mandates, their pinned successors, and the load-bearing sentences in `tests/unit/data/pinned_sentences/`. A pin generated from the prose it guards would confirm any reword, including an unintended one.
 
+Skills whose run has a per-item shape — a list of tests, dimensions, sections, references or candidates a host could hand to one helper agent each — open their body with an `## Execution shape` section as the first `##` heading: the run is one agent in one context, with the skill's own reason, and where a host may insist on a workflow, the cap and the helper contract. The section is pinned whole under `tests/unit/data/pinned_sentences/<skill>--execution-shape.txt`; `tests/unit/test_execution_shape.py` discovers covered skills from those filenames and enforces first position and pin-equals-section, so adding a pin file extends coverage. Skills that are sequential by construction — a dialogue, a ladder, a script — carry none. Origin: a real supervise run under a workflow-by-default host mode fanned out into 27 agents (2026-09-02); the sections are a mitigation, and the dev runner's probe (`harness/README.md`) is the only measurement.
+
 ## History
 
 Migrated from a LaTeX proposal template on 2026-07-29; the tag `legacy-latex-template` preserves the old state, and the archived OpenSpec changes under `openspec/changes/archive/` document every step including eval findings.

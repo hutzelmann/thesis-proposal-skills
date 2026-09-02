@@ -75,7 +75,7 @@ Report these. They are what the project's own tests are built around, so a confi
 
 Thin argument, a research question that reads flat, a section the user finds weak. This is not a defect. Point them at `proposal-review` for a substance verdict, or at `proposal-customize` if the defaults do not match what their supervisor wants. Assemble no report.
 
-A run that cost many times the usual and produced correct output lands here too: the host's effort or workflow mode fanned the task out into many helper agents, against the execution shape the skill states. Name that mode and the host's own budget controls as the remedy, and assemble no report.
+A run that cost many times the usual and produced correct output lands here too: the host's effort or workflow mode fanned the task out into many helper agents, against the execution shape the skill states where it states one. Name that mode and the host's own budget and effort controls as the remedy, and assemble no report.
 
 ## Assembling the report
 

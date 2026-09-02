@@ -40,7 +40,7 @@ The first rung SHALL be the possibility that the user's installed skills predate
 
 ### Requirement: Non-defect causes named as such
 
-Four causes SHALL be reported as correct behavior rather than as defects: a model known to fail the task in question, a workspace `guidelines.md` override producing the behavior the user objects to, dissatisfaction with output that broke no stated rule, and a run that cost many times the usual while producing correct output because the host's effort or workflow mode fanned the task out into many agents against the execution shape the skill states. For each, the skill SHALL name the mechanism responsible and the user's available remedy — switch models, amend the overrides, use the review or customize skill, or use the host's own budget and effort controls.
+Four causes SHALL be reported as correct behavior rather than as defects: a model known to fail the task in question, a workspace `guidelines.md` override producing the behavior the user objects to, dissatisfaction with output that broke no stated rule, and a run that cost many times the usual while producing correct output because the host's effort or workflow mode fanned the task out into many agents — against the execution shape the skill states, where it states one. For each, the skill SHALL name the mechanism responsible and the user's available remedy — switch models, amend the overrides, use the review or customize skill, or use the host's own budget and effort controls.
 
 An unsupported model SHALL remain reportable at the user's option, because a fresh failure on a known-weak model is evidence about that model rather than noise.
 
@@ -62,7 +62,7 @@ An unsupported model SHALL remain reportable at the user's option, because a fre
 #### Scenario: Cost blowup under a fan-out host mode
 
 - **WHEN** the user reports that a run cost many times the usual and its output was otherwise correct
-- **THEN** the skill lands on the dissatisfaction rung, names the host's effort or workflow mode and its budget controls as the mechanism and remedy, and assembles no report
+- **THEN** the skill lands on the dissatisfaction rung, names the host's effort or workflow mode and its budget and effort controls as the mechanism and remedy, and assembles no report
 
 ### Requirement: Support verdicts shipped as skill data
 

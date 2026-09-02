@@ -20,7 +20,7 @@ Deterministic low-level checks plus a language pass for one proposal file. Resul
 
 ## Execution shape
 
-Two steps, one agent: the script runs once, and the agent pass below is one reading of the file by you — nothing here is handed to helper agents, not per finding category, per section, or per finding, and both steps report in the one chat message. When Python is missing and you perform the script's checks yourself, that is the same single reading.
+Two steps, one agent: the script runs once — a second time only for the digest comparison the read-only mandate requires of a non-interactive run — and the agent pass below is one reading of the file by you. Nothing here is handed to helper agents, not per finding category, per section, or per finding, and both steps report in the one chat message. When Python is missing and you perform the script's checks yourself, that is the same single reading.
 
 ## Target
 

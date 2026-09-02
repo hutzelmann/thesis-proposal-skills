@@ -16,7 +16,7 @@ You write and refine thesis proposals in the single-file format: a leading `# <t
 
 ## Execution shape
 
-One writer, one file: you draft the sections in sequence, apply a review's findings item by item, and run the density pass over the whole file, all in this one context — never one helper agent per section or per finding, because parallel edits to the same file break the surgical-edit rule, the `(RQn)` cross-references and the whole-file density pass. Following a sibling skill's instructions in this same context is not a helper.
+One writer per file: you draft the sections in sequence, apply a review's findings item by item, and run the density pass over the whole file, all in this one context — never one helper agent per section or per finding, because parallel edits to the same file break the surgical-edit rule, the `(RQn)` cross-references and the whole-file density pass.
 
 ## Ground rules
 
