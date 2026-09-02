@@ -53,12 +53,10 @@
       "Bash(openspec list *)",
       "Bash(openspec diff *)",
       "Bash(openspec --version)",
-      "Edit(openspec/changes/**)",
-      "Write(openspec/changes/**)"
+      "Edit(openspec/changes/**)"
     ],
     "deny": [
-      "Edit(openspec/changes/archive/**)",
-      "Write(openspec/changes/archive/**)"
+      "Edit(openspec/changes/archive/**)"
     ]
   }
 }
