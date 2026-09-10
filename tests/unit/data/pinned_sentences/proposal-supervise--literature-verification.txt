@@ -1,0 +1,1 @@
+No paper enters the feedback, the review, or the notes file without a record returned in this run by the lit-search scripts or their read-only fallback — a paper you know from memory included; an unverifiable paper stays out.

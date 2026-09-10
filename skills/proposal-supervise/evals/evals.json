@@ -5,18 +5,19 @@
     {
       "id": 1,
       "task": "supervise_feedback",
-      "prompt": "A student emailed me this thesis idea — I saved it as ws/submission-email.txt. Prepare my feedback: the draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path.",
+      "prompt": "A student emailed me this thesis idea — I saved it as ws/submission-email.txt. Prepare my feedback: the draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path. Do not look up literature.",
       "files": [
         "ws/submission-email.txt"
       ],
-      "expected_output": "Paste-ready feedback: verdict tier stated up front, at most five curated points, skill pointers that resolve, and none of the submission's personal data.",
+      "expected_output": "Paste-ready feedback: verdict tier stated up front, at most five curated points, skill pointers that resolve, none of the submission's personal data, and any literature woven into the points rather than listed.",
       "assertions": [
         "supervise: a feedback draft exists as the slug-named feedback file and is not empty.",
         "supervise: the feedback carries a numbered points list of at most five entries (skill-supervise spec: curated to pressing points).",
         "supervise: the feedback opens with one of the three verdict tiers, English or German, case-insensitive like every prose-relaying verdict. Word-bounded where the tier is a single word (\"already\" must not count as \"ready\").",
         "supervise: no personal-data token from the submission survives anywhere in the student-facing feedback (skill-supervise spec: intake strips identity). `artifacts` maps file names to contents.",
         "supervise: the feedback steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set.",
-        "supervise: the feedback carries the shared closing note verbatim, in the language it was written in (skill-supervise spec: the closing note is quoted whole). Paraphrase is the failure this exists to catch — it is the path by which the disclosure acquires a claim it is forbidden to make."
+        "supervise: the feedback carries the shared closing note verbatim, in the language it was written in (skill-supervise spec: the closing note is quoted whole). Paraphrase is the failure this exists to catch — it is the path by which the disclosure acquires a claim it is forbidden to make.",
+        "supervise: literature the feedback cites is woven, not listed — every `https://doi.org/` URL sits in a prose block (a numbered point or the strengths block: never on a bulleted line, with a few dozen words around it; a paragraph holding several DOI lines is judged line by line), every cited DOI is recorded in the companion notes file, and at most three distinct papers are cited. A feedback that cites no DOI passes: literature is conditional on the professor's approval and the findings."
       ]
     }
   ]

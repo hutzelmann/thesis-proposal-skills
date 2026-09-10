@@ -51,6 +51,7 @@ from l1_checks import (
     verdict_seed,
     verdict_supervise_closing,
     verdict_supervise_feedback,
+    verdict_supervise_literature,
     verdict_supervise_no_personal_data,
     verdict_supervise_pointers,
     verdict_supervise_points,
@@ -216,8 +217,9 @@ async def read_ws(path: str) -> str | None:
         return None
 
 
-async def workspace_markdown() -> dict[str, str]:
-    listing = await sandbox().exec(["bash", "-c", "ls ws/*.md 2>/dev/null"], timeout=10)
+async def workspace_files(pattern: str) -> dict[str, str]:
+    """Workspace files matching a shell glob, keyed by name relative to ws/."""
+    listing = await sandbox().exec(["bash", "-c", f"ls ws/{pattern} 2>/dev/null"], timeout=10)
     files = {}
     for path in listing.stdout.splitlines():
         name = path.strip().removeprefix("ws/")
@@ -225,6 +227,10 @@ async def workspace_markdown() -> dict[str, str]:
         if text is not None:
             files[name] = text
     return files
+
+
+async def workspace_markdown() -> dict[str, str]:
+    return await workspace_files("*.md")
 
 
 async def run_check(proposal: str) -> str:
@@ -964,20 +970,18 @@ INSTALLED_SKILLS = tuple(sorted(
 
 async def supervise_feedback_files() -> dict[str, str]:
     """The `<slug>-feedback.md` draft(s) the skill wrote, keyed by file name."""
-    listing = await sandbox().exec(
-        ["bash", "-c", "ls ws/*-feedback.md 2>/dev/null"], timeout=10)
-    files = {}
-    for path in listing.stdout.splitlines():
-        name = path.strip().removeprefix("ws/")
-        text = await read_ws(name) if name else None
-        if text is not None:
-            files[name] = text
-    return files
+    return await workspace_files("*-feedback.md")
 
 
 async def supervise_feedback_text() -> str | None:
     files = await supervise_feedback_files()
     return next((text for name, text in files.items() if name.endswith("feedback.md")), None)
+
+
+async def supervise_notes_text() -> str | None:
+    """The `<slug>.notes.md` companion, where woven literature is recorded."""
+    files = await workspace_files("*.notes.md")
+    return next(iter(files.values()), None)
 
 
 @verdict_scorer("supervise_l1_feedback")
@@ -1011,17 +1015,26 @@ async def supervise_l1_closing(_state: TaskState) -> tuple[bool, str]:
         await supervise_feedback_text(), load_closing_note(SKILLS), S01_LANGUAGE)
 
 
+@verdict_scorer("supervise_l1_literature")
+async def supervise_l1_literature(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_literature(
+        await supervise_feedback_text(), await supervise_notes_text())
+
+
 @task
 def supervise_feedback(baseline: bool = False) -> Task:
+    # the closing sentences pre-answer both interactive stops: a headless
+    # single-turn run has no professor to ask, so it takes the needs-revision
+    # default and the no-search path instead of stalling
     return proposal_task(
         "proposal-supervise", "s01-raw-email",
         f"A student emailed me this thesis idea — I saved it as ws/{S01_SUBMISSION}. "
         "Prepare my feedback: the draft I can send back. "
         "If the verdict turns out borderline, do not ask me — take the "
-        "needs-revision path.",
+        "needs-revision path. Do not look up literature.",
         [supervise_l1_feedback(), supervise_l1_points(), supervise_l1_tier(),
          supervise_l1_no_personal_data(), supervise_l1_pointers(),
-         supervise_l1_closing()],
+         supervise_l1_closing(), supervise_l1_literature()],
         baseline=baseline,
         extra_skill_files={
             f"ws/{S01_SUBMISSION}": str(FIXTURES / "s01-raw-email" / S01_SUBMISSION),

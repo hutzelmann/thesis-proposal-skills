@@ -741,6 +741,76 @@ def verdict_supervise_pointers(feedback: str | None,
     return True, "pointers resolve: " + ", ".join(sorted(named))
 
 
+# A woven citation sits inside a point that also names a direction and a skill
+# pointer, which runs well past this; the standalone list this exists to catch
+# (real run, 2026-09-10) carried about 25 words per entry.
+LITERATURE_PROSE_WORDS = 40
+LITERATURE_CAP = 3
+# A DOI runs to whitespace or a closing delimiter, except that a balanced
+# parenthesis pair is part of it (the Elsevier shape: 10.1000/S0000-0000(20)30183-5);
+# the unbalanced `)` closing a markdown link or a parenthetical still ends it.
+_DOI = r"10\.\d{4,9}/(?:[^\s\]\)(>,;\"']|\([^\s()]*\))+"
+_DOI_URL = re.compile(r"https?://(?:dx\.)?doi\.org/(" + _DOI + ")", re.IGNORECASE)
+_DOI_TOKEN = re.compile(_DOI, re.IGNORECASE)
+_BULLET_LINE = re.compile(r"^\s*[-*+•–]\s")
+_NUMBERED_POINT = re.compile(r"^\s*\d+[.)]\s+")
+
+
+def _clean_doi(raw: str) -> str:
+    return raw.rstrip(".,;:").lower()
+
+
+def _cited_dois(feedback: str) -> list[tuple[str, str]]:
+    """(doi, block) for every DOI URL in the feedback: the DOI lower-cased with
+    trailing punctuation trimmed, and the block that has to carry it — the
+    whole paragraph when the DOI's line is the paragraph's only DOI line, the
+    line alone when several DOI-bearing lines share one paragraph, which is a
+    list written without blank lines, not a point."""
+    out = []
+    for para in re.split(r"\n\s*\n", feedback):
+        doi_lines = [line for line in para.splitlines() if _DOI_URL.search(line)]
+        for line in doi_lines:
+            block = para if len(doi_lines) == 1 else line
+            out.extend((_clean_doi(m.group(1)), block) for m in _DOI_URL.finditer(line))
+    return out
+
+
+def _recorded_dois(notes: str | None) -> set[str]:
+    """Every DOI the notes file carries, as tokens — a substring match would
+    let a cited DOI pass on a longer recorded one it merely prefixes."""
+    return {_clean_doi(m.group(0)) for m in _DOI_TOKEN.finditer(notes or "")}
+
+
+def verdict_supervise_literature(feedback: str | None, notes: str | None) -> tuple[bool, str]:
+    """supervise: literature the feedback cites is woven, not listed — every
+    `https://doi.org/` URL sits in a prose block (a numbered point or the
+    strengths block: never on a bulleted line, with a few dozen words around
+    it; a paragraph holding several DOI lines is judged line by line), every
+    cited DOI is recorded in the companion notes file, and at most three
+    distinct papers are cited. A feedback that cites no DOI passes:
+    literature is conditional on the professor's approval and the findings."""
+    if not feedback or not feedback.strip():
+        return False, "no feedback draft to check for literature"
+    cited = _cited_dois(feedback)
+    if not cited:
+        return True, "no literature cited"
+    distinct = sorted({doi for doi, _ in cited})
+    if len(distinct) > LITERATURE_CAP:
+        return False, f"{len(distinct)} papers cited — at most {LITERATURE_CAP} are woven in"
+    for doi, block in cited:
+        lines = block.splitlines()
+        if any(_BULLET_LINE.match(line) and doi in line.lower() for line in lines):
+            return False, f"{doi} sits on a bulleted line — a list, not a point"
+        words = len(" ".join(_NUMBERED_POINT.sub("", line, count=1) for line in lines).split())
+        if words < LITERATURE_PROSE_WORDS:
+            return False, (f"{doi} sits in a {words}-word block — a bare citation, "
+                           "not a point that does work with it")
+    missing = [doi for doi in distinct if doi not in _recorded_dois(notes)]
+    if missing:
+        return False, "not recorded in the notes file: " + ", ".join(missing)
+    return True, f"{len(distinct)} paper(s) woven into the points and recorded in the notes"
+
+
 def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tuple[str, ...],
                                         installed: tuple[str, ...],
                                         closing: dict[str, str] | None = None,
@@ -749,15 +819,21 @@ def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tu
     """Aggregate of the supervise feedback verdicts for single-verdict runners
     (the dev runner); the Inspect task scores them separately. Fails on the
     first missing piece but reports every failed aspect. The closing-note
-    verdict is skipped when the caller cannot supply the shared snippet."""
+    verdict is skipped when the caller cannot supply the shared snippet.
+    `artifacts` may carry the notes file beside the feedback: the literature
+    verdict reads it, and the personal-data scan covers it too — no artifact
+    the skill writes may record the student's identity."""
     feedback = next((text for name, text in sorted(artifacts.items())
                      if name.endswith("feedback.md")), None)
+    notes = next((text for name, text in sorted(artifacts.items())
+                  if name.endswith(".notes.md")), None)
     results = [
         verdict_supervise_feedback(feedback),
         verdict_supervise_points(feedback),
         verdict_supervise_tier(feedback),
         verdict_supervise_no_personal_data(artifacts, forbidden),
         verdict_supervise_pointers(feedback, installed),
+        verdict_supervise_literature(feedback, notes),
     ]
     if closing:
         results.append(verdict_supervise_closing(feedback, closing, expected_language))

@@ -107,13 +107,32 @@ SCENARIOS = {
         "skill": "proposal-supervise",
         "siblings": ("proposal-import",),
         "feedback": True,
-        # the closing sentence pre-answers the borderline deferral: a headless
+        # the closing sentences pre-answer both interactive stops — the
+        # borderline deferral and the literature approval: a headless
         # single-turn run has no professor to ask, so it exercises the
-        # needs-revision default instead of stalling
+        # needs-revision default and the no-search path instead of stalling
         "request": "A student emailed me this thesis idea — I saved it as "
                    "submission-email.txt. Prepare my feedback: the draft "
                    "I can send back. If the verdict turns out "
-                   "borderline, do not ask me — take the needs-revision path.",
+                   "borderline, do not ask me — take the needs-revision path. "
+                   "Do not look up literature.",
+    },
+    # the network path of the same scenario: lit-search staged as a sibling and
+    # the approval granted in the request, so the run asks nothing and — the
+    # fixture's bibliography being two blog posts — has a finding to ground.
+    # Live scholarly APIs: expect variance, read the woven papers by hand.
+    "supervise_literature": {
+        "fixture": "s01-raw-email",
+        "skill": "proposal-supervise",
+        "siblings": ("proposal-import", "proposal-lit-search"),
+        "feedback": True,
+        "request": "A student emailed me this thesis idea — I saved it as "
+                   "submission-email.txt. Prepare my feedback: the draft "
+                   "I can send back. If the verdict turns out "
+                   "borderline, do not ask me — take the needs-revision path. "
+                   "Yes, you may look up literature: read-only queries through "
+                   "proposal-lit-search are fine, and I cannot answer any "
+                   "further question.",
     },
     # nothing staged: the group page and a canned DBLP-shaped publication list
     # are served over localhost ({url}/{dblp} filled at runtime) and the
@@ -321,9 +340,11 @@ INSTALLED_SKILLS = tuple(sorted(
 
 
 def feedback_files(ws: Path) -> dict[str, str]:
+    """The feedback draft(s) plus the notes file the literature verdict reads."""
     return {
         f.name: f.read_text(encoding="utf-8")
-        for f in sorted(ws.glob("*-feedback.md")) if f.is_file()
+        for pattern in ("*-feedback.md", "*.notes.md")
+        for f in sorted(ws.glob(pattern)) if f.is_file()
     }
 
 

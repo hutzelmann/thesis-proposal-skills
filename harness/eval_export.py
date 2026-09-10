@@ -113,8 +113,9 @@ EXPECTED_OUTPUTS = {
     ),
     "supervise_feedback": (
         "Paste-ready feedback: verdict tier stated up front, at "
-        "most five curated points, skill pointers that resolve, and none of the "
-        "submission's personal data."
+        "most five curated points, skill pointers that resolve, none of the "
+        "submission's personal data, and any literature woven into the points "
+        "rather than listed."
     ),
 }
 
@@ -151,6 +152,7 @@ def _l1_assertions():
         "supervise_l1_no_personal_data": c.verdict_supervise_no_personal_data,
         "supervise_l1_pointers": c.verdict_supervise_pointers,
         "supervise_l1_closing": c.verdict_supervise_closing,
+        "supervise_l1_literature": c.verdict_supervise_literature,
         "no_spurious_offer": c.verdict_no_spurious_offer,
     }
 
