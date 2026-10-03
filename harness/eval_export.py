@@ -153,6 +153,9 @@ def _l1_assertions():
         "supervise_l1_pointers": c.verdict_supervise_pointers,
         "supervise_l1_closing": c.verdict_supervise_closing,
         "supervise_l1_literature": c.verdict_supervise_literature,
+        "supervise_l1_substance_only": c.verdict_supervise_substance_only,
+        "supervise_l1_markup": c.verdict_supervise_markup,
+        "supervise_l1_locators": c.verdict_supervise_locators,
         "no_spurious_offer": c.verdict_no_spurious_offer,
     }
 

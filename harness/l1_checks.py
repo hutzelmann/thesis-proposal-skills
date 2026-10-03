@@ -862,7 +862,10 @@ def verdict_supervise_pointers(feedback: str | None,
     set."""
     # the lookbehind keeps repo/install names out: `thesis-proposal-skills` in
     # the closing note must not read as a skill named proposal-skills
-    named = set(re.findall(r"(?<![\w-])proposal-[a-z][a-z-]*[a-z]", feedback or ""))
+    # case-insensitive: without code markup a skill name can open a sentence
+    # ("Proposal-write helps with this." — sonnet dev run, 2026-10-03)
+    named = {name.lower() for name in re.findall(r"(?<![\w-])proposal-[a-z][a-z-]*[a-z]",
+                                                 feedback or "", re.IGNORECASE)}
     if not named:
         return False, "feedback names no skill at all"
     unknown = sorted(named - set(installed))
@@ -876,6 +879,10 @@ def verdict_supervise_pointers(feedback: str | None,
 # (real run, 2026-09-10) carried about 25 words per entry.
 LITERATURE_PROSE_WORDS = 40
 LITERATURE_CAP = 3
+# DOI prefixes of standards issuers: the feedback may locate such a norm by DOI
+# (NIST SP 800-82r3 has one), and it is then the locator verdict's business —
+# not a woven paper owed a notes record or counted against the cap.
+_STANDARD_DOI_PREFIXES = ("10.6028/",)
 # A DOI runs to whitespace or a closing delimiter, except that a balanced
 # parenthesis pair is part of it (the Elsevier shape: 10.1000/S0000-0000(20)30183-5);
 # the unbalanced `)` closing a markdown link or a parenthetical still ends it.
@@ -921,7 +928,8 @@ def verdict_supervise_literature(feedback: str | None, notes: str | None) -> tup
     literature is conditional on the professor's approval and the findings."""
     if not feedback or not feedback.strip():
         return False, "no feedback draft to check for literature"
-    cited = _cited_dois(feedback)
+    cited = [(doi, block) for doi, block in _cited_dois(feedback)
+             if not doi.startswith(_STANDARD_DOI_PREFIXES)]
     if not cited:
         return True, "no literature cited"
     distinct = sorted({doi for doi, _ in cited})
@@ -941,15 +949,244 @@ def verdict_supervise_literature(feedback: str | None, notes: str | None) -> tup
     return True, f"{len(distinct)} paper(s) woven into the points and recorded in the notes"
 
 
+def _sentences(text: str) -> list[str]:
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", text) if s.strip()]
+
+
+# What a format lecture is about: the toolchain's own document conventions, which
+# a raw submission never adopted (skill-supervise spec: format findings stay in
+# the review). The timeline is handled apart below — a scope paragraph names it
+# as evidence all the time, and only its length is a convention.
+_SUBJECTS = (
+    r"gantt|phase (?:list|plan|table)|work ?plan|chapter (?:outline|structure|list)"
+    r"|table of contents|cover (?:page|sheet|data)|title page|your name\b"
+    r"|supervisor'?s? name|matriculation|company name|page (?:count|limit)"
+    r"|proxy link|library link|reference (?:style|format|links?)"
+    r"|section (?:names|headings|titles)"
+    r"|phasenplan|arbeitsplan|gliederung|kapitel(?:übersicht|struktur)"
+    r"|inhaltsverzeichnis|deckblatt|titelblatt|matrikel|seiten(?:zahl|umfang)"
+)
+# Conventions a lecture tells the student to cut outright. The work plan stays
+# out: "cut the work plan to two packages" is scope advice, not a format remark.
+_CUTTABLE = (r"gantt|chapter (?:outline|structure|list)|table of contents|cover (?:page|sheet)"
+             r"|title page|your name\b")
+# The convention as the object of what precedes it — never across "from"/"aus",
+# because a cut option removes a package *from* the work plan.
+_OBJECT = rf"\s+(?:(?!from\b|aus\b)[\w-]+\s+){{0,3}}?(?:{_SUBJECTS})"
+# What makes a sentence a lecture rather than a use of the thing. Phrases scope
+# advice also uses ("should not include", "remove", "leave out") count only with
+# the convention as their object; the rest only a lecture says ("does not belong
+# in the proposal", "goes to your notes").
+_CONVENTION_LECTURE = re.compile(
+    rf"\b(?:should|must)(?:n't| not) (?:carry|contain|include|show|list|have|name){_OBJECT}"
+    r"|\b(?:proposal|expos[ée]|document)\s+(?:should|must)(?:n't| not)"
+    r" (?:carry|contain|include|show|list|have|name)\b"
+    r"|\bdo(?:es)?(?:n't| not) belong (?:in|into) (?:a|the|your) (?:proposal|expos[ée])"
+    r"|\b(?:belongs?|goe?s|go|move[sd]?) (?:only )?(?:in|into|to) (?:your )?(?:own )?"
+    r"(?:working )?notes\b"
+    r"|\b(?:rather than|instead of) (?:library )?proxy"
+    rf"|\b(?:remove|delete|omit|strip|leave out|take out|drop|shorten|trim|condense){_OBJECT}"
+    rf"|\bcut\s+(?:(?:the|your|this|its)\s+)?(?:{_CUTTABLE})"
+    rf"|\bleave\s+(?:[\w-]+\s+){{0,4}}?(?:{_SUBJECTS})[\w-]*(?:\s+[\w-]+){{0,2}}?\s+out\b"
+    r"|\bnicht ins expos[ée]|\bin ihre (?:eigenen )?notizen"
+    rf"|(?<!aus dem )(?<!aus ihrem )\b(?:{_SUBJECTS})[\w-]*\s+(?:[\w-]+\s+){{0,4}}?"
+    r"(?:entfernen|streichen|weglassen|herausnehmen|kürzen|verkürzen)",
+    re.IGNORECASE,
+)
+_TIMELINE_LECTURE = re.compile(
+    r"\b(?:timeline|zeitplan)\b[^.;]{0,40}?\b(?:is|be|as|in|into|to|auf)\s+"
+    r"(?:one|a single|ein(?:en)?)\s+(?:sentence|satz)"
+    r"|\bone sentence (?:with|naming|stating|that names) (?:the )?start"
+    r"|\b(?:shorten|reduce|trim|condense)\s+(?:(?:the|your)\s+)?(?:timeline|zeitplan)"
+    r"|\b(?:timeline|zeitplan)\w*\s+(?:[\w-]+\s+){0,3}?(?:kürzen|verkürzen)",
+    re.IGNORECASE,
+)
+
+
+def verdict_supervise_substance_only(feedback: str | None) -> tuple[bool, str]:
+    """supervise: the feedback carries no format lecture — no sentence that
+    pairs one of the toolchain's document conventions (cover data, a Gantt chart
+    or work plan, a chapter outline, page counts, reference link style, the
+    timeline's length) with an instruction to remove, shorten or restyle it.
+    Naming the Gantt chart as scope evidence is not a lecture and passes."""
+    if not feedback or not feedback.strip():
+        return False, "no feedback draft to check for format remarks"
+    for sentence in _sentences(feedback):
+        if _CONVENTION_LECTURE.search(sentence) or _TIMELINE_LECTURE.search(sentence):
+            return False, f"format remark reached the feedback: {sentence[:160]!r}"
+    return True, "no format remarks in the feedback"
+
+
+_HEADING_LINE = re.compile(r"^\s{0,3}#{1,6}\s")
+_QUOTE_LINE = re.compile(r"^\s{0,3}>")
+
+
+def verdict_supervise_markup(feedback: str | None) -> tuple[bool, str]:
+    """supervise: the feedback's markup stays light — bold runs and plain lists
+    are fine, but a heading line, a blockquote line or a backtick reaches a
+    plain-text channel as a literal character."""
+    if not feedback or not feedback.strip():
+        return False, "no feedback draft to check for markup"
+    for line in feedback.splitlines():
+        if _HEADING_LINE.match(line):
+            return False, f"heading line in the feedback: {line.strip()[:80]!r}"
+        if _QUOTE_LINE.match(line):
+            return False, f"blockquote line in the feedback: {line.strip()[:80]!r}"
+        if "`" in line:
+            return False, f"code markup in the feedback: {line.strip()[:80]!r}"
+    return True, "light markup only"
+
+
+# Standards and regulations by their public designation. The key a designation
+# is compared under is its number with parts and revision, never its year, so
+# "ISO 13485:2016" in the feedback matches "ISO 13485" in the proposal while
+# "IEC 62443-3-2" does not match "IEC 62443-3-3".
+_DESIGNATION = re.compile(
+    # a space-separated group continues a designation only as the ETSI
+    # three-digit grouping ("EN 301 549"), so "ISO 27001 2022 edition" stays 27001
+    r"\b(?:ISO(?:/IEC)?|IEC|DIN(?:\s+EN)?|ETSI\s+EN|EN)\s+\d{2,5}(?:-\d{1,5}|\s\d{3}\b)*(?::\d{4})?"
+    r"|\b(?:NIST\s+)?(?:SP|Special\s+Publication)\s+\d{3}-\d+(?:\s?r(?:ev(?:ision)?\.?\s?)?\d+)?"
+    r"|\bWCAG\s*\d(?:\.\d)?"
+    r"|\b(?:Directive|Regulation|Richtlinie|Verordnung)\s+(?:\((?:EU|EG|EC|EEC|EWG)\)\s+)?"
+    r"(?:No\.?\s+|Nr\.?\s+)?\d{2,4}/\d{1,4}",
+    re.IGNORECASE,
+)
+
+
+def _designation_key(designation: str) -> str:
+    # WCAG versions are one family, as editions of a standard are: naming the
+    # 2.0 criteria a paper measured, next to a proposal that cites 2.2, names no
+    # new source (sonnet dev run on s02, 2026-10-03)
+    if designation.lower().startswith("wcag"):
+        return "wcag"
+    text = re.sub(r":\d{4}\b", "", designation)
+    return ".".join(re.findall(r"\d+(?:[-/.]\d+)*", text))
+
+
+def verdict_supervise_locators(feedback: str | None, proposal: str | None) -> tuple[bool, str]:
+    """supervise: every standard or regulation the feedback names that the
+    normalized proposal does not already carry has a URL in the paragraph of
+    its first mention (skill-supervise spec: a locator for every source not in
+    the proposal). Papers are the literature verdict's business; this one sees
+    designations."""
+    if not feedback or not feedback.strip():
+        return False, "no feedback draft to check for locators"
+    known = {_designation_key(m.group(0)) for m in _DESIGNATION.finditer(proposal or "")}
+    named = 0
+    for para in re.split(r"\n\s*\n", feedback):
+        for match in _DESIGNATION.finditer(para):
+            key = _designation_key(match.group(0))
+            if key in known:
+                continue
+            named += 1
+            if not re.search(r"https?://", para):
+                return False, f"{match.group(0)!r} is new to the proposal but has no locator"
+            known.add(key)  # located at first mention; later mentions need none
+    if not named:
+        return True, "no standard or regulation beyond the proposal's own"
+    return True, f"{named} new standard/regulation mention(s) located"
+
+
+_LETTERED_OPTION = re.compile(
+    # at a line start, optionally bulleted: "A) …", "- **B)** …", "C — …"
+    r"(?:^|\n)[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?(?:Option\s+)?([A-C])(?:\*\*)?(?:\s*[—–-]|[).:])"
+    r"(?:\*\*)?\s"
+    # inline after sentence punctuation: "three ways: A) …; B) …" — never after a
+    # bare word, so "Annex A)" stays out
+    r"|[.:;—–][ \t]+(?:\*\*)?([A-C])\)(?:\*\*)?\s"
+    r"|\(([A-C])\)\s"
+    r"|\b(?:Option|Variante)\s+([A-C])\b"
+)
+_STUDENT_CHOICE = re.compile(
+    r"\b(?:choose|choice|decide|decision|up to you|wählen|wahl|entscheid\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def verdict_supervise_scope_options(feedback: str | None,
+                                    closing: dict[str, str] | None = None) -> tuple[bool, str]:
+    """supervise, over-scoped fixture: the feedback offers at least two
+    lettered cut options and leaves the choice to the student (skill-supervise
+    spec: workload volume check). Letters, because numbered lines are points.
+    The closing note is left out of the choice search: its "every decision …
+    stays with you" would otherwise answer for every feedback."""
+    if not feedback or not feedback.strip():
+        return False, "no feedback draft to check for scope options"
+    letters = {next(g for g in m.groups() if g) for m in _LETTERED_OPTION.finditer(feedback)}
+    if len(letters) < 2:
+        return False, (f"{len(letters)} lettered cut option(s) — an over-scoped plan "
+                       "gets at least two")
+    body = _collapse(feedback)
+    for section in (closing or {}).values():
+        body = body.replace(_collapse(section), " ")
+    if not _STUDENT_CHOICE.search(body):
+        return False, "cut options offered, but the choice is not left to the student"
+    return True, f"lettered cut options {', '.join(sorted(letters))}, choice with the student"
+
+
+def _review_section(review: str, headings: str) -> str | None:
+    """The body of a `##`/`###` section (optionally numbered), up to the next
+    heading of the same or a higher level — its own sub-headings stay inside."""
+    head = re.search(rf"^(#{{2,3}})\s+(?:\d+[.)]?\s+)?(?:{headings})\b[^\n]*\n",
+                     review, re.MULTILINE | re.IGNORECASE)
+    if not head:
+        return None
+    end = re.compile(rf"^#{{1,{len(head.group(1))}}}\s", re.MULTILINE).search(review, head.end())
+    return review[head.end():end.start() if end else len(review)]
+
+
+_TABLE_ROW = re.compile(r"^\s*\|.*\|.*\|", re.MULTILINE)
+_SCOPE_VERDICT = re.compile(
+    r"(?:scope verdict|umfang)[*_`]*\s*:\s*[*_`]*\s*"
+    r"(?:fits|tight|over[-‑‐–]scoped|passt|knapp|zu umfangreich)",
+    re.IGNORECASE,
+)
+
+
+def verdict_supervise_review_sections(review: str | None) -> tuple[bool, str]:
+    """supervise: the professor-side review carries the workload section — a
+    work-package table and a scope verdict line — and the verification section
+    (skill-supervise spec: workload volume check, claims verified before
+    hand-over). English or German headings."""
+    if not review or not review.strip():
+        return False, "no review file to check"
+    problems = []
+    workload = _review_section(review, "Workload|Arbeitsumfang")
+    if workload is None:
+        problems.append("no workload section")
+    else:
+        if len(_TABLE_ROW.findall(workload)) < 3:
+            problems.append("workload section has no work-package table")
+        if not _SCOPE_VERDICT.search(workload):
+            problems.append("workload section states no scope verdict")
+    if _review_section(review, r"(?:Claim\s+)?Verification|Überprüfung|Verifikation") is None:
+        problems.append("no verification section")
+    if problems:
+        return False, "; ".join(problems)
+    return True, "workload table with scope verdict, verification section present"
+
+
+def feedback_body_words(feedback: str | None, closing: dict[str, str] | None = None) -> int:
+    """Words in the feedback body, without URLs and the closing note — the
+    figure the soft length target is about (locators do not count)."""
+    body = _collapse(feedback or "")
+    for section in (closing or {}).values():
+        body = body.replace(_collapse(section), " ")
+    body = re.sub(r"\(?https?://\S+", " ", body)
+    return len(body.split())
+
+
 def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tuple[str, ...],
                                         installed: tuple[str, ...],
                                         closing: dict[str, str] | None = None,
                                         expected_language: str | None = None,
+                                        proposal: str | None = None,
                                         ) -> tuple[bool, str]:
     """Aggregate of the supervise feedback verdicts for single-verdict runners
     (the dev runner); the Inspect task scores them separately. Fails on the
     first missing piece but reports every failed aspect. The closing-note
-    verdict is skipped when the caller cannot supply the shared snippet.
+    verdict is skipped when the caller cannot supply the shared snippet, and the
+    locator verdict when it cannot supply the normalized proposal.
     `artifacts` may carry the notes file beside the feedback: the literature
     verdict reads it, and the personal-data scan covers it too — no artifact
     the skill writes may record the student's identity."""
@@ -964,7 +1201,13 @@ def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tu
         verdict_supervise_no_personal_data(artifacts, forbidden),
         verdict_supervise_pointers(feedback, installed),
         verdict_supervise_literature(feedback, notes),
+        verdict_supervise_substance_only(feedback),
+        verdict_supervise_markup(feedback),
     ]
+    if proposal is None:
+        results.append((True, "locators not checked (no normalized proposal)"))
+    else:
+        results.append(verdict_supervise_locators(feedback, proposal))
     if closing:
         results.append(verdict_supervise_closing(feedback, closing, expected_language))
     failed = [why for ok, why in results if not ok]
@@ -1057,12 +1300,17 @@ def verdict_early_stop(files: dict[str, str]) -> tuple[bool, str]:
 HELPER_TOOLS = ("Agent", "Task", "Workflow")
 
 
-def verdict_single_context(tool_names: list[str]) -> tuple[bool, str]:
-    """Advisory probe for the fan-out class of failure: the run spawned no
-    helper agent. `tool_names` are the tool_use names of a host event stream,
-    in order; the verdict names the spawning calls when there are any."""
+def verdict_single_context(tool_names: list[str], allowed: int = 0) -> tuple[bool, str]:
+    """Advisory probe for the fan-out class of failure: the run spawned no more
+    helper agents than its scenario allows — none by default; supervise allows
+    its one verifier of the finished feedback. `tool_names` are the tool_use
+    names of a host event stream, in order; the verdict names the spawning
+    calls when there are too many."""
     spawned = [name for name in tool_names if name in HELPER_TOOLS]
-    if spawned:
-        return False, (f"{len(spawned)} helper-agent call(s): "
+    if len(spawned) > allowed:
+        limit = f", {allowed} allowed" if allowed else ""
+        return False, (f"{len(spawned)} helper-agent call(s){limit}: "
                        f"{', '.join(sorted(set(spawned)))}")
+    if spawned:
+        return True, f"{len(spawned)} helper-agent call(s) within the allowance of {allowed}"
     return True, "no helper agents spawned"

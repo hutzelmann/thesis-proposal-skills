@@ -1,0 +1,71 @@
+Prioritizing Accessibility Requirements for a Municipal Web Portal
+Exposé for a Bachelor's Thesis
+
+Erika Musterfrau, matriculation number 00000000
+B.Sc. Business Informatics, 7th semester
+Supervisor: Prof. Dr. Max Mustermann
+Company: Example Web Services GmbH, Musterstraße 1, 12345 Musterstadt
+Contact: erika.musterfrau@example.org
+
+1 Introduction
+
+Public websites have to be usable by everyone, including people who rely on screen readers, keyboard navigation or magnification. Example Web Services GmbH builds and operates the Musterstadt city portal. The company's web team checks new page templates against an internal accessibility checklist before release.
+
+Under the European Accessibility Act (Directive (EU) 2019/882), all municipal websites must meet EN 301 549 since 28 June 2025. Many municipalities are therefore under pressure to show conformance quickly.
+
+2 Problem Statement
+
+The company already maintains a consolidated accessibility requirements catalogue that maps WCAG 2.2, EN 301 549 and the German BITV onto one list of requirements. The internal checklist, however, was written years ago, before the catalogue existed. Nobody knows which requirements from the catalogue matter most for the portal, and whether the checklist asks about them at all.
+
+3 Objective and Research Questions
+
+The objective is to develop an Accessibility Priority Model that ranks the catalogue's requirements for the portal, to identify gaps in the current checklist, and to revise the checklist and its remediation guidance accordingly.
+
+RQ1: How can accessibility requirements from an existing requirements catalogue be prioritized for a municipal web portal?
+RQ2: To what extent does the current checklist cover the high-priority requirements?
+RQ3: How does a priority-driven revision of the checklist improve its coverage, depth and usability?
+
+4 State of the Art
+
+WCAG 2.2 [1] defines testable success criteria at three conformance levels, and EN 301 549 [2] adopts them for public procurement in Europe. Automated evaluation tools are widely used to check conformance. Vigo et al. [3] showed that automated evaluation tools reliably detect WCAG violations, so the audit step of this thesis can rely on automated scanning alone. The European Accessibility Act [4] makes these requirements binding. For ranking requirements, the Analytic Hierarchy Process [5] is an established multi-criteria method.
+
+5 Methodology
+
+The thesis is a case study at Example Web Services GmbH.
+
+Step 1: The requirements in the existing catalogue will be reviewed with input from the web team to filter those relevant for the portal.
+Step 2: Criteria for prioritization will be derived from the literature and the regulatory requirements, and weighted with AHP pairwise comparisons by three company experts. The result is the Accessibility Priority Model.
+Step 3: All 40 page templates of the portal will be audited against every prioritized requirement, using automated scanning.
+Step 4: Based on the model and the audit, the checklist will be revised: topics regrouped, questions rewritten, missing questions added, and the remediation guidance per requirement updated.
+Step 5: The revised checklist will be evaluated with the web team and with two screen-reader users through a questionnaire and a short usability test, comparing it to the original checklist on coverage, depth and usability.
+
+6 Timeline
+
+The work starts on 15 October 2026 and ends with submission on 20 January 2027. The thesis has not yet been registered.
+
+Phase                                   Weeks
+Catalogue review and filtering          1-3
+Priority model (criteria, AHP)          3-6
+Template audit                          6-9
+Checklist and guidance revision         9-12
+Evaluation                              12-13
+Writing                                 13-14
+
+7 Planned Chapter Outline
+
+1 Introduction
+2 Fundamentals of Web Accessibility
+3 State of the Art
+4 Accessibility Priority Model
+5 Audit and Gap Analysis
+6 Revised Checklist
+7 Evaluation
+8 Conclusion
+
+References
+
+[1] W3C. Web Content Accessibility Guidelines (WCAG) 2.2. W3C Recommendation, 2023. https://www.w3.org/TR/WCAG22/
+[2] ETSI. EN 301 549 V3.2.1: Accessibility requirements for ICT products and services. 2021.
+[3] Vigo, M., Brown, J., Conway, V. Benchmarking web accessibility evaluation tools. Proceedings of the 10th International Cross-Disciplinary Conference on Web Accessibility (W4A), 2013. https://doi.org/10.1145/2461121.2461124
+[4] Directive (EU) 2019/882 of the European Parliament and of the Council on the accessibility requirements for products and services. 2019.
+[5] Saaty, T. L. The Analytic Hierarchy Process. McGraw-Hill, 1980.

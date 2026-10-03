@@ -49,6 +49,7 @@ EXPECTED_SCORERS = {
         "supervise_l1_feedback", "supervise_l1_points", "supervise_l1_tier",
         "supervise_l1_no_personal_data", "supervise_l1_pointers",
         "supervise_l1_closing", "supervise_l1_literature",
+        "supervise_l1_substance_only", "supervise_l1_markup", "supervise_l1_locators",
     ],
 }
 

@@ -13,14 +13,19 @@ import json
 from pathlib import Path
 
 from claude_runner import (
+    SCENARIOS,
+    SKILLS,
     final_text,
     host_command,
     host_failure,
+    normalized_proposal,
     parse_events,
     summary,
+    supervise_extra,
+    supervise_verdict,
     telemetry,
 )
-from l1_checks import HELPER_TOOLS, verdict_single_context
+from l1_checks import HELPER_TOOLS, load_closing_note, verdict_single_context
 from routing import tool_calls
 
 STREAMS = Path(__file__).resolve().parent / "data" / "routing_streams"
@@ -56,6 +61,18 @@ def test_single_context_fails_naming_each_spawn():
     assert "3 helper-agent call(s)" in why
     assert "Task" in why
     assert "Workflow" in why
+
+
+def test_single_context_allowance_admits_the_supervise_verifier():
+    """supervise allows one fresh verifier of the finished feedback; a second
+    helper is the fan-out again (skill-supervise spec: single-context execution)."""
+    passed, why = verdict_single_context(["Read", "Agent", "Write"], allowed=1)
+    assert passed
+    assert "within the allowance of 1" in why
+    passed, why = verdict_single_context(["Agent", "Read", "Agent"], allowed=1)
+    assert not passed
+    assert "2 helper-agent call(s), 1 allowed" in why
+    assert "Agent" in why
 
 
 def test_recorded_exploration_spawned_nothing():
@@ -132,6 +149,21 @@ def test_host_failure_reports_an_error_result_with_its_detail():
     assert "4 turns" in message
 
 
+def test_host_failure_reads_the_result_text_when_errors_are_empty():
+    """Recorded 2026-10-03: an expired host login ends as subtype "success",
+    is_error true, errors null, the reason in `result` — the message must carry
+    it rather than "no detail"."""
+    stream = [{
+        "type": "result", "subtype": "success", "is_error": True, "errors": None,
+        "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
+        "terminal_reason": "api_error", "total_cost_usd": 0, "num_turns": 1,
+    }]
+    message = host_failure(stream, 0, "")
+    assert "api_error" in message
+    assert "OAuth session expired" in message
+    assert "no detail" not in message
+
+
 def test_host_failure_falls_back_to_stderr_without_a_result():
     assert host_failure([], 1, "boom\n") == "claude failed: boom"
     assert host_failure([], 1, "") == "claude failed: no stderr"
@@ -166,3 +198,113 @@ def test_summary_labels_an_isolated_run(tmp_path):
     assert out["config_dir"] == str(config)
     assert out["helper_calls"] == []
     assert out["single_context"] == "PASS: no helper agents spawned"
+
+
+def test_summary_applies_the_scenario_allowance_and_reports_extras():
+    out = summary(ARGS, True, "fine", events("helper-fanout"), None,
+                  allowed=1, extra={"feedback_words": 640})
+    assert out["single_context"] == "PASS: 1 helper-agent call(s) within the allowance of 1"
+    assert out["feedback_words"] == 640
+
+
+# ---------- supervise dispatch ------------------------------------------------
+#
+# Synthetic workspaces in the shape a supervise run leaves behind: the
+# normalized proposal, its notes, the review and the feedback side by side.
+
+CLOSING_EN = load_closing_note(SKILLS)["English"]
+
+SCOPED_FEEDBACK = f"""My verdict: **needs revision** — please address the points below and resubmit.
+
+The plan is large for a Bachelor's thesis: five packages wait on each other in fourteen
+weeks. Two ways to cut it to one core — the choice is yours:
+
+A) Model and diagnosis: the priority model and the gap analysis; the revised checklist
+moves to the outlook.
+B) Revision and evaluation: a borrowed ranking, the weight on the revised checklist and a
+trial with its users.
+
+1. Name the criteria the model ranks by and where each comes from — proposal-write.
+2. Say how many requirements the catalogue holds; it decides the audit's size — proposal-write.
+
+What to keep: the access to the web team and the real checklist.
+
+{CLOSING_EN}
+"""
+
+SCOPED_REVIEW = """**Verdict: needs revision.**
+
+## Workload
+
+| Package | Depends on | Size driver | Estimate (weeks, est.) |
+|---|---|---|---|
+| Catalogue review | — | catalogue size (unknown) | 3–6 |
+| Priority model | catalogue review | criteria, expert time | 3 |
+
+Scope verdict: over-scoped
+
+## Verification
+
+Contradicted: the regulation the export names for municipal websites.
+"""
+
+
+def supervise_ws(tmp_path, feedback=SCOPED_FEEDBACK, review=SCOPED_REVIEW):
+    (tmp_path / "accessibility-priority-model.md").write_text(
+        "# Prioritizing Accessibility Requirements\n\nWCAG 2.2 and EN 301 549.\n",
+        encoding="utf-8")
+    (tmp_path / "accessibility-priority-model.notes.md").write_text(
+        "# Notes\n", encoding="utf-8")
+    (tmp_path / "accessibility-priority-model-review.md").write_text(review, encoding="utf-8")
+    (tmp_path / "accessibility-priority-model-feedback.md").write_text(
+        feedback, encoding="utf-8")
+    return tmp_path
+
+
+def test_normalized_proposal_skips_the_sidecars(tmp_path):
+    text = normalized_proposal(supervise_ws(tmp_path))
+    assert text.startswith("# Prioritizing")
+    assert normalized_proposal(tmp_path / "missing") is None
+
+
+def test_supervise_scope_scenario_passes_a_complete_run(tmp_path):
+    passed, why = supervise_verdict(SCENARIOS["supervise_scope"], supervise_ws(tmp_path))
+    assert passed, why
+    assert "lettered cut options A, B" in why
+    assert "workload table" in why
+
+
+def test_supervise_scope_scenario_fails_without_options_or_review_sections(tmp_path):
+    flat = SCOPED_FEEDBACK.replace("A) ", "").replace("B) ", "")
+    passed, why = supervise_verdict(
+        SCENARIOS["supervise_scope"],
+        supervise_ws(tmp_path, feedback=flat, review="**Verdict: needs revision.**\n"))
+    assert not passed
+    assert "lettered cut option" in why
+    assert "no workload section" in why
+
+
+def test_supervise_scope_scenario_uses_its_own_identity_tokens(tmp_path):
+    leaked = SCOPED_FEEDBACK.replace("What to keep:", "Prof. Mustermann agrees. What to keep:")
+    passed, why = supervise_verdict(SCENARIOS["supervise_scope"],
+                                    supervise_ws(tmp_path, feedback=leaked))
+    assert not passed
+    assert "Mustermann" in why
+
+
+def test_supervise_feedback_scenario_skips_the_scope_verdicts(tmp_path):
+    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"], supervise_ws(tmp_path))
+    assert passed, why
+    assert "lettered" not in why
+
+
+def test_supervise_scenarios_allow_exactly_one_verifier():
+    for name in ("supervise_feedback", "supervise_literature", "supervise_scope"):
+        assert SCENARIOS[name]["helpers"] == 1
+    assert "helpers" not in SCENARIOS["check_report"]
+
+
+def test_supervise_extra_reports_the_body_length(tmp_path):
+    words = supervise_extra(SCENARIOS["supervise_scope"], supervise_ws(tmp_path))
+    assert 60 < words["feedback_words"] < 200
+    assert supervise_extra(SCENARIOS["check_report"], tmp_path) == {}

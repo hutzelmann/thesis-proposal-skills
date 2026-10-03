@@ -31,6 +31,7 @@ from inspect_ai.util import sandbox
 
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from l1_checks import (
+    NOTES_SUFFIX,
     load_closing_note,
     parse_grade,
     select_draft,
@@ -52,9 +53,12 @@ from l1_checks import (
     verdict_supervise_closing,
     verdict_supervise_feedback,
     verdict_supervise_literature,
+    verdict_supervise_locators,
+    verdict_supervise_markup,
     verdict_supervise_no_personal_data,
     verdict_supervise_pointers,
     verdict_supervise_points,
+    verdict_supervise_substance_only,
     verdict_supervise_tier,
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
@@ -1021,20 +1025,46 @@ async def supervise_l1_literature(_state: TaskState) -> tuple[bool, str]:
         await supervise_feedback_text(), await supervise_notes_text())
 
 
+async def supervise_proposal_text() -> str | None:
+    """The normalized `<slug>.md` beside the feedback, review and notes."""
+    files = await workspace_markdown()
+    return next((text for name, text in sorted(files.items())
+                 if not name.endswith(("-feedback.md", "-review.md", NOTES_SUFFIX))), None)
+
+
+@verdict_scorer("supervise_l1_substance_only")
+async def supervise_l1_substance_only(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_substance_only(await supervise_feedback_text())
+
+
+@verdict_scorer("supervise_l1_markup")
+async def supervise_l1_markup(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_markup(await supervise_feedback_text())
+
+
+@verdict_scorer("supervise_l1_locators")
+async def supervise_l1_locators(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_locators(
+        await supervise_feedback_text(), await supervise_proposal_text())
+
+
 @task
 def supervise_feedback(baseline: bool = False) -> Task:
-    # the closing sentences pre-answer both interactive stops: a headless
-    # single-turn run has no professor to ask, so it takes the needs-revision
-    # default and the no-search path instead of stalling
+    # the closing sentences pre-answer both interactive stops — the borderline
+    # deferral and the lookup approval: a headless single-turn run has no
+    # professor to ask, so it takes the needs-revision default and the offline
+    # path instead of stalling
     return proposal_task(
         "proposal-supervise", "s01-raw-email",
         f"A student emailed me this thesis idea — I saved it as ws/{S01_SUBMISSION}. "
         "Prepare my feedback: the draft I can send back. "
         "If the verdict turns out borderline, do not ask me — take the "
-        "needs-revision path. Do not look up literature.",
+        "needs-revision path. Do not make any network lookups — no claim checks "
+        "and no literature — and I cannot answer any further question.",
         [supervise_l1_feedback(), supervise_l1_points(), supervise_l1_tier(),
          supervise_l1_no_personal_data(), supervise_l1_pointers(),
-         supervise_l1_closing(), supervise_l1_literature()],
+         supervise_l1_closing(), supervise_l1_literature(), supervise_l1_substance_only(),
+         supervise_l1_markup(), supervise_l1_locators()],
         baseline=baseline,
         extra_skill_files={
             f"ws/{S01_SUBMISSION}": str(FIXTURES / "s01-raw-email" / S01_SUBMISSION),

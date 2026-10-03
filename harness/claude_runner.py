@@ -46,6 +46,7 @@ from pathlib import Path
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
+    feedback_body_words,
     load_closing_note,
     select_draft,
     verdict_check_report,
@@ -59,6 +60,8 @@ from l1_checks import (
     verdict_seed,
     verdict_single_context,
     verdict_supervise_feedback_contract,
+    verdict_supervise_review_sections,
+    verdict_supervise_scope_options,
 )
 from routing import prepare_config, tool_calls
 from sources import MESSY_REQUEST
@@ -113,15 +116,20 @@ SCENARIOS = {
         "skill": "proposal-supervise",
         "siblings": ("proposal-import",),
         "feedback": True,
+        # the skill's one fresh verifier of the finished feedback; the probe
+        # flags anything beyond it (skill-supervise spec: single-context execution)
+        "helpers": 1,
         # the closing sentences pre-answer both interactive stops — the
-        # borderline deferral and the literature approval: a headless
-        # single-turn run has no professor to ask, so it exercises the
-        # needs-revision default and the no-search path instead of stalling
+        # borderline deferral and the lookup approval (claim checks and
+        # literature alike): a headless single-turn run has no professor to
+        # ask, so it exercises the needs-revision default and the offline
+        # path instead of stalling
         "request": "A student emailed me this thesis idea — I saved it as "
                    "submission-email.txt. Prepare my feedback: the draft "
                    "I can send back. If the verdict turns out "
                    "borderline, do not ask me — take the needs-revision path. "
-                   "Do not look up literature.",
+                   "Do not make any network lookups — no claim checks and no "
+                   "literature — and I cannot answer any further question.",
     },
     # the network path of the same scenario: lit-search staged as a sibling and
     # the approval granted in the request, so the run asks nothing and — the
@@ -132,6 +140,7 @@ SCENARIOS = {
         "skill": "proposal-supervise",
         "siblings": ("proposal-import", "proposal-lit-search"),
         "feedback": True,
+        "helpers": 1,
         "request": "A student emailed me this thesis idea — I saved it as "
                    "submission-email.txt. Prepare my feedback: the draft "
                    "I can send back. If the verdict turns out "
@@ -139,6 +148,26 @@ SCENARIOS = {
                    "Yes, you may look up literature: read-only queries through "
                    "proposal-lit-search are fine, and I cannot answer any "
                    "further question.",
+    },
+    # the over-scoped export: chained packages, an uncounted catalogue, a phase
+    # table and chapter outline as format bait, a wrong regulation claim and a
+    # paper cited against its own abstract. The lookups are granted so the claim
+    # checks can run; whether the planted claims were caught is read by hand.
+    "supervise_scope": {
+        "fixture": "s02-overscoped-export",
+        "skill": "proposal-supervise",
+        "siblings": ("proposal-import", "proposal-lit-search"),
+        "feedback": True,
+        "scope": True,
+        "helpers": 1,
+        "forbidden": ("Musterfrau", "00000000", "erika.musterfrau@example.org",
+                      "Musterstraße", "Mustermann"),
+        "request": "A student uploaded this revised exposé for a Bachelor's thesis — I "
+                   "saved it as submission-export.txt. Prepare my feedback: the draft "
+                   "I can send back. If the verdict turns out borderline, do not ask "
+                   "me — take the needs-revision path. Yes, you may run read-only "
+                   "lookups to check claims and find literature, and I cannot answer "
+                   "any further question.",
     },
     # nothing staged: the group page and a canned DBLP-shaped publication list
     # are served over localhost ({url}/{dblp} filled at runtime) and the
@@ -289,7 +318,14 @@ def host_failure(events: list[dict], returncode: int, stderr: str) -> str | None
     over partial narration with empty telemetry."""
     result = result_event(events)
     if result.get("is_error"):
-        errors = "; ".join(str(e) for e in result.get("errors") or []) or "no detail"
+        # an expired login arrives as subtype "success" with no `errors` and the
+        # reason in `result` (recorded 2026-10-03); without the fallback the
+        # message read "success: no detail"
+        errors = "; ".join(str(e) for e in result.get("errors") or [])
+        if not errors:
+            reason = result.get("terminal_reason")
+            text = result.get("result") if isinstance(result.get("result"), str) else ""
+            errors = " — ".join(part for part in (reason, text) if part) or "no detail"
         return (f"claude failed: {result.get('subtype', 'error')}: {errors} "
                 f"(cost so far {result.get('total_cost_usd')} USD, "
                 f"{result.get('num_turns')} turns)")
@@ -371,11 +407,13 @@ def telemetry(events: list[dict]) -> dict:
 
 
 def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict],
-            config: Path | None) -> dict:
+            config: Path | None, allowed: int = 0, extra: dict | None = None) -> dict:
     """The run's L1 verdict plus the probe: telemetry and the advisory
-    single-context verdict, which never changes the exit status."""
+    single-context verdict against the scenario's helper allowance, which never
+    changes the exit status. `extra` carries scenario-specific information —
+    a supervise run's feedback length — that is reported, never judged."""
     names = [name for name, _ in tool_calls(events)]
-    single, single_why = verdict_single_context(names)
+    single, single_why = verdict_single_context(names, allowed)
     return {
         "scenario": args.scenario, "model": args.model,
         "arm": "baseline" if args.no_skill else "with-skill",
@@ -385,6 +423,7 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
         **telemetry(events),
         "helper_calls": [name for name in names if name in HELPER_TOOLS],
         "single_context": f"{'PASS' if single else 'FAIL'}: {single_why}",
+        **(extra or {}),
     }
 
 
@@ -419,6 +458,51 @@ def feedback_files(ws: Path) -> dict[str, str]:
         for pattern in ("*-feedback.md", "*.notes.md")
         for f in sorted(ws.glob(pattern)) if f.is_file()
     }
+
+
+# what a supervise run writes beside the normalized proposal
+_SUPERVISE_SIDECARS = ("-feedback.md", "-review.md", NOTES_SUFFIX)
+
+
+def normalized_proposal(ws: Path) -> str | None:
+    """The normalized `<slug>.md` a supervise run wrote — the locator verdict
+    compares the feedback's standards against it — or None."""
+    found = [f for f in sorted(ws.glob("*.md"))
+             if f.is_file() and not f.name.endswith(_SUPERVISE_SIDECARS)]
+    return found[0].read_text(encoding="utf-8") if found else None
+
+
+def first_text(ws: Path, pattern: str) -> str | None:
+    found = sorted(f for f in ws.glob(pattern) if f.is_file())
+    return found[0].read_text(encoding="utf-8") if found else None
+
+
+def supervise_verdict(scenario: dict, ws: Path) -> tuple[bool, str]:
+    """The feedback contract over the scenario's fixture identity, plus — for
+    the over-scoped fixture — the lettered cut options in the feedback and the
+    workload and verification sections in the review."""
+    passed, why = verdict_supervise_feedback_contract(
+        feedback_files(ws), scenario.get("forbidden", S01_FORBIDDEN), INSTALLED_SKILLS,
+        load_closing_note(SKILLS), S01_LANGUAGE, proposal=normalized_proposal(ws))
+    if not scenario.get("scope"):
+        return passed, why
+    results = [(passed, why),
+               verdict_supervise_scope_options(first_text(ws, "*-feedback.md"),
+                                               load_closing_note(SKILLS)),
+               verdict_supervise_review_sections(first_text(ws, "*-review.md"))]
+    failed = [reason for ok, reason in results if not ok]
+    if failed:
+        return False, "; ".join(failed)
+    return True, "; ".join(reason for _, reason in results)
+
+
+def supervise_extra(scenario: dict, ws: Path) -> dict:
+    """What a supervise run reports beside its verdict without being judged on it."""
+    if not scenario.get("feedback"):
+        return {}
+    feedback = first_text(ws, "*-feedback.md")
+    return {"feedback_words": feedback_body_words(feedback, load_closing_note(SKILLS))
+            if feedback else None}
 
 
 def containment_inputs(request: str, chat: str,
@@ -457,9 +541,7 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
     if name in CONTAINMENT_SCENARIOS:
         return containment_verdict(ws, request, chat, events or [])
     if scenario.get("feedback"):
-        return verdict_supervise_feedback_contract(
-            feedback_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS,
-            load_closing_note(SKILLS), S01_LANGUAGE)
+        return supervise_verdict(scenario, ws)
     if name == "ideate_scoped":
         files = workspace_markdown(ws)
         produced, where = select_draft(files)
@@ -536,7 +618,9 @@ def main(argv: list[str] | None = None) -> int:
                             budget=args.max_budget_usd, config=config)
         chat = final_text(events)
         passed, why = verdict(args.scenario, scenario, ws, chat, request, events)
-        print(json.dumps(summary(args, passed, why, events, config), indent=2))
+        print(json.dumps(summary(args, passed, why, events, config,
+                                 allowed=scenario.get("helpers", 0),
+                                 extra=supervise_extra(scenario, ws)), indent=2))
         print("\n--- chat tail ---\n" + chat[-1200:])
         return 0 if passed else 1
     finally:
