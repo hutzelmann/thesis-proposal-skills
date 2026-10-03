@@ -47,23 +47,32 @@ The consecutive-citation bullet becomes the four-part rule chosen in the intervi
 
 `rule_hindsight_leakage` walks prose **blocks** instead of a flat sentence stream.
 
-- A new helper splits the masked body into blocks at blank lines, headings, list items and table rows, yielding `(sentence, line)` lists.
+- A new helper splits the masked body into blocks, yielding `(sentence, line)` lists. A blank line or heading ends a block, a table row is a block of its own, and a list item starts one. For the repetition comparison of ladder step B, consecutive list items stay one block, so bullets do not hide repeats.
+- Sentences are split at sentence punctuation **outside citation brackets**: a locator `[@key, S. 12]` never ends a sentence. The lines of a paragraph are joined first, so a hard-wrapped sentence stays one sentence. Abbreviations (et al., e.g., i.e., cf., vgl., z. B., d. h., u. a., S./p./pp. locators, Abb., Kap., Tab., Nr.) and German ordinals after an article or preposition ("im 2. Schritt") do not split.
 - Within a block, a sentence is *attributed* if it carries a citation key, or if the previous sentence was attributed and this one opens with a back-reference cue. Any other sentence clears the state.
 - A sentence fires only when it is unattributed and matches the existing result-verb or quantity logic.
 
-**Cues are a closed, per-language set, matched within the first three words.** The window admits a leading connective ("However, they …"), a preposition ("In their evaluation …"), and German verb-second order ("Zudem zeigen sie …").
+**Cues are a closed, per-language set, and must open the sentence.** A cue may stand:
+- first ("They …", "Ihre Auswertung …");
+- after a single connective set off by a comma ("However, they …");
+- after a preposition, as a possessive or "the authors" ("In their evaluation …", "According to the authors …", "Laut den Autoren …");
+- in German verb-second order, as the subject after the finite verb ("Zudem zeigen sie …").
+
+A cue in object position does not open a sentence. Any sentence containing a first-person pronoun is never a continuation.
+
+The first cut matched the cue anywhere in the first three words. The adversarial review showed that this laundered own-work claims such as "We outperformed **their** baseline …" and "In **both** settings we …", which is why the rule is now positional.
 
 | Language | Cues |
 |---|---|
-| English | they, their, both, the authors, these authors, the study, the same study, this approach, the approach |
-| German | sie, ihr/ihre/ihrem/ihren/ihrer/ihres, deren, dessen, beide, die/den/der Autoren (also Autorinnen, Autor:innen), die/der Studie, dieser Ansatz |
+| English | they, their, both, the authors, these authors, the same study |
+| German | sie, ihr/ihre/ihrem/ihren/ihrer/ihres, deren, dessen, beide, die/den/der Autoren (also Autorinnen, Autor:innen) |
 
 The German oblique cases are included so that "Laut den Autoren …" counts as attribution, mirroring English "According to the authors …".
 
 Words deliberately excluded:
 
 - **it / es**: expletive use ("It was shown", "Es zeigte sich") would launder unattributed claims.
-- **this study / diese Arbeit / this work**: proposals use them for the thesis itself.
+- **every name a proposal gives the thesis itself**: this study, this work, diese Arbeit, and also **the study / die Studie / the approach**. The guidance prescribes "the study" as the thesis's third-person self-reference, so it cannot double as a back-reference. The first cut listed it; the review caught it.
 - **generic "the X" ("the detector")**: unbounded, so it keeps the warning. The fix is "their detector".
 
 **Alternatives considered:**
@@ -80,16 +89,19 @@ The warning message adds the cue as a fix: "attribute the result — cite it, or
 
 The key pattern `(?<![\w.\\])@([A-Za-z][\w:.-]*)`, with trailing punctuation stripping, becomes a module-level compiled pattern plus a `citation_keys(text) -> set[str]` helper. `scan_citations`, the hindsight rule and the block walk use it. Behaviour of `scan_citations` is unchanged; existing fixture oracles prove that.
 
-### D4 — L1 verdicts are self-contained in l1_checks.py
+### D4 — L1 verdicts share the check script's splitting
 
 New in `l1_checks.py`:
 
-- `citation_blocks(text)`: strips the trailing metadata block, splits into blocks with the same boundaries as D2, splits lines into sentences, and guards common abbreviations ("et al.", "e.g.", "i.e.", "cf.", "vs.", "z. B.", "d. h.", "vgl.") against false sentence ends.
+- `citation_blocks(text)`: the check script's `split_proposal` and `prose_blocks(body, list_items_break=False)`, annotated with each sentence's citation keys.
 - `repeated_citation_runs(text)`: returns `(line, keys)` for every adjacent pair in a block with an identical non-empty key set.
 - `verdict_citation_runs(text)`: the verdict for the write task.
 - `verdict_citation_repair(before, after)`: the repair verdict, which adds "every key the input cites is still cited".
+- `verdict_cited_draft` / `verdict_repaired_draft`: these add the existing draft verdict and are shared by both runners.
 
-The splitting is duplicated from `check.py`'s semantics rather than imported, because the harness runtime cannot import skill scripts. The duplication is two short regexes, documented as mirroring D2. L0 tests pin both on shared crafted inputs, so drift shows up as a failing test.
+`l1_checks.py` loads the sync source `skills/proposal-check/scripts/check.py` by file path (`importlib`). The verdict and the `citation-repeated` warning a writer sees therefore share one implementation and cannot disagree about what a sentence is.
+
+The first cut duplicated the splitting regexes and pinned them by shared inputs. The review showed that most alternatives were unpinned, which is why it was replaced. Both runners judge on the host, where the script is a file away. An L0 test asserts that the loaded module is the shipped file.
 
 ### D5 — Fixtures
 
@@ -148,14 +160,30 @@ Dispatch goes through a small table keyed by scenario name, so `verdict()` does 
 
 **Outcome after B: C triggered.** Sonnet repair became solid (3/3), but haiku's one structurally intact repair still left seven repeats. The warning does not reach a model that treats warnings as optional. C therefore does two things in `proposal-write`'s SKILL.md, each pinned:
 
-- a drafting clause among the ground rules (prior work concept-first; cite once per continuous use, carried on in words);
-- a paragraph in "Verify before you report" that makes `citation-repeated` binding, resolved by restructuring and never by deletion.
+- a drafting clause among the strong defaults (prior work concept-first; cite once per continuous use, carried on in words; cite again on the guidance's full set of triggers);
+- a paragraph in "Verify before you report" that makes `citation-repeated` binding in text the pass wrote or was asked to improve, resolved by restructuring and never by deletion. In untouched sections the findings become suggestions, as the density pass does, and the warning yields to a workspace that requires per-sentence citation.
 
 Both land with a skill-write delta ("Citation scope in writing passes").
 
+**Review fixes after C.** The pre-commit adversarial review (task 6.1: four dimensions, each finding verified by a refuting agent) confirmed eleven findings:
+
+- the cue window laundered own-work claims;
+- "the study" doubled as a cue;
+- locators, ordinals and wrapped lines split sentences;
+- the lone-letter rule merged a sentence ending in a variable;
+- the write clause said "only" and sat under "non-negotiable";
+- the exported L1 wording overstated the verdict;
+- the duplicated splitter was mostly unpinned;
+- two recording gaps (no "et al." test, no workspace paths).
+
+All are fixed (see D2, D4, Risks). They change shipped behaviour, so the dev runs were repeated on the fixed state. That final state is the one L2 grades.
+
 ## Risks / Trade-offs
 
-- [The cue set has false negatives and positives] → Warning-class only, false positives acknowledged by spec. Excluding it/es and "this study" chooses missed attribution over laundered claims; the fix the warning names ("their …") is always available.
+- [The cue set has false negatives and positives] → Warning-class only, false positives acknowledged by spec. Excluding it/es and the thesis's own names chooses missed attribution over laundered claims; the fix the warning names ("their …") is always available.
+- [German `sie` is also the pronoun for feminine nouns, and the thesis's own work often is one: die Arbeit, die Analyse] → Accepted. "Sie erreichte 95 %" after a sentence whose subject is the thesis's own analysis passes as attributed. English "they" has the same ambiguity for plural nouns. Dropping bare `sie` would refuse the most natural German continuation. The precondition, a cited sentence whose subject is the thesis's own feminine noun, is narrow.
+- [A writing pass that saves a stray or backup `.md` beside an in-place repair is judged on the new file (`select_draft` prefers new files)] → Accepted and unobserved. The write skill keeps the filename. Reading `ws/<proposal>` directly would misjudge a model that writes its revision to a new file instead.
+- [A program requires a citation on every sentence] → The write skill places the citation-scope drafting rule among its strong defaults that a workspace `guidelines.md` may override, and the binding warning yields to such a workspace. The first cut had put it under "non-negotiable"; the review caught it.
 - [German verb-second order defeats an opening-only cue] → The three-word window covers "Zudem zeigen sie" and "In ihrer Auswertung". German behaviour is L0-tested, not model-measured.
 - [Duplicated splitting in harness and check drifts] → Shared crafted inputs in L0 tests for both.
 - [The repair task rewards keeping every key, but a writer could legitimately drop a reference] → f27 is built so that every reference supports a claim, so dropping one is never correct here (stated in its oracle).

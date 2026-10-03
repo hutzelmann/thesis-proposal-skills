@@ -30,8 +30,8 @@
 ## 5. Ladder (only if 4.3 fails — routed by failing criterion)
 
 - [x] 5.1 If repetition fails (triggered: repair sonnet 1/3): amend the change via `openspec-update-change` (skill-check "Repeated citations reported as a warning", guidance-model "Citation scope" amendment), add the `citation-repeated` warning to `check.py` with L0 tests for every spec scenario and the rule-id tests; recalibrate f27's oracle (trips) and verify every other oracle still passes (pass case); sync; re-run the L1 dev runs on a frozen snapshot and record them in `measurement.md`
-- [ ] 5.2 If scope or synthesis fails on sonnet, or repetition persists after 5.1 (triggered: haiku repair 7 repeats with the warning shown): add the skill-write delta "Citation scope in writing passes", the pinned drafting clause and the binding-warning paragraph to `skills/proposal-write/SKILL.md` (two pins under `tests/unit/data/pinned_sentences/`), verify `uv run poe test`, commit, re-run all 12 dev runs on a frozen snapshot and record them
-- [ ] 5.3 If the bar still fails after 5.2: stop escalating and record the outcome as it stands in `measurement.md`
+- [x] 5.2 If scope or synthesis fails on sonnet, or repetition persists after 5.1 (triggered: haiku repair 7 repeats with the warning shown): add the skill-write delta "Citation scope in writing passes", the pinned drafting clause and the binding-warning paragraph to `skills/proposal-write/SKILL.md` (two pins under `tests/unit/data/pinned_sentences/`), verify `uv run poe test`, commit, re-run all 12 dev runs on a frozen snapshot and record them
+- [x] 5.3 If the bar still fails after 5.2: stop escalating and record the outcome as it stands in `measurement.md`
 
 ## 6. Review and close
 

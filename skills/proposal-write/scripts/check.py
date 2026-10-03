@@ -1240,55 +1240,121 @@ PRESENT_PASSIVE = {
 }
 
 
-# Back-references that carry a cited sentence's attribution into the next one,
-# matched among a sentence's first words: the guidance asks for exactly these
-# instead of a repeated citation. Deliberately absent: `it`/`es`, whose
-# expletive use ("It was shown", "Es zeigte sich") would launder a claim, and
-# `this study`/`diese Arbeit`, which proposals use for the thesis itself.
+# Back-references that carry a cited sentence's attribution into the next one.
+# The guidance asks for exactly these instead of a repeated citation, and the
+# cue has to open the sentence (see `continues_attribution`). Deliberately
+# absent: `it`/`es`, whose expletive use ("It was shown", "Es zeigte sich")
+# would launder a claim, and every name a proposal gives the thesis itself —
+# `this study`, `diese Arbeit`, and `the study`/`die Studie`, which the
+# guidance prescribes for the thesis's own work.
 CONTINUATION_CUES = {
-    "en": r"(they|their|both|the authors|these authors|the study|the same study|"
-          r"this approach|the approach)\b",
-    "de": r"(sie|ihre?[mnrs]?|deren|dessen|beide|(?:die|den|der) autor(?:en|innen|:innen)|"
-          r"(?:die|der) studie|dieser ansatz)\b",
+    "en": r"(?:they|their|both|the authors|these authors|the same study)\b",
+    "de": r"(?:sie|ihre?[mnrs]?|deren|dessen|beide|(?:die|den|der) autor(?:en|innen|:innen))\b",
 }
-CUE_WINDOW = 3
-# a line that starts a new block even without a blank line before it
-BLOCK_START = re.compile(r"\s*(#|[-*+]\s|\d+[.)]\s|\|)")
-# a period after one of these does not end the sentence; a lone lowercase
-# letter covers the first half of `z. B.`, `d. h.` and `u. a.`
+# after a preposition only a possessive cue opens the sentence: "In their
+# evaluation …", "Laut den Autoren …" — never "In both settings we …"
+POSSESSIVE_CUES = {
+    "en": r"(?:in|for|from|across|on|under|with|according to)\s+"
+          r"(?:their|the authors|these authors)\b",
+    "de": r"(?:in|bei|nach|laut|gemäß|mit|aus|unter)\s+(?:ihre?[mnrs]?|deren|dessen|"
+          r"(?:den|der) autor(?:en|innen|:innen))\b",
+}
+FIRST_PERSON = {
+    "en": r"\b(?:we|our|ours|us)\b",
+    "de": r"\b(?:wir|unser\w*|uns)\b",
+}
+LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
+# One regex walks a line for brackets and for sentence ends at once: a period
+# inside `[@key, S. 12]` is a locator, never a sentence end.
+SENTENCE_END = re.compile(r"[\[\]]|(?<=[.!?])\s+")
+# a period after one of these does not end the sentence (`S.`/`p.` only as the
+# capital resp. small locator letter, so a sentence ending in "is." stays one)
 ABBREVIATION = re.compile(
-    r"(?:\bet al|\be\.g|\bi\.e|\bcf|\bvs|\bz\. ?B|\bd\. ?h|\bu\. ?a|\bvgl|\bbzw|\bca|"
-    r"\bFig|\bSec|\bEq|(?:^|\s)[a-zäöü])\.$"
+    r"(?:\b(?i:et al|e\.g|i\.e|cf|vs|z\. ?b|d\. ?h|u\. ?a|vgl|bzw|ca|fig|sec|eq|abb|kap|"
+    r"tab|nr|pp)|\b[Sp])\.$"
+)
+# the first half of `z. B.`, `d. h.`, `u. a.` — joined only to a next piece
+# that is itself one letter and a period
+ABBREVIATION_HALF = re.compile(r"\b(?i:[zdu])\.$")
+# German ordinals after an article or preposition: "im 2. Schritt", "am 3. Mai"
+ORDINAL = re.compile(
+    r"\b(?i:im|am|zum|vom|beim|der|die|das|den|dem|des|ein|eine|einem|einen|einer|ab|bis|"
+    r"seit)\s+\d{1,3}\.$"
 )
 
 
+def joins_previous(before: str, piece: str) -> bool:
+    """A sentence-end match that only closed an abbreviation or an ordinal."""
+    return bool(ABBREVIATION.search(before) or ORDINAL.search(before)
+                or (ABBREVIATION_HALF.search(before) and re.match(r"[A-Za-z]\.", piece)))
+
+
+def append_piece(spans: list[tuple[int, str]], start: int, piece: str) -> None:
+    piece = piece.strip()
+    if not piece:
+        return
+    if spans and joins_previous(spans[-1][1], piece):
+        spans[-1] = (spans[-1][0], f"{spans[-1][1]} {piece}")
+    else:
+        spans.append((start, piece))
+
+
+def sentence_spans(text: str) -> list[tuple[int, str]]:
+    """(offset, sentence) for every sentence of a text: split at sentence
+    punctuation outside citation brackets, never inside an abbreviation."""
+    spans: list[tuple[int, str]] = []
+    start = depth = 0
+    for m in SENTENCE_END.finditer(text):
+        if m.group(0) == "[":
+            depth += 1
+        elif m.group(0) == "]":
+            depth = max(0, depth - 1)
+        elif not depth:
+            append_piece(spans, start, text[start:m.start()])
+            start = m.end()
+    append_piece(spans, start, text[start:])
+    return spans
+
+
 def split_sentences(line: str) -> list[str]:
-    """One line's sentences; a period after an abbreviation does not split."""
-    out: list[str] = []
-    for piece in re.split(r"(?<=[.!?])\s+", line.strip()):
-        if out and ABBREVIATION.search(out[-1]):
-            out[-1] = f"{out[-1]} {piece}"
-        elif piece:
-            out.append(piece)
-    return out
+    return [sentence for _, sentence in sentence_spans(line.strip())]
 
 
-def prose_blocks(body: str) -> list[list[tuple[str, int]]]:
+def segment_sentences(segment: list[tuple[int, str]]) -> list[tuple[str, int]]:
+    """A run of lines read as one text, so a wrapped sentence stays one; each
+    sentence reports the line it starts on."""
+    text, starts = "", []
+    for lineno, part in segment:
+        starts.append((len(text), lineno))
+        text += part + " "
+    return [(sentence, max(line for at, line in starts if at <= offset))
+            for offset, sentence in sentence_spans(text)]
+
+
+def prose_blocks(body: str, list_items_break: bool = True) -> list[list[tuple[str, int]]]:
     """Blocks of (sentence, line number). A blank line or a heading ends a
-    block, and a list item or table row starts one — the scope a citation's
-    attribution may run on in."""
+    block and a table row is a block of its own. A list item starts a block
+    for attribution runs; for the repetition comparison (`list_items_break`
+    false) consecutive items stay one block, so bullets do not hide repeats,
+    while each item still ends its own last sentence."""
     blocks: list[list[tuple[str, int]]] = []
-    current: list[tuple[str, int]] = []
+    segments: list[list[tuple[int, str]]] = []
     for lineno, line in enumerate(mask_code(body).split("\n"), start=1):
-        if not line.strip() or BLOCK_START.match(line):
-            if current:
-                blocks.append(current)
-            current = []
-            if not line.strip() or line.lstrip().startswith("#"):
+        text = line.strip()
+        item = bool(LIST_ITEM.match(line))
+        if not text or text.startswith(("#", "|")) or (item and list_items_break):
+            if segments:
+                blocks.append([s for seg in segments for s in segment_sentences(seg)])
+            segments = []
+            if not text or text.startswith("#"):
                 continue
-        current.extend((sentence, lineno) for sentence in split_sentences(line))
-    if current:
-        blocks.append(current)
+        if item or text.startswith("|") or not segments:
+            segments.append([])
+        segments[-1].append((lineno, text))
+        if text.startswith("|"):
+            blocks.append(segment_sentences(segments.pop()))
+    if segments:
+        blocks.append([s for seg in segments for s in segment_sentences(seg)])
     return blocks
 
 
@@ -1297,7 +1363,7 @@ def citation_keys(text: str) -> frozenset[str]:
 
 
 def rule_repeated_citations(ctx: Context) -> list[Finding]:
-    """The same references cited on adjacent sentences of one block.
+    """The same references cited on adjacent sentences of one paragraph or list.
 
     The guidance asks for one citation per continuous use, carried on in
     words. A sentence citing a different set is a change of source, which the
@@ -1305,7 +1371,7 @@ def rule_repeated_citations(ctx: Context) -> list[Finding]:
     follow-up still reads as attributed is not judged here.
     """
     out = []
-    for block in prose_blocks(ctx.body):
+    for block in prose_blocks(ctx.body, list_items_break=False):
         before: frozenset[str] = frozenset()
         for sentence, lineno in block:
             keys = citation_keys(sentence)
@@ -1321,10 +1387,20 @@ def rule_repeated_citations(ctx: Context) -> list[Finding]:
 
 
 def continues_attribution(sentence: str, lang: str) -> bool:
-    """The sentence opens with a back-reference to a cited work or its authors."""
-    words = [w.strip(",;:()\"'„“”") for w in sentence.lower().split()]
+    """The sentence opens with a back-reference to a cited work or its authors:
+    the cue first, after one connective set off by a comma ("However, they"),
+    after a preposition as a possessive ("In their evaluation"), or — German
+    verb-second order — as the subject after the finite verb ("Zudem zeigen
+    sie"). A cue in object position does not open a sentence, and a sentence in
+    the first person is the thesis speaking whatever else it mentions."""
+    text = sentence.lower().lstrip("\"'„“”( ")
+    if re.search(FIRST_PERSON[lang], text):
+        return False
     cue = CONTINUATION_CUES[lang]
-    return any(re.match(cue, " ".join(words[i:])) for i in range(min(CUE_WINDOW, len(words))))
+    openers = [cue, rf"\w+,\s+{cue}", POSSESSIVE_CUES[lang]]
+    if lang == "de":
+        openers.append(r"\w+\s+\w+\s+(?:sie|beide)\b")
+    return any(re.match(opener, text) for opener in openers)
 
 
 def result_claim(sentence: str, lang: str) -> re.Match | None:

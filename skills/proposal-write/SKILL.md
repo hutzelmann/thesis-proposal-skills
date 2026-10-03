@@ -26,12 +26,12 @@ Non-negotiable regardless of overrides:
 
 - Cite only keys that exist in the proposal's `references` block. Never invent a publication. Missing support → `[TODO: add key reference for …]`.
 - Pick the citation form by grammatical role: `@key` (renders `Smith et al. [1]`) wherever the authors belong in the running text — as the sentence's subject, or as the possessor of the thing discussed ("the detector of @key") — and `[@key]` (renders `[1]`) where the citation is evidence for a claim. Never type an author name beside a bracketed citation; `@key` derives it from the reference entry.
-- Draft prior work concept-first: group the sources by the claim they support and compare them. Cite each source once per continuous use — open the run with `@key`, let the sentences after it refer back in words ("they", "their evaluation"), and cite again only at a new paragraph or a change of source.
 - Never fabricate facts the user did not provide. Uncertain statement → keep it out or mark `[TODO: verify …]`. Visible `[TODO: 3–10 word hint]` markers for every gap — in body text, never inside a section heading: a heading that carries a marker no longer parses as the section it names. The leading `# <title>` line and the subtitle paragraph are not section headings and may carry a marker for an unsettled title or degree level.
 
 Strong defaults (workspace `guidelines.md` may override them):
 
 - One sentence per line in the source file.
+- Draft prior work concept-first: group the sources by the claim they support and compare them. Cite each source once per continuous use — open the run with `@key`, let the sentences after it refer back in words ("they", "their evaluation"), and cite again at a new paragraph, after another source or a claim of the thesis's own, and wherever a sentence would otherwise read as the thesis's own claim.
 - Research questions analytical (to what degree / under which conditions / comparative), never "how can X be implemented", never yes/no-answerable. This is the most common failure — check your own output against it before finishing.
 
 ## The notes file
@@ -101,7 +101,7 @@ One finding is resolved by removal rather than in spite of it:
 
 - **An uncited reference.** `reference-uncited` has exactly two answers, and which one applies turns on whether the proposal has a claim that needs the entry. It does → cite it there. It does not → delete the entry from `references:` and record it in the notes file's Excluded Literature with a one-line reason, or say so in chat when there is no notes file (never create one for this). That deletion is the finding resolved, not silenced — the sentence above is about findings you judge wrong, and this one is right. What you must not do is write a sentence so that the entry is cited: a sentence whose job is to carry a citation fails the guidelines' necessity test, and it is how a neighbouring field's vocabulary ends up in a proposal that has no use for it. A reference the literature search merged is not thereby owed a place in the text.
 
-One warning is binding: **a repeated citation.** `citation-repeated` marks a sentence that cites what the sentence before it already cited. Resolve every one before you report — open the run with `@key` and refer back in words, or merge the sentences into the comparison the paragraph is for. Never resolve it by deleting the citation or dropping the source: a sentence that loses its citation without a back-reference reads as the thesis's own claim.
+One warning is binding: **a repeated citation.** `citation-repeated` marks a sentence that cites what the sentence before it already cited. Resolve every one in text this pass wrote or was asked to improve before you report — open the run with `@key` and refer back in words, or merge the sentences into the comparison the paragraph is for. In sections a refinement did not touch, report the findings as suggestions, as the density pass does; where the workspace guidelines require a citation on every sentence, the warning is not binding at all. Never resolve it by deleting the citation or dropping the source: a sentence that loses its citation without a back-reference reads as the thesis's own claim.
 
 ## Finishing a pass
 

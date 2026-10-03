@@ -46,9 +46,9 @@ EXPECTED_OUTPUTS = {
         "by theme."
     ),
     "write_repair_citations": (
-        "The over-citing draft revised so that no source is cited on consecutive "
-        "sentences, every source is still cited, and each continuation refers "
-        "back to its source in words."
+        "The over-citing draft revised so that no sentence repeats exactly the "
+        "citations of the sentence before it, every source is still cited, and "
+        "each continuation refers back to its source in words."
     ),
     "review_fixture": (
         "An enumerated review file beside the proposal, finding the seeded "

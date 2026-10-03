@@ -6,8 +6,10 @@ No sandbox, no model calls — unit-testable and runner-agnostic.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import sys
 import tomllib
 from itertools import pairwise
 from pathlib import Path
@@ -510,73 +512,34 @@ def verdict_offtopic_reference(after: str | None,
 # ---------- citation practice -------------------------------------------------
 #
 # The writing tasks over w08 and f27 measure whether a draft cites one source
-# on consecutive sentences. The splitting mirrors check.py's `prose_blocks` and
-# its citation-key pattern instead of importing them, because neither Inspect
-# nor the dev runner puts skill scripts on the path; the two are pinned to each
-# other by shared inputs in tests/unit/test_citation_practice.py.
+# on consecutive sentences. Sentence and block boundaries are the check
+# script's own, loaded from its file: the verdict and the `citation-repeated`
+# warning a writer sees must never disagree about what a sentence is. Both
+# runners judge on the host, where the script is a file away; neither puts the
+# skill scripts on the import path, hence the explicit load.
 
-CITATION_KEY = re.compile(r"(?<![\w.\\])@([A-Za-z][\w:.-]*)")
-# a line that starts a new block even without a blank line before it
-BLOCK_START = re.compile(r"\s*(#|[-*+]\s|\d+[.)]\s|\|)")
-SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
-# a period after one of these does not end the sentence; a lone lowercase
-# letter covers the first half of `z. B.`, `d. h.` and `u. a.`
-ABBREVIATION = re.compile(
-    r"(?:\bet al|\be\.g|\bi\.e|\bcf|\bvs|\bz\. ?B|\bd\. ?h|\bu\. ?a|\bvgl|\bbzw|\bca|"
-    r"\bFig|\bSec|\bEq|(?:^|\s)[a-zäöü])\.$"
-)
+
+def _load_check_script():
+    path = Path(__file__).resolve().parent.parent / "skills/proposal-check/scripts/check.py"
+    spec = importlib.util.spec_from_file_location("proposal_check_script", path)
+    module = importlib.util.module_from_spec(spec)
+    # the script's dataclasses resolve their annotations through sys.modules
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+CHECK_SCRIPT = _load_check_script()
 
 Sentence = tuple[int, str, frozenset[str]]
 
 
-def split_sentences(line: str) -> list[str]:
-    """One line's sentences; a period after an abbreviation does not split."""
-    out: list[str] = []
-    for piece in SENTENCE_END.split(line.strip()):
-        if out and ABBREVIATION.search(out[-1]):
-            out[-1] = f"{out[-1]} {piece}"
-        elif piece:
-            out.append(piece)
-    return out
-
-
-def _prose_lines(text: str):
-    """(line number, line) of the body with fences blanked and code spans masked."""
-    lines = text.rstrip("\n").split("\n")
-    delim = [i for i, line in enumerate(lines) if re.fullmatch(r"---\s*", line)]
-    if len(delim) >= 2 and delim[-1] == len(lines) - 1:
-        lines = lines[:delim[-2]]
-    fence = ""
-    for lineno, line in enumerate(lines, start=1):
-        if m := re.match(r"\s*(`{3,}|~{3,})", line):
-            marker = m.group(1)[0]
-            fence = "" if fence == marker else (fence or marker)
-            yield lineno, ""
-        elif fence:
-            yield lineno, ""
-        else:
-            yield lineno, re.sub(r"(`+)[^`]*\1", lambda c: " " * len(c.group(0)), line)
-
-
 def citation_blocks(text: str) -> list[list[Sentence]]:
-    """Prose blocks of (line, sentence, cited keys). A blank line or heading
-    ends a block and a list item or table row starts one — the boundaries
-    check.py's `prose_blocks` uses for attribution runs."""
-    blocks: list[list[Sentence]] = []
-    current: list[Sentence] = []
-    for lineno, line in _prose_lines(text):
-        if not line.strip() or BLOCK_START.match(line):
-            if current:
-                blocks.append(current)
-            current = []
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-        for sentence in split_sentences(line):
-            keys = frozenset(m.group(1).rstrip(".,;:") for m in CITATION_KEY.finditer(sentence))
-            current.append((lineno, sentence, keys))
-    if current:
-        blocks.append(current)
-    return blocks
+    """Blocks of (line, sentence, cited keys), as the check's repetition rule
+    sees them: a paragraph, or consecutive items of one list."""
+    body, _ = CHECK_SCRIPT.split_proposal(text)
+    return [[(line, sentence, CHECK_SCRIPT.citation_keys(sentence)) for sentence, line in block]
+            for block in CHECK_SCRIPT.prose_blocks(body, list_items_break=False)]
 
 
 def repeated_citation_runs(text: str) -> list[tuple[int, tuple[str, ...]]]:
@@ -644,9 +607,9 @@ RICH_SEED_MIN_CITED = 6
 
 def verdict_cited_draft(text: str | None, check_output: str,
                         min_cited: int = RICH_SEED_MIN_CITED) -> tuple[bool, str]:
-    """A draft from a reference-rich seed is mechanically sound and cites no
-    source on consecutive sentences, with enough cited sentences that it had
-    the chance to."""
+    """A draft from a reference-rich seed is mechanically sound, no sentence
+    repeats exactly the citations of the sentence before it, and enough
+    sentences cite that it had the chance to."""
     drafted, why = verdict_draft(text, check_output)
     cited, detail = verdict_citation_runs(text, min_cited)
     return drafted and cited, f"{why}; {detail}"
@@ -655,8 +618,8 @@ def verdict_cited_draft(text: str | None, check_output: str,
 def verdict_repaired_draft(before: str, after: str | None,
                            check_output: str) -> tuple[bool, str]:
     """A writing pass over an over-citing draft leaves it mechanically sound,
-    with no source cited on consecutive sentences and every source still
-    cited."""
+    no sentence repeating exactly the citations of the sentence before it,
+    and every source still cited."""
     drafted, why = verdict_draft(after, check_output)
     repaired, detail = verdict_citation_repair(before, after)
     return drafted and repaired, f"{why}; {detail}"

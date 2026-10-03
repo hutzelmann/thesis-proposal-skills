@@ -4,11 +4,9 @@ from pathlib import Path
 
 import check
 import claude_runner
+import l1_checks
 from l1_checks import (
-    citation_blocks,
-    cited_keys,
     repeated_citation_runs,
-    split_sentences,
     verdict_citation_repair,
     verdict_citation_runs,
     verdict_cited_draft,
@@ -75,16 +73,17 @@ def test_paragraph_break_resets_the_comparison():
     assert verdict_citation_runs(text)[0]
 
 
-def test_list_items_and_headings_start_new_blocks():
+def test_bullets_do_not_hide_a_repetition_but_headings_reset():
+    """Turning over-cited sentences into bullet items must not pass the task;
+    a heading still starts a fresh comparison."""
     text = proposal(
         "Flaky tests are common [@Alder24Flaky].\n"
-        "- Timing is the main cause [@Alder24Flaky].\n"
+        "- Timing is the main cause [@Alder24Flaky]\n"
+        "- Network access is the second [@Alder24Flaky]\n"
         "## Contribution to the State-of-the-Art\n"
         "Reruns hide them [@Alder24Flaky]."
     )
-    cited_blocks = [b for b in citation_blocks(text) if any(keys for _, _, keys in b)]
-    assert len(cited_blocks) == 3
-    assert verdict_citation_runs(text)[0]
+    assert [line for line, _ in repeated_citation_runs(text)] == [8, 9]
 
 
 def test_uncited_sentence_between_breaks_adjacency():
@@ -96,12 +95,13 @@ def test_uncited_sentence_between_breaks_adjacency():
     assert verdict_citation_runs(text)[0]
 
 
-def test_abbreviations_do_not_split_sentences():
-    assert split_sentences("Detectors, e.g. DDM, use error rates [@Gama04Drift].") == [
-        "Detectors, e.g. DDM, use error rates [@Gama04Drift]."]
-    assert split_sentences("Ansätze, z. B. Wiederholungen, verdecken das [@Alder24Flaky].") == [
-        "Ansätze, z. B. Wiederholungen, verdecken das [@Alder24Flaky]."]
-    assert len(split_sentences("One [@a]. Two [@b].")) == 2
+def test_locators_abbreviations_and_wrapped_lines_keep_a_repetition_visible():
+    text = proposal(
+        "Rivera et al. report flaky reruns [@Alder24Flaky, p. 3].\n"
+        "Most reruns, e.g. those on CI, hide\n"
+        "timing faults [@Alder24Flaky, S. 4]."
+    )
+    assert [line for line, _ in repeated_citation_runs(text)] == [8]
 
 
 def test_metadata_block_and_code_are_ignored():
@@ -284,40 +284,19 @@ def test_verdict_cited_draft_refuses_a_draft_that_barely_cites():
     assert "proves nothing" in why
 
 
-PARITY_INPUTS = [
-    F27,
-    W08,
-    proposal(
-        "Detectors, e.g. DDM, use error rates [@Gama04Drift]. Ansätze, z. B. Wiederholungen, "
-        "verdecken das [@Alder24Flaky].\n"
-        "A second sentence follows. A third one too!\n"
-        "- A list item [@a].\n"
-        "  continues the item [@a].\n"
-        "1. A numbered item.\n"
-        "| a table row [@b] |\n"
-        "| another row [@b] |\n"
-        "```\nfenced @Code. still fenced.\n```\n"
-        "Inline `@Override` code. After it [@c]."
-    ),
-]
+def test_verdict_splits_with_the_shipped_check_script():
+    """The verdict and the `citation-repeated` warning a writer sees share one
+    implementation: l1_checks loads the sync source of check.py by path."""
+    shipped = Path(__file__).resolve().parents[2] / "skills/proposal-check/scripts/check.py"
+    assert Path(l1_checks.CHECK_SCRIPT.__file__).resolve() == shipped
 
 
-def test_block_splitting_mirrors_the_check_script():
-    """l1_checks cannot import check.py at runtime, so the two splitters are
-    pinned to each other here: same blocks, same sentences, same lines."""
-    for text in PARITY_INPUTS:
-        body, _ = check.split_proposal(text)
-        from_check = [[(line, s) for s, line in block] for block in check.prose_blocks(body)]
-        from_l1 = [[(line, s) for line, s, _ in block] for block in citation_blocks(text)]
-        assert from_l1 == from_check
-
-
-def test_citation_keys_mirror_the_check_script():
-    for text in PARITY_INPUTS:
-        body, _ = check.split_proposal(text)
-        assert cited_keys(text) == {
-            m.group(1).rstrip(".,;:") for m in check.CITATION_KEY.finditer(check.mask_code(body))
-        }
+def test_verdict_and_warning_agree_on_the_fixtures():
+    for text in (F27, W08, repaired_f27()):
+        body, meta = check.split_proposal(text)
+        warned = check.rule_repeated_citations(
+            check.build_context(body, meta, check.load_structure(None), {}))
+        assert len(warned) == len(repeated_citation_runs(text))
 
 
 def test_verdict_repaired_draft_needs_both_halves():
