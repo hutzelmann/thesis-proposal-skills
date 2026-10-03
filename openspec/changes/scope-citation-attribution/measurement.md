@@ -73,7 +73,7 @@ Totals across all 12 runs:
 - **Haiku ignores the warning.** Its one structurally intact repair still carries seven repeats, so the warning does not reach it. This fits the write skill's contract, where only check errors are binding.
 - **Ladder.** Citation mechanics gate both models (interview Q11) and repetition persists on haiku, so step C is triggered: the sequential ladder continues after B. The structural breakage, which haiku shows in two of three repair runs, stays outside every ladder step.
 
-### After step C (`8013803`), the final state
+### After step C (`8013803`)
 
 | Scenario | Model | L1 per run | Cell |
 |---|---|---|---|
@@ -93,20 +93,44 @@ Totals across all 12 runs:
 
   Each run is therefore a general skill-adherence failure of the cheap tier on a polish request, not a citation-specific one. No wording in this change can repair it, and the ladder ends here as agreed.
 
-### Bar (design D7, item 6), evaluated at the final state
-
-| Criterion | Result |
-|---|---|
-| L1 solid on both models, both scenarios | **Not met** for haiku × repair (0/3). Met for the other three cells. |
-| L1 solid on the capable tier | Met: sonnet 3/3 on both scenarios. |
-| L2 citation scope (both models) and synthesis (sonnet) | Pending: stop 1, cost approval. |
-| The user's eye on before/after samples | Pending: stop 2. |
-
 Escalation is exhausted (A → B → C). Per the interview, the pipeline stops escalating and reports the haiku repair cell as it stands.
 
 ### Re-score after the review fixes
 
 The review fixes (`142d970`) changed the verdict's splitting: sentences across wrapped lines, locators inside brackets, comparison across consecutive list items, and the shared check-script implementation. Re-scoring all 48 kept workspaces of the four states above with the fixed verdict reproduces every number in this document unchanged. None of the measured drafts hard-wrapped, used locators, or moved a repetition into bullets.
+
+### After the review fixes (`142d970`)
+
+L1 cells:
+
+| Scenario | sonnet | haiku |
+|---|---|---|
+| repair | 3/3 | 0/3, all structural (2, 6, 0 repeats) |
+| rich seed | 3/3 | 3/3 |
+
+One sonnet repair drew a **hindsight warning on correct prose**. A mid-sentence reporting clause ("Most projects, they report, …"), a referential "It uses …", and "According to these studies, …" each broke the run under the positional cues alone. The correctly cued sentence after them then warned. A warning like that pushes a writer back to re-citing, so it is a defect of this change, fixed in `326211b` (design D2).
+
+### Shipped state (`326211b`), the final measurement
+
+| Scenario | Model | L1 per run | Cell |
+|---|---|---|---|
+| repair | sonnet | ✓ ✓ ✓ | **3/3 solid** |
+| repair | haiku | ✗(structure, 5 repeats) ✗(structure, 5) ✗(structure, 9) | **0/3** |
+| rich seed | sonnet | ✓ ✓ ✓ | **3/3 solid** |
+| rich seed | haiku | ✓ ✓ ✓ | **3/3 solid** |
+
+Each sonnet repair removes every repetition, keeps all seven sources, and carries the attribution with back-references. The old check would have flagged all three as hindsight leakage; the shipped check flags none.
+
+Across all 72 kept drafts the shipped check emits **no** hindsight warning. The before-state check flagged 14 of them, every one a back-reference continuation the guidance asks for.
+
+### Bar (design D7, item 6), evaluated at the shipped state
+
+| Criterion | Result |
+|---|---|
+| L1 solid on both models, both scenarios | **Not met** for haiku × repair (0/3): structural breakage, general skill non-adherence. Met for the other three cells. |
+| L1 solid on the capable tier | **Met**: sonnet 3/3 on both scenarios, in four consecutive states (B, C, review fixes, shipped). |
+| L2 citation scope (both models) and synthesis (sonnet) | Pending: stop 1, cost approval. |
+| The user's eye on before/after samples | Pending: stop 2. |
 
 ### Totals across stages
 
@@ -118,3 +142,86 @@ The review fixes (`142d970`) changed the verdict's splitting: sentences across w
 | after A | 2 | 7 | 12 | 0 |
 | after B | 3 | 9 | 10 | 0 |
 | after C | 3 | 9 | 14 (all in haiku repair) | 0 |
+| review fixes | 3 | 9 | 8 (all in haiku repair) | 0 |
+| shipped | 3 | 9 | 19 (all in haiku repair) | 0 |
+
+From "after B" on, every repetition in every state sits in haiku's structurally broken polishing passes. Sonnet's repairs and both models' drafts from the rich seed carry none.
+
+### Kept workspaces
+
+The kept workspaces are local and ephemeral (`/tmp`, gone at reboot). They are listed so that the re-score and the stop-2 samples stay traceable while they exist.
+
+| State | Scenario | Model | Run | L1 | Produced draft |
+|---|---|---|---|---|---|
+| before | repair | sonnet | 1 | ✓ | `/tmp/devrun-write_repair_citations-bk_v3t8e/dependency-update-breakage.md` |
+| before | repair | sonnet | 2 | ✓ | `/tmp/devrun-write_repair_citations-bdj7bvvg/dependency-update-breakage.md` |
+| before | repair | sonnet | 3 | ✗ | `/tmp/devrun-write_repair_citations-aqww6sn_/dependency-update-breakage.md` |
+| before | repair | haiku | 1 | ✗ | `/tmp/devrun-write_repair_citations-ku_itehy/dependency-update-breakage.md` |
+| before | repair | haiku | 2 | ✗ | `/tmp/devrun-write_repair_citations-9zv5nxca/dependency-update-breakage.md` |
+| before | repair | haiku | 3 | ✗ | `/tmp/devrun-write_repair_citations-c0w001j0/dependency-update-breakage.md` |
+| before | rich_seed | sonnet | 1 | ✗ | `/tmp/devrun-write_rich_seed-nsbrcok1/flaky-test-prediction.md` |
+| before | rich_seed | sonnet | 2 | ✓ | `/tmp/devrun-write_rich_seed-ki09fx8n/flaky-test-prediction.md` |
+| before | rich_seed | sonnet | 3 | ✓ | `/tmp/devrun-write_rich_seed-fb4kvpui/flaky-test-prediction.md` |
+| before | rich_seed | haiku | 1 | ✓ | `/tmp/devrun-write_rich_seed-sfayxyzs/flaky-test-prediction.md` |
+| before | rich_seed | haiku | 2 | ✓ | `/tmp/devrun-write_rich_seed-itorradu/flaky-test-prediction.md` |
+| before | rich_seed | haiku | 3 | ✗ | `/tmp/devrun-write_rich_seed-5v1_07ar/flaky-test-prediction.md` |
+| after A | repair | sonnet | 1 | ✗ | `/tmp/devrun-write_repair_citations-nzsxaiv5/dependency-update-breakage.md` |
+| after A | repair | sonnet | 2 | ✗ | `/tmp/devrun-write_repair_citations-l2vqmper/dependency-update-breakage.md` |
+| after A | repair | sonnet | 3 | ✓ | `/tmp/devrun-write_repair_citations-ahewblca/dependency-update-breakage.md` |
+| after A | repair | haiku | 1 | ✗ | `/tmp/devrun-write_repair_citations-hovxkup3/dependency-update-breakage.md` |
+| after A | repair | haiku | 2 | ✗ | `/tmp/devrun-write_repair_citations-yndh8vam/dependency-update-breakage.md` |
+| after A | repair | haiku | 3 | ✗ | `/tmp/devrun-write_repair_citations-25wz_wcb/dependency-update-breakage.md` |
+| after A | rich_seed | sonnet | 1 | ✓ | `/tmp/devrun-write_rich_seed-3xb3h97o/flaky-test-prediction-2.md` |
+| after A | rich_seed | sonnet | 2 | ✓ | `/tmp/devrun-write_rich_seed-pumgpwxb/flaky-test-prediction.md` |
+| after A | rich_seed | sonnet | 3 | ✓ | `/tmp/devrun-write_rich_seed-xpceh1n7/flaky-test-prediction.md` |
+| after A | rich_seed | haiku | 1 | ✓ | `/tmp/devrun-write_rich_seed-wkbyqf1c/flaky-test-prediction.md` |
+| after A | rich_seed | haiku | 2 | ✓ | `/tmp/devrun-write_rich_seed-53ye10qs/flaky-test-prediction.md` |
+| after A | rich_seed | haiku | 3 | ✓ | `/tmp/devrun-write_rich_seed-2qjv1ziq/flaky-test-prediction.md` |
+| after B | repair | sonnet | 1 | ✓ | `/tmp/devrun-write_repair_citations-eqqx9u3t/dependency-update-breakage.md` |
+| after B | repair | sonnet | 2 | ✓ | `/tmp/devrun-write_repair_citations-qzi3o_bb/dependency-update-breakage.md` |
+| after B | repair | sonnet | 3 | ✓ | `/tmp/devrun-write_repair_citations-6u25oy0j/dependency-update-breakage.md` |
+| after B | repair | haiku | 1 | ✗ | `/tmp/devrun-write_repair_citations-5kubqt67/dependency-update-breakage.md` |
+| after B | repair | haiku | 2 | ✗ | `/tmp/devrun-write_repair_citations-gy7oen5t/dependency-update-breakage.md` |
+| after B | repair | haiku | 3 | ✗ | `/tmp/devrun-write_repair_citations-aq8xht9t/dependency-update-breakage.md` |
+| after B | rich_seed | sonnet | 1 | ✓ | `/tmp/devrun-write_rich_seed-ovtdxat4/flaky-test-prediction.md` |
+| after B | rich_seed | sonnet | 2 | ✓ | `/tmp/devrun-write_rich_seed-wahi4jxs/flaky-test-prediction.md` |
+| after B | rich_seed | sonnet | 3 | ✓ | `/tmp/devrun-write_rich_seed-8c1itucx/flaky-test-prediction.md` |
+| after B | rich_seed | haiku | 1 | ✓ | `/tmp/devrun-write_rich_seed-i_t_d1om/flaky-test-prediction.md` |
+| after B | rich_seed | haiku | 2 | ✓ | `/tmp/devrun-write_rich_seed-h84dgll2/flaky-test-prediction.md` |
+| after B | rich_seed | haiku | 3 | ✓ | `/tmp/devrun-write_rich_seed-zd6ic0pq/flaky-test-prediction.md` |
+| after C | repair | sonnet | 1 | ✓ | `/tmp/devrun-write_repair_citations-u0bkm7hn/dependency-update-breakage.md` |
+| after C | repair | sonnet | 2 | ✓ | `/tmp/devrun-write_repair_citations-j_ybcqhy/dependency-update-breakage.md` |
+| after C | repair | sonnet | 3 | ✓ | `/tmp/devrun-write_repair_citations-fm1hduf1/dependency-update-breakage.md` |
+| after C | repair | haiku | 1 | ✗ | `/tmp/devrun-write_repair_citations-jp9rbapm/dependency-update-breakage.md` |
+| after C | repair | haiku | 2 | ✗ | `/tmp/devrun-write_repair_citations-eh_cq8bv/dependency-update-breakage.md` |
+| after C | repair | haiku | 3 | ✗ | `/tmp/devrun-write_repair_citations-2o3ia1sv/dependency-update-breakage.md` |
+| after C | rich_seed | sonnet | 1 | ✓ | `/tmp/devrun-write_rich_seed-bc8rcenv/flaky-test-prediction-2.md` |
+| after C | rich_seed | sonnet | 2 | ✓ | `/tmp/devrun-write_rich_seed-zck98_ge/flaky-test-prediction.md` |
+| after C | rich_seed | sonnet | 3 | ✓ | `/tmp/devrun-write_rich_seed-fcrqak9x/flaky-test-prediction-2.md` |
+| after C | rich_seed | haiku | 1 | ✓ | `/tmp/devrun-write_rich_seed-08go6sdy/flaky-test-prediction.md` |
+| after C | rich_seed | haiku | 2 | ✓ | `/tmp/devrun-write_rich_seed-ofxgmm13/flaky-test-prediction.md` |
+| after C | rich_seed | haiku | 3 | ✓ | `/tmp/devrun-write_rich_seed-ucaj2p75/flaky-test-prediction.md` |
+| review fixes | repair | sonnet | 1 | ✓ | `/tmp/devrun-write_repair_citations-_xiu8rac/dependency-update-breakage.md` |
+| review fixes | repair | sonnet | 2 | ✓ | `/tmp/devrun-write_repair_citations-d1onsqho/dependency-update-breakage.md` |
+| review fixes | repair | sonnet | 3 | ✓ | `/tmp/devrun-write_repair_citations-bs2ad5pu/dependency-update-breakage.md` |
+| review fixes | repair | haiku | 1 | ✗ | `/tmp/devrun-write_repair_citations-cpqeuz5p/dependency-update-breakage.md` |
+| review fixes | repair | haiku | 2 | ✗ | `/tmp/devrun-write_repair_citations-mmf3_m_z/dependency-update-breakage.md` |
+| review fixes | repair | haiku | 3 | ✗ | `/tmp/devrun-write_repair_citations-o36o5z8y/dependency-update-breakage.md` |
+| review fixes | rich_seed | sonnet | 1 | ✓ | `/tmp/devrun-write_rich_seed-u2mj2zq_/flaky-test-prediction-2.md` |
+| review fixes | rich_seed | sonnet | 2 | ✓ | `/tmp/devrun-write_rich_seed-8n7nyx97/flaky-test-prediction.md` |
+| review fixes | rich_seed | sonnet | 3 | ✓ | `/tmp/devrun-write_rich_seed-ipeml77d/flaky-test-prediction.md` |
+| review fixes | rich_seed | haiku | 1 | ✓ | `/tmp/devrun-write_rich_seed-mo3om8np/flaky-test-prediction.md` |
+| review fixes | rich_seed | haiku | 2 | ✓ | `/tmp/devrun-write_rich_seed-jqi5p53d/flaky-test-prediction.md` |
+| review fixes | rich_seed | haiku | 3 | ✓ | `/tmp/devrun-write_rich_seed-0qcl10o3/flaky-test-prediction.md` |
+| shipped | repair | sonnet | 1 | ✓ | `/tmp/devrun-write_repair_citations-qmimmsb7/dependency-update-breakage.md` |
+| shipped | repair | sonnet | 2 | ✓ | `/tmp/devrun-write_repair_citations-62viwrrf/dependency-update-breakage.md` |
+| shipped | repair | sonnet | 3 | ✓ | `/tmp/devrun-write_repair_citations-rf4h1w_u/dependency-update-breakage.md` |
+| shipped | repair | haiku | 1 | ✗ | `/tmp/devrun-write_repair_citations-626l98vw/dependency-update-breakage.md` |
+| shipped | repair | haiku | 2 | ✗ | `/tmp/devrun-write_repair_citations-aro1te75/dependency-update-breakage.md` |
+| shipped | repair | haiku | 3 | ✗ | `/tmp/devrun-write_repair_citations-70q5bsri/dependency-update-breakage.md` |
+| shipped | rich_seed | sonnet | 1 | ✓ | `/tmp/devrun-write_rich_seed-zovblhh2/flaky-test-prediction.md` |
+| shipped | rich_seed | sonnet | 2 | ✓ | `/tmp/devrun-write_rich_seed-2_cyprja/flaky-test-prediction.md` |
+| shipped | rich_seed | sonnet | 3 | ✓ | `/tmp/devrun-write_rich_seed-9sbl102k/flaky-test-prediction.md` |
+| shipped | rich_seed | haiku | 1 | ✓ | `/tmp/devrun-write_rich_seed-xvfsblkf/flaky-test-prediction.md` |
+| shipped | rich_seed | haiku | 2 | ✓ | `/tmp/devrun-write_rich_seed-0ll2aa07/flaky-test-prediction.md` |
+| shipped | rich_seed | haiku | 3 | ✓ | `/tmp/devrun-write_rich_seed-y03gt7uy/flaky-test-prediction.md` |
