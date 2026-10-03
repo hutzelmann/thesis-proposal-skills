@@ -1242,22 +1242,36 @@ PRESENT_PASSIVE = {
 
 # Back-references that carry a cited sentence's attribution into the next one.
 # The guidance asks for exactly these instead of a repeated citation, and the
-# cue has to open the sentence (see `continues_attribution`). Deliberately
-# absent: `it`/`es`, whose expletive use ("It was shown", "Es zeigte sich")
-# would launder a claim, and every name a proposal gives the thesis itself —
-# `this study`, `diese Arbeit`, and `the study`/`die Studie`, which the
-# guidance prescribes for the thesis's own work.
+# cue has to open the sentence (see `continues_attribution`). `it` counts
+# unless an expletive construction follows ("It was shown …" would launder a
+# claim); German `es` stays out, being expletive far more often than not.
+# Deliberately absent: every name a proposal gives the thesis itself — `this
+# study`, `diese Arbeit`, and `the study`/`die Studie`, which the guidance
+# prescribes for the thesis's own work. Plural "these studies" cannot be it.
+EXPLETIVE = (r"(?:is|are|was|were|has been|had been|seems|seemed|appears|appeared|turns out|"
+             r"turned out|remains|remained|follows|followed|(?:can|could|should|must|may|"
+             r"might|will|would) be)")
 CONTINUATION_CUES = {
-    "en": r"(?:they|their|both|the authors|these authors|the same study)\b",
-    "de": r"(?:sie|ihre?[mnrs]?|deren|dessen|beide|(?:die|den|der) autor(?:en|innen|:innen))\b",
+    "en": rf"(?:they|their|its|it\b(?!\s+{EXPLETIVE}\b)|both studies|both|these studies|"
+          r"the authors|these authors|the same study)\b",
+    "de": r"(?:sie|ihre?[mnrs]?|deren|dessen|sein(?:e[mnrs]?)?|beide studien|beide|"
+          r"diese studien|(?:die|den|der) autor(?:en|innen|:innen))\b",
+}
+# a reporting clause naming the cited authors attributes a sentence wherever
+# it stands: "Most projects, they report, merge …", "…, so die Autoren."
+REPORTING_CLAUSE = {
+    "en": r"\b(?:they|the authors|these authors)\s+(?:report|reported|find|found|show|showed|"
+          r"argue|argued|note|noted|observe|observed|conclude|concluded|state|stated)\b",
+    "de": r"\b(?:so die autor(?:en|innen|:innen)|(?:ihnen|den autor(?:en|innen|:innen)) zufolge|"
+          r"(?:berichten|zeigen|argumentieren|folgern) sie)\b",
 }
 # after a preposition only a possessive cue opens the sentence: "In their
 # evaluation …", "Laut den Autoren …" — never "In both settings we …"
 POSSESSIVE_CUES = {
     "en": r"(?:in|for|from|across|on|under|with|according to)\s+"
-          r"(?:their|the authors|these authors)\b",
+          r"(?:their|its|the authors|these authors|these studies|both studies)\b",
     "de": r"(?:in|bei|nach|laut|gemäß|mit|aus|unter)\s+(?:ihre?[mnrs]?|deren|dessen|"
-          r"(?:den|der) autor(?:en|innen|:innen))\b",
+          r"seine[mnrs]?|(?:den|der) autor(?:en|innen|:innen)|diesen studien|beiden studien)\b",
 }
 FIRST_PERSON = {
     "en": r"\b(?:we|our|ours|us)\b",
@@ -1396,6 +1410,8 @@ def continues_attribution(sentence: str, lang: str) -> bool:
     text = sentence.lower().lstrip("\"'„“”( ")
     if re.search(FIRST_PERSON[lang], text):
         return False
+    if re.search(REPORTING_CLAUSE[lang], text):
+        return True
     cue = CONTINUATION_CUES[lang]
     openers = [cue, rf"\w+,\s+{cue}", POSSESSIVE_CUES[lang]]
     if lang == "de":

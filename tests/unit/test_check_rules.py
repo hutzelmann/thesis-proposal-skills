@@ -609,7 +609,7 @@ def test_repeated_citation_rule_reports_each_repeating_sentence():
     "We outperformed their baseline by 20 %.",
     "Unlike their approach, we reduced reruns by 30 %.",
     "In both settings the prototype reduced water use by 25 %.",
-    "It outperformed their scheduler by 20 %.",
+    "It was shown that their scheduler cuts water use by 20 %.",
     "This confirmed both hypotheses.",
     "The study showed that scheduling cuts water use.",
     "The approach achieved a 30 % reduction.",
@@ -629,6 +629,25 @@ def test_hindsight_rule_does_not_take_a_cue_out_of_its_opening(own):
 def test_hindsight_rule_does_not_take_a_german_cue_out_of_its_opening(own):
     cited = "@Chen25Learning trainieren einen Transformer auf Review-Kommentaren.\n"
     assert hindsight(cited + own, "de") == ["hindsight-leakage"]
+
+
+def test_hindsight_rule_follows_attribution_written_the_way_writers_write_it():
+    """Shape of a measured sonnet repair (2026-10-04) that the positional cues
+    alone flagged: a mid-sentence reporting clause, a referential `it`, and a
+    plural "these studies" each continue the run — a warning there would push
+    the writer back to re-citing, the defect this rule exists to remove."""
+    assert hindsight(
+        "@Halloran24Update study dependency-update bots.\n"
+        "Most projects, they report, merge these pull requests without review.\n"
+        "They find that the bots reduced the median age of dependencies by 40 %.\n"
+        "It uses three signals per update.\n"
+        "Its accuracy dropped by 30 % on unseen projects.\n"
+        "According to these studies, minor releases reduced stability by 10 %."
+    ) == []
+    assert hindsight(
+        "@Halloran24Update untersuchen Update-Bots.\n"
+        "Die meisten Projekte, so die Autoren, übernehmen die Änderungen ungeprüft.\n"
+        "Seine Genauigkeit sank um 30 %.", "de") == []
 
 
 def test_hindsight_rule_keeps_a_run_across_locators_ordinals_and_wrapped_lines():

@@ -64,8 +64,12 @@ The first cut matched the cue anywhere in the first three words. The adversarial
 
 | Language | Cues |
 |---|---|
-| English | they, their, both, the authors, these authors, the same study |
-| German | sie, ihr/ihre/ihrem/ihren/ihrer/ihres, deren, dessen, beide, die/den/der Autoren (also Autorinnen, Autor:innen) |
+| English | they, their, its, it (unless an expletive follows: "It is/was/seems …"), both, these/both studies, the authors, these authors, the same study |
+| German | sie, ihr/ihre/ihrem/ihren/ihrer/ihres, deren, dessen, sein/seine…, beide, diese/beide Studien, die/den/der Autoren (also Autorinnen, Autor:innen) |
+
+A **reporting clause** that names the cited authors counts wherever it stands: "…, they report, …", "they find that …", "so die Autoren", "den Autoren zufolge".
+
+The final run showed why both extensions are needed. A sonnet repair wrote "Most projects, **they report**, merge …", "**It** uses three features …" and "According to **these studies**, …". Each sentence broke the run under the positional cues alone, so the correctly cued sentence that followed warned. That false positive would push the writer back to re-citing, the defect this rule exists to remove. With the extensions, none of the 60 measured drafts carries a hindsight warning. The old check flagged 11 of them.
 
 The German oblique cases are included so that "Laut den Autoren …" counts as attribution, mirroring English "According to the authors …".
 
@@ -181,6 +185,7 @@ All are fixed (see D2, D4, Risks). They change shipped behaviour, so the dev run
 ## Risks / Trade-offs
 
 - [The cue set has false negatives and positives] → Warning-class only, false positives acknowledged by spec. Excluding it/es and the thesis's own names chooses missed attribution over laundered claims; the fix the warning names ("their …") is always available.
+- [A referential "it" after a cited sentence is read as the cited work] → Accepted. "It outperformed their scheduler by 20 %" passes as attributed. Excluding "it" made every "It uses …" continuation break the run and warn the cued sentence after it, a false positive in measured output. Expletive "It is/was …" stays excluded.
 - [German `sie` is also the pronoun for feminine nouns, and the thesis's own work often is one: die Arbeit, die Analyse] → Accepted. "Sie erreichte 95 %" after a sentence whose subject is the thesis's own analysis passes as attributed. English "they" has the same ambiguity for plural nouns. Dropping bare `sie` would refuse the most natural German continuation. The precondition, a cited sentence whose subject is the thesis's own feminine noun, is narrow.
 - [A writing pass that saves a stray or backup `.md` beside an in-place repair is judged on the new file (`select_draft` prefers new files)] → Accepted and unobserved. The write skill keeps the filename. Reading `ws/<proposal>` directly would misjudge a model that writes its revision to a new file instead.
 - [A program requires a citation on every sentence] → The write skill places the citation-scope drafting rule among its strong defaults that a workspace `guidelines.md` may override, and the binding warning yields to such a workspace. The first cut had put it under "non-negotiable"; the review caught it.

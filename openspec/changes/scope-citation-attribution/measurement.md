@@ -104,6 +104,10 @@ Totals across all 12 runs:
 
 Escalation is exhausted (A → B → C). Per the interview, the pipeline stops escalating and reports the haiku repair cell as it stands.
 
+### Re-score after the review fixes
+
+The review fixes (`142d970`) changed the verdict's splitting: sentences across wrapped lines, locators inside brackets, comparison across consecutive list items, and the shared check-script implementation. Re-scoring all 48 kept workspaces of the four states above with the fixed verdict reproduces every number in this document unchanged. None of the measured drafts hard-wrapped, used locators, or moved a repetition into bullets.
+
 ### Totals across stages
 
 12 runs per state:
