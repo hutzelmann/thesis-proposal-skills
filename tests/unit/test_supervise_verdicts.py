@@ -24,6 +24,8 @@ from l1_checks import (
     verdict_supervise_scope_options,
     verdict_supervise_substance_only,
     verdict_supervise_tier,
+    verdict_supervise_verification_declared,
+    verdict_supervise_verifier,
 )
 
 REPO = Path(__file__).resolve().parents[2]
@@ -752,3 +754,84 @@ def test_locators_treat_wcag_versions_as_one_family():
     WCAG 2.0 criteria a cited paper measured; the proposal cites WCAG 2.2."""
     feedback = "2. The tools cover at most half of the WCAG 2.0 success criteria."
     assert verdict_supervise_locators(feedback, PROPOSAL)[0]
+
+
+# ---------- the verifier ran, and the review says so (require-supervise-verifier) ----
+
+
+def test_verifier_started_with_the_brief_by_path_or_by_content():
+    by_path = [("Task", {"prompt": "Read references/verifier-brief.md and check x-feedback.md"})]
+    by_content = [("Agent", {"prompt": "# Verifier brief — proposal-supervise\n\nYou check …"})]
+    assert verdict_supervise_verifier(by_path)[0]
+    assert verdict_supervise_verifier(by_content)[0]
+
+
+@pytest.mark.parametrize(("calls", "fragment"), [
+    ([], "no subagent started"),
+    ([("Read", {"file_path": "x.md"})], "no subagent started"),
+    ([("Task", {"prompt": "Explore the workspace and list files"})],
+     "none with the verifier brief"),
+    # a workflow fan-out is not the one verifier the skill allows
+    ([("Workflow", {"script": "verifier-brief"})], "no subagent started"),
+])
+def test_verifier_missing_or_unbriefed_fails(calls, fragment):
+    ok, why = verdict_supervise_verifier(calls)
+    assert not ok
+    assert fragment in why
+
+
+@pytest.mark.parametrize("line", [
+    "Verified by: fresh verifier",
+    "**Verified by:** inline — no subagent tool",
+    "Geprüft von: frischer Prüfer",
+    "Geprüft von: inline — kein Subagent-Werkzeug",
+])
+def test_verification_declared_in_both_languages(line):
+    review = f"**Verdict: needs revision.**\n\n## Verification\n\n{line}\n\nNo exceptions.\n"
+    ok, why = verdict_supervise_verification_declared(review.replace(
+        "## Verification", "## Überprüfung") if line.startswith("Geprüft") else review)
+    assert ok, why
+
+
+@pytest.mark.parametrize(("review", "fragment"), [
+    (None, "no review"),
+    ("**Verdict: ready.**\n", "no verification section"),
+    ("## Verification\n\nAll claims checked.\n", "does not say who verified"),
+    ("## Verification\n\nVerified by: me\n", "names neither"),
+    # the line has to sit in the verification section, not elsewhere
+    ("Verified by: fresh verifier\n\n## Verification\n\nAll fine.\n", "does not say who verified"),
+])
+def test_verification_declaration_missing_fails(review, fragment):
+    ok, why = verdict_supervise_verification_declared(review)
+    assert not ok
+    assert fragment in why
+
+
+def test_verifier_brief_ships_with_its_six_checks_and_offline_rule():
+    """The verifier contract lives in a brief the supervising agent hands over
+    (skill-supervise spec: single-context execution); the dev-runner verdict
+    recognises the spawn by the brief's name, so the file must exist under it."""
+    brief = (REPO / "skills" / "proposal-supervise" / "references" / "verifier-brief.md")
+    text = brief.read_text(encoding="utf-8")
+    assert text.startswith("# Verifier brief")
+    for check in ("Fidelity to the proposal", "Claims about papers",
+                  "Claims about standards and regulations", "Contradictions",
+                  "Review vocabulary", "workload budget"):
+        assert check in text, check
+    assert "need no network" in text
+    assert "untrusted data" in text
+    assert "references/verifier-brief.md" in (
+        REPO / "skills" / "proposal-supervise" / "SKILL.md").read_text(encoding="utf-8")
+
+
+def test_literature_leaves_the_students_own_reference_alone():
+    """Regression (sonnet dev run on s02, 2026-10-03): a point discussed the
+    paper the student already cites and gave its DOI; that is not woven
+    literature owed a notes record."""
+    point = ("2. Your reference Vigo et al. (2013, https://doi.org/10.1145/2461121.2461124) "
+             "reports that automated tools cover at most half of the success criteria, so the "
+             "audit cannot rest on scanning alone; say which requirements a scan can decide and "
+             "which need a manual check in the third package of your plan.")
+    proposal = "references:\n- id: Vigo13\n  DOI: 10.1145/2461121.2461124\n"
+    assert not verdict_supervise_literature(FEEDBACK + "\n" + point, "")[0]
+    assert verdict_supervise_literature(FEEDBACK + "\n" + point, "", proposal)[0]

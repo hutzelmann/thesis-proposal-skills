@@ -62,6 +62,8 @@ from l1_checks import (
     verdict_supervise_feedback_contract,
     verdict_supervise_review_sections,
     verdict_supervise_scope_options,
+    verdict_supervise_verification_declared,
+    verdict_supervise_verifier,
 )
 from routing import prepare_config, tool_calls
 from sources import MESSY_REQUEST
@@ -375,6 +377,20 @@ def parse_events(stdout: str) -> list[dict]:
     return events
 
 
+# inside the workspace so a kept run carries its own transcript; the leading
+# dot keeps it out of every `*.md` glob a verdict reads
+EVENTS_FILE = ".devrun-events.jsonl"
+
+
+def save_events(events: list[dict], ws: Path) -> Path:
+    """Write the host's event stream into the workspace, one object per line —
+    the only record of why a run did or skipped something."""
+    path = ws / EVENTS_FILE
+    path.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events),
+                    encoding="utf-8")
+    return path
+
+
 def result_event(events: list[dict]) -> dict:
     return next((e for e in reversed(events) if e.get("type") == "result"), {})
 
@@ -477,19 +493,24 @@ def first_text(ws: Path, pattern: str) -> str | None:
     return found[0].read_text(encoding="utf-8") if found else None
 
 
-def supervise_verdict(scenario: dict, ws: Path) -> tuple[bool, str]:
-    """The feedback contract over the scenario's fixture identity, plus — for
-    the over-scoped fixture — the lettered cut options in the feedback and the
-    workload and verification sections in the review."""
+def supervise_verdict(scenario: dict, ws: Path,
+                      events: list[dict] | None = None) -> tuple[bool, str]:
+    """The feedback contract over the scenario's fixture identity; the verifier
+    — started with its brief, and declared in the review — wherever the
+    scenario allows the helper; and, for the over-scoped fixture, the lettered
+    cut options in the feedback and the workload and verification sections."""
     passed, why = verdict_supervise_feedback_contract(
         feedback_files(ws), scenario.get("forbidden", S01_FORBIDDEN), INSTALLED_SKILLS,
         load_closing_note(SKILLS), S01_LANGUAGE, proposal=normalized_proposal(ws))
-    if not scenario.get("scope"):
-        return passed, why
-    results = [(passed, why),
-               verdict_supervise_scope_options(first_text(ws, "*-feedback.md"),
-                                               load_closing_note(SKILLS)),
-               verdict_supervise_review_sections(first_text(ws, "*-review.md"))]
+    results = [(passed, why)]
+    review = first_text(ws, "*-review.md")
+    if scenario.get("helpers"):
+        results += [verdict_supervise_verifier(tool_calls(events or [])),
+                    verdict_supervise_verification_declared(review)]
+    if scenario.get("scope"):
+        results += [verdict_supervise_scope_options(first_text(ws, "*-feedback.md"),
+                                                    load_closing_note(SKILLS)),
+                    verdict_supervise_review_sections(review)]
     failed = [reason for ok, reason in results if not ok]
     if failed:
         return False, "; ".join(failed)
@@ -541,7 +562,7 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
     if name in CONTAINMENT_SCENARIOS:
         return containment_verdict(ws, request, chat, events or [])
     if scenario.get("feedback"):
-        return supervise_verdict(scenario, ws)
+        return supervise_verdict(scenario, ws, events)
     if name == "ideate_scoped":
         files = workspace_markdown(ws)
         produced, where = select_draft(files)
@@ -616,6 +637,7 @@ def main(argv: list[str] | None = None) -> int:
             request = request.format(url=f"{base}/group.html", dblp=f"{base}/dblp.json")
         events = run_claude(ws, request, args.model, args.timeout,
                             budget=args.max_budget_usd, config=config)
+        save_events(events, ws)
         chat = final_text(events)
         passed, why = verdict(args.scenario, scenario, ws, chat, request, events)
         print(json.dumps(summary(args, passed, why, events, config,

@@ -918,18 +918,22 @@ def _recorded_dois(notes: str | None) -> set[str]:
     return {_clean_doi(m.group(0)) for m in _DOI_TOKEN.finditer(notes or "")}
 
 
-def verdict_supervise_literature(feedback: str | None, notes: str | None) -> tuple[bool, str]:
+def verdict_supervise_literature(feedback: str | None, notes: str | None,
+                                 proposal: str | None = None) -> tuple[bool, str]:
     """supervise: literature the feedback cites is woven, not listed — every
     `https://doi.org/` URL sits in a prose block (a numbered point or the
     strengths block: never on a bulleted line, with a few dozen words around
     it; a paragraph holding several DOI lines is judged line by line), every
     cited DOI is recorded in the companion notes file, and at most three
     distinct papers are cited. A feedback that cites no DOI passes:
-    literature is conditional on the professor's approval and the findings."""
+    literature is conditional on the professor's approval and the findings.
+    A DOI the normalized proposal already carries is the student's own
+    reference, discussed rather than woven in, so it is not counted."""
     if not feedback or not feedback.strip():
         return False, "no feedback draft to check for literature"
+    own = _recorded_dois(proposal)
     cited = [(doi, block) for doi, block in _cited_dois(feedback)
-             if not doi.startswith(_STANDARD_DOI_PREFIXES)]
+             if not doi.startswith(_STANDARD_DOI_PREFIXES) and doi not in own]
     if not cited:
         return True, "no literature cited"
     distinct = sorted({doi for doi, _ in cited})
@@ -1166,6 +1170,53 @@ def verdict_supervise_review_sections(review: str | None) -> tuple[bool, str]:
     return True, "workload table with scope verdict, verification section present"
 
 
+# How a supervise run's verifier is recognised in the host's tool calls: a
+# subagent spawn (not a workflow fan-out) whose task carries the shipped brief,
+# by its file name or by the heading it opens with.
+VERIFIER_SPAWN_TOOLS = ("Agent", "Task")
+_VERIFIER_BRIEF_MARK = re.compile(r"verifier[-_ ]brief", re.IGNORECASE)
+
+
+def verdict_supervise_verifier(calls: list[tuple[str, dict]]) -> tuple[bool, str]:
+    """supervise: the run started the one fresh verifier of the finished
+    feedback (skill-supervise spec: single-context execution). `calls` are the
+    (tool name, input) pairs of the host's event stream. The dev runner's host
+    offers a subagent tool, so a run without the spawn skipped the verifier."""
+    spawns = [inp for name, inp in calls if name in VERIFIER_SPAWN_TOOLS]
+    briefed = [inp for inp in spawns if _VERIFIER_BRIEF_MARK.search(str(inp))]
+    if briefed:
+        return True, "fresh verifier started with the brief"
+    if spawns:
+        return False, f"{len(spawns)} subagent(s) started, none with the verifier brief"
+    return False, "verifier did not run: no subagent started"
+
+
+_VERIFIED_BY = re.compile(
+    r"^[ \t>*_-]*(?:verified by|geprüft von)[*_]*\s*:\s*[*_]*\s*(.+)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_VERIFIER_MODE = re.compile(
+    r"fresh|independent|separate|inline|frisch|unabhängig|eigenständig", re.IGNORECASE)
+
+
+def verdict_supervise_verification_declared(review: str | None) -> tuple[bool, str]:
+    """supervise: the review's verification section states who verified — a
+    fresh verifier, or inline checks because no subagent tool was available — so
+    the professor sees at a glance whether the double check ran."""
+    if not review or not review.strip():
+        return False, "no review file to check"
+    section = _review_section(review, r"(?:Claim\s+)?Verification|Überprüfung|Verifikation")
+    if section is None:
+        return False, "no verification section"
+    line = _VERIFIED_BY.search(section)
+    if not line:
+        return False, "verification section does not say who verified"
+    if not _VERIFIER_MODE.search(line.group(1)):
+        return False, ("'Verified by' names neither a fresh verifier nor inline checks: "
+                       f"{line.group(1)[:60]!r}")
+    return True, f"verified by: {line.group(1).strip()[:60]}"
+
+
 def feedback_body_words(feedback: str | None, closing: dict[str, str] | None = None) -> int:
     """Words in the feedback body, without URLs and the closing note — the
     figure the soft length target is about (locators do not count)."""
@@ -1200,7 +1251,7 @@ def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tu
         verdict_supervise_tier(feedback),
         verdict_supervise_no_personal_data(artifacts, forbidden),
         verdict_supervise_pointers(feedback, installed),
-        verdict_supervise_literature(feedback, notes),
+        verdict_supervise_literature(feedback, notes, proposal),
         verdict_supervise_substance_only(feedback),
         verdict_supervise_markup(feedback),
     ]

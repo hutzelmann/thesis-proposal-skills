@@ -1022,7 +1022,8 @@ async def supervise_l1_closing(_state: TaskState) -> tuple[bool, str]:
 @verdict_scorer("supervise_l1_literature")
 async def supervise_l1_literature(_state: TaskState) -> tuple[bool, str]:
     return verdict_supervise_literature(
-        await supervise_feedback_text(), await supervise_notes_text())
+        await supervise_feedback_text(), await supervise_notes_text(),
+        await supervise_proposal_text())
 
 
 async def supervise_proposal_text() -> str | None:

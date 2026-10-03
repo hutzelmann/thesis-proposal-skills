@@ -1,0 +1,1 @@
+always start that verifier with `references/verifier-brief.md`, offline too: approval decides what the verifier may fetch, not whether it runs.
