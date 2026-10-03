@@ -146,6 +146,13 @@ Dispatch goes through a small table keyed by scenario name, so `verdict()` does 
 
    **Outcome after stage A: B triggered.** `write_repair_citations` reached L1 1/3 on sonnet, and each failure was one genuine same-key repeat. Haiku reached 0/3 there, but every failure was a structurally broken draft, not a citation defect, so neither B nor C addresses it; it is reported (see `measurement.md`). One caveat governs what B can achieve. `proposal-write` treats only check *errors* as binding ("Fix every error it reports"); warnings are reported, not mandated. Whether a warning changes a polishing pass is therefore exactly what the re-measurement shows.
 
+**Outcome after B: C triggered.** Sonnet repair became solid (3/3), but haiku's one structurally intact repair still left seven repeats. The warning does not reach a model that treats warnings as optional. C therefore does two things in `proposal-write`'s SKILL.md, each pinned:
+
+- a drafting clause among the ground rules (prior work concept-first; cite once per continuous use, carried on in words);
+- a paragraph in "Verify before you report" that makes `citation-repeated` binding, resolved by restructuring and never by deletion.
+
+Both land with a skill-write delta ("Citation scope in writing passes").
+
 ## Risks / Trade-offs
 
 - [The cue set has false negatives and positives] → Warning-class only, false positives acknowledged by spec. Excluding it/es and "this study" chooses missed attribution over laundered claims; the fix the warning names ("their …") is always available.

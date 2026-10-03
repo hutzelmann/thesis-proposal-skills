@@ -11,7 +11,7 @@
 
 ## 2. Baseline measurement
 
-- [ ] 2.1 Run the dev runner on the instruments commit: sonnet and haiku × `write_rich_seed` and `write_repair_citations` × 3 runs (subscription, `--keep`); record per-run L1 verdicts, repeated-run counts, host version and kept workspace paths in `measurement.md`
+- [x] 2.1 Run the dev runner on the instruments commit: sonnet and haiku × `write_rich_seed` and `write_repair_citations` × 3 runs (subscription, `--keep`); record per-run L1 verdicts, repeated-run counts, host version and kept workspace paths in `measurement.md`
 
 ## 3. Stage A — rule text and hindsight
 
@@ -23,14 +23,14 @@
 
 ## 4. After measurement
 
-- [ ] 4.1 Re-run the 12 dev runs of 2.1 on the stage-A commit; record results beside the baseline in `measurement.md`
+- [x] 4.1 Re-run the 12 dev runs of 2.1 on the stage-A commit; record results beside the baseline in `measurement.md`
 - [ ] 4.2 Show the Inspect cost estimate for sonnet and haiku × both tasks × 2 epochs and wait for the user's approval (pipeline stop 1); run, then record L1/L2 scores, judge explanations and actual cost in `measurement.md`
 - [ ] 4.3 Evaluate the bar (design D7): L1 cells solid on both models; L2 citation scope passing on both epochs for both models; L2 synthesis passing on both epochs for sonnet, haiku reported; record the verdict per criterion in `measurement.md`
 
 ## 5. Ladder (only if 4.3 fails — routed by failing criterion)
 
-- [ ] 5.1 If repetition fails (triggered: repair sonnet 1/3): amend the change via `openspec-update-change` (skill-check "Repeated citations reported as a warning", guidance-model "Citation scope" amendment), add the `citation-repeated` warning to `check.py` with L0 tests for every spec scenario and the rule-id tests; recalibrate f27's oracle (trips) and verify every other oracle still passes (pass case); sync; re-run the L1 dev runs on a frozen snapshot and record them in `measurement.md`
-- [ ] 5.2 If scope or synthesis fails on sonnet: amend the change via `openspec-update-change` (skill-write requirement), add the pinned drafting clause to `skills/proposal-write/SKILL.md`, sync, re-run the affected runs and record; otherwise mark N/A with the reason
+- [x] 5.1 If repetition fails (triggered: repair sonnet 1/3): amend the change via `openspec-update-change` (skill-check "Repeated citations reported as a warning", guidance-model "Citation scope" amendment), add the `citation-repeated` warning to `check.py` with L0 tests for every spec scenario and the rule-id tests; recalibrate f27's oracle (trips) and verify every other oracle still passes (pass case); sync; re-run the L1 dev runs on a frozen snapshot and record them in `measurement.md`
+- [ ] 5.2 If scope or synthesis fails on sonnet, or repetition persists after 5.1 (triggered: haiku repair 7 repeats with the warning shown): add the skill-write delta "Citation scope in writing passes", the pinned drafting clause and the binding-warning paragraph to `skills/proposal-write/SKILL.md` (two pins under `tests/unit/data/pinned_sentences/`), verify `uv run poe test`, commit, re-run all 12 dev runs on a frozen snapshot and record them
 - [ ] 5.3 If the bar still fails after 5.2: stop escalating and record the outcome as it stands in `measurement.md`
 
 ## 6. Review and close
