@@ -24,6 +24,14 @@ from inspect_ai._util.registry import registry_info
 # in the same change that adds or renames a scorer — never to make a test pass.
 EXPECTED_SCORERS = {
     "write_from_seed": ["write_l1", "write_l2_rq_quality", "write_l2_density"],
+    "write_rich_seed": [
+        "write_rich_seed_l1", "write_rich_seed_l2_citation_scope",
+        "write_rich_seed_l2_synthesis",
+    ],
+    "write_repair_citations": [
+        "write_repair_citations_l1", "write_repair_citations_l2_citation_scope",
+        "write_repair_citations_l2_synthesis",
+    ],
     "review_fixture": ["review_l1", "review_l2_quality", "no_spurious_offer"],
     "review_hollow": ["review_hollow_l1", "review_hollow_l2", "no_spurious_offer"],
     "title_alarm": ["title_l1", "title_l2_alarm"],
@@ -75,7 +83,8 @@ def test_l1_scorers_keep_the_marker_the_classifier_reads():
     deterministic = {
         name for names in EXPECTED_SCORERS.values() for name in names
         if not name.endswith(
-            ("_l2", "_l2_quality", "_l2_alarm", "_l2_rq_quality", "_l2_socratic", "_l2_density")
+            ("_l2", "_l2_quality", "_l2_alarm", "_l2_rq_quality", "_l2_socratic", "_l2_density",
+             "_l2_citation_scope", "_l2_synthesis")
         )
     }
     unmarked = {

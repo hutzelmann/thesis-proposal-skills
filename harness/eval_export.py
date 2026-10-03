@@ -39,6 +39,17 @@ EXPECTED_OUTPUTS = {
         "A complete proposal draft grown from the seed idea, mechanically sound "
         "apart from a tolerated reference shortfall, with gaps marked TODO."
     ),
+    "write_rich_seed": (
+        "A complete proposal draft from an eleven-reference seed that cites each "
+        "source once per continuous use — the run opened by the author-in-text "
+        "form, later sentences referring back in words — and groups prior work "
+        "by theme."
+    ),
+    "write_repair_citations": (
+        "The over-citing draft revised so that no source is cited on consecutive "
+        "sentences, every source is still cited, and each continuation refers "
+        "back to its source in words."
+    ),
     "review_fixture": (
         "An enumerated review file beside the proposal, finding the seeded "
         "defects; the proposal itself byte-identical."
@@ -131,6 +142,8 @@ def _l1_assertions():
 
     return {
         "write_l1": c.verdict_draft,
+        "write_rich_seed_l1": c.verdict_cited_draft,
+        "write_repair_citations_l1": c.verdict_repaired_draft,
         "review_l1": c.verdict_review,
         "review_de_l1": c.verdict_review_localized,
         "review_hollow_l1": c.verdict_hollow_review,

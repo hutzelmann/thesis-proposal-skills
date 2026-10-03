@@ -115,9 +115,11 @@ matrix = [
 # no extra cost, so the rung probe does not need to be paid for on every model.
 # supervise_feedback joins the matrix at the next big metered run
 # (add-proposal-supervise); until then it runs on demand like the others here.
+# write_rich_seed and write_repair_citations measure one guidance rule (citation
+# scope, scope-citation-attribution) and run on demand like the rest of this list.
 extended = [
   "ideate_stonewall", "ideate_outofscope", "ideate_probing", "troubleshoot_model_rung",
-  "supervise_feedback",
+  "supervise_feedback", "write_rich_seed", "write_repair_citations",
 ]
 # Smoke subset: cheap, short, high signal.
 core = ["write_from_seed", "import_messy", "customize_override"]
@@ -143,6 +145,8 @@ excluded = [
 # every task defined in skill_evals.py must appear here, excluded ones included.
 [tasks.skills]
 write_from_seed = "proposal-write"
+write_rich_seed = "proposal-write"
+write_repair_citations = "proposal-write"
 check_report = "proposal-check"
 check_report_compound = "proposal-check"
 check_report_hardened = "proposal-check"

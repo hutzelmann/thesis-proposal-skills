@@ -50,11 +50,13 @@ from l1_checks import (
     load_closing_note,
     select_draft,
     verdict_check_report,
+    verdict_cited_draft,
     verdict_draft,
     verdict_hollow_review,
     verdict_ideate_scoped,
     verdict_import,
     verdict_offtopic_reference,
+    verdict_repaired_draft,
     verdict_review,
     verdict_scoping_containment,
     verdict_seed,
@@ -256,10 +258,37 @@ SCENARIOS = {
             "decide and tell me what you did."
         ),
     },
+    # citation practice: neither request mentions citations. The rule has to
+    # reach the draft through the skill's own guidance, which is what a student
+    # asking for a draft or a polish gets.
+    "write_rich_seed": {
+        "skill": "proposal-write",
+        "fixture": "w08-rich-seed",
+        "proposal": "flaky-test-prediction.md",
+        "citations": "draft",
+        "request": (
+            "Please turn my idea notes in flaky-test-prediction.md into a full proposal "
+            "draft. Keep my idea, mark anything missing as TODO. I cannot answer any "
+            "questions — decide and tell me what you did."
+        ),
+    },
+    "write_repair_citations": {
+        "skill": "proposal-write",
+        "fixture": "f27-citation-runs",
+        "proposal": "dependency-update-breakage.md",
+        "citations": "repair",
+        "request": (
+            "Please do a writing pass over dependency-update-breakage.md so it is ready "
+            "for my supervisor. I cannot answer any questions — decide and tell me what "
+            "you did."
+        ),
+    },
 }
 
 # Scenarios whose verdict is scoping containment rather than the default.
 CONTAINMENT_SCENARIOS = ("ideate_scoped_adjacent", "ideate_scoped_partial")
+# Scenarios judged on the produced draft; `citations` adds the citation verdicts.
+DRAFT_SCENARIOS = ("write_from_seed", "write_rich_seed", "write_repair_citations")
 # Scenarios judged from `<slug>-review.md`: same inputs, different bar.
 REVIEW_VERDICTS = {
     "review_fixture": verdict_review,
@@ -536,6 +565,26 @@ def containment_verdict(ws: Path, request: str, chat: str,
     return contained, f"{why}; {detail} ({where})"
 
 
+def draft_verdict(scenario: dict, ws: Path, original: str) -> tuple[bool, str]:
+    """The draft is mechanically sound. The citation scenarios add that no
+    source is cited on consecutive sentences — and, over the over-citing
+    fixture, that no source was dropped to get there."""
+    # the skill may draft into a fresh <slug>.md instead of the seed
+    chosen, where = select_draft(workspace_markdown(ws), scenario["proposal"], original)
+    if not chosen:
+        return False, where
+    text = read(ws / chosen)
+    check = run_check(ws, chosen)
+    citations = scenario.get("citations")
+    if citations == "repair":
+        passed, why = verdict_repaired_draft(original, text, check)
+    elif citations == "draft":
+        passed, why = verdict_cited_draft(text, check)
+    else:
+        passed, why = verdict_draft(text, check)
+    return passed, f"{why} ({where})"
+
+
 def verdict(name: str, scenario: dict, ws: Path, chat: str,
             request: str = "", events: list[dict] | None = None) -> tuple[bool, str]:
     if name in CONTAINMENT_SCENARIOS:
@@ -570,13 +619,8 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
     if name in REVIEW_VERDICTS:
         review_name = scenario["proposal"].replace(".md", "-review.md")
         return REVIEW_VERDICTS[name](original, current, read(ws / review_name), review_name)
-    if name == "write_from_seed":
-        # the skill may draft into a fresh <slug>.md instead of the seed
-        chosen, where = select_draft(workspace_markdown(ws), scenario["proposal"], original)
-        if not chosen:
-            return False, where
-        passed, why = verdict_draft(read(ws / chosen), run_check(ws, chosen))
-        return passed, f"{why} ({where})"
+    if name in DRAFT_SCENARIOS:
+        return draft_verdict(scenario, ws, original)
     raise ValueError(name)
 
 

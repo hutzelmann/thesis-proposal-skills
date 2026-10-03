@@ -36,6 +36,7 @@ from l1_checks import (
     parse_grade,
     select_draft,
     verdict_check_report,
+    verdict_cited_draft,
     verdict_customize_override,
     verdict_draft,
     verdict_early_stop,
@@ -46,6 +47,7 @@ from l1_checks import (
     verdict_notes_progress,
     verdict_provenance,
     verdict_publish,
+    verdict_repaired_draft,
     verdict_reverse,
     verdict_review,
     verdict_review_localized,
@@ -75,11 +77,29 @@ JUDGE_INSTRUCTIONS = (
     'Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).'
 )
 
+# The two citation-practice tasks are graded against the same two criteria.
+CITATION_SCOPE = (
+    "Every sentence that reports prior work is recognisably attributed, by its "
+    "own citation or by a back-reference continuing a cited sentence in the same "
+    "paragraph; no publication or group of publications is cited on consecutive "
+    "sentences while source and topic stay the same; no sentence carries a "
+    "source's content on without a citation or a back-reference."
+)
+CITATION_SYNTHESIS = (
+    "Prior work is grouped by theme and compared within each group; no paragraph "
+    "summarises one source after another or spends most of its sentences on a "
+    "single source."
+)
+
 # L2 rubric criteria, keyed (task, scorer). One table instead of inline strings
 # so the eval projection (harness/eval_export.py) exports the exact text the
 # judge receives — a criterion edited here flows into the projection, and a
 # criterion that exists only here or only there fails the projection drift test.
 CRITERIA: dict[tuple[str, str], str] = {
+    ("write_rich_seed", "write_rich_seed_l2_citation_scope"): CITATION_SCOPE,
+    ("write_rich_seed", "write_rich_seed_l2_synthesis"): CITATION_SYNTHESIS,
+    ("write_repair_citations", "write_repair_citations_l2_citation_scope"): CITATION_SCOPE,
+    ("write_repair_citations", "write_repair_citations_l2_synthesis"): CITATION_SYNTHESIS,
     ("write_from_seed", "write_l2_rq_quality"):
         "All research questions analytical, self-contained, non-overlapping, not yes/no.",
     ("write_from_seed", "write_l2_density"):
@@ -301,11 +321,15 @@ W01_PROPOSAL = "data-drift-detection.md"
 W01_SEED = (FIXTURES / "w01-ideate-seed" / W01_PROPOSAL).read_text(encoding="utf-8")
 
 
-async def produced_draft() -> tuple[str | None, str, str]:
+async def drafted(seed_name: str, seed_text: str) -> tuple[str | None, str, str]:
     """(filename, text, where): the skill may draft into a fresh <slug>.md."""
     files = await workspace_markdown()
-    chosen, where = select_draft(files, W01_PROPOSAL, W01_SEED)
+    chosen, where = select_draft(files, seed_name, seed_text)
     return chosen, files.get(chosen, ""), where
+
+
+async def produced_draft() -> tuple[str | None, str, str]:
+    return await drafted(W01_PROPOSAL, W01_SEED)
 
 
 @verdict_scorer("write_l1")
@@ -344,6 +368,83 @@ def write_from_seed(baseline: bool = False) -> Task:
         "Please turn my idea notes into a full proposal draft. The file is "
         f"ws/{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
         [write_l1(), write_l2_rq_quality(), write_l2_density()],
+        baseline=baseline,
+    )
+
+
+# ---------- tasks: citation practice ------------------------------------------
+# Neither request mentions citations: the rule has to reach the draft through
+# the skill's own guidance. The dev runner carries the same two scenarios.
+
+W08_PROPOSAL = "flaky-test-prediction.md"
+W08_SEED = (FIXTURES / "w08-rich-seed" / W08_PROPOSAL).read_text(encoding="utf-8")
+F27_PROPOSAL = "dependency-update-breakage.md"
+F27_DRAFT = (FIXTURES / "f27-citation-runs" / F27_PROPOSAL).read_text(encoding="utf-8")
+
+
+@verdict_scorer("write_rich_seed_l1")
+async def write_rich_seed_l1(_state: TaskState) -> tuple[bool, str]:
+    chosen, text, where = await drafted(W08_PROPOSAL, W08_SEED)
+    if not chosen:
+        return False, where
+    ok, why = verdict_cited_draft(text, await run_check(chosen))
+    return ok, f"{why} ({where})"
+
+
+@verdict_scorer("write_rich_seed_l2_citation_scope")
+async def write_rich_seed_l2_citation_scope(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await drafted(W08_PROPOSAL, W08_SEED)
+    return await judge("citation_practice.txt", state.input_text, text, CITATION_SCOPE)
+
+
+@verdict_scorer("write_rich_seed_l2_synthesis")
+async def write_rich_seed_l2_synthesis(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await drafted(W08_PROPOSAL, W08_SEED)
+    return await judge("citation_practice.txt", state.input_text, text, CITATION_SYNTHESIS)
+
+
+@task
+def write_rich_seed(baseline: bool = False) -> Task:
+    return proposal_task(
+        "proposal-write", "w08-rich-seed",
+        f"Please turn my idea notes in ws/{W08_PROPOSAL} into a full proposal draft. "
+        "Keep my idea, mark anything missing as TODO. I cannot answer any questions — "
+        "decide and tell me what you did.",
+        [write_rich_seed_l1(), write_rich_seed_l2_citation_scope(),
+         write_rich_seed_l2_synthesis()],
+        baseline=baseline,
+    )
+
+
+@verdict_scorer("write_repair_citations_l1")
+async def write_repair_citations_l1(_state: TaskState) -> tuple[bool, str]:
+    chosen, text, where = await drafted(F27_PROPOSAL, F27_DRAFT)
+    if not chosen:
+        return False, where
+    ok, why = verdict_repaired_draft(F27_DRAFT, text, await run_check(chosen))
+    return ok, f"{why} ({where})"
+
+
+@verdict_scorer("write_repair_citations_l2_citation_scope")
+async def write_repair_citations_l2_citation_scope(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await drafted(F27_PROPOSAL, F27_DRAFT)
+    return await judge("citation_practice.txt", state.input_text, text, CITATION_SCOPE)
+
+
+@verdict_scorer("write_repair_citations_l2_synthesis")
+async def write_repair_citations_l2_synthesis(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await drafted(F27_PROPOSAL, F27_DRAFT)
+    return await judge("citation_practice.txt", state.input_text, text, CITATION_SYNTHESIS)
+
+
+@task
+def write_repair_citations(baseline: bool = False) -> Task:
+    return proposal_task(
+        "proposal-write", "f27-citation-runs",
+        f"Please do a writing pass over ws/{F27_PROPOSAL} so it is ready for my "
+        "supervisor. I cannot answer any questions — decide and tell me what you did.",
+        [write_repair_citations_l1(), write_repair_citations_l2_citation_scope(),
+         write_repair_citations_l2_synthesis()],
         baseline=baseline,
     )
 

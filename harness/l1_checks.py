@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import tomllib
+from itertools import pairwise
 from pathlib import Path
 
 # The reference shortfall is the one check error a produced draft may carry: a
@@ -504,6 +505,158 @@ def verdict_offtopic_reference(after: str | None,
     if problems:
         return False, "; ".join(problems)
     return True, f"{OFFTOPIC_KEY} {resolution} with a reason, {NEEDED_KEY} not discarded"
+
+
+# ---------- citation practice -------------------------------------------------
+#
+# The writing tasks over w08 and f27 measure whether a draft cites one source
+# on consecutive sentences. The splitting mirrors check.py's `prose_blocks` and
+# its citation-key pattern instead of importing them, because neither Inspect
+# nor the dev runner puts skill scripts on the path; the two are pinned to each
+# other by shared inputs in tests/unit/test_citation_practice.py.
+
+CITATION_KEY = re.compile(r"(?<![\w.\\])@([A-Za-z][\w:.-]*)")
+# a line that starts a new block even without a blank line before it
+BLOCK_START = re.compile(r"\s*(#|[-*+]\s|\d+[.)]\s|\|)")
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+# a period after one of these does not end the sentence; a lone lowercase
+# letter covers the first half of `z. B.`, `d. h.` and `u. a.`
+ABBREVIATION = re.compile(
+    r"(?:\bet al|\be\.g|\bi\.e|\bcf|\bvs|\bz\. ?B|\bd\. ?h|\bu\. ?a|\bvgl|\bbzw|\bca|"
+    r"\bFig|\bSec|\bEq|(?:^|\s)[a-zäöü])\.$"
+)
+
+Sentence = tuple[int, str, frozenset[str]]
+
+
+def split_sentences(line: str) -> list[str]:
+    """One line's sentences; a period after an abbreviation does not split."""
+    out: list[str] = []
+    for piece in SENTENCE_END.split(line.strip()):
+        if out and ABBREVIATION.search(out[-1]):
+            out[-1] = f"{out[-1]} {piece}"
+        elif piece:
+            out.append(piece)
+    return out
+
+
+def _prose_lines(text: str):
+    """(line number, line) of the body with fences blanked and code spans masked."""
+    lines = text.rstrip("\n").split("\n")
+    delim = [i for i, line in enumerate(lines) if re.fullmatch(r"---\s*", line)]
+    if len(delim) >= 2 and delim[-1] == len(lines) - 1:
+        lines = lines[:delim[-2]]
+    fence = False
+    for lineno, line in enumerate(lines, start=1):
+        if re.match(r"\s*(`{3,}|~{3,})", line):
+            fence = not fence
+            yield lineno, ""
+        else:
+            yield lineno, "" if fence else re.sub(r"(`+)[^`]*\1", " ", line)
+
+
+def citation_blocks(text: str) -> list[list[Sentence]]:
+    """Prose blocks of (line, sentence, cited keys). A blank line, heading,
+    list item or table row ends a block — the boundaries check.py's
+    `prose_blocks` uses for attribution runs."""
+    blocks: list[list[Sentence]] = []
+    current: list[Sentence] = []
+    for lineno, line in _prose_lines(text):
+        if not line.strip() or BLOCK_START.match(line):
+            if current:
+                blocks.append(current)
+            current = []
+            if not line.strip() or line.lstrip().startswith(("#", "|")):
+                continue
+        for sentence in split_sentences(line):
+            keys = frozenset(m.group(1).rstrip(".,;:") for m in CITATION_KEY.finditer(sentence))
+            current.append((lineno, sentence, keys))
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def repeated_citation_runs(text: str) -> list[tuple[int, tuple[str, ...]]]:
+    """(line, keys) for every sentence citing exactly the key set of the
+    sentence before it in the same block. A changed set is a source switch,
+    which the guidance asks to cite, so it never counts."""
+    hits = []
+    for block in citation_blocks(text):
+        for (_, _, before), (line, _, keys) in pairwise(block):
+            if keys and keys == before:
+                hits.append((line, tuple(sorted(keys))))
+    return hits
+
+
+def cited_keys(text: str) -> set[str]:
+    return {key for block in citation_blocks(text) for _, _, keys in block for key in keys}
+
+
+def verdict_citation_runs(text: str | None, min_cited: int = 0) -> tuple[bool, str]:
+    """No sentence repeats the citation of the sentence before it.
+
+    `min_cited` guards against a vacuous pass: a draft that cites nothing
+    cannot repeat a citation, so a task built to offer the temptation sets the
+    number of cited sentences below which the run proves nothing.
+    """
+    if text is None:
+        return False, "no proposal file"
+    blocks = citation_blocks(text)
+    cited = sum(1 for block in blocks for _, _, keys in block if keys)
+    pairs = sum(1 for block in blocks for a, b in pairwise(block) if a[2] and b[2])
+    counts = f"{cited} cited sentences, {pairs} adjacent cited pairs"
+    hits = repeated_citation_runs(text)
+    if hits:
+        shown = "; ".join(f"line {line}: {', '.join(keys)}" for line, keys in hits[:5])
+        return False, (f"{len(hits)} sentence(s) repeat the previous sentence's citation "
+                       f"({counts}) — {shown}")
+    if cited < min_cited:
+        return False, f"only {cited} cited sentences (< {min_cited}), the run proves nothing"
+    return True, f"no repeated citation ({counts})"
+
+
+def verdict_citation_repair(before: str, after: str | None) -> tuple[bool, str]:
+    """A writing pass over a draft that overcites removes the repetition
+    without removing a source: every key the input cites is still cited, so
+    deleting citations is never a way to pass."""
+    if after is None:
+        return False, "no proposal file after the writing pass"
+    problems = []
+    lost = sorted(cited_keys(before) - cited_keys(after))
+    if lost:
+        problems.append(f"no longer cited anywhere: {', '.join(lost)} — "
+                        "deleting a citation is not a repair")
+    passed, why = verdict_citation_runs(after)
+    if not passed:
+        problems.append(why)
+    if problems:
+        return False, "; ".join(problems)
+    return True, f"every source still cited, {why}"
+
+
+# A draft from the eleven-reference w08 seed that cites fewer sentences than
+# this never had the chance to repeat a citation, so its pass proves nothing.
+RICH_SEED_MIN_CITED = 6
+
+
+def verdict_cited_draft(text: str | None, check_output: str,
+                        min_cited: int = RICH_SEED_MIN_CITED) -> tuple[bool, str]:
+    """A draft from a reference-rich seed is mechanically sound and cites no
+    source on consecutive sentences, with enough cited sentences that it had
+    the chance to."""
+    drafted, why = verdict_draft(text, check_output)
+    cited, detail = verdict_citation_runs(text, min_cited)
+    return drafted and cited, f"{why}; {detail}"
+
+
+def verdict_repaired_draft(before: str, after: str | None,
+                           check_output: str) -> tuple[bool, str]:
+    """A writing pass over an over-citing draft leaves it mechanically sound,
+    with no source cited on consecutive sentences and every source still
+    cited."""
+    drafted, why = verdict_draft(after, check_output)
+    repaired, detail = verdict_citation_repair(before, after)
+    return drafted and repaired, f"{why}; {detail}"
 
 
 def verdict_provenance(transcript: str, seed_text: str | None,
