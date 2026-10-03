@@ -15,11 +15,11 @@
 
 ## 3. Stage A — rule text and hindsight
 
-- [ ] 3.1 Replace the consecutive-citation bullet in `shared/guidelines/guidelines.md` "Literature and Citations" with the attribution-scope rule (design D1, guidance-model "Citation scope"); run `python3 scripts/sync_shared.py` and verify `python3 scripts/sync_shared.py --check` reports no drift
-- [ ] 3.2 Extract the citation-key pattern and a `citation_keys` helper in `skills/proposal-check/scripts/check.py`, used by `scan_citations` and the hindsight rule (design D3); verify all existing fixture oracles still pass unchanged
-- [ ] 3.3 Rewrite `rule_hindsight_leakage` to walk prose blocks with cue-anchored attribution runs and the extended message (design D2, skill-check "Hindsight leakage reported as a warning"); verify with L0 tests for every spec scenario: cited, cued continuation (EN and DE), uncued continuation, run ended by paragraph, run broken by an own sentence, planned measurement, "It was shown" / "Es zeigte sich" / "This study" not accepted as cues
-- [ ] 3.4 Sync the generated `check.py` copies and verify `uv run poe test` is green, including the shared-input tests that pin `l1_checks` block splitting to `check.py`'s
-- [ ] 3.5 Commit stage A
+- [x] 3.1 Replace the consecutive-citation bullet in `shared/guidelines/guidelines.md` "Literature and Citations" with the attribution-scope rule (design D1, guidance-model "Citation scope"); run `python3 scripts/sync_shared.py` and verify `python3 scripts/sync_shared.py --check` reports no drift
+- [x] 3.2 Extract the citation-key pattern and a `citation_keys` helper in `skills/proposal-check/scripts/check.py`, used by `scan_citations` and the hindsight rule (design D3); verify all existing fixture oracles still pass unchanged
+- [x] 3.3 Rewrite `rule_hindsight_leakage` to walk prose blocks with cue-anchored attribution runs and the extended message (design D2, skill-check "Hindsight leakage reported as a warning"); verify with L0 tests for every spec scenario: cited, cued continuation (EN and DE), uncued continuation, run ended by paragraph, run broken by an own sentence, planned measurement, "It was shown" / "Es zeigte sich" / "This study" not accepted as cues
+- [x] 3.4 Sync the generated `check.py` copies and verify `uv run poe test` is green, including the shared-input tests that pin `l1_checks` block splitting to `check.py`'s
+- [x] 3.5 Commit stage A
 
 ## 4. After measurement
 

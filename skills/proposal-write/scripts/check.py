@@ -936,6 +936,12 @@ def mask_code(body: str) -> str:
     return "\n".join(out)
 
 
+# An `@` that no word character, period or backslash precedes, then the key:
+# the period keeps e-mail addresses out, the backslash is the escape a student
+# uses for an at-sign that is not a citation.
+CITATION_KEY = re.compile(r"(?<![\w.\\])@([A-Za-z][\w:.-]*)")
+
+
 def scan_citations(ctx: Context) -> tuple[dict[str, int], dict[str, int],
                                           list[tuple[str, int, bool]]]:
     """(cited, author-in-text, typed names) with the line each first occurred on."""
@@ -944,10 +950,9 @@ def scan_citations(ctx: Context) -> tuple[dict[str, int], dict[str, int],
     typed_names: list[tuple[str, int, bool]] = []
     for lineno, line in enumerate(mask_code(ctx.body).split("\n"), start=1):
         # a key inside a bracketed group renders as a bare number; one outside
-        # is author-in-text and gets an author label prefixed. `\@` is the
-        # escape a student uses for an at-sign that is not a citation.
+        # is author-in-text and gets an author label prefixed
         depth = 0
-        for m in re.finditer(r"\[|\]|(?<![\w.\\])@([A-Za-z][\w:.-]*)", line):
+        for m in re.finditer(r"\[|\]|" + CITATION_KEY.pattern, line):
             if m.group(0) == "[":
                 depth += 1
             elif m.group(0) == "]":
@@ -1234,42 +1239,103 @@ PRESENT_PASSIVE = {
 }
 
 
-def prose_sentences(body: str):
-    """(sentence, line number) for every prose sentence, headings skipped."""
+# Back-references that carry a cited sentence's attribution into the next one,
+# matched among a sentence's first words: the guidance asks for exactly these
+# instead of a repeated citation. Deliberately absent: `it`/`es`, whose
+# expletive use ("It was shown", "Es zeigte sich") would launder a claim, and
+# `this study`/`diese Arbeit`, which proposals use for the thesis itself.
+CONTINUATION_CUES = {
+    "en": r"(they|their|both|the authors|these authors|the study|the same study|"
+          r"this approach|the approach)\b",
+    "de": r"(sie|ihre?[mnrs]?|deren|dessen|beide|(?:die|den|der) autor(?:en|innen|:innen)|"
+          r"(?:die|der) studie|dieser ansatz)\b",
+}
+CUE_WINDOW = 3
+# a line that starts a new block even without a blank line before it
+BLOCK_START = re.compile(r"\s*(#|[-*+]\s|\d+[.)]\s|\|)")
+# a period after one of these does not end the sentence; a lone lowercase
+# letter covers the first half of `z. B.`, `d. h.` and `u. a.`
+ABBREVIATION = re.compile(
+    r"(?:\bet al|\be\.g|\bi\.e|\bcf|\bvs|\bz\. ?B|\bd\. ?h|\bu\. ?a|\bvgl|\bbzw|\bca|"
+    r"\bFig|\bSec|\bEq|(?:^|\s)[a-zäöü])\.$"
+)
+
+
+def split_sentences(line: str) -> list[str]:
+    """One line's sentences; a period after an abbreviation does not split."""
+    out: list[str] = []
+    for piece in re.split(r"(?<=[.!?])\s+", line.strip()):
+        if out and ABBREVIATION.search(out[-1]):
+            out[-1] = f"{out[-1]} {piece}"
+        elif piece:
+            out.append(piece)
+    return out
+
+
+def prose_blocks(body: str) -> list[list[tuple[str, int]]]:
+    """Blocks of (sentence, line number). A blank line or a heading ends a
+    block, and a list item or table row starts one — the scope a citation's
+    attribution may run on in."""
+    blocks: list[list[tuple[str, int]]] = []
+    current: list[tuple[str, int]] = []
     for lineno, line in enumerate(mask_code(body).split("\n"), start=1):
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        for sentence in re.split(r"(?<=[.!?])\s+", line.strip()):
-            if sentence:
-                yield sentence, lineno
+        if not line.strip() or BLOCK_START.match(line):
+            if current:
+                blocks.append(current)
+            current = []
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+        current.extend((sentence, lineno) for sentence in split_sentences(line))
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def continues_attribution(sentence: str, lang: str) -> bool:
+    """The sentence opens with a back-reference to a cited work or its authors."""
+    words = [w.strip(",;:()\"'„“”") for w in sentence.lower().split()]
+    cue = CONTINUATION_CUES[lang]
+    return any(re.match(cue, " ".join(words[i:])) for i in range(min(CUE_WINDOW, len(words))))
+
+
+def result_claim(sentence: str, lang: str) -> re.Match | None:
+    """The result verb, or the change word beside a quantity, that states an
+    outcome as obtained — unless present-tense passive makes it a plan."""
+    m = re.search(RESULT_VERBS[lang], sentence, re.IGNORECASE)
+    if m is None and re.search(QUANTITY, sentence):
+        m = re.search(CHANGE_WORDS[lang], sentence, re.IGNORECASE)
+    if m is None or re.search(PRESENT_PASSIVE[lang], sentence[:m.start()], re.IGNORECASE):
+        return None
+    return m
 
 
 def rule_hindsight_leakage(ctx: Context) -> list[Finding]:
-    """Results the proposal cannot have yet, in sentences that cite nobody.
+    """Results the proposal cannot have yet, in sentences attributed to nobody.
 
-    The citation anchor is the whole rule: reporting what prior work
+    The attribution anchor is the whole rule: reporting what prior work
     established is exactly what the contribution section does, so a check that
     could not tell `@Rivera23 showed …` from `we showed …` would fire on every
-    correctly written proposal.
+    correctly written proposal. A sentence is attributed when it cites, or when
+    it continues a cited sentence in the same block through a back-reference —
+    the form the guidance asks for instead of repeating the citation, which a
+    per-sentence anchor would punish.
     """
-    verbs = RESULT_VERBS[ctx.lang]
-    change = CHANGE_WORDS[ctx.lang]
-    for sentence, lineno in prose_sentences(ctx.body):
-        if re.search(r"(?<![\w.\\])@[A-Za-z]", sentence):
-            continue
-        m = re.search(verbs, sentence, re.IGNORECASE)
-        if m is None and re.search(QUANTITY, sentence):
-            m = re.search(change, sentence, re.IGNORECASE)
-        if m is None:
-            continue
-        if re.search(PRESENT_PASSIVE[ctx.lang], sentence[:m.start()], re.IGNORECASE):
-            continue
-        return [warn(
-            "hindsight-leakage",
-            f"`{m.group(0)}` (line {lineno}) states the work as already done, "
-            f"in a sentence citing no source — a proposal plans work that has "
-            f"not happened; attribute the result or write it as a plan",
-        )]
+    for block in prose_blocks(ctx.body):
+        attributed = False
+        for sentence, lineno in block:
+            attributed = bool(CITATION_KEY.search(sentence)) or (
+                attributed and continues_attribution(sentence, ctx.lang))
+            m = None if attributed else result_claim(sentence, ctx.lang)
+            if m is None:
+                continue
+            return [warn(
+                "hindsight-leakage",
+                f"`{m.group(0)}` (line {lineno}) states the work as already done, in a "
+                f"sentence that neither cites a source nor continues a cited one — a "
+                f"proposal plans work that has not happened; attribute the result (cite "
+                f"it, or continue a cited sentence with \"they\" / \"their …\") or write "
+                f"it as a plan",
+            )]
     return []
 
 

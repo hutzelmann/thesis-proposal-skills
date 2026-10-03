@@ -546,19 +546,22 @@ def _prose_lines(text: str):
     delim = [i for i, line in enumerate(lines) if re.fullmatch(r"---\s*", line)]
     if len(delim) >= 2 and delim[-1] == len(lines) - 1:
         lines = lines[:delim[-2]]
-    fence = False
+    fence = ""
     for lineno, line in enumerate(lines, start=1):
-        if re.match(r"\s*(`{3,}|~{3,})", line):
-            fence = not fence
+        if m := re.match(r"\s*(`{3,}|~{3,})", line):
+            marker = m.group(1)[0]
+            fence = "" if fence == marker else (fence or marker)
+            yield lineno, ""
+        elif fence:
             yield lineno, ""
         else:
-            yield lineno, "" if fence else re.sub(r"(`+)[^`]*\1", " ", line)
+            yield lineno, re.sub(r"(`+)[^`]*\1", lambda c: " " * len(c.group(0)), line)
 
 
 def citation_blocks(text: str) -> list[list[Sentence]]:
-    """Prose blocks of (line, sentence, cited keys). A blank line, heading,
-    list item or table row ends a block — the boundaries check.py's
-    `prose_blocks` uses for attribution runs."""
+    """Prose blocks of (line, sentence, cited keys). A blank line or heading
+    ends a block and a list item or table row starts one — the boundaries
+    check.py's `prose_blocks` uses for attribution runs."""
     blocks: list[list[Sentence]] = []
     current: list[Sentence] = []
     for lineno, line in _prose_lines(text):
@@ -566,7 +569,7 @@ def citation_blocks(text: str) -> list[list[Sentence]]:
             if current:
                 blocks.append(current)
             current = []
-            if not line.strip() or line.lstrip().startswith(("#", "|")):
+            if not line.strip() or line.lstrip().startswith("#"):
                 continue
         for sentence in split_sentences(line):
             keys = frozenset(m.group(1).rstrip(".,;:") for m in CITATION_KEY.finditer(sentence))

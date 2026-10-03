@@ -478,6 +478,86 @@ def test_hindsight_rule_ignores_prose_inside_a_code_block():
     assert hindsight("```\nWe demonstrated the effect.\n```") == []
 
 
+# Attribution runs (scope-citation-attribution): the guidance asks for one
+# citation per continuous use, carried on in words. A per-sentence anchor would
+# punish exactly that and reward repeating the citation instead.
+
+CITED = "@Chen25Learning train a transformer on review comments.\n"
+
+
+def test_hindsight_rule_accepts_a_cued_continuation():
+    assert hindsight(CITED + "Their evaluation showed a 30 % reduction in effort.") == []
+    assert hindsight(CITED + "They reduced reviewer effort by 30 %.") == []
+    assert hindsight(CITED + "However, the authors achieved this only on one project.") == []
+    assert hindsight(CITED + "In their evaluation, review effort dropped by 30 %.") == []
+
+
+def test_hindsight_rule_carries_a_run_across_several_cued_sentences():
+    assert hindsight(
+        CITED + "Their model learns from accepted comments.\n"
+        "Their evaluation showed a 30 % reduction in effort."
+    ) == []
+
+
+def test_hindsight_rule_reports_an_uncued_continuation():
+    findings = check.rule_hindsight_leakage(context(
+        "# Topic\n\n" + CITED + "The model reduced reviewer effort by 30 %.\n\n"
+        "---\nreferences: []\n---"))
+    assert rules_of(findings) == ["hindsight-leakage"]
+    assert "(line 4)" in findings[0].message
+    assert '"their …"' in findings[0].message
+
+
+def test_hindsight_rule_ends_a_run_at_the_paragraph():
+    assert hindsight(CITED + "\nTheir evaluation showed a 30 % reduction.") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_ends_a_run_at_an_own_sentence():
+    """An uncited, uncued sentence is the thesis speaking; a `their` after it
+    no longer reaches back to the citation."""
+    assert hindsight(
+        CITED + "Review effort matters to every maintainer.\n"
+        "Their evaluation showed a 30 % reduction."
+    ) == ["hindsight-leakage"]
+
+
+def test_hindsight_rule_ends_a_run_at_a_list_item():
+    assert hindsight(CITED + "- Their evaluation showed a 30 % reduction.") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_accepts_a_german_cued_continuation():
+    cited = "@Chen25Learning trainieren einen Transformer auf Review-Kommentaren.\n"
+    assert hindsight(cited + "Ihre Auswertung zeigte eine deutliche Entlastung.", "de") == []
+    assert hindsight(cited + "Zudem erreichten sie eine Entlastung um 30 %.", "de") == []
+    assert hindsight(cited + "Laut den Autoren zeigte sich ein Effekt.", "de") == []
+    assert hindsight(cited + "Die Auswertung zeigte einen Effekt.", "de") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_refuses_cues_that_would_launder_a_claim():
+    """`it`/`es` are expletive as often as they refer back, and `this study` /
+    `diese Arbeit` is how proposals name the thesis itself."""
+    assert hindsight(CITED + "It was shown that effort fell by 30 %.") == ["hindsight-leakage"]
+    assert hindsight(CITED + "This study demonstrated the effect.") == ["hindsight-leakage"]
+    cited_de = "@Chen25Learning trainieren einen Transformer.\n"
+    assert hindsight(cited_de + "Es zeigte sich ein Effekt.", "de") == ["hindsight-leakage"]
+    assert hindsight(cited_de + "Diese Arbeit zeigte einen Effekt.", "de") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_does_not_split_at_abbreviations():
+    """`e.g.` ending a fragment would make the remainder an uncited sentence."""
+    assert hindsight(
+        "Detectors, e.g. DDM, reduced false alarms by 20 % [@Gama04Learning]."
+    ) == []
+
+
 def test_metadata_present_names_a_block_that_sits_at_the_top():
     """Frontmatter at the top is what every other markdown tool expects, so a
     student arrives at it honestly — and gets five errors none of which say so."""

@@ -2,9 +2,11 @@
 
 from pathlib import Path
 
+import check
 import claude_runner
 from l1_checks import (
     citation_blocks,
+    cited_keys,
     repeated_citation_runs,
     split_sentences,
     verdict_citation_repair,
@@ -280,6 +282,42 @@ def test_verdict_cited_draft_refuses_a_draft_that_barely_cites():
     passed, why = verdict_cited_draft(proposal("One claim [@Alder24Flaky]."), CLEAN_CHECK)
     assert not passed
     assert "proves nothing" in why
+
+
+PARITY_INPUTS = [
+    F27,
+    W08,
+    proposal(
+        "Detectors, e.g. DDM, use error rates [@Gama04Drift]. Ansätze, z. B. Wiederholungen, "
+        "verdecken das [@Alder24Flaky].\n"
+        "A second sentence follows. A third one too!\n"
+        "- A list item [@a].\n"
+        "  continues the item [@a].\n"
+        "1. A numbered item.\n"
+        "| a table row [@b] |\n"
+        "| another row [@b] |\n"
+        "```\nfenced @Code. still fenced.\n```\n"
+        "Inline `@Override` code. After it [@c]."
+    ),
+]
+
+
+def test_block_splitting_mirrors_the_check_script():
+    """l1_checks cannot import check.py at runtime, so the two splitters are
+    pinned to each other here: same blocks, same sentences, same lines."""
+    for text in PARITY_INPUTS:
+        body, _ = check.split_proposal(text)
+        from_check = [[(line, s) for s, line in block] for block in check.prose_blocks(body)]
+        from_l1 = [[(line, s) for line, s, _ in block] for block in citation_blocks(text)]
+        assert from_l1 == from_check
+
+
+def test_citation_keys_mirror_the_check_script():
+    for text in PARITY_INPUTS:
+        body, _ = check.split_proposal(text)
+        assert cited_keys(text) == {
+            m.group(1).rstrip(".,;:") for m in check.CITATION_KEY.finditer(check.mask_code(body))
+        }
 
 
 def test_verdict_repaired_draft_needs_both_halves():

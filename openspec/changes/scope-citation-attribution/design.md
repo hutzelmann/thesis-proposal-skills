@@ -56,7 +56,9 @@ The consecutive-citation bullet becomes the four-part rule chosen in the intervi
 | Language | Cues |
 |---|---|
 | English | they, their, both, the authors, these authors, the study, the same study, this approach, the approach |
-| German | sie, ihr/ihre/ihrem/ihren/ihrer/ihres, deren, dessen, beide, die Autoren/Autorinnen/Autor:innen, die Studie, dieser Ansatz |
+| German | sie, ihr/ihre/ihrem/ihren/ihrer/ihres, deren, dessen, beide, die/den/der Autoren (also Autorinnen, Autor:innen), die/der Studie, dieser Ansatz |
+
+The German oblique cases are included so that "Laut den Autoren …" counts as attribution, mirroring English "According to the authors …".
 
 Words deliberately excluded:
 
