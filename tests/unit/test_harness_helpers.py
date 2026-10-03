@@ -19,11 +19,13 @@ from l1_checks import (
     verdict_litsearch_expanded,
     verdict_no_spurious_offer,
     verdict_notes_progress,
+    verdict_offtopic_reference,
     verdict_provenance,
     verdict_publish,
     verdict_reverse,
     verdict_review,
     verdict_review_localized,
+    verdict_scoping_containment,
     verdict_seed,
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
@@ -705,6 +707,126 @@ def test_verdict_provenance_ignores_reference_metadata_entries():
     passed, why = verdict_provenance(PROVENANCE_TRANSCRIPT, with_refs)
     assert passed, why
     assert "nakamura" not in why.lower()
+
+
+# Containment reuses the flaky-test dialogue above on purpose: it is an idea a
+# CS student could plausibly bring and it touches none of the g01 fixture's
+# research areas, which is exactly the case the existing `ideate_scoped`
+# scenario cannot produce — its student idea restates the group's first area, so
+# bleed and adoption are indistinguishable there.
+CONTAINED_SEED = PROVENANCE_SEED
+CLEAN_QUERIES = "search.py 'flaky test classification CI history' --limit 8"
+
+
+def test_verdict_scoping_containment_passes_a_clean_run():
+    passed, why = verdict_scoping_containment(
+        PROVENANCE_TRANSCRIPT, {"flaky-tests.md": CONTAINED_SEED}, CLEAN_QUERIES)
+    assert passed, why
+
+
+def test_verdict_scoping_containment_flags_a_term_in_the_seed():
+    leaky = CONTAINED_SEED.replace(
+        "using CI history?",
+        "using CI history in eBPF-instrumented containerized runners?")
+    passed, why = verdict_scoping_containment(
+        PROVENANCE_TRANSCRIPT, {"flaky-tests.md": leaky}, CLEAN_QUERIES)
+    assert not passed
+    assert "eBPF" in why
+    assert "flaky-tests.md" in why
+
+
+def test_verdict_scoping_containment_flags_a_term_in_a_query_only():
+    """Bleed into a query never reaches a file, and steers what comes back."""
+    passed, why = verdict_scoping_containment(
+        PROVENANCE_TRANSCRIPT, {"flaky-tests.md": CONTAINED_SEED},
+        "search.py 'flaky tests WebAssembly runtimes' --limit 8")
+    assert not passed
+    assert "literature query" in why
+
+
+def test_verdict_scoping_containment_allows_a_term_the_student_voiced():
+    """The skill is required to float hints from the group's publications when
+    the student has no idea; a student who takes one up has made it theirs."""
+    transcript = PROVENANCE_TRANSCRIPT + (
+        "\n\nSTUDENT: Actually our whole CI runs in containerized workers, so that "
+        "is where the flakiness shows up."
+    )
+    seeded = CONTAINED_SEED.replace("using CI history?",
+                                    "using CI history on containerized workers?")
+    passed, why = verdict_scoping_containment(
+        transcript, {"flaky-tests.md": seeded}, CLEAN_QUERIES)
+    assert passed, why
+
+
+def test_verdict_scoping_containment_scans_every_produced_file():
+    files = {"flaky-tests.md": CONTAINED_SEED,
+             "flaky-tests.notes.md": "## Log\nCompared against Joule Scheduling."}
+    passed, why = verdict_scoping_containment(PROVENANCE_TRANSCRIPT, files, CLEAN_QUERIES)
+    assert not passed
+    assert "flaky-tests.notes.md" in why
+
+
+def test_verdict_scoping_containment_needs_a_transcript():
+    """Without turns there is nothing to attribute against, and every term would
+    read as unvoiced — a pass here would be vacuous, so it fails loudly."""
+    passed, why = verdict_scoping_containment("", {"x.md": CONTAINED_SEED}, "")
+    assert not passed
+    assert "no dialogue turns" in why
+
+
+F26 = (REPO / "tests" / "fixtures" / "f26-offtopic-reference"
+       / "onboarding-documentation-formats.md").read_text(encoding="utf-8")
+F26_REASON = ("Excluded Literature: Halvorsen24Kernel — no research question or "
+              "method step in this proposal depends on it.")
+
+
+def test_verdict_offtopic_reference_passes_removal_with_a_reason():
+    after = "\n".join(ln for ln in F26.splitlines() if "Halvorsen" not in ln)
+    passed, why = verdict_offtopic_reference(after, F26_REASON)
+    assert passed, why
+    assert "removed" in why
+
+
+def test_verdict_offtopic_reference_fails_a_carrier_sentence():
+    """The failure this change exists for: the entry acquires a sentence whose
+    only job is to cite it."""
+    after = F26.replace(
+        "The deliverable is a report of findings",
+        "Scheduling latency in preemptible kernels has been measured with the same "
+        "experimental discipline [@Halvorsen24Kernel].\nThe deliverable is a report "
+        "of findings")
+    passed, why = verdict_offtopic_reference(after, F26_REASON)
+    assert not passed
+    assert "Halvorsen24Kernel is now cited" in why
+
+
+def test_verdict_offtopic_reference_fails_removing_the_needed_entry():
+    """The control in the other direction: the finding is identical for both
+    entries, so a run that deletes every uncited entry must not pass."""
+    after = "\n".join(ln for ln in F26.splitlines()
+                      if "Halvorsen" not in ln and "Serrano" not in ln)
+    passed, why = verdict_offtopic_reference(after, F26_REASON)
+    assert not passed
+    assert "Serrano24Sampling was removed" in why
+
+
+def test_verdict_offtopic_reference_allows_keeping_it_uncited_with_a_reason():
+    passed, why = verdict_offtopic_reference(F26, F26_REASON)
+    assert passed, why
+    assert "kept uncited" in why
+
+
+def test_verdict_offtopic_reference_fails_a_silent_removal():
+    after = "\n".join(ln for ln in F26.splitlines() if "Halvorsen" not in ln)
+    passed, why = verdict_offtopic_reference(after, "")
+    assert not passed
+    assert "no reason recorded" in why
+
+
+def test_verdict_offtopic_reference_needs_a_file():
+    passed, why = verdict_offtopic_reference(None, F26_REASON)
+    assert not passed
+    assert "no proposal file" in why
 
 
 def test_verdict_early_stop_passes_notes_without_proposal():

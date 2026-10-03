@@ -118,8 +118,11 @@ Five tests define the substance bar; agents judging a proposal cite them by thes
 - **Delta test** — the proposal states precisely what the thesis adds beyond the work it cites: what it confirms, refutes, or extends. A contribution section that reads as a feature list or restates the field fails; confirming or refuting a published finding under new conditions passes, because extending is not the only admissible delta.
 - **Falsifiability test** — the research questions can come out negative. A question whose every conceivable outcome counts as success fails.
 - **Swap test** — the proposal's core statements could not equally describe ten other theses in the area. Text that stays plausible after swapping the topic noun fails as generic.
+- **Necessity test** — every sentence, citation and technical term serves a research question, the delta, or the method. Material that is true, specific and well-sourced still fails if removing it would not weaken the argument. This is the swap test's mirror: the swap test catches text that could belong to any thesis in the area, the necessity test catches text that belongs to a different one.
 - **Method-fit test** — the methodology concretely answers each research question. Method prose that never touches the questions is boilerplate and fails.
 - **Executability test** — the proposal gives concrete, actionable goals: it names the objects of study (dataset, system, population, corpus), states a concrete evaluation, is feasible in the stated months, and makes clear what the student would actually do first.
+
+A citation does not satisfy the necessity test. A citation is evidence for a claim, so a claim no research question, delta, or method step needs fails together with the sentence carrying it, however good the source behind it — and a sentence written so that an entry in the reference list gets cited is exactly that failure. This is where a neighbouring field's vocabulary enters a proposal that has no use for it.
 
 ## Methodology Content
 
@@ -174,7 +177,7 @@ The same advisory style applies to work on mined, scraped, or third-party data �
 - Tone: professional, specific, concise. No vague language, no generalizations, no marketing.
 - Every sentence carries information essential to this thesis. Scene-setting openers, truisms, and restatements of the obvious are filler: delete them. Shortness comes from deleting low-information sentences, not from compressing wording.
 - The rendered proposal stays within five pages (workspace `[length] page_limit` overrides this). The bound is deliberately generous — a proposal that respects the density rule stays well under it. Mechanical checks estimate pages from word count and warn, never fail.
-- Avoid technical details irrelevant to the research questions or methodology; stay on the level of ideas and concepts.
+- Stay on the level of ideas and concepts: technical detail that serves no research question and no method step fails the necessity test above, and the test is where that judgment is made.
 - Define abbreviations at first use, e.g. "System on a Chip (SoC)".
 - Active voice; avoid passive constructions (especially German "soll … werden" chains).
 - Third person only ("the thesis", "the study") — no I/we/my/our.

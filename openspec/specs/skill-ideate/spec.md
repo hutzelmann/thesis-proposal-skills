@@ -2,7 +2,9 @@
 
 ## Purpose
 Socratic idea-development skill that helps a student refine a thesis idea into an academically grounded starting point, seeding the proposal file.
+
 ## Requirements
+
 ### Requirement: Socratic interaction style
 The skill SHALL NOT ask directly for missing idea content, and SHALL NOT supply idea content itself: topics, research questions, and the method choice for the student's problem originate with the student. Every hint, observation, or provocation SHALL anchor in something the student already said — the skill operates on the student's material rather than advancing its own agenda in question form. Turns stay short: at most one question per turn, and some turns SHALL be observations that end without any question.
 
@@ -99,6 +101,8 @@ When consent for lookups was declined, the skill SHALL make no outbound requests
 
 The resulting scope SHALL be applied generously: an idea in even loose proximity to whatever scope was given SHALL pass without comment. Only an idea clearly outside the given scope SHALL draw Socratic steering and a warning, and the warning SHALL appear in chat only, at most once; if the user persists, ideation SHALL continue and no fit judgment SHALL be recorded in the seed file. When the user has no idea at all, the skill MAY float one or two directions drawn from the group's recent publications as Socratic hints, stating each hint's source publication — but SHALL NOT present a ready-made topic menu.
 
+**Scoping material is a filter on the student's idea, never a source for it.** Terminology that reaches the session only through the scoping lookup — the group's research areas, its publication titles, the vocabulary of either — SHALL NOT enter the seed file, the proposal text, or a literature-search query unless the student voiced it first. Proximity to the scope SHALL be judged, never narrated into the student's idea, and the skill SHALL NOT adjust an idea's framing, motivation, or terminology to improve its apparent fit with the scope. The no-idea hint path above is the single exception, and it is bounded by its own rule: one or two directions, each named to the publication it came from, offered in chat as hints. Vocabulary the student adopts after hearing it becomes the student's own and travels without restriction; the boundary is whether a student turn voiced it, not who said it first.
+
 Scoping facts persist by invariance. Proposal-invariant facts — study program, degree level, and a research group the student is committed to across proposals — belong in the workspace `guidelines.md` prose: offered once at the seeding step, the composed note shown to the user before anything is appended, never duplicating a note already present, written in the skill's own words with no fetched text copied, and a broken TOML block in that file left untouched and mentioned. Proposal-specific context — interests, candidate groups still being compared — belongs in the companion notes file. Declining the `guidelines.md` offer writes nothing there. The seed file SHALL NOT contain the supervisor's name, the research group, or the study program.
 
 #### Scenario: Preamble skipped entirely
@@ -124,6 +128,18 @@ Scoping facts persist by invariance. Proposal-invariant facts — study program,
 #### Scenario: Idea clearly outside, user insists
 - **WHEN** the user's idea sits clearly outside the scope that was given, and the user wants to keep it after Socratic steering
 - **THEN** the skill warns once in chat, continues ideation, and the seed file carries no trace of the fit concern
+
+#### Scenario: Idea adjacent to the fetched profile
+- **WHEN** the student's idea is plausible for the program but touches none of the scoping profile's research areas
+- **THEN** no term drawn from the profile's areas, publication titles, or their vocabulary appears in the seed file, the notes file, or any literature query the session issues
+
+#### Scenario: Idea overlapping one of several profile areas
+- **WHEN** the student's idea overlaps one research area of a multi-area profile
+- **THEN** the vocabulary of the areas it does not overlap stays out of the produced files and the literature queries, and the overlapping area's terms appear only where the student voiced them
+
+#### Scenario: Student adopts a term the skill surfaced
+- **WHEN** the skill names a publication as a Socratic hint on the no-idea path and the student takes up its terminology in a later turn
+- **THEN** that terminology may appear in the seed file, because a student turn voiced it
 
 #### Scenario: Student has no idea yet
 - **WHEN** the user brings no topic at all and scoping data is available
@@ -233,7 +249,6 @@ The skill MAY still describe the shape the idea must eventually take — an anal
 #### Scenario: Thin grounding is not padded
 - **WHEN** grounding surfaces only one relevant work
 - **THEN** the skill says the signal is thin and does not search further merely to raise the number of references in the seed
-
 
 ### Requirement: Level-steered ideation
 When the degree level is known from the preamble, the skill SHALL let it steer the Socratic session: at Bachelor's level, hints steer toward a well-bounded application or evaluation of something established, and deriving the topic from the supervising group's work is named as the level-appropriate move; at Master's level, hints push toward a gap in the literature and toward what would be new. The steering SHALL add no new preamble questions, SHALL never present the level as a limit on ambition, and SHALL leave no level-related concern in the seed file. When the level was never given, ideation proceeds level-neutrally as today.

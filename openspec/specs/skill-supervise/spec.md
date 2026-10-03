@@ -2,7 +2,9 @@
 
 ## Purpose
 Supervisor-side feedback on raw student submissions: normalize whatever arrives, curate the most pressing findings into paste-ready draft feedback, and steer the student into the proposal toolchain.
+
 ## Requirements
+
 ### Requirement: Raw submission intake and normalization
 
 The skill SHALL accept a raw student submission in any form it is handed — PDF, Word export, pasted text, or an already-standard proposal file — and SHALL normalize non-standard input to the standard single-file proposal format with the same guarantees the import skill gives: personal data stripped, gaps marked, references carried over. The normalized file SHALL be named by an idea slug and placed in the professor's workspace beside their other proposals. The skill SHALL NOT build a student registry, SHALL NOT record student identity in any artifact it writes, and SHALL NOT manage artifact lifecycle beyond the single run — retention and deletion stay manual.
@@ -36,10 +38,9 @@ The skill SHALL derive findings from the same sources the student-facing skills 
 - **THEN** the feedback states what is sound and should be kept, and contains no generic praise of the student or the material
 
 ### Requirement: Verdict expressed as proposal state
-
 The feedback SHALL open with a verdict expressed as the state of the proposal and never as a commitment on the professor's behalf. The student-facing tiers are: **ready**, phrased as requiring no substantial revisions; **needs revision**, directing the student to address the enumerated points and resubmit; and **idea stage** (German: Ideenphase), stating that the material is an idea that has not yet reached the proposal stage. The idea-stage tier SHALL couple the standard a proposal must meet with an assurance anchored in a named, true strength of the submission and a feed-forward to ideation as the designed next step — never framed as failure, never softened into revision advice. The statement that revision alone will not produce a proposal SHALL be composed in the feedback's own words and grounded in what the specific submission is missing; it SHALL NOT render the skill's instruction wording as feedback text and SHALL NOT refer to the proposal standard's elements by count or as an enumerated list. The professor-side review file SHALL keep the review skill's blunt three-tier vocabulary unchanged.
 
-The idea-stage tier SHALL only be assigned automatically when the failure is evidence-clear: at least three of the five substance tests fail decisively, each with a stated reason why no single revision round can repair it. When the internal review reaches no-viable-core without meeting that bar, the verdict decision SHALL be deferred to the professor rather than taken by the skill. The skill SHALL NOT promise meetings, approvals, deadlines, or any other supervisor action.
+The idea-stage tier SHALL only be assigned automatically when the failure is evidence-clear: at least three of the six substance tests fail decisively, each with a stated reason why no single revision round can repair it. A necessity-test failure SHALL NOT count toward that bar: material that serves no research question is removable in place, so it never evidences a missing thesis core. When the internal review reaches no-viable-core without meeting that bar, the verdict decision SHALL be deferred to the professor rather than taken by the skill. The skill SHALL NOT promise meetings, approvals, deadlines, or any other supervisor action.
 
 #### Scenario: Ready without commitment
 - **WHEN** the submission passes review with no substantial findings
@@ -49,13 +50,17 @@ The idea-stage tier SHALL only be assigned automatically when the failure is evi
 - **WHEN** at least three substance tests fail decisively and no single revision round could repair them
 - **THEN** the feedback opens with the idea-stage verdict, names the proposal standard, anchors an assurance in a true strength, and directs the student to ideation — without asking the professor first
 
-#### Scenario: Plainness statement in the feedback's own words
-- **WHEN** an idea-stage feedback states that revision alone will not produce a proposal
-- **THEN** the statement names what this submission is missing in the feedback's own words, rather than translating the skill's instruction sentence or pointing at the standard's elements by count
+#### Scenario: Necessity failure does not lower the tier
+- **WHEN** only two substance tests fail decisively and the necessity test fails as well
+- **THEN** the evidence bar is not met, the necessity failure is not counted toward it, and the tier decision follows the borderline path rather than becoming idea stage
 
 #### Scenario: Blunt vocabulary stays professor-side
 - **WHEN** the internal review concludes no viable thesis core
 - **THEN** the review file says so in those words while the feedback renders the tier as idea stage
+
+#### Scenario: Plainness statement in the feedback's own words
+- **WHEN** an idea-stage feedback states that revision alone will not produce a proposal
+- **THEN** the statement names what this submission is missing in the feedback's own words, rather than translating the skill's instruction sentence or pointing at the standard's elements by count
 
 ### Requirement: Student-facing feedback with disclosure and steering
 
@@ -143,8 +148,7 @@ The drafted feedback SHALL be calibrated to the degree level the submission's su
 - **THEN** the draft judges against the level-independent bar and includes one line asking the student to state the degree level in the subtitle
 
 ### Requirement: Single-context execution
-
-The supervise run SHALL be a single-context task: one agent normalizes the submission, runs the check, judges the five substance tests and every review dimension in one pass, decides the tier, and curates the feedback, because the tier decision needs the tests judged side by side against the evidence bar this specification fixes, and the curated points are chosen across all findings. Helper agents SHALL NOT be part of the skill's execution; following the import or literature-search sibling's instructions in the same context is not a helper. When the host nevertheless runs the task as a workflow, the skill SHALL cap it at three agents counting the supervising agent itself: that agent is the full review, and the helpers are at most one adversarial check of its fail verdicts and one optional reading of the proposal's own references block for citation consistency, without network access. The skill SHALL NOT assign one agent per substance test, per dimension, or per research question. The adversarial check informs the evidence bar; it SHALL NOT decide the tier, which stays with the main agent and, when borderline, the professor. The SKILL.md SHALL state this shape in an `## Execution shape` section that is the first section of the body, so that it is read before a run is planned, and the whole section SHALL be pinned verbatim offline.
+The supervise run SHALL be a single-context task: one agent normalizes the submission, runs the check, judges the six substance tests and every review dimension in one pass, decides the tier, and curates the feedback, because the tier decision needs the tests judged side by side against the evidence bar this specification fixes, and the curated points are chosen across all findings. Helper agents SHALL NOT be part of the skill's execution; following the import or literature-search sibling's instructions in the same context is not a helper. When the host nevertheless runs the task as a workflow, the skill SHALL cap it at three agents counting the supervising agent itself: that agent is the full review, and the helpers are at most one adversarial check of its fail verdicts and one optional reading of the proposal's own references block for citation consistency, without network access. The skill SHALL NOT assign one agent per substance test, per dimension, or per research question. The adversarial check informs the evidence bar; it SHALL NOT decide the tier, which stays with the main agent and, when borderline, the professor. The SKILL.md SHALL state this shape in an `## Execution shape` section that is the first section of the body, so that it is read before a run is planned, and the whole section SHALL be pinned verbatim offline.
 
 Whatever the host does, a helper SHALL write no file: the main agent is the only writer of `<slug>.md`, its notes file, `<slug>-review.md` and `<slug>-feedback.md`; the review file carries every finding regardless of how many a helper returned, and the feedback's load-bearing strengths are named by the main agent. A helper SHALL work from the normalized `<slug>.md` — never the submission, so no student identity reaches it — with the resolved workspace `guidelines.md` override and only the guideline sections its task needs, and SHALL return a verdict per substance test it examined (decisive fail, uncertain, or pass, with one quotable finding per failed test and, for a decisive fail, why no single revision round could repair it), then at most five findings, each with severity, location, a one-sentence problem, a one-sentence suggestion and a quote of at most one sentence, location-only duplicates merged. The helper's return SHALL carry no reasoning prose, no strengths list and no restated guidelines, unless the professor asks for full reasoning.
 
@@ -156,13 +160,13 @@ Whatever the host does, a helper SHALL write no file: the main agent is the only
 - **WHEN** helpers return per-test verdicts with decisive/uncertain marks and one quotable finding each
 - **THEN** the main agent applies the evidence bar and the borderline deferral exactly as without helpers, quoting one finding per test to the professor when the bar is not met
 
-#### Scenario: Strengths stay with the main agent
-- **WHEN** a helper's return carries no strengths, per the contract
-- **THEN** the feedback's "What to keep" block is still present, written by the main agent from its own reading
-
 #### Scenario: Section survives a rewrite
 - **WHEN** a change rewords any part of the execution-shape section, drops its helper-contract paragraph, or moves the section below another section, without updating its pinned copy
 - **THEN** the offline suite fails naming the skill and the difference
+
+#### Scenario: Strengths stay with the main agent
+- **WHEN** a helper's return carries no strengths, per the contract
+- **THEN** the feedback's "What to keep" block is still present, written by the main agent from its own reading
 
 ### Requirement: Literature grounded by consent
 
@@ -233,4 +237,3 @@ The normalized proposal SHALL stay the faithful record of the submission: found 
 #### Scenario: Proposal untouched, notes record
 - **WHEN** papers are woven into the feedback
 - **THEN** the normalized proposal's references are unchanged, the notes file carries each entry as CSL-YAML with the point it serves, and the wrap-up names the papers
-

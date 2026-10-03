@@ -281,6 +281,27 @@ SCOPING_SIGNALS = (
     "Systems Software Group", "Beispiel", "WebAssembly", "Wasm", "eBPF",
     "virtualization", "energy-aware", "Joule",
 )
+# The research vocabulary of tests/fixtures/g01-research-group — its listed areas
+# and its dblp.json titles. Scoping is a filter on the student's idea, never a
+# source for it (skill-ideate spec), so a term here that no student turn voiced
+# has no business in a produced file or in a literature query: it reached the
+# session through the lookup and nowhere else.
+#
+# This deliberately overlaps SCOPING_SIGNALS. The two roles are separated by
+# where a term appears, not by which term it is: naming WebAssembly in chat is
+# how a run proves it read the page, and writing it into the seed is the leak.
+# What was missing is this second reading — the vocabulary was scored as
+# proof-of-fetch and never as bleed, so bleed could not fail a run.
+#
+# Terms are distinctive to the fixture on purpose. A term that collides with
+# ordinary proposal vocabulary ("runtime", "edge", "kernel") leaves this tuple
+# rather than being special-cased at the matcher: a containment set that fires
+# on words any thesis might use would be routed around within a week.
+SCOPING_VOCABULARY = (
+    "WebAssembly", "Wasm", "eBPF", "Joule", "energy-aware", "containerized",
+    "microcontroller", "micro-VM", "power cap", "cold start",
+    "lightweight virtualization", "energy budget", "kernel instrumentation",
+)
 
 
 def verdict_ideate_scoped(files: dict[str, str], seed_name: str | None,
@@ -374,6 +395,115 @@ def _seed_idea_terms(seed_text: str) -> set[str]:
         lines.append(title)
     words = re.findall(r"[a-zA-Zäöüß][a-zA-Zäöüß-]{4,}", " ".join(lines).lower())
     return {w for w in words if w not in PROVENANCE_STOPWORDS}
+
+
+def _voiced_by_student(term: str, turns: list[tuple[str, str]]) -> bool:
+    """Did any STUDENT turn use this term?
+
+    Single words match on a six-character prefix stem, as `verdict_provenance`
+    does, so morphology does not split a term ("containerized"/"containers").
+    Multi-word terms match whole: the stem of "power cap" is "power ", which
+    would fire on "the power of the test".
+    """
+    needle = term[:6].lower() if " " not in term else term.lower()
+    return any(role == "STUDENT" and needle in text.lower() for role, text in turns)
+
+
+def verdict_scoping_containment(transcript: str, files: dict[str, str],
+                                queries: str) -> tuple[bool, str]:
+    """Scoping vocabulary stays out of what the session produces.
+
+    The research-group profile is fetched to judge whether the student's idea
+    fits. It is a filter, not a source (skill-ideate spec): a term that reached
+    the session only through that lookup must not turn up in the seed file, the
+    notes file, or a literature query the run issued.
+
+    The boundary is whether a *student turn* voiced the term, not who said it
+    first — same calibration as `verdict_provenance`, and for the same reason.
+    The skill is required to float hints from the group's publications when the
+    student has no idea at all; a student who takes one up has made it theirs,
+    and counting that as a leak would fail the skill for following its own
+    instructions.
+
+    `queries` is the serialized tool-call input of the run — URLs, search terms,
+    shell commands. Bleed into a query never reaches a file, which is exactly
+    why it needs its own eye: it steers what literature comes back, and the
+    proposal inherits the drift one step later.
+    """
+    turns = _dialogue_turns(transcript)
+    if not turns:
+        return False, "no dialogue turns to attribute scoping vocabulary against"
+    leaks = []
+    for term in SCOPING_VOCABULARY:
+        if _voiced_by_student(term, turns):
+            continue
+        needle = term.lower()
+        for name, text in sorted(files.items()):
+            if needle in text.lower():
+                leaks.append(f"{term} -> {name}")
+        if needle in (queries or "").lower():
+            leaks.append(f"{term} -> literature query")
+    if leaks:
+        return False, "scoping vocabulary no student turn voiced: " + "; ".join(leaks[:6])
+    return True, f"no scoping bleed across {len(files)} produced file(s)"
+
+
+# tests/fixtures/f26-offtopic-reference: two entries, one mechanical finding,
+# opposite right answers. `NEEDED` supports a claim the proposal already makes
+# (students recruited from university programmes); `UNNEEDED` is adjacent, real,
+# and depended on by nothing.
+OFFTOPIC_KEY = "Halvorsen24Kernel"
+NEEDED_KEY = "Serrano24Sampling"
+
+
+def _cites(text: str, key: str) -> bool:
+    return f"@{key}" in text
+
+
+def verdict_offtopic_reference(after: str | None,
+                               rationale: str) -> tuple[bool, str]:
+    """A writing pass resolves `reference-uncited` by judging, not by reflex.
+
+    The unneeded entry may be removed (with a reason recorded) or left uncited
+    with a stated reason; what it may not do is acquire a sentence written so
+    that it is cited. That sentence is the failure this whole change is about:
+    the reference arrived from a literature search, the check complained that
+    nothing cited it, and the cheapest way to quiet the check is a true,
+    specific, well-sourced clause about a neighbouring field.
+
+    The needed entry is the control in the other direction. Removing every
+    uncited entry on sight passes a fixture that only baits the first mistake,
+    so this verdict fails that too.
+
+    `rationale` is where a kept-but-uncited entry has to be accounted for: the
+    notes file and the run's chat, concatenated by the caller, because the skill
+    may record the reason in either.
+    """
+    if after is None:
+        return False, "no proposal file after the writing pass"
+    problems = []
+    if _cites(after, OFFTOPIC_KEY):
+        problems.append(
+            f"{OFFTOPIC_KEY} is now cited — no research question, delta or method step "
+            "needs it, so the citation can only sit in a sentence written to carry it"
+        )
+        resolution = "cited"
+    elif OFFTOPIC_KEY in after:
+        resolution = "kept uncited"
+        if OFFTOPIC_KEY not in rationale:
+            problems.append(f"{OFFTOPIC_KEY} left uncited with no reason recorded")
+    else:
+        resolution = "removed"
+        if OFFTOPIC_KEY not in rationale:
+            problems.append(f"{OFFTOPIC_KEY} removed with no reason recorded")
+    if NEEDED_KEY not in after:
+        problems.append(
+            f"{NEEDED_KEY} was removed — the proposal recruits student participants, "
+            "which is the claim it supports; the finding was identical, the answer was not"
+        )
+    if problems:
+        return False, "; ".join(problems)
+    return True, f"{OFFTOPIC_KEY} {resolution} with a reason, {NEEDED_KEY} not discarded"
 
 
 def verdict_provenance(transcript: str, seed_text: str | None,

@@ -971,7 +971,9 @@ def rule_citations(ctx: Context) -> list[Finding]:
         for key in sorted(set(cited) - defined)
     ]
     out += [
-        warn("reference-uncited", f"reference `{key}` defined but never cited")
+        warn("reference-uncited",
+             f"reference `{key}` defined but never cited — cite it where a claim rests on it, "
+             f"or remove the entry; never add a sentence so that it is cited")
         for key in sorted(defined - set(cited))
     ]
     for key, lineno, bracketed in typed_names:

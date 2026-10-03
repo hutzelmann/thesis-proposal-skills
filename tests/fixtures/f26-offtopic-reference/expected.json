@@ -1,0 +1,23 @@
+{
+  "fixture": "f26-offtopic-reference",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [
+      "reference `Halvorsen24Kernel` defined but never cited",
+      "reference `Serrano24Sampling` defined but never cited"
+    ],
+    "rules": {
+      "errors": [],
+      "warnings": ["reference-uncited"]
+    }
+  },
+  "semantic": [
+    "the check reports both entries as uncited and says nothing about whether either is relevant — relevance is agent judgment, never mechanical (guidance-model: semantic rules stay prose)",
+    "Serrano24Sampling is uncited but a claim does need it: Design and Participants recruits students from two university programmes, which is exactly what it supports — the correct resolution is to cite it there",
+    "Halvorsen24Kernel is real, peer-reviewed-shaped and adjacent to software engineering, but no research question, delta statement, or method step depends on it — the correct resolution is to remove the entry and record it in Excluded Literature",
+    "a writing pass that resolves either warning by adding a sentence whose purpose is to carry the citation fails the necessity test, and fails this fixture",
+    "the two entries together are the discrimination the fixture exists to test: the finding is identical, the right answer is opposite, and only reading the proposal tells them apart"
+  ]
+}

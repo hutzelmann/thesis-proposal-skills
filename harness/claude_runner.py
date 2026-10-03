@@ -13,6 +13,8 @@ Usage:
   uv run python harness/claude_runner.py write_from_seed
   uv run python harness/claude_runner.py import_messy
   uv run python harness/claude_runner.py ideate_scoped --model sonnet
+  uv run python harness/claude_runner.py ideate_scoped_adjacent --model sonnet
+  uv run python harness/claude_runner.py write_offtopic_reference --model sonnet
   uv run python harness/claude_runner.py review_fixture --isolated --max-budget-usd 2
 
 Every run reads the host's stream-json events and prints, beside the L1
@@ -43,6 +45,7 @@ from pathlib import Path
 
 from l1_checks import (
     HELPER_TOOLS,
+    NOTES_SUFFIX,
     load_closing_note,
     select_draft,
     verdict_check_report,
@@ -50,7 +53,10 @@ from l1_checks import (
     verdict_hollow_review,
     verdict_ideate_scoped,
     verdict_import,
+    verdict_offtopic_reference,
     verdict_review,
+    verdict_scoping_containment,
+    verdict_seed,
     verdict_single_context,
     verdict_supervise_feedback_contract,
 )
@@ -162,6 +168,73 @@ SCENARIOS = {
             "scoping notes for later sessions."
         ),
     },
+    # the containment pair. `ideate_scoped` above shares its fixture but cannot
+    # measure containment: its student idea restates the group's first research
+    # area, so a profile term in the seed is indistinguishable from the student's
+    # own words. These two put daylight between the idea and the profile — fully
+    # in `_adjacent`, all but one area in `_partial` — so a term that arrived
+    # through the lookup is attributable.
+    "ideate_scoped_adjacent": {
+        "skill": "proposal-ideate",
+        "serve": "g01-research-group",
+        "produces": True,
+        "request": (
+            "I want to develop a thesis idea. To answer your usual questions up "
+            "front: I'm in the M.Sc. Embedded Systems Engineering program at "
+            "Musterstadt University, it's a Master's thesis, the proposal should "
+            "be in English, I have about five months (April 2027 to September "
+            "2027), and yes, you may look things up online. The research group I "
+            "hope will supervise me has its page at {url} — please take a look "
+            "at what they do; a saved export of their recent publication list is "
+            "at {dblp}. My rough idea: whether code review comments on embedded "
+            "firmware predict where field defects later show up. This message is "
+            "our whole session — I cannot reply again, so develop the idea as far "
+            "as you can without asking me anything, then treat this as me saying "
+            "'enough' and create the seed proposal file now. Don't keep any "
+            "scoping notes for later sessions."
+        ),
+    },
+    "ideate_scoped_partial": {
+        "skill": "proposal-ideate",
+        "serve": "g01-research-group",
+        "produces": True,
+        "request": (
+            "I want to develop a thesis idea. To answer your usual questions up "
+            "front: I'm in the M.Sc. Embedded Systems Engineering program at "
+            "Musterstadt University, it's a Master's thesis, the proposal should "
+            "be in English, I have about five months (April 2027 to September "
+            "2027), and yes, you may look things up online. The research group I "
+            "hope will supervise me has its page at {url} — please take a look "
+            "at what they do; a saved export of their recent publication list is "
+            "at {dblp}. My rough idea: how much an eBPF tracing probe changes the "
+            "latency of the code it observes. This message is our whole session — "
+            "I cannot reply again, so develop the idea as far as you can without "
+            "asking me anything, then treat this as me saying 'enough' and create "
+            "the seed proposal file now. Don't keep any scoping notes for later "
+            "sessions."
+        ),
+    },
+    # the fixture carries two uncited entries with opposite right answers, and
+    # the request deliberately does not say which is which: the judgment is the
+    # thing under test, and naming the off-topic entry would hand it over.
+    "write_offtopic_reference": {
+        "skill": "proposal-write",
+        "fixture": "f26-offtopic-reference",
+        "proposal": "onboarding-documentation-formats.md",
+        "request": (
+            "Please do a writing pass over onboarding-documentation-formats.md and "
+            "resolve whatever the check reports. I cannot answer any questions — "
+            "decide and tell me what you did."
+        ),
+    },
+}
+
+# Scenarios whose verdict is scoping containment rather than the default.
+CONTAINMENT_SCENARIOS = ("ideate_scoped_adjacent", "ideate_scoped_partial")
+# Scenarios judged from `<slug>-review.md`: same inputs, different bar.
+REVIEW_VERDICTS = {
+    "review_fixture": verdict_review,
+    "review_hollow": verdict_hollow_review,
 }
 
 
@@ -348,7 +421,41 @@ def feedback_files(ws: Path) -> dict[str, str]:
     }
 
 
-def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
+def containment_inputs(request: str, chat: str,
+                       events: list[dict]) -> tuple[str, str]:
+    """A two-turn transcript and the run's issued queries.
+
+    The dev runner's scenarios are one-shot, so the student's only turn is the
+    request itself — which is the right attribution anyway: it is the whole of
+    what the student said. Queries are read from the tool-call inputs, where a
+    search term reaches whether the run used the shipped script, a fetch tool, or
+    a shell command.
+    """
+    transcript = f"STUDENT: {request}\n\nASSISTANT: {chat}"
+    queries = " ".join(json.dumps(inp, ensure_ascii=False) for _, inp in tool_calls(events))
+    return transcript, queries
+
+
+def containment_verdict(ws: Path, request: str, chat: str,
+                        events: list[dict]) -> tuple[bool, str]:
+    """Seed structurally complete, and no scoping vocabulary the student never
+    voiced in the files or the queries."""
+    files = workspace_markdown(ws)
+    produced, where = select_draft(files)
+    if not produced:
+        return False, where
+    seeded, why = verdict_seed(files.get(produced), produced)
+    if not seeded:
+        return False, why
+    transcript, queries = containment_inputs(request, chat, events)
+    contained, detail = verdict_scoping_containment(transcript, files, queries)
+    return contained, f"{why}; {detail} ({where})"
+
+
+def verdict(name: str, scenario: dict, ws: Path, chat: str,
+            request: str = "", events: list[dict] | None = None) -> tuple[bool, str]:
+    if name in CONTAINMENT_SCENARIOS:
+        return containment_verdict(ws, request, chat, events or [])
     if scenario.get("feedback"):
         return verdict_supervise_feedback_contract(
             feedback_files(ws), S01_FORBIDDEN, INSTALLED_SKILLS,
@@ -372,12 +479,15 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str) -> tuple[bool, str]:
     current = read(ws / scenario["proposal"])
     if name == "check_report":
         return verdict_check_report(fixture / "expected.json", original, current, chat)
-    if name == "review_fixture":
+    if name == "write_offtopic_reference":
+        # the reason may land in the notes file or in chat; the verdict accepts
+        # either, so both are handed over as one blob
+        notes = "".join(text for fname, text in workspace_markdown(ws).items()
+                        if fname.endswith(NOTES_SUFFIX))
+        return verdict_offtopic_reference(current, notes + chat)
+    if name in REVIEW_VERDICTS:
         review_name = scenario["proposal"].replace(".md", "-review.md")
-        return verdict_review(original, current, read(ws / review_name), review_name)
-    if name == "review_hollow":
-        review_name = scenario["proposal"].replace(".md", "-review.md")
-        return verdict_hollow_review(original, current, read(ws / review_name), review_name)
+        return REVIEW_VERDICTS[name](original, current, read(ws / review_name), review_name)
     if name == "write_from_seed":
         # the skill may draft into a fresh <slug>.md instead of the seed
         chosen, where = select_draft(workspace_markdown(ws), scenario["proposal"], original)
@@ -425,7 +535,7 @@ def main(argv: list[str] | None = None) -> int:
         events = run_claude(ws, request, args.model, args.timeout,
                             budget=args.max_budget_usd, config=config)
         chat = final_text(events)
-        passed, why = verdict(args.scenario, scenario, ws, chat)
+        passed, why = verdict(args.scenario, scenario, ws, chat, request, events)
         print(json.dumps(summary(args, passed, why, events, config), indent=2))
         print("\n--- chat tail ---\n" + chat[-1200:])
         return 0 if passed else 1

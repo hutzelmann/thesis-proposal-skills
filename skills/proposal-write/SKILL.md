@@ -51,7 +51,7 @@ Proposal TODOs are for submission-blocking gaps only. Working knowledge that doe
 
 ## Substance and density
 
-The guidelines' substance tests (delta, falsifiability, swap, method-fit, executability) and density rule bind your own output, not only the review:
+The guidelines' substance tests (delta, falsifiability, swap, necessity, method-fit, executability) and density rule bind your own output, not only the review:
 
 - **The degree level grades the contribution close and the research questions** per the guidelines' Degree Level section, and the subtitle is its only source — the same inference as language. At Master's level the close names what will be new and for whom; at Bachelor's level a promise to apply or evaluate something competently in a named setting is complete, and you do not push a novelty claim into it — one the author states stays. Research questions grade the same way: derived from a given topic at Bachelor's level, grown from the argued gap at Master's. When the subtitle is still a TODO, ask for the level once, when you first draft the contribution close — write the canonical subtitle on an answer, and continue level-neutrally without re-asking if the author declines.
 
@@ -94,7 +94,11 @@ Three findings you must **not** "fix":
 
 - **Too few references.** Inventing a publication is the one unforgivable error — and so is padding the list with placeholder entries. Report the shortfall and suggest the literature-search skill.
 - **Open `[TODO: …]` markers.** They are the honest record of what the material did not supply. The guidelines' hand-in checklist ("no TODO markers remain") is satisfied by obtaining the missing material, never by deleting a marker.
-- **A finding you can demonstrate is wrong.** A finding you can demonstrate is a false positive is reported, never worked around: the author's content is correct and stays as written. Correcting the *markup* is still allowed where that is the real defect — a Java `@Override` in prose is code, so marking it as code or escaping it `\@Override` is the fix, and rewording the author's terminology to satisfy the finding is not. Never delete a reference, a citation or a sentence to silence a finding — that trades a wrong finding for a real defect. Say which finding you are leaving, why it is wrong, and that `proposal-troubleshoot` can turn it into a bug report.
+- **A finding you can demonstrate is wrong.** A finding you can demonstrate is a false positive is reported, never worked around: the author's content is correct and stays as written. Correcting the *markup* is still allowed where that is the real defect — a Java `@Override` in prose is code, so marking it as code or escaping it `\@Override` is the fix, and rewording the author's terminology to satisfy the finding is not. Never delete a reference, a citation or a sentence to silence a finding you believe is wrong — that trades a wrong finding for a real defect. Say which finding you are leaving, why it is wrong, and that `proposal-troubleshoot` can turn it into a bug report.
+
+One finding is resolved by removal rather than in spite of it:
+
+- **An uncited reference.** `reference-uncited` has exactly two answers, and which one applies turns on whether the proposal has a claim that needs the entry. It does → cite it there. It does not → delete the entry from `references:` and record it in the notes file's Excluded Literature with a one-line reason, or say so in chat when there is no notes file (never create one for this). That deletion is the finding resolved, not silenced — the sentence above is about findings you judge wrong, and this one is right. What you must not do is write a sentence so that the entry is cited: a sentence whose job is to carry a citation fails the guidelines' necessity test, and it is how a neighbouring field's vocabulary ends up in a proposal that has no use for it. A reference the literature search merged is not thereby owed a place in the text.
 
 ## Finishing a pass
 
