@@ -632,6 +632,8 @@ A dedicated verdict function SHALL pass when a run spawned no more helper agents
 
 For the supervise scenarios the verifier is part of the scored L1 verdict, not only of the advisory probe: a run SHALL fail when it spawned no helper whose task carries the skill's verifier brief, and when its review's verification section does not state who verified. The headless host offers a subagent tool, so a run that checks inline has skipped the verifier rather than fallen back.
 
+Because the runner starts the host without permission prompts, it SHALL deny the host's outward-facing tools on every run — publishing artifacts and their comments or data, messaging other sessions, push notifications, remote triggers, scheduling, and design sync — so that no test run can publish, send or schedule anything, whatever the model decides. The routing rig SHALL deny the same tools, from the same list.
+
 The runner SHALL accept a hard budget cap passed through to the host, and SHALL label each run as measuring the ambient host configuration or an isolated one prepared for the run, naming the isolated directory. Failures SHALL be reported as follows:
 
 - a host result event marked as an error — a budget overrun among them — SHALL end the run as a runner failure whose message carries the host's subtype, its errors, and the cost and turns so far;
@@ -647,6 +649,10 @@ The chat the verdicts read SHALL be the result event's final text and nothing el
 #### Scenario: Event stream kept
 - **WHEN** a run's workspace is kept
 - **THEN** it holds the run's event stream, from which the tool calls and the agent's narration can be read after the fact
+
+#### Scenario: Outward tools denied
+- **WHEN** the runner or the routing rig builds the host command
+- **THEN** the command denies every tool on the shared outward-facing list, so a model that decides to publish its output as an artifact cannot
 
 #### Scenario: Helper spawn detected from a recorded stream
 - **WHEN** a recorded event stream contains a `Task` or `Agent` or `Workflow` tool call and the scenario allows none

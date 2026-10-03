@@ -28,7 +28,7 @@ from claude_runner import (
     telemetry,
 )
 from l1_checks import HELPER_TOOLS, load_closing_note, verdict_single_context
-from routing import tool_calls
+from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, tool_calls
 
 STREAMS = Path(__file__).resolve().parent / "data" / "routing_streams"
 ARGS = argparse.Namespace(scenario="check_report", model="haiku", no_skill=False)
@@ -138,6 +138,26 @@ def test_host_command_pins_the_stream_flags_and_the_budget_pass_through():
     assert "--verbose" in plain
     assert "--max-budget-usd" not in plain
     assert host_command("do it", "sonnet", budget=2)[-2:] == ["--max-budget-usd", "2"]
+
+
+def test_host_command_denies_every_outward_tool_and_keeps_the_ones_runs_need():
+    """Permission prompts are skipped, so the command itself must deny the host's
+    publishing, messaging and scheduling tools (haiku published artifacts in a
+    2026-10-03 run); the supervise verifier and the lookups must stay usable."""
+    command = host_command("do it", "sonnet")
+    denied = command[command.index("--disallowed-tools") + 1:]
+    for tool in OUTWARD_TOOLS:
+        assert tool in denied, tool
+    for needed in ("Agent", "Task", "WebFetch", "WebSearch", "Skill"):
+        assert needed not in denied, needed
+    # the variadic list must not swallow the budget flag that follows it
+    budgeted = host_command("do it", "sonnet", budget=2)
+    assert budgeted[-2:] == ["--max-budget-usd", "2"]
+    assert "Artifact" in OUTWARD_TOOLS
+
+
+def test_routing_rig_denies_the_same_outward_tools():
+    assert set(OUTWARD_TOOLS) <= set(DISALLOWED_TOOLS)
 
 
 def test_host_failure_reports_an_error_result_with_its_detail():

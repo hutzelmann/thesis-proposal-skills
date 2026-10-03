@@ -65,7 +65,7 @@ from l1_checks import (
     verdict_supervise_verification_declared,
     verdict_supervise_verifier,
 )
-from routing import prepare_config, tool_calls
+from routing import OUTWARD_TOOLS, prepare_config, tool_calls
 from sources import MESSY_REQUEST
 
 HARNESS = Path(__file__).resolve().parent
@@ -301,10 +301,12 @@ def stage(scenario: dict, ws: Path, install_skill: bool = True) -> None:
 
 def host_command(request: str, model: str, budget: float | None = None) -> list[str]:
     """The headless invocation: stream-json emits events only with --verbose,
+    the outward-facing tools are denied because permission prompts are skipped,
     and the budget cap is added only when one was given."""
     command = [
         "claude", "-p", request, "--model", model, "--dangerously-skip-permissions",
         "--output-format", "stream-json", "--verbose",
+        "--disallowed-tools", *OUTWARD_TOOLS,
     ]
     if budget is not None:
         command += ["--max-budget-usd", str(budget)]

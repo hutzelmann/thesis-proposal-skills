@@ -69,7 +69,17 @@ DEFAULT_EPOCHS = 3
 # isolated config still executed Bash. The deny list is what actually holds, and
 # the kill-on-route is what actually bounds the run; neither is decorative.
 ALLOWED_TOOLS = ("Skill", "Read", "Glob")
-DISALLOWED_TOOLS = ("Bash", "Write", "Edit", "NotebookEdit", "Task", "WebFetch", "WebSearch")
+# Host tools that reach outside the machine: publishing, messaging, scheduling.
+# No measured run may use them, whatever the model decides — haiku published
+# its own feedback as claude.ai artifacts in a 2026-10-03 dev run that skipped
+# permission prompts. The dev runner denies the same list.
+OUTWARD_TOOLS = (
+    "Artifact", "ArtifactComments", "ArtifactData", "SendMessage", "ListAgents",
+    "PushNotification", "RemoteTrigger", "CronCreate", "CronDelete", "ScheduleWakeup",
+    "DesignSync",
+)
+DISALLOWED_TOOLS = ("Bash", "Write", "Edit", "NotebookEdit", "Task", "WebFetch", "WebSearch",
+                    *OUTWARD_TOOLS)
 
 # The files a case's utterance may name. Only the ones a given sentence actually
 # names are staged for it: staging the union made "my idea" ambiguous in every
