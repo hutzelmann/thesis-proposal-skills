@@ -29,7 +29,7 @@
 
 ## 5. Ladder (only if 4.3 fails — routed by failing criterion)
 
-- [ ] 5.1 If repetition fails: amend the change via `openspec-update-change` (skill-check warning class, guidance-model formalization boundary), add the `citation-repeated` warning to `check.py` with L0 tests and a trip/pass oracle pair (f27 trips, f00 passes), sync, re-run the L1 dev runs and record; otherwise mark this task N/A in `measurement.md` with the reason
+- [ ] 5.1 If repetition fails (triggered: repair sonnet 1/3): amend the change via `openspec-update-change` (skill-check "Repeated citations reported as a warning", guidance-model "Citation scope" amendment), add the `citation-repeated` warning to `check.py` with L0 tests for every spec scenario and the rule-id tests; recalibrate f27's oracle (trips) and verify every other oracle still passes (pass case); sync; re-run the L1 dev runs on a frozen snapshot and record them in `measurement.md`
 - [ ] 5.2 If scope or synthesis fails on sonnet: amend the change via `openspec-update-change` (skill-write requirement), add the pinned drafting clause to `skills/proposal-write/SKILL.md`, sync, re-run the affected runs and record; otherwise mark N/A with the reason
 - [ ] 5.3 If the bar still fails after 5.2: stop escalating and record the outcome as it stands in `measurement.md`
 

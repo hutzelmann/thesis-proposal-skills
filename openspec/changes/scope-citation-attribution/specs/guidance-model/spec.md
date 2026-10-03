@@ -7,7 +7,9 @@ When consecutive sentences within a paragraph draw on the same publication, the 
 
 The guidance SHALL forbid removing a citation without leaving such a cue, and SHALL name the reason: a citation whose reach the reader cannot see makes borrowed content look like the thesis's own. The guidance SHALL identify a paragraph that needs one source in most of its sentences as a summary of that source rather than a thematic cluster, and SHALL direct its restructuring to the rule that prior work is organised thematically.
 
-The existing prohibition on typing an author name in the prose SHALL stay. Continuation cues are pronouns and noun phrases, never a typed name. Whether a sentence still reads as attributed is a semantic judgement and SHALL remain prose guidance; no list of acceptable cues is encoded as structured guidance data.
+The existing prohibition on typing an author name in the prose SHALL stay. Continuation cues are pronouns and noun phrases, never a typed name.
+
+The surface pattern of the rule (the same set of references cited on adjacent sentences) MAY be reported mechanically as a warning. Whether a sentence still reads as attributed is a semantic judgement and SHALL remain prose guidance; no list of acceptable cues is encoded as structured guidance data.
 
 #### Scenario: Same source on consecutive sentences
 - **WHEN** three consecutive sentences in one paragraph each cite the same publication while the topic stays the same

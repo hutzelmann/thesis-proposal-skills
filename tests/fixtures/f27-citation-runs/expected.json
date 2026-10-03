@@ -4,15 +4,19 @@
   "check": {
     "exit_code": 0,
     "errors_contain": [],
-    "warnings_contain": [],
+    "warnings_contain": [
+      "`Halloran24Update` (line 8) repeats the citation of the sentence before it",
+      "`Ito24Breaking, Vasquez23Semver` (line 12) repeats the citation of the sentence before it",
+      "`Morandi25Breakage` (line 19) repeats the citation of the sentence before it"
+    ],
     "rules": {
       "errors": [],
-      "warnings": []
+      "warnings": ["citation-repeated"]
     }
   },
   "semantic": [
     "the proposal over-cites in three shapes: Halloran24Update on four consecutive sentences of the introduction, the group Vasquez23Semver + Ito24Breaking on three adjacent sentences, and a contribution paragraph that summarises Morandi25Breakage one sentence at a time with the citation on each",
-    "the check is clean because nothing in it detects repetition — the pattern is a semantic defect of citation practice (guidance-model: citation scope), measured by the L1 citation-runs verdict, not by the check",
+    "the check reports no error and one citation-repeated warning per repeating sentence (nine) — the only warning-class rule the fixture trips, and the corpus's trip case for it; whether a repaired sentence still reads as attributed is not mechanical and stays with the agent (guidance-model: citation scope)",
     "every one of the seven references supports a claim the proposal needs, so a writing pass that stops citing any of them has deleted a source rather than repaired the citation practice",
     "a clean repair opens each run with the author-in-text form (e.g. '@Halloran24Update report that …'), carries the following findings in words ('they', 'their classifier'), and keeps the switch from Ito24Breaking + Okonjo23Compat to Okonjo23Compat alone, which is a change of source and correctly cited",
     "the Morandi25Breakage paragraph is a one-source summary; the clean repair compresses it into the comparison the contribution section needs (what the classifier uses, how far it transfers, what it ignores) instead of only removing brackets",

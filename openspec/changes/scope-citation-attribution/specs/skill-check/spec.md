@@ -1,3 +1,26 @@
+## ADDED Requirements
+
+### Requirement: Repeated citations reported as a warning
+The skill SHALL report as a warning (never a hard failure, false positives acknowledged) every sentence that cites exactly the same set of references as the sentence before it in the same block. A blank line or a heading ends a block, and a list item or a table row starts one. Code spans and fenced blocks SHALL be ignored, as they are for every citation scan. A sentence whose set of cited references differs from its predecessor's SHALL NOT be reported, because a change of source is what the guidance asks to cite. Each finding SHALL carry its line and name the repeated references, and its message SHALL name the fix: cite the publication once, opening with the author-in-text form, and refer back to it in words.
+
+The finding reports the surface pattern only. Whether a sentence without a citation still reads as attributed stays a judgement for the agent and the reader.
+
+#### Scenario: Same reference on adjacent sentences
+- **WHEN** two adjacent sentences in one paragraph each cite the same single reference
+- **THEN** the check emits a warning for the second sentence, citing its line and naming the reference
+
+#### Scenario: Same group on adjacent sentences
+- **WHEN** two adjacent sentences each cite the same two references, in any order
+- **THEN** the check emits a warning naming both references
+
+#### Scenario: Source switch
+- **WHEN** one sentence cites one reference and the next cites that reference together with another
+- **THEN** no warning is emitted
+
+#### Scenario: New paragraph
+- **WHEN** the last sentence of one paragraph and the first sentence of the next cite the same reference
+- **THEN** no warning is emitted, because the guidance asks to cite again at a new paragraph
+
 ## MODIFIED Requirements
 
 ### Requirement: Hindsight leakage reported as a warning

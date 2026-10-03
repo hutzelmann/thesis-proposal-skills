@@ -138,11 +138,13 @@ Dispatch goes through a small table keyed by scenario name, so `verdict()` does 
    - L2 synthesis passes on both epochs for sonnet; reported for haiku.
    - 2–3 before/after paragraphs go to the user for the final "professional" call (pipeline stop 2, before archive and commit).
 7. **Ladder, routed by the failing criterion.**
-   - L1 repetition or L2 overcitation fails → **B**: `citation-repeated` warning in `check.py`. It fires on an identical key set on adjacent sentences in a block, is warning-class, quotes the line, and needs f27 oracle recalibration plus deltas for skill-check "Warning-class pattern checks" and guidance-model "Formalization boundary". Then re-measure L1.
+   - L1 repetition or L2 overcitation fails → **B**: `citation-repeated` warning in `check.py`. It fires on an identical key set on adjacent sentences in a block, is warning-class, quotes the line, and needs f27 oracle recalibration. The deltas are a new skill-check requirement ("Repeated citations reported as a warning") and an amendment to this change's guidance-model "Citation scope". "Formalization boundary" stays untouched, because no structured guidance data is added. Then re-measure L1.
    - L2 scope or synthesis fails on sonnet → **C**: a drafting clause in `proposal-write`'s SKILL.md (draft prior work concept-first; cite once per continuous use), pinned under `tests/unit/data/pinned_sentences/`, with a skill-write delta. Then re-measure.
    - After C there is no further escalation. The pipeline stops with the measurement as it stands.
 
-   Ladder steps change specs, so they enter this change through `openspec-update-change` before implementation.
+   Ladder steps change specs, so they enter this change through `openspec-update-change` before implementation. The ladder is sequential (A → B → C, as agreed in the interview). The routing only decides where it enters: a repetition that survives B goes on to C.
+
+   **Outcome after stage A: B triggered.** `write_repair_citations` reached L1 1/3 on sonnet, and each failure was one genuine same-key repeat. Haiku reached 0/3 there, but every failure was a structurally broken draft, not a citation defect, so neither B nor C addresses it; it is reported (see `measurement.md`). One caveat governs what B can achieve. `proposal-write` treats only check *errors* as binding ("Fix every error it reports"); warnings are reported, not mandated. Whether a warning changes a polishing pass is therefore exactly what the re-measurement shows.
 
 ## Risks / Trade-offs
 

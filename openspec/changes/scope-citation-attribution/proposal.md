@@ -38,7 +38,7 @@ None.
 ### Modified Capabilities
 
 - `guidance-model`: a new requirement states the attribution-scope rule for citations, which today exists only as unspecified prose.
-- `skill-check`: "Hindsight leakage reported as a warning" changes from a per-sentence citation anchor to a paragraph-scoped, cue-anchored attribution run.
+- `skill-check`: "Hindsight leakage reported as a warning" changes from a per-sentence citation anchor to a paragraph-scoped, cue-anchored attribution run. The ladder's step B, triggered by the after-measurement, adds "Repeated citations reported as a warning".
 - `testing-harness`: new requirement covering citation-practice instruments, which are the fixtures, scenarios, L1 verdicts, and the L2 rubric.
 
 ## Impact
@@ -48,4 +48,4 @@ None.
 - `harness/l1_checks.py` (new verdicts), `harness/claude_runner.py` (two scenarios), `harness/skill_evals.py` (two tasks, criteria), `harness/rubrics/` (one rubric), `harness/README.md`, the generated `evals/evals.json` projection of `proposal-write`.
 - `tests/fixtures/` (two new synthetic fixtures with oracles), `tests/unit/` (rule and verdict tests).
 - No change to import, review, supervise, publish, or the citation syntax. The ban on typed author names stays, and continuation uses pronouns and noun phrases.
-- Conditional on the measurement: `check.py` gains `citation-repeated`, or `skills/proposal-write/SKILL.md` gains a pinned drafting clause.
+- Triggered by the measurement: `check.py` gains `citation-repeated` (ladder step B). Still conditional: `skills/proposal-write/SKILL.md` gains a pinned drafting clause (step C) if repetition persists.

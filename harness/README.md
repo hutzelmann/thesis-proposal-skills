@@ -93,7 +93,7 @@ All three supervise scenarios allow one helper, the skill's fresh verifier of th
 
 `write_rich_seed` and `write_repair_citations` measure the citation-scope rule, which says to cite a source once per continuous use and carry it on in words. They have Inspect twins of the same name, which add two L2 rubric scorers (citation scope, synthesis) and sit in the registry's on-demand `extended` set, not in the default matrix.
 - **`write_rich_seed`** drafts from `w08-rich-seed`: eleven references, one of them carrying five findings in note form. `verdict_cited_draft()` fails a draft that cites any source on two adjacent sentences of one paragraph, or that cites fewer than six sentences at all, because a draft without the opportunity proves nothing.
-- **`write_repair_citations`** gives a writing pass over `f27-citation-runs`, a check-clean proposal that over-cites in three shapes. `verdict_repaired_draft()` fails a pass that leaves a repetition, and equally one that stops citing a source to get rid of it.
+- **`write_repair_citations`** gives a writing pass over `f27-citation-runs`, a proposal without check errors that over-cites in three shapes; the check reports each repetition as a `citation-repeated` warning. `verdict_repaired_draft()` fails a pass that leaves a repetition, and equally one that stops citing a source to get rid of it.
 
 Neither request mentions citations: the rule has to arrive through the skill's guidance, as it does for a student who asks for a draft or a polish. The per-run measurement lives in the change's `measurement.md`.
 

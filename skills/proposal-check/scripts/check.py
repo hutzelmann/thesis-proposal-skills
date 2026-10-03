@@ -108,6 +108,7 @@ RULE_IDS = (
     "author-name-typed-bracketed",
     "author-name-typed-in-text",
     "author-in-text-without-author",
+    "citation-repeated",
     "reference-id-shape",
     "reference-id-too-long",
     "min-references",
@@ -1289,6 +1290,34 @@ def prose_blocks(body: str) -> list[list[tuple[str, int]]]:
     return blocks
 
 
+def citation_keys(text: str) -> frozenset[str]:
+    return frozenset(m.group(1).rstrip(".,;:") for m in CITATION_KEY.finditer(text))
+
+
+def rule_repeated_citations(ctx: Context) -> list[Finding]:
+    """The same references cited on adjacent sentences of one block.
+
+    The guidance asks for one citation per continuous use, carried on in
+    words. A sentence citing a different set is a change of source, which the
+    guidance asks to cite, so only an identical set counts. Whether an uncited
+    follow-up still reads as attributed is not judged here.
+    """
+    out = []
+    for block in prose_blocks(ctx.body):
+        before: frozenset[str] = frozenset()
+        for sentence, lineno in block:
+            keys = citation_keys(sentence)
+            if keys and keys == before:
+                out.append(warn(
+                    "citation-repeated",
+                    f"`{', '.join(sorted(keys))}` (line {lineno}) repeats the citation "
+                    f"of the sentence before it — cite it once, opening with the "
+                    f"author-in-text form, and refer back in words (\"they\", \"their …\")",
+                ))
+            before = keys
+    return out
+
+
 def continues_attribution(sentence: str, lang: str) -> bool:
     """The sentence opens with a back-reference to a cited work or its authors."""
     words = [w.strip(",;:()\"'„“”") for w in sentence.lower().split()]
@@ -1358,6 +1387,7 @@ RULES = (
     rule_forbidden_sections,
     rule_research_questions,
     rule_citations,
+    rule_repeated_citations,
     rule_reference_id_shape,
     rule_min_references,
     rule_reference_density,

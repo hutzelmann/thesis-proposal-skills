@@ -551,6 +551,60 @@ def test_hindsight_rule_refuses_cues_that_would_launder_a_claim():
     ]
 
 
+def repeated(prose: str) -> list[check.Finding]:
+    return check.rule_repeated_citations(context(
+        f"# Topic\n\n*Master's Thesis Proposal*\n\n{prose}\n\n---\nreferences: []\n---"))
+
+
+def test_repeated_citation_rule_reports_the_same_key_on_adjacent_sentences():
+    findings = repeated("Bots open pull requests [@Halloran24Update].\n"
+                        "Most are merged unreviewed [@Halloran24Update].")
+    assert rules_of(findings) == ["citation-repeated"]
+    assert "`Halloran24Update` (line 6)" in findings[0].message
+    assert "author-in-text form" in findings[0].message
+
+
+def test_repeated_citation_rule_reports_the_same_group_in_any_order():
+    findings = repeated("Versions mislead [@Vasquez23Semver; @Ito24Breaking].\n"
+                        "Patches break interfaces [@Ito24Breaking; @Vasquez23Semver].")
+    assert "`Ito24Breaking, Vasquez23Semver`" in findings[0].message
+
+
+def test_repeated_citation_rule_counts_author_in_text_as_the_same_citation():
+    """`[@k]` then `@k report …` renders `[1]. Smith et al. [1] report …`."""
+    assert rules_of(repeated("Bots open pull requests [@Halloran24Update].\n"
+                             "@Halloran24Update report that most are merged.")) == [
+        "citation-repeated"
+    ]
+
+
+def test_repeated_citation_rule_ignores_a_source_switch():
+    assert repeated("Versions mislead [@Vasquez23Semver].\n"
+                    "Patches break interfaces [@Vasquez23Semver; @Ito24Breaking].") == []
+
+
+def test_repeated_citation_rule_ignores_a_new_paragraph():
+    assert repeated("Bots open pull requests [@Halloran24Update].\n\n"
+                    "Most are merged unreviewed [@Halloran24Update].") == []
+
+
+def test_repeated_citation_rule_ignores_a_cued_continuation():
+    assert repeated("@Halloran24Update study update bots.\n"
+                    "They find that most pull requests are merged unreviewed.") == []
+
+
+def test_repeated_citation_rule_ignores_code():
+    assert repeated("Annotations such as `@Override` matter.\n"
+                    "Tools read `@Override` too.") == []
+
+
+def test_repeated_citation_rule_reports_each_repeating_sentence():
+    findings = repeated("A [@Halloran24Update].\nB [@Halloran24Update].\nC [@Halloran24Update].")
+    assert [f.message.split(")")[0] for f in findings] == [
+        "`Halloran24Update` (line 6", "`Halloran24Update` (line 7"
+    ]
+
+
 def test_hindsight_rule_does_not_split_at_abbreviations():
     """`e.g.` ending a fragment would make the remainder an uncited sentence."""
     assert hindsight(
