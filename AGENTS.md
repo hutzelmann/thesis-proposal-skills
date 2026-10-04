@@ -19,6 +19,7 @@ Instructions for AI agents working **on this repository** (skill development and
 - **Fixtures are synthetic.** Nothing derived verbatim from real proposals; personal data obviously fake (`Erika Musterfrau`, matriculation `00000000`). Every proposal fixture carries an `expected.json` oracle calibrated against `skills/proposal-check/scripts/check.py`; non-proposal web fixtures (`g` prefix) ship none.
 - **Git**: `main` is the release channel — `npx skills add` installs whatever is on it, so what lands there is live and must be complete. Unfinished work therefore stays off `main`; where it lives instead (a branch, a worktree, a local sequence of commits) is deliberately unspecified. Commit per completed OpenSpec change. After merging work that touched `shared/`, re-run `python3 scripts/sync_shared.py` — the generated copies carry `merge=ours`, so a merge can leave them stale, and CI's drift check is the backstop. Do not push and do not publish to skills.sh — both happen only on explicit request.
 - **Credentials**: dev-side keys live in the gitignored `.env` at the repo root (`cp .env.example .env`, fill in) or in the environment; never hardcode, log, or commit them, and never store keys in the private proposals directory — it holds real proposals only. User-side scripts resolve keys via environment, then `$THESIS_PROPOSAL_KEYS`, then `api-keys.env` in the working directory, then `~/.config/thesis-proposal/api-keys.env` — never by searching ancestor directories.
+- **Metered model calls**: an Anthropic model runs on the Claude subscription wherever the subscription can do the job — dev runs, routing, the audit preflight, and grading output that already exists. Any metered call on an Anthropic model (billed per token through OpenRouter or any other API key) — `poe matrix` or another metered poe task, a bare `inspect eval`, a scratch script, an ad-hoc re-judge — goes through the matrix cost gate or an explicit user approval, and the request states the estimate with its basis and names the $0 subscription alternative, or says why there is none (a non-Anthropic row, a change that targets a shipped verdict). Re-grading recorded artifacts is never metered. Before proposing a metered run, check that the pinned model is still the newest of its family in OpenRouter's public model catalog, since a stale pin pays to measure a model users no longer run. Why: by 2026-10-04 the OpenRouter key had billed $21.07 to traced runs, $20.61 of it on Anthropic models the subscription covers; $2.645 of that re-graded drafts the subscription had already produced, from a scratch script run with `--env-file .env` that no gate saw, after an approval of about $0.70. The gate enforces this only for the poe matrix tasks; a scratch script or a bare `inspect eval` is invisible to every repo check, so this rule is the only guard there — which is why it names them.
 
 ## Python conventions
 
@@ -63,9 +64,9 @@ uv run poe test                    # L0 chain: pytest + ruff + generated-copy dr
 uv run poe test-fast               # inner loop: parallel, without the pandoc/typst builds (~3s)
 uv run poe cov                     # coverage with the 78% floor
 uv run poe specs                   # openspec validate --all --strict, CLI version pinned here for CI
-uv run poe dev <scenario> --model haiku   # dev loop, subscription (claude_runner passthrough)
-uv run poe smoke                   # metered smoke: 1 cheap model × core tasks × 1 epoch (cost-gated)
-uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # model-support matrix, cost-gated
+uv run poe dev <scenario> --model haiku   # default for Anthropic models: real Claude Code on the subscription, $0 (claude_runner passthrough)
+uv run poe smoke                   # metered Inspect-wiring check: haiku × core tasks × 1 epoch via OpenRouter (cost-gated) — a quick check is poe dev
+uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # model-support matrix: metered OpenRouter, cost-gated — the source of record for shipped verdicts
 uv run poe report                  # regenerate README model-support summary + docs/model-support.md from logs
 uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
 uv run poe audit-status            # post-publish: skills.sh verdicts vs audit-baseline.json
@@ -81,7 +82,7 @@ matching no revision was edited locally, which answers most "works for me" repor
 
 `poe test` is the gate and always runs everything; `poe test-fast` is the inner loop and is never the thing you check before claiming green.
 
-The model-support matrix (`harness/models.toml` roster, cost gate, classification, report) is documented in `harness/README.md`. Metered matrix runs always show their estimate and wait for confirmation — never bypass the gate with `--yes` on a user's behalf without their explicit cost approval.
+The model-support matrix (`harness/models.toml` roster, cost gate, classification, report) is documented in `harness/README.md`. Metered matrix runs always show their estimate and wait for confirmation — never bypass the gate with `--yes` on a user's behalf without their explicit cost approval. `harness/README.md` opens with a "Which path to use" table that says which path each job takes.
 
 Raw invocations behind them, plus commands without a poe task:
 
@@ -90,12 +91,12 @@ uv run pytest                      # L0: all tests, no model calls
 uv run ruff check .                # lint
 python3 scripts/sync_shared.py --check   # generated-copy drift check
 openspec validate --all --strict   # spec validity
-uv run inspect eval harness/skill_evals.py@<task> --model openrouter/...   # L1/L2, metered
+uv run inspect eval harness/skill_evals.py@<task> --model openrouter/...   # metered and ungated — prefer poe matrix --models/--tasks; see "Metered model calls"
 ```
 
 Publish pipeline (publishing itself stays explicit-request only): L0 suite (includes the audit-invariant tests) → `scripts/audit_scan.py` gate → publish → `scripts/audit_status.py` confirmation, then `--update` the baseline once the new verdicts are reviewed. `harness/audit_llm_preflight.py` approximates the Gen Agent Trust Hub categories via headless `claude -p` and is advisory only.
 
-Eval details, task list, and known limitations: `harness/README.md`. Model runs cost money or quota — run them deliberately, never in loops.
+Eval details, task list, and known limitations: `harness/README.md`. Model runs cost money (OpenRouter) or plan quota (subscription: no money while extra usage stays off, but the rolling limits are shared with the user's own Claude use) — run them deliberately, never in loops.
 
 ## Inspecting output
 

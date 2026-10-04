@@ -2,7 +2,23 @@
 
 L1/L2 skill evals over the fixture corpus (see `openspec/specs/testing-harness/spec.md`). L0 unit tests live in `tests/unit/` and never call models. The L1 verdict logic is shared between both runners via `l1_checks.py` (pure functions, unit-tested).
 
-## Authoritative runs (Inspect + OpenRouter, metered)
+## Which path to use
+
+| Job | Path | Cost |
+|---|---|---|
+| Iterate on a skill with an Anthropic model; quick check after a change | `poe dev <scenario> --model haiku`/`sonnet`/`opus`. Add `--isolated` when the result is cited as a measurement. | subscription |
+| Re-grade output that already exists | on the subscription | subscription — never metered |
+| Skill selection from the descriptions | `poe routing` | subscription |
+| Audit preflight | `harness/audit_llm_preflight.py` | subscription |
+| L2 rubric scores, persona dialogues, confirming a change that targets a shipped verdict | `poe matrix --models … --tasks …` (Inspect) | metered, cost-gated |
+| Non-Anthropic model under test | `poe matrix --models …` | metered, cost-gated — OpenRouter is the only route |
+| The Inspect wiring itself changed | `poe smoke` | metered, cost-gated |
+
+"Subscription" means no money while the plan's extra usage stays off. It does draw the rolling plan limits, which are shared with the operator's own Claude use. Any metered call on an Anthropic model follows the `AGENTS.md` rule "Metered model calls".
+
+## Inspect runs (OpenRouter, metered — source of record)
+
+This path is reserved for what the table above sends here: L2 rubric scores, persona dialogues, non-Anthropic models, and the runs behind shipped verdicts. A bare `inspect eval`, as in the block below, has no cost gate; for any task the registry admits (the matrix or extended set, `support.select_tasks`) prefer `poe matrix --models … --tasks …`, which prints an estimate and waits for confirmation.
 
 Credentials setup (once): `cp .env.example .env`, fill in `OPENROUTER_API_KEY`. Pass the file with `--env-file .env` (uv-native; nothing breaks when `.env` is absent because the flag is per-command).
 
@@ -15,7 +31,7 @@ uv run inspect eval harness/skill_evals.py@review_fixture \
     --model "openrouter/anthropic/claude-haiku-4.5,openrouter/deepseek/deepseek-v4-flash"
 ```
 
-Judge model: `JUDGE_MODEL` env, default `openrouter/anthropic/claude-haiku-4.5`.
+Judge model: `JUDGE_MODEL` env, default `openrouter/anthropic/claude-haiku-4.5`. That default is the matrix L2 judge and, through `PERSONA_MODEL`, the persona's default too. It is pinned and metered on purpose, so shipped L2 verdicts stay comparable from run to run. It is not an ad-hoc grader: re-grading output that already exists runs on the subscription and is never metered.
 View transcripts: `uv run inspect view --log-dir logs/evals`.
 
 Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `review_fixture` (f05; L1 review file + untouched proposal, L2 review rubric), `review_fixture_de` (f04; German review), `review_hollow` (f22; a buzzword-generic proposal with no viable thesis core — L1 review file + untouched proposal, L2 rubric: verdict stated outright, failed substance tests named, never softened into needs-revision phrasing), `title_alarm` (f21; the agent-judgment half of the title rule — L1 title raised in writing and never rewritten in the proposal, L2 title rubric: certificate consequence named, one to three abstracted alternatives, decision left with the student), `check_report` (f15; L1 report fidelity + untouched proposal), `ideate_longrun` (~18-round scripted composite dialogue: preamble → hesitant → extraction probe → pivot → convergence → seeding; L1 seed + notes-growth snapshots + provenance, L2 phase-aware Socratic rubric), `ideate_stonewall` (early stop fires: notes saved, no proposal generated), `ideate_noidea` (hints stay few and sourced, never a topic menu; live DBLP noise must read as weak scoping), `ideate_outofscope` (one chat-only warning, ideation continues), `ideate_probing` (agreeable extractor offering only generalities plus pressure to "just write it"; the genericity gate must hold — swap test voiced, impasse named, no seed), `customize_override` (f00; supervisor requirements to valid TOML overrides), `publish_build` (f00; real pandoc/typst pipeline to PDF), `import_messy` (pasted messy text to standard format, personal data stripped), `troubleshoot_model_rung` (user on haiku with rung 0 already closed; the run must resolve rung 1 from the vendored verdicts and assemble no bundle), `litsearch_expand` (w03; live academic APIs — network-dependent, expect flakiness), `supervise_feedback` (s01; a raw student email to paste-ready feedback — L1: feedback present, at most five curated points, verdict tier stated, no fixture personal data in the feedback, every named skill real, closing note verbatim, any literature woven into the points and recorded in the notes rather than listed; the request pre-answers the borderline deferral and declines every lookup — claim checks and literature alike — so the network path is observed only in a dev run with `proposal-lit-search` staged as a sibling; extended set until the next big matrix run). The former 5-round cooperative dialogues (`ideate_socratic`, `ideate_anecdote`) are retired — their coverage lives in `ideate_longrun`'s hesitant phase, and their cooperative-only personas were the blind spot the probes close.
@@ -32,17 +48,17 @@ uv run python harness/eval_export.py         # or --check for the drift verdict
 
 ## Model-support matrix (metered, cost-gated)
 
-`harness/models.toml` pins the nine-model roster (exact OpenRouter IDs, family, price tier, cached $/Mtok pricing, enabled flag) plus the task policy: the scorable `matrix` set, the `core` smoke subset, `heavy` tasks (1 epoch on frontier tier), `excluded_l1` tasks whose `*_l1*` scorers are the environment-fidelity probes (structural score ignored, `*_l2*` rubric counts), `excluded` tasks (env probes without a rubric, live-network tasks), per-tier default epochs, and token priors for the estimate.
+`harness/models.toml` pins the nine-model roster (exact OpenRouter IDs, family, price tier, cached $/Mtok pricing, enabled flag) plus the task policy: the scorable `matrix` set, the `core` smoke subset, `heavy` tasks (1 epoch on frontier tier), `excluded_l1` tasks whose `*_l1*` scorers are the environment-fidelity probes (structural score ignored, `*_l2*` rubric counts), `excluded` tasks (env probes without a rubric, live-network tasks), per-tier default epochs, and token priors for the estimate. The matrix is the source of record for the verdicts the README ships, and the only place an Anthropic model under test needs OpenRouter.
 
 ```sh
-uv run poe smoke                     # haiku × core tasks × 1 epoch (~$1)
+uv run poe smoke                     # metered Inspect-wiring check: haiku × core tasks × 1 epoch via OpenRouter (cost-gated) — a quick check is poe dev
 uv run poe matrix --estimate-only    # price a full run without any metered call
 uv run poe matrix --tier cheap      
 uv run poe matrix --models claude-haiku-4.5 gpt-5.6-luna --tasks write_from_seed
 uv run poe report                    # regenerate README summary + docs/model-support.md
 ```
 
-Every metered invocation prints a cost estimate (registry pricing × token priors, replaced by measured history from `logs/evals/matrix-usage.json` once it exists) and waits for confirmation; `--yes` skips the prompt. After the run it prints actual spend (recorded token usage × registry pricing), persists a `matrix-cost-*.json` summary next to the logs, and updates the usage history. Per-sample `token_limit` backstops runaway loops.
+Every metered invocation prints a cost estimate (registry pricing × token priors, replaced by measured history from `logs/evals/matrix-usage.json` once it exists) and waits for confirmation; `--yes` skips the prompt. `--yes` is for the operator to type: an agent passes it only after the user approved that run's estimate in chat. After the run it prints actual spend (recorded token usage × registry pricing), persists a `matrix-cost-*.json` summary next to the logs, and updates the usage history. Per-sample `token_limit` backstops runaway loops.
 
 Classification per model×task cell: 3 epochs (per-tier policy in the registry), all pass = solid, mixed = flaky, none = fail. Per model: any fail → warning naming the affected skills (via the registry's task→skill map), any flaky → "flaky on <skills>", all cells solid → supported, solid-but-incomplete coverage → partial (untested count disclosed), no logs at all → untested. Disabled registry models keep their row, marked as disabled. `poe report` derives both the README summary table (pinned ID, verdict, run date) and the full grid with pass rates and per-model run cost from the newest log per cell — nothing in either artifact is hand-written.
 
@@ -51,15 +67,15 @@ Classification per model×task cell: 3 epochs (per-tier policy in the registry),
 The standard's with/without comparison (testing-harness spec): the same single-turn task, staging, and verdicts, with the skill instructions removed. On-demand and cost-gated — never part of the default matrix, and baseline logs never count toward support verdicts.
 
 ```sh
-uv run poe matrix --baseline --models claude-haiku-4.5 --tasks write_from_seed
+uv run poe dev check_report --no-skill --model haiku    # subscription: dev-loop eyeballing, no logs
+uv run poe matrix --baseline --models claude-haiku-4.5 --tasks write_from_seed    # metered, gated
 uv run --env-file .env inspect eval harness/skill_evals.py@check_report \
-    -T baseline=true --model openrouter/anthropic/claude-haiku-4.5 --log-dir logs/evals
-uv run poe dev check_report --no-skill --model haiku    # dev-loop eyeballing, no logs
+    -T baseline=true --model openrouter/anthropic/claude-haiku-4.5 --log-dir logs/evals    # metered, ungated: needs explicit approval
 ```
 
 Persona-dialogue tasks have no baseline arm (a without-skill control of a skill-shaped conversation measures nothing); the registry's `dialogue` list drops them from `--baseline` selections and their builders take no `baseline` parameter. When baseline and with-skill logs exist for the same (model, task), `poe report` appends a "Baseline delta" section to `docs/model-support.md`: pass rate bought vs tokens and time spent, plus per-scorer flags — a scorer passing in both arms is a dead-assertion candidate, one failing in both arms a too-hard candidate.
 
-## Dev runs (real Claude Code binary, Max subscription)
+## Dev runs (real Claude Code binary, Max subscription — the default for Anthropic models)
 
 Stages a fixture into a temp workspace, installs the skill into `.claude/skills/` (real skill discovery), runs headless `claude -p`, applies the same L1 verdicts:
 

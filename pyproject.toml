@@ -92,8 +92,10 @@ pythonpath = [
 [tool.coverage.run]
 source = ["harness", "scripts", "skills"]
 omit = [
-    # metered-only: these execute under `inspect eval` or a live model run and
-    # never at L0, so counting them measures nothing and only drags the floor
+    # skill_evals.py runs only under `inspect eval` (metered), never at L0.
+    # claude_runner.py drives the real host on the subscription, but L0 tests
+    # run its staging, parsing and verdict code; the entry stays until
+    # add-dev-runner-judge removes it or records why it stays
     "harness/skill_evals.py",
     "harness/claude_runner.py",
 ]
