@@ -35,7 +35,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -46,7 +45,7 @@ from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
-from host_login import RELOGIN
+from host_login import login_remedy
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
@@ -71,7 +70,13 @@ from l1_checks import (
     verdict_supervise_verification_declared,
     verdict_supervise_verifier,
 )
-from routing import OUTWARD_TOOLS, isolated_config, tool_calls
+from routing import (
+    OUTWARD_TOOLS,
+    error_result_reason,
+    isolated_config,
+    result_event,
+    tool_calls,
+)
 from sources import MESSY_REQUEST
 
 HARNESS = Path(__file__).resolve().parent
@@ -346,18 +351,11 @@ def host_command(request: str, model: str, budget: float | None = None) -> list[
     return command
 
 
-# the host's wording for a login it cannot use: an expired one that could not be
-# refreshed (recorded 2026-10-03 and 2026-10-04), or none at all
-LOGIN_FAILURE = re.compile(r"Failed to authenticate|OAuth session|Not logged in")
-
-
 def host_failure(events: list[dict], returncode: int, stderr: str) -> str | None:
     """Why the run is a runner failure, or None — with the re-login instruction
     when the reason is the stored login, which no rerun repairs."""
     message = host_failure_reason(events, returncode, stderr)
-    if message and LOGIN_FAILURE.search(message):
-        message += f"\nThe stored host login is no longer valid: {RELOGIN}, then rerun."
-    return message
+    return login_remedy(message) if message else None
 
 
 def host_failure_reason(events: list[dict], returncode: int, stderr: str) -> str | None:
@@ -366,23 +364,14 @@ def host_failure_reason(events: list[dict], returncode: int, stderr: str) -> str
     subtype, errors and cost so far), a non-zero exit without one (the stderr
     tail), and a zero exit with no result event at all, which the host allows
     and which would otherwise judge the L1 over partial narration with empty
-    telemetry."""
-    result = result_event(events)
-    if result.get("is_error"):
-        # an expired login arrives as subtype "success" with no `errors` and the
-        # reason in `result` (recorded 2026-10-03); without the fallback the
-        # message read "success: no detail"
-        errors = "; ".join(str(e) for e in result.get("errors") or [])
-        if not errors:
-            reason = result.get("terminal_reason")
-            text = result.get("result") if isinstance(result.get("result"), str) else ""
-            errors = " — ".join(part for part in (reason, text) if part) or "no detail"
-        return (f"claude failed: {result.get('subtype', 'error')}: {errors} "
-                f"(cost so far {result.get('total_cost_usd')} USD, "
-                f"{result.get('num_turns')} turns)")
+    telemetry. The first is composed by `routing.error_result_reason`, which
+    the routing rig reads the same way."""
+    reason = error_result_reason(events)
+    if reason:
+        return reason
     if returncode != 0:
         return f"claude failed: {stderr.strip()[-800:] or 'no stderr'}"
-    if not result:
+    if not result_event(events):
         return "claude emitted no result event"
     return None
 
@@ -438,10 +427,6 @@ def save_events(events: list[dict], ws: Path) -> Path:
     path.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events),
                     encoding="utf-8")
     return path
-
-
-def result_event(events: list[dict]) -> dict:
-    return next((e for e in reversed(events) if e.get("type") == "result"), {})
 
 
 def final_text(events: list[dict]) -> str:

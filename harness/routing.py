@@ -37,7 +37,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from host_login import CREDENTIALS, LONG_LIVED_TOKEN, RELOGIN, keep_login
+from host_login import CREDENTIALS, LONG_LIVED_TOKEN, RELOGIN, keep_login, login_remedy
 
 HARNESS = Path(__file__).resolve().parent
 REPO = HARNESS.parent
@@ -208,6 +208,31 @@ def tool_calls(events: list[dict]) -> list[tuple[str, dict]]:
     return calls
 
 
+def result_event(events: list[dict]) -> dict:
+    """The host's closing `result` event, or {} when the run emitted none."""
+    return next((e for e in reversed(events) if e.get("type") == "result"), {})
+
+
+def error_result_reason(events: list[dict]) -> str | None:
+    """The host's own account of a run it ended with an error result, or None:
+    the subtype, its errors, and the cost and turns so far. Shared by the dev
+    runner and the routing rig, which both need the host's words for it."""
+    result = result_event(events)
+    if not result.get("is_error"):
+        return None
+    # an expired login arrives as subtype "success" with no `errors` and the
+    # reason in `result` (recorded 2026-10-03); without the fallback the
+    # message read "success: no detail"
+    errors = "; ".join(str(e) for e in result.get("errors") or [])
+    if not errors:
+        reason = result.get("terminal_reason")
+        text = result.get("result") if isinstance(result.get("result"), str) else ""
+        errors = " — ".join(part for part in (reason, text) if part) or "no detail"
+    return (f"claude failed: {result.get('subtype', 'error')}: {errors} "
+            f"(cost so far {result.get('total_cost_usd')} USD, "
+            f"{result.get('num_turns')} turns)")
+
+
 def route_from_events(events: list[dict], bound: int = MAX_PREPARATORY_CALLS) -> str | None:
     """First `proposal-*` skill invoked, or None when the case went unrouted.
 
@@ -228,6 +253,28 @@ def route_from_events(events: list[dict], bound: int = MAX_PREPARATORY_CALLS) ->
     return None
 
 
+def case_result(case: Case, events: list[dict], stream_error: str | None) -> Result:
+    """What one measurement means.
+
+    A route outranks every error: a host that fails after selecting has still
+    selected. Without one, the host's error result outranks the stream's error,
+    so a dead login is reported in the host's words rather than as "no events" —
+    and never as unrouted, which a negative case would count as correct: a
+    sweep run while logged out would otherwise pass every negative case and
+    report every other case as not selected.
+    """
+    result = Result(case_id=case.id, expected=case.expected, kind=case.kind)
+    try:
+        result.route = route_from_events(events)
+    except ValueError as exc:
+        result.error = str(exc)
+        return result
+    if result.route is None:
+        failure = error_result_reason(events)
+        result.error = login_remedy(failure) if failure else stream_error
+    return result
+
+
 def classify(results: list[Result]) -> Matrix:
     matrix = Matrix()
     for result in results:
@@ -243,6 +290,13 @@ def classify(results: list[Result]) -> Matrix:
 
 def misroutes(results: list[Result]) -> list[Result]:
     return [r for r in results if r.error is None and not r.passed]
+
+
+def report_due(matrix: Matrix) -> bool:
+    """Whether a run measured anything to report. A run in which every case
+    errored would replace the report with 0/0, and the next run would be
+    compared against that instead of the last real score."""
+    return matrix.totals[1] > 0
 
 
 def outcome_label(expected: str, selected: str) -> str:
@@ -469,7 +523,6 @@ def stream_events(ws: Path, config: Path, utterance: str, model: str,
 
 def measure(case: Case, config: Path, model: str, timeout: int,
             keep_events: bool = False) -> Result:
-    result = Result(case_id=case.id, expected=case.expected, kind=case.kind)
     with tempfile.TemporaryDirectory(prefix="routing-") as tmp:
         ws = Path(tmp)
         stage_workspace(ws, case)
@@ -478,14 +531,7 @@ def measure(case: Case, config: Path, model: str, timeout: int,
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         (LOG_DIR / f"events-{case.id}.jsonl").write_text(
             "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
-    try:
-        result.route = route_from_events(events)
-    except ValueError as exc:
-        result.error = str(exc)
-        return result
-    if result.route is None and error:
-        result.error = error
-    return result
+    return case_result(case, events, error)
 
 
 # ---------- entry point ------------------------------------------------------
@@ -501,6 +547,20 @@ def select_cases(cases: list[Case], args: argparse.Namespace) -> list[Case]:
 
 def epochs_for(_case: Case, override: int | None) -> int:
     return override if override is not None else DEFAULT_EPOCHS
+
+
+def write_report(results: list[Result], matrix: Matrix, args: argparse.Namespace) -> None:
+    """Replace the tracked report — unless the run measured nothing, which
+    leaves the earlier report and its score standing."""
+    if not report_due(matrix):
+        print(f"routing: no measurement completed; {REPORT_FILE.name} left unchanged")
+        return
+    REPORT_FILE.write_text(
+        render_report(results, matrix, args.model, supersedes=previous_score(REPORT_FILE),
+                      epochs=args.epochs or DEFAULT_EPOCHS,
+                      conditions_changed=args.conditions_changed),
+        encoding="utf-8")
+    print(f"routing: report written to {REPORT_FILE.relative_to(REPO).as_posix()}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -560,7 +620,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  MIS-ROUTE {result.case_id}: expected {result.expected}, got {result.selected}")
     for error in matrix.errors:
         print(f"  ERROR {error}")
-    print(f"routing: {passed}/{total} correct")
+    errored = f", {len(matrix.errors)} errored" if matrix.errors else ""
+    print(f"routing: {passed}/{total} correct{errored}")
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -571,13 +632,10 @@ def main(argv: list[str] | None = None) -> int:
     }
     (LOG_DIR / f"{stamp}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     if not args.no_report:
-        REPORT_FILE.write_text(
-            render_report(results, matrix, args.model, supersedes=previous_score(),
-                          epochs=args.epochs or DEFAULT_EPOCHS,
-                          conditions_changed=args.conditions_changed),
-            encoding="utf-8")
-        print(f"routing: report written to {REPORT_FILE.relative_to(REPO).as_posix()}")
-    return 0 if passed == total else 1
+        write_report(results, matrix, args)
+    # an errored case is no verdict, so it cannot count as a pass either: a
+    # sweep in which every case errored totals 0/0
+    return 0 if passed == total and not matrix.errors else 1
 
 
 if __name__ == "__main__":

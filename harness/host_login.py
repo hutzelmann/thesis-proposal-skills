@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -34,6 +35,10 @@ LONG_LIVED_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
 CLAIM_NAME = ".devrun-refresh.claim"
 RELOGIN = "run `claude` and enter `/login`"
 
+# the host's wording for a login it cannot use: an expired one that could not be
+# refreshed (recorded 2026-10-03 and 2026-10-04), or none at all
+LOGIN_FAILURE = re.compile(r"Failed to authenticate|OAuth session|Not logged in")
+
 # Judgment, not host constants (the host's own refresh margin is not
 # documented). A run whose stored token expires within the margin is about to
 # refresh. The host refreshes on its first request, seconds after start, so a
@@ -45,6 +50,14 @@ REFRESH_MARGIN_S = 300
 CLAIM_HOLD_S = 60
 CLAIM_STALE_S = 120
 CLAIM_WAIT_S = 90
+
+
+def login_remedy(message: str) -> str:
+    """`message`, plus the re-login instruction when the reason is the stored
+    login — which no rerun repairs. Shared by the dev runner and the routing rig."""
+    if LOGIN_FAILURE.search(message):
+        return f"{message}\nThe stored host login is no longer valid: {RELOGIN}, then rerun."
+    return message
 
 
 def expires_at(path: Path) -> int | None:
