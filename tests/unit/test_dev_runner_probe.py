@@ -186,6 +186,28 @@ def test_host_failure_reads_the_result_text_when_errors_are_empty():
     assert "no detail" not in message
 
 
+def test_host_failure_tells_the_operator_to_log_in_again():
+    """The stored login cannot be repaired from inside a run; the only remedy
+    is an interactive login, so the message has to say which one."""
+    stream = [{
+        "type": "result", "subtype": "success", "is_error": True, "errors": None,
+        "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
+        "terminal_reason": "api_error", "total_cost_usd": 0, "num_turns": 1,
+    }]
+    message = host_failure(stream, 0, "")
+    assert "`claude`" in message
+    assert "`/login`" in message
+    assert "/login" in host_failure([], 1, "Not logged in · Please run /login\n")
+
+
+def test_host_failure_names_no_login_remedy_for_other_errors():
+    stream = [{
+        "type": "result", "subtype": "error_max_budget_usd", "is_error": True,
+        "errors": ["Exceeded USD budget"], "total_cost_usd": 0.31, "num_turns": 4,
+    }]
+    assert "/login" not in host_failure(stream, 1, "")
+
+
 def test_host_failure_falls_back_to_stderr_without_a_result():
     assert host_failure([], 1, "boom\n") == "claude failed: boom"
     assert host_failure([], 1, "") == "claude failed: no stderr"
