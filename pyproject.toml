@@ -92,7 +92,9 @@ pythonpath = [
 [tool.coverage.run]
 source = ["harness", "scripts", "skills"]
 omit = [
-    # skill_evals.py runs only under `inspect eval` (metered), never at L0.
+    # skill_evals.py: L0 builds and stages every task (test_eval_wiring.py),
+    # but its scorer and solver bodies run only inside an eval against a
+    # model, so the floor leaves the file out.
     # claude_runner.py drives the real host on the subscription, but L0 tests
     # run its staging, parsing and verdict code; the entry stays until
     # add-dev-runner-judge removes it or records why it stays

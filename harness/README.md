@@ -7,26 +7,28 @@ L1/L2 skill evals over the fixture corpus (see `openspec/specs/testing-harness/s
 | Job | Path | Cost |
 |---|---|---|
 | Iterate on a skill with an Anthropic model; quick check after a change | `poe dev <scenario> --model haiku`/`sonnet`/`opus`. Add `--isolated` when the result is cited as a measurement. | subscription |
-| Re-grade output that already exists | on the subscription | subscription — never metered |
+| Re-grade output that already exists | the agent's own session, or `claude -p` over the recorded files | subscription — never metered |
 | Skill selection from the descriptions | `poe routing` | subscription |
 | Audit preflight | `harness/audit_llm_preflight.py` | subscription |
 | L2 rubric scores, persona dialogues, confirming a change that targets a shipped verdict | `poe matrix --models … --tasks …` (Inspect) | metered, cost-gated |
 | Non-Anthropic model under test | `poe matrix --models …` | metered, cost-gated — OpenRouter is the only route |
 | The Inspect wiring itself changed | `poe smoke` | metered, cost-gated |
 
-"Subscription" means no money while the plan's extra usage stays off. It does draw the rolling plan limits, which are shared with the operator's own Claude use. Any metered call on an Anthropic model follows the `AGENTS.md` rule "Metered model calls".
+"Subscription" means no money while the plan's extra usage stays off. It does draw the rolling plan limits, which are shared with the operator's own Claude use. The subscription runners pass the launching shell's environment to `claude -p`, where an exported `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_USE_*` switch outranks the login and bills every call per token with no gate; unset them before a subscription run, since `claude auth status` still reports the login with `ANTHROPIC_API_KEY` exported. Any metered call on an Anthropic model follows the `AGENTS.md` rule "Metered model calls".
 
 ## Inspect runs (OpenRouter, metered — source of record)
 
-This path is reserved for what the table above sends here: L2 rubric scores, persona dialogues, non-Anthropic models, and the runs behind shipped verdicts. A bare `inspect eval`, as in the block below, has no cost gate; for any task the registry admits (the matrix or extended set, `support.select_tasks`) prefer `poe matrix --models … --tasks …`, which prints an estimate and waits for confirmation.
+This path is reserved for what the table above sends here: L2 rubric scores, persona dialogues, non-Anthropic models, and the runs behind shipped verdicts. A bare `inspect eval`, as in the block below, has no cost gate; for any task the registry admits (the matrix or extended set, `support.select_tasks`) prefer `poe matrix --models … --tasks …`, which prints an estimate and waits for confirmation. Every matrix run writes to `logs/evals`, and `poe report` builds the shipped verdicts from the newest log per cell there, so a check that is not meant for the record passes `--log-dir logs/scratch` or stays on `poe dev`.
 
 Credentials setup (once): `cp .env.example .env`, fill in `OPENROUTER_API_KEY`. Pass the file with `--env-file .env` (uv-native; nothing breaks when `.env` is absent because the flag is per-command).
 
 ```sh
+# metered, ungated: needs explicit approval. check_report has no L2 rubric and is
+# excluded from the matrix; its $0 run is `poe dev check_report --model haiku`.
 uv run --env-file .env inspect eval harness/skill_evals.py@check_report \
     --model openrouter/anthropic/claude-haiku-4.5 --log-dir logs/evals
 
-# model matrix in one invocation (one log per model):
+# model matrix in one invocation (one log per model) — metered, ungated: needs explicit approval
 uv run inspect eval harness/skill_evals.py@review_fixture \
     --model "openrouter/anthropic/claude-haiku-4.5,openrouter/deepseek/deepseek-v4-flash"
 ```
