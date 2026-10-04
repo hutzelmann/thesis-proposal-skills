@@ -200,3 +200,71 @@ def test_check_detects_tampering(victim_rel, capsys):
         assert "OUT OF SYNC" in capsys.readouterr().out
     finally:
         victim.write_text(original, encoding="utf-8")
+
+
+# ---------- install prompt materialized into documents ----------------------
+
+
+PROMPT = "Install it.\n\n1. Do the thing.\n"
+
+
+def test_prompt_fills_every_marked_fence():
+    doc = ("intro\n<!-- install-prompt -->\n```text\nstale\n```\nmiddle\n"
+           "<!-- install-prompt -->\n\n```text\n```\nend\n")
+    out = sync_shared.render_prompt_doc(doc, PROMPT, "doc")
+    assert out.count("Install it.\n\n1. Do the thing.\n```") == 2
+    assert "stale" not in out
+    assert out.startswith("intro\n")
+    assert out.endswith("```\nend\n")
+    assert sync_shared.render_prompt_doc(out, PROMPT, "doc") == out
+
+
+def test_prompt_leaves_unmarked_fences_alone():
+    doc = "```sh\nnpx skills add x\n```\n<!-- install-prompt -->\n```text\nold\n```\n"
+    out = sync_shared.render_prompt_doc(doc, PROMPT, "doc")
+    assert out.startswith("```sh\nnpx skills add x\n```\n")
+
+
+@pytest.mark.parametrize("doc", [
+    "no marker at all\n",
+    "<!-- install-prompt -->\nprose instead of a fence\n",
+    "<!-- install-prompt -->\n```text\nnever closed\n",
+], ids=["no-marker", "no-fence", "unclosed"])
+def test_prompt_anchor_problems_raise(doc):
+    with pytest.raises(sync_shared.AnchorError):
+        sync_shared.render_prompt_doc(doc, PROMPT, "doc")
+
+
+@pytest.fixture
+def prompt_tree(tmp_path, monkeypatch):
+    """The prompt source and its documents, copied: the tamper cases below run
+    on the copy, so no other worker ever reads a tampered README."""
+    for rel in [*sync_shared.PROMPT_DOCS, "shared/blocks/install-prompt.md"]:
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text((REPO / rel).read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(sync_shared, "REPO", tmp_path)
+    monkeypatch.setattr(sync_shared, "PROMPT_SOURCE", tmp_path / "shared/blocks/install-prompt.md")
+    return tmp_path
+
+
+@pytest.mark.parametrize("doc_rel", sync_shared.PROMPT_DOCS)
+def test_check_detects_a_drifted_prompt_copy(doc_rel, prompt_tree):
+    victim = prompt_tree / doc_rel
+    original = victim.read_text(encoding="utf-8")
+    victim.write_text(original.replace("(recommended)", "(advised)", 1), encoding="utf-8")
+    assert sync_shared._sync_prompt_docs(check=True) == [doc_rel]
+    assert sync_shared._sync_prompt_docs(check=False) == []
+    assert victim.read_text(encoding="utf-8") == original
+
+
+def test_unchanged_documents_are_not_announced_to_the_hook(prompt_tree, capsys):
+    """The hook stages every announced destination; a README that only needed
+    no change must not be staged with the author's unrelated edits."""
+    assert sync_shared._sync_prompt_docs(check=False) == []
+    assert capsys.readouterr().out == ""
+    source = prompt_tree / "shared/blocks/install-prompt.md"
+    source.write_text(source.read_text(encoding="utf-8") + "6. New step.\n", encoding="utf-8")
+    sync_shared._sync_prompt_docs(check=False)
+    announced = capsys.readouterr().out.split()
+    assert "README.md" in announced
+    assert "docs/install.md" in announced

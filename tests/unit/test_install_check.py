@@ -76,3 +76,42 @@ def test_isolated_env_strips_claude_and_redirects_home(tmp_path, monkeypatch):
     assert "CLAUDECODE" not in env
     assert env["HOME"] == str(tmp_path)
     assert env["XDG_CONFIG_HOME"].startswith(str(tmp_path))
+
+
+def test_installer_arm_matches_the_installer():
+    """The check restates where the installer writes; this keeps them in step."""
+    import install
+    assert install_check.INSTALLER_DIRS == install.SHARED_DIRS
+    assert install_check.RECORD_NAME == install.RECORD_NAME
+
+
+def test_installed_problems_names_extra_and_differing_skills(tmp_path):
+    src, root = tmp_path / "src", tmp_path / "root"
+    for base in (src / "skills", root):
+        (base / "proposal-a").mkdir(parents=True)
+        (base / "proposal-a" / "SKILL.md").write_text("a", encoding="utf-8")
+    (root / "proposal-extra").mkdir()
+    (root / "proposal-a" / "SKILL.md").write_text("changed", encoding="utf-8")
+    problems = install_check.installed_problems(src, root, ["proposal-a"], "arm")
+    assert problems == [
+        "arm: installed ['proposal-a', 'proposal-extra'] != shipped ['proposal-a']",
+        "arm: proposal-a: differs: SKILL.md",
+    ]
+
+
+def test_installed_problems_ignores_the_record_file(tmp_path):
+    src, root = tmp_path / "src", tmp_path / "root"
+    for base in (src / "skills", root):
+        (base / "proposal-a").mkdir(parents=True)
+        (base / "proposal-a" / "SKILL.md").write_text("a", encoding="utf-8")
+    (root / install_check.RECORD_NAME).write_text("{}", encoding="utf-8")
+    assert install_check.installed_problems(src, root, ["proposal-a"], "arm") == []
+
+
+def test_record_problems(tmp_path):
+    record = tmp_path / install_check.RECORD_NAME
+    assert "no readable install record" in install_check.record_problems(tmp_path, "abc", "x")[0]
+    record.write_text('{"revision": "abc"}', encoding="utf-8")
+    assert install_check.record_problems(tmp_path, "abc", "x") == []
+    assert install_check.record_problems(tmp_path, "def", "x") == [
+        "x: install record names revision abc, expected def"]

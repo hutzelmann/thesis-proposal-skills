@@ -87,10 +87,14 @@ pythonpath = [
     "skills/proposal-import/scripts",
     "skills/proposal-publish/scripts",
     "skills/proposal-troubleshoot/scripts",
+    # the repository installer (install.py) — user-side, but outside skills/
+    # so it never installs itself
+    ".",
 ]
 
 [tool.coverage.run]
 source = ["harness", "scripts", "skills"]
+source_pkgs = ["install"]
 omit = [
     # metered-only: these execute under `inspect eval` or a live model run and
     # never at L0, so counting them measures nothing and only drags the floor

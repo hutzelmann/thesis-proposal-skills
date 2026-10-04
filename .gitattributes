@@ -19,6 +19,7 @@ skills/proposal-supervise/references/structure.json linguist-generated=true merg
 skills/proposal-supervise/scripts/check.py linguist-generated=true merge=ours
 skills/proposal-troubleshoot/references/model-support.json linguist-generated=true merge=ours
 skills/proposal-troubleshoot/references/structure.json linguist-generated=true merge=ours
+skills/proposal-troubleshoot/scripts/check.py linguist-generated=true merge=ours
 skills/proposal-write/references/guidelines.md linguist-generated=true merge=ours
 skills/proposal-write/references/structure.json linguist-generated=true merge=ours
 skills/proposal-write/scripts/check.py linguist-generated=true merge=ours

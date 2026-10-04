@@ -15,6 +15,8 @@ Usage:
   uv run python harness/claude_runner.py ideate_scoped --model sonnet
   uv run python harness/claude_runner.py ideate_scoped_adjacent --model sonnet
   uv run python harness/claude_runner.py write_offtopic_reference --model sonnet
+  uv run python harness/claude_runner.py install_prompt --model sonnet
+  uv run python harness/claude_runner.py install_prompt_answered --model sonnet
   uv run python harness/claude_runner.py review_fixture --isolated --max-budget-usd 2
 
 Every run reads the host's stream-json events and prints, beside the L1
@@ -39,6 +41,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import zipfile
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -54,6 +57,8 @@ from l1_checks import (
     verdict_hollow_review,
     verdict_ideate_scoped,
     verdict_import,
+    verdict_install_prompt_asks_scope,
+    verdict_install_prompt_installed,
     verdict_offtopic_reference,
     verdict_review,
     verdict_scoping_containment,
@@ -256,6 +261,10 @@ SCENARIOS = {
             "decide and tell me what you did."
         ),
     },
+    # the install prompt, unanswered and with the scope answer given up front
+    # (run_install_probe; nothing is staged)
+    "install_prompt": {"install": True},
+    "install_prompt_answered": {"install": True, "answered": True},
 }
 
 # Scenarios whose verdict is scoping containment rather than the default.
@@ -265,6 +274,113 @@ REVIEW_VERDICTS = {
     "review_fixture": verdict_review,
     "review_hollow": verdict_hollow_review,
 }
+
+
+# ---------- install prompt probe (installation spec) -------------------------
+#
+# Not a skill scenario: nothing is staged, and the agent installs the skills
+# itself by carrying out the shared install prompt. The default branch is
+# replaced by a local server holding install.py and a zip of the working tree,
+# so the probe measures this tree and reaches no public service, and the run
+# gets its own HOME so the installer can never touch the operator's skills.
+
+INSTALL_PROMPT = REPO / "shared" / "blocks" / "install-prompt.md"
+INSTALLER = REPO / "install.py"
+RAW_INSTALLER_URL = (
+    "https://raw.githubusercontent.com/hutzelmann/thesis-proposal-skills/main/install.py")
+DEFAULT_ARCHIVE_URL = (
+    "https://codeload.github.com/hutzelmann/thesis-proposal-skills/zip/refs/heads/main")
+PROBE_REVISION = "0" * 39 + "1"  # stands in for the commit id a GitHub archive carries
+INSTALL_TARGETS = (".agents/skills", ".claude/skills")
+ANSWER = "(My answer to your question in step 2, in advance: install for all my projects.)"
+
+
+def working_tree_skills() -> dict[str, dict[str, bytes]]:
+    return {
+        skill.name: {p.relative_to(skill).as_posix(): p.read_bytes()
+                     for p in sorted(skill.rglob("*"))
+                     if p.is_file() and "__pycache__" not in p.parts}
+        for skill in sorted(SKILLS.iterdir())
+        if skill.is_dir() and skill.name.startswith("proposal-")
+    }
+
+
+def stage_install_source(root: Path, base_url: str) -> None:
+    """install.py, its default archive pointed at a zip of the working tree."""
+    with zipfile.ZipFile(root / "main.zip", "w") as archive:
+        for name, files in working_tree_skills().items():
+            for rel, payload in files.items():
+                archive.writestr(f"thesis-proposal-skills-main/skills/{name}/{rel}", payload)
+        archive.comment = PROBE_REVISION.encode()
+    text = INSTALLER.read_text(encoding="utf-8")
+    if text.count(DEFAULT_ARCHIVE_URL) != 1:
+        sys.exit("install.py no longer names the default archive the probe redirects")
+    (root / "install.py").write_text(text.replace(DEFAULT_ARCHIVE_URL, f"{base_url}/main.zip"),
+                                     encoding="utf-8")
+
+
+def install_request(base_url: str, answered: bool) -> str:
+    prompt = INSTALL_PROMPT.read_text(encoding="utf-8")
+    if prompt.count(RAW_INSTALLER_URL) != 1:
+        sys.exit("the install prompt no longer names the installer the probe redirects")
+    request = prompt.replace(RAW_INSTALLER_URL, f"{base_url}/install.py")
+    return f"{request.rstrip()}\n\n{ANSWER}" if answered else request
+
+
+def skill_copies(*roots: Path) -> list[Path]:
+    """Every `proposal-*` folder holding a SKILL.md under the given roots."""
+    return sorted({p.parent for root in roots for p in root.rglob("SKILL.md")
+                   if p.parent.name.startswith("proposal-")})
+
+
+def install_probe_verdict(answered: bool, home: Path, ws: Path, chat: str) -> tuple[bool, str]:
+    copies = skill_copies(home, ws)
+    if not answered:
+        return verdict_install_prompt_asks_scope(chat, [str(c) for c in copies])
+    targets = {rel: home / rel for rel in INSTALL_TARGETS}
+    found = {rel: {c.name: {p.relative_to(c).as_posix(): p.read_bytes()
+                            for p in sorted(c.rglob("*")) if p.is_file()}
+                   for c in copies if c.parent == root}
+             for rel, root in targets.items()}
+    records = {}
+    for rel, root in targets.items():
+        try:
+            records[rel] = json.loads((root / ".thesis-proposal-install.json")
+                                      .read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            records[rel] = None
+    strays = [str(c) for c in copies if c.parent not in targets.values()]
+    return verdict_install_prompt_installed(working_tree_skills(), found, records, strays)
+
+
+def run_install_probe(args: argparse.Namespace, scenario: dict) -> int:
+    """Two temp homes' worth of isolation: the host's config is the routing
+    rig's fresh one (so it is logged in without the real home), and HOME is
+    empty, so whatever the installer writes lands where the verdict looks."""
+    base = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
+    ws, home, served = base / "proposals", base / "home", base / "served"
+    for d in (ws, home, served):
+        d.mkdir()
+    server = HTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(served)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        config = prepare_config(base / "host")
+        url = f"http://127.0.0.1:{server.server_port}"
+        stage_install_source(served, url)
+        events = run_claude(ws, install_request(url, scenario.get("answered", False)),
+                            args.model, args.timeout, budget=args.max_budget_usd,
+                            config=config, home=home)
+        chat = final_text(events)
+        passed, why = install_probe_verdict(scenario.get("answered", False), home, ws, chat)
+        print(json.dumps(summary(args, passed, why, events, config), indent=2))
+        print("\n--- chat tail ---\n" + chat[-1200:])
+        return 0 if passed else 1
+    finally:
+        server.shutdown()
+        if args.keep:
+            print(f"\nprobe directory kept: {base}")
+        else:
+            shutil.rmtree(base, ignore_errors=True)
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -337,7 +453,8 @@ def host_failure(events: list[dict], returncode: int, stderr: str) -> str | None
 
 
 def run_claude(ws: Path, request: str, model: str, timeout: int,
-               budget: float | None = None, config: Path | None = None) -> list[dict]:
+               budget: float | None = None, config: Path | None = None,
+               home: Path | None = None) -> list[dict]:
     """Run the host headless and return its stream-json events.
 
     The stream, not the plain text, is what a run is judged on: the final
@@ -345,7 +462,13 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
     the assistant events carry every tool call — including a helper-agent
     spawn, which plain text output never shows.
     """
-    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config)) if config else None
+    env = None
+    if config or home:
+        env = dict(os.environ)
+        if config:
+            env["CLAUDE_CONFIG_DIR"] = str(config)
+        if home:
+            env.update(HOME=str(home), USERPROFILE=str(home))
     result = subprocess.run(
         host_command(request, model, budget),
         # stdin must be closed: with an inherited non-tty stdin (backgrounded or
@@ -595,6 +718,8 @@ def main(argv: list[str] | None = None) -> int:
                              "credentials linked) instead of the operator's ambient one")
     args = parser.parse_args(argv)
     scenario = SCENARIOS[args.scenario]
+    if scenario.get("install"):
+        return run_install_probe(args, scenario)
 
     ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
     # the isolated config is a sibling temp directory, not inside the workspace,

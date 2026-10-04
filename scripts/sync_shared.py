@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Materialize shared/ sources and designated cross-skill scripts into
-self-contained skill copies.
+self-contained skill copies, and the install prompt into the documents that
+present it.
 
 One-way, deterministic: the mapped sources are the only place devs edit;
 committed copies inside skills are what skills.sh installs. Run with --check
@@ -16,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -70,6 +72,10 @@ SYNC_MAP: dict[str, list[str]] = {
         "skills/proposal-reverse/scripts",
         # supervise runs the mechanical check over the file it normalized
         "skills/proposal-supervise/scripts",
+        # troubleshoot's script rung captures the check's output as evidence;
+        # addressing the sibling's copy needed a hardcoded install path, which
+        # breaks under user-level and plugin installs
+        "skills/proposal-troubleshoot/scripts",
     ],
     # common+crossref vendored into import: validate_refs.py imports them as
     # Python modules, so a missing sibling would crash rather than degrade.
@@ -97,6 +103,14 @@ SYNC_MAP: dict[str, list[str]] = {
 
 BLOCKS = REPO / "shared" / "blocks"
 SKILLS = REPO / "skills"
+# The install prompt is pasted by students from the documents, not loaded by an
+# agent from a skill, so it lands in a fenced block (GitHub gives it a copy
+# button) right after an HTML comment. Unlike a SKILL.md region, a marker is
+# fine here: GitHub hides comments, and skills.sh renders SKILL.md only.
+PROMPT_SOURCE = BLOCKS / "install-prompt.md"
+PROMPT_MARKER = "<!-- install-prompt -->"
+PROMPT_DOCS = ["README.md", "docs/install.md"]
+FENCE_RE = re.compile(r"^```[ \t]*$", re.MULTILINE)
 # The reporter is where the offer leads, so it carries no offer and no closing
 # section; its absence is not drift (skill-packaging spec).
 REPORTER = "proposal-troubleshoot"
@@ -186,6 +200,26 @@ def render_skill_md(skill_dir: Path) -> str:
     return front + body
 
 
+def render_prompt_doc(text: str, prompt: str, label: str) -> str:
+    """The document with the prompt written into every fenced block that
+    directly follows a marker. A marker without a fence after it, or a document
+    without any marker, is an anchor error: the prompt would silently vanish."""
+    out, pos, found = [], 0, 0
+    while (start := text.find(PROMPT_MARKER, pos)) != -1:
+        after = start + len(PROMPT_MARKER)
+        opening = re.compile(r"\s*```[^\n]*\n").match(text, after)
+        if opening is None:
+            raise AnchorError(f"{label}: {PROMPT_MARKER} is not followed by a fenced block")
+        closing = FENCE_RE.search(text, opening.end())
+        if closing is None:
+            raise AnchorError(f"{label}: the install-prompt fence is never closed")
+        out += [text[pos:opening.end()], prompt.rstrip("\n") + "\n"]
+        pos, found = closing.start(), found + 1
+    if not found:
+        raise AnchorError(f"{label}: no {PROMPT_MARKER} marker")
+    return "".join(out) + text[pos:]
+
+
 def render(source: Path) -> str:
     # Headers are written into committed files, so the path must render the same
     # on every host: .as_posix() or a Windows sync rewrites every generated copy
@@ -246,13 +280,16 @@ def render_gitattributes(current: str) -> str:
     return head + block + tail
 
 
-def _materialize(dest: Path, expected: str, src_label: str, check: bool) -> str | None:
+def _materialize(dest: Path, expected: str, src_label: str, check: bool,
+                 announce_unchanged: bool = True) -> str | None:
     """Write or verify one destination; returns its path when it has drifted.
 
     The one place the write/check branch lives, so each pass below is a loop over
     destinations and nothing else. The printed line is exactly
     "synced <src> -> <dst>": .githooks/pre-commit reads its fourth field and
-    stages it.
+    stages it. A hand-written document holding a materialized region passes
+    `announce_unchanged=False`, so the hook stages it only when the region was
+    rewritten, never the author's unrelated edits along with every commit.
     """
     rel = dest.relative_to(REPO).as_posix()
     if check:
@@ -260,7 +297,8 @@ def _materialize(dest: Path, expected: str, src_label: str, check: bool) -> str 
         return rel if stale else None
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and dest.read_text(encoding="utf-8") == expected:
-        print(f"synced {src_label} -> {rel}")
+        if announce_unchanged:
+            print(f"synced {src_label} -> {rel}")
         return None
     # Temp file + os.replace: concurrent readers (xdist workers, anything racing
     # the pre-commit hook) must never observe the truncation window of an
@@ -294,6 +332,17 @@ def _sync_skill_blocks(check: bool) -> list[str]:
     return [rel for rel in drift if rel]
 
 
+def _sync_prompt_docs(check: bool) -> list[str]:
+    prompt = PROMPT_SOURCE.read_text(encoding="utf-8")
+    drift = []
+    for rel in PROMPT_DOCS:
+        doc = REPO / rel
+        expected = render_prompt_doc(doc.read_text(encoding="utf-8"), prompt, rel)
+        drift.append(_materialize(doc, expected, "shared/blocks/install-prompt.md", check,
+                                  announce_unchanged=False))
+    return [rel for rel in drift if rel]
+
+
 def _sync_copies(check: bool) -> list[str]:
     drift = []
     for src_rel, dest_dirs in SYNC_MAP.items():
@@ -305,7 +354,8 @@ def _sync_copies(check: bool) -> list[str]:
 
 
 def sync(check: bool) -> int:
-    drift = _sync_attributes(check) + _sync_skill_blocks(check) + _sync_copies(check)
+    drift = (_sync_attributes(check) + _sync_skill_blocks(check) + _sync_prompt_docs(check)
+             + _sync_copies(check))
     if check and drift:
         print("OUT OF SYNC (run scripts/sync_shared.py):", *drift, sep="\n  ")
         return 1

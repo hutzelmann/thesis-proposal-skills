@@ -6,8 +6,9 @@ in `pyproject.toml`. Publishing means bumping it there (patch for fixes, minor
 for new behavior or skills, major for breaking workspace-facing changes), running
 this script, and committing the stamp (`chore(publish): stamp <version>`), so the
 published tree names its snapshot and `poe identify` resolves a bug report
-without walking history. Installs are git snapshots of `main` (`npx skills add`
-clones the repo), so commits landing after the stamp ship with the older
+without walking history. Installs are git snapshots of `main` (the installer
+fetches its archive, the plugin marketplace syncs it, `npx skills add` clones
+it), so commits landing after the stamp ship with the older
 version still inside: the stamp is a floor ("last published at or before this
 snapshot"), and `identify` verifies the actual revision by blob hashes.
 All skills share the suite version; a re-stamp of a

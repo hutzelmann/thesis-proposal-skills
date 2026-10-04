@@ -11,6 +11,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import collect
 import pytest
 from collect import (
     canonical_titles,
@@ -24,6 +25,8 @@ from collect import (
     sibling_artifacts,
     strip_personal_data,
 )
+
+import install
 
 REPO = Path(__file__).resolve().parents[2]
 SKILL = REPO / "skills" / "proposal-troubleshoot"
@@ -441,3 +444,166 @@ def test_hash_lines_carry_no_absolute_paths(workspace):
     lines = (workspace / "bug-report" / "hashes.txt").read_text(encoding="utf-8")
     assert str(Path.home()) not in lines
     assert not any(ln.startswith("/") for ln in lines.splitlines())
+
+
+# --------------------------------------------------------------------------
+# install route — installer record, plugin installs, skills CLI lock
+# --------------------------------------------------------------------------
+
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    """A fake home holding nothing yet, and a workspace outside it."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.chdir(ws)
+    return home
+
+
+def plant_skill(root: Path, name: str = "proposal-check") -> None:
+    (root / name).mkdir(parents=True, exist_ok=True)
+    (root / name / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+
+
+def plant_record(root: Path, **overrides) -> None:
+    plant_skill(root)
+    record = {"package": "thesis-proposal", "installer": 1, "revision": SHA,
+              "installed_at": "2026-10-03T12:00:00+00:00", "scope": "all",
+              "source": "default-branch", "directories": ["~/.agents/skills"],
+              "skills": ["proposal-check"], **overrides}
+    (root / collect.RECORD_NAME).write_text(json.dumps(record), encoding="utf-8")
+
+
+def test_installer_record_is_reported_home_relative(home):
+    plant_record(home / ".agents/skills")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert (f"[measured] install record in ~/.agents/skills: revision {SHA}, scope all, "
+            "source default-branch, installed 2026-10-03T12:00:00+00:00") in lines
+    assert "[measured] install route: installer" in lines
+    assert str(home) not in "\n".join(lines)
+
+
+def test_record_values_of_an_unknown_shape_are_never_repeated(home):
+    plant_record(home / ".claude/skills", revision="see https://evil.example/x",
+                 scope="/home/erika", source="C:\\Users\\Erika", installed_at="yesterday")
+    text = "\n".join(collect.install_lines(Path.cwd(), None))
+    assert "revision unreadable, scope unreadable, source unreadable, installed unreadable" in text
+    assert "evil" not in text
+    assert "erika" not in text.lower()
+
+
+def test_unparseable_record_is_reported_not_raised(home):
+    root = home / ".claude/skills"
+    plant_skill(root)
+    (root / collect.RECORD_NAME).write_text("{not json", encoding="utf-8")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert "[measured] install record in ~/.claude/skills is unreadable" in lines
+
+
+@pytest.mark.usefixtures("home")
+def test_workspace_record_is_reported_workspace_relative():
+    plant_record(Path.cwd() / ".claude/skills", scope="folder")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert any(ln.startswith("[measured] install record in ./.claude/skills:") for ln in lines)
+
+
+def test_plugin_install_found_and_orphaned_versions_ignored(home):
+    cache = home / ".claude/plugins/cache/thesis-proposal/thesis-proposal"
+    plant_skill(cache / "old123")
+    (cache / "old123" / collect.ORPHANED_MARKER).write_text("1", encoding="utf-8")
+    assert "[measured] install route: unknown (hand-copied or installed by other means)" in \
+        collect.install_lines(Path.cwd(), None)
+    plant_skill(cache / "new456")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert "[measured] plugin install found for Claude" in lines
+    assert "[measured] install route: plugin" in lines
+    roots = collect.skill_roots(Path.cwd())
+    assert (cache / "new456").resolve() in roots
+    assert (cache / "old123").resolve() not in roots
+
+
+def test_plugin_keeping_the_repository_layout_is_found(home):
+    plant_skill(home / ".codex/plugins/cache/thesis-proposal/thesis-proposal/abc/skills")
+    assert "[measured] plugin install found for ChatGPT/Codex" in \
+        collect.install_lines(Path.cwd(), None)
+
+
+def test_two_routes_at_once_are_flagged(home):
+    plant_record(home / ".claude/skills")
+    plant_skill(home / ".copilot/installed-plugins/thesis-proposal/thesis-proposal")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert "[measured] install route: installer + plugin" in lines
+    assert any("load every skill twice" in ln for ln in lines)
+
+
+def test_record_values_of_the_wrong_type_are_unreadable_not_a_crash(home):
+    plant_record(home / ".agents/skills", scope=["all"], source={"a": 1}, revision=7)
+    text = "\n".join(collect.install_lines(Path.cwd(), None))
+    assert "revision unreadable, scope unreadable, source unreadable" in text
+
+
+def test_a_workspace_above_home_never_shows_the_user_name(home):
+    root = home / ".agents/skills"
+    plant_record(root)
+    assert collect.shown_root(root.resolve(), home.parent) == "~/.agents/skills"
+    assert collect.shown_root(root.resolve(), home) == "~/.agents/skills"
+
+
+def test_a_claude_plugin_button_install_is_found(home):
+    plant_skill(home / collect.CLAUDE_SYNCED / "acct_org" / "thesis-proposal" / "abc" / "skills")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert "[measured] plugin install found for Claude" in lines
+
+
+def test_a_vs_code_plugin_clone_is_found(home):
+    plant_skill(home / ".config/Code" / collect.VSCODE_PLUGIN / "skills")
+    assert "[measured] plugin install found for VS Code" in collect.install_lines(Path.cwd(), None)
+
+
+def test_a_global_terminal_install_is_the_cli_route(home):
+    (home / ".agents").mkdir()
+    (home / ".agents/.skill-lock.json").write_text('{"skills": {}}', encoding="utf-8")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert "[measured] install route: CLI" in lines
+    assert any("global lock present" in ln for ln in lines)
+
+
+@pytest.mark.usefixtures("home")
+def test_cli_lock_still_reported():
+    lock = Path.cwd() / "skills-lock.json"
+    lock.write_text("{}", encoding="utf-8")
+    lines = collect.install_lines(Path.cwd(), lock)
+    assert "[measured] install route: CLI" in lines
+
+
+def test_report_carries_the_route_section(home):
+    (Path.cwd() / "p.md").write_text(PROPOSAL, encoding="utf-8")
+    plant_record(home / ".agents/skills")
+    assert main(["p.md"]) == 0
+    report = (Path.cwd() / "bug-report" / "report.md").read_text(encoding="utf-8")
+    assert "[measured] install route: installer" in report
+    assert str(home) not in report
+
+
+def test_locations_match_the_repository_installer():
+    """The collector restates the installer's names and directories (a skill
+    never imports from outside its own folder); this keeps the two in step."""
+    assert collect.RECORD_NAME == install.RECORD_NAME
+    assert collect.PACKAGE == install.PACKAGE
+    installer_dirs = {*install.SHARED_DIRS,
+                      *(h.user_dir for h in install.HOST_DIRS),
+                      *(h.folder_dir for h in install.HOST_DIRS if h.folder_dir)}
+    assert installer_dirs <= set(collect.COPY_DIRS)
+    assert {"default-branch", "url", "zip", "directory"} == collect.RECORD_SOURCES
+    plugin_dirs = {rel for _, rel in collect.PLUGIN_CACHES}
+    assert {rel for _, rel in install.PLUGIN_FOLDERS} <= plugin_dirs
+    assert collect.CLAUDE_SYNCED == install.CLAUDE_SYNCED
+    assert collect.VSCODE_PLUGIN == install.VSCODE_PLUGIN

@@ -18,8 +18,22 @@ body:
     attributes:
       label: Updated first
       options:
-        - label: I re-ran `npx skills add hutzelmann/thesis-proposal-skills` and the problem still happens
+        - label: I updated the skills the way I installed them — pasted the install prompt again, used Check for updates on the app's plugin page, or ran `npx skills update` — and the problem still happens
           required: true
+
+  - type: dropdown
+    id: route
+    attributes:
+      label: How the skills were installed
+      description: The "install route" line in the "Installed skills" section of report.md
+      options:
+        - Install prompt (the installer)
+        - Plugin button in the app
+        - From a terminal (npx skills)
+        - More than one of these
+        - Not sure
+    validations:
+      required: true
 
   - type: input
     id: skill
@@ -55,9 +69,9 @@ body:
     attributes:
       label: Environment and installed skills
       description: >
-        Paste the `[measured]` lines from report.md, plus `hashes.txt` and `skills-lock.json`
-        if you have them. These identify which revision you were running, which is usually the
-        first thing that has to be established.
+        Paste the `[measured]` lines from report.md (the install record line among them), plus
+        `hashes.txt` and `skills-lock.json` if you have them. These identify which revision you
+        were running, which is usually the first thing that has to be established.
       render: text
     validations:
       required: true

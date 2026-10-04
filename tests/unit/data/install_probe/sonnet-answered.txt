@@ -1,0 +1,3 @@
+The installer finished. It installed 11 thesis-proposal skills (revision 0000000) for all your projects, in `~/.agents/skills` and `~/.claude/skills`. It didn't suggest any other option.
+
+To make me pick up the new skills, start a new chat. I don't have a way to reload skills in this session.

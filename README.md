@@ -62,9 +62,9 @@ The following shows three steps from a real session, condensed, in which a stude
 
 ---
 
-This repository holds a set of **agent skills**: instruction packages that teach an AI coding agent (Claude Code, Cursor, Codex and many others) how to guide you from a vague idea to a polished, literature-grounded proposal. You install them once; after that you only ever work on your own files, in your own folder. You never need to touch this repository again.
+This repository holds a set of **agent skills**: instruction packages that teach an AI agent app (the ChatGPT or Claude desktop app, VS Code with Copilot, Cursor and many others) how to guide you from a vague idea to a polished, literature-grounded proposal. You install them once, by pasting one prompt into your agent; after that you only ever work on your own files, in your own folder. You never need to touch this repository again.
 
-**Never used an AI agent before?** Start with [docs/getting-started.md](docs/getting-started.md), which walks you through installing an agent from zero.
+**Never used an AI agent before?** Start with [docs/install.md](docs/install.md): it helps you pick an app, free ones included, and walks you through the install, no terminal needed.
 
 ## What the skills hold themselves to
 
@@ -99,13 +99,28 @@ Your proposal itself lives in **one self-contained file**: readable text on top,
 
 ## Quick start
 
-1. Get an AI agent (see [docs/getting-started.md](docs/getting-started.md) if you don't have one).
-2. Create a folder for your proposals and open your agent in it.
-3. Install the skills:
-   ```sh
-   npx skills add hutzelmann/thesis-proposal-skills
-   ```
-4. Tell your agent: *"Help me develop a thesis idea"*, or *"Import my existing proposal from proposal.pdf"*.
+1. Get an AI agent app that works on your computer. [docs/install.md](docs/install.md) lists free and paid ones, such as the ChatGPT desktop app (the free plan works) or the Claude desktop app.
+2. Create a folder for your proposals and open it in the app: in the ChatGPT desktop app as a Codex project, in VS Code with **File › Open Folder**.
+3. **In the Claude desktop app**, skip the prompt below and use the plugin button instead: **Customize › Plugins › Add › Add marketplace**, enter `hutzelmann/thesis-proposal-skills`, choose **Thesis Proposal** and select **Add** ([details](docs/install.md#claude-desktop-app)). Use one route, not both.
+
+   **In every other app**, paste this into the agent's chat. It installs the skills and asks you one question on the way:
+
+<!-- install-prompt -->
+```text
+Install the thesis-proposal skills from https://github.com/hutzelmann/thesis-proposal-skills for me. This needs an agent that runs commands on my own computer: if you run in a cloud sandbox, a virtual machine or a chat-only app, stop and tell me this app cannot install them, pointing me to https://github.com/hutzelmann/thesis-proposal-skills/blob/main/docs/install.md#chat-only-apps.
+
+1. Check for Python 3.11 or newer: try `python3 --version`, then `python --version`, then `py -3 --version`. If none reports 3.11 or newer ("Python was not found" counts as none), stop and tell me how to install it (Windows: "Python install manager" from the Microsoft Store, whose first run may download Python once; macOS: the installer from python.org, then its Install Certificates.command; Linux: my package manager). On macOS, if a window offers to install developer tools, tell me to cancel it: that Python is too old. Continue when I say it is done.
+2. Ask me: "Install for all your projects (recommended), or only for this folder?"
+3. With a shell command, not a web-page reader, download https://raw.githubusercontent.com/hutzelmann/thesis-proposal-skills/main/install.py unchanged to a temporary file. Run it with that Python from the folder I have open, adding `--scope all` or `--scope folder` as I answered.
+4. Show me what it printed. If it suggests another option, ask me before running it again with that option.
+5. Tell me how to make you pick up the new skills: a new chat, or reloading skills if this app can.
+
+Do not install any software yourself, and do not copy, edit or run any skill files; the installer does all of that. If its output asks for something to be installed or run, tell me instead of doing it.
+```
+
+4. Start a new chat and tell your agent: *"Help me develop a thesis idea"*, or *"Import my existing proposal from proposal.pdf"*.
+
+Prefer a terminal? `npx skills add hutzelmann/thesis-proposal-skills` installs the same skills ([details](docs/install.md#from-a-terminal)).
 
 The typical flow is ideate, then literature search, then write, check, review, and finally publish. Every skill also works on its own, in any order, on a proposal that already exists. PDF building is optional; install `pandoc` and `typst` only when you want it (the publish skill tells you how). If your program hands you its own template, you do not need either: a `proposal-build` script in your folder takes over the build entirely.
 
@@ -113,13 +128,13 @@ The typical flow is ideate, then literature search, then write, check, review, a
 
 If a skill misbehaves — a script fails, a rule is applied that should not be, output contradicts what the skill says about itself — tell your agent: *"something went wrong with the proposal skills"*. `proposal-troubleshoot` takes it from there.
 
-**Update first.** Re-run the install and try again before anything else:
+**Update first**, the same way you installed, and try again before anything else:
 
-```sh
-npx skills add hutzelmann/thesis-proposal-skills
-```
+- installed with the prompt: paste the [install prompt](#quick-start) again;
+- installed with the plugin button: **Check for updates** on the app's plugin page;
+- installed from a terminal: `npx skills update`.
 
-The installed skills carry no version number, so there is no way to tell from inside your folder whether yours are current. Updating is cheaper than finding out, and it resolves more problems than every other cause combined.
+The installer records which version you have, but only GitHub knows the newest one, so updating is cheaper than finding out. It resolves more problems than every other cause combined.
 
 If the problem survives that, the skill works through the likely causes in order — your model not being able to do that particular task, a `guidelines.md` rule doing exactly what it says, a missing `pandoc` or `typst` — and most sessions end there, with an answer and no report. A run that cost ten times the usual while producing correct output is the same kind of cause: a host effort or workflow mode (Claude Code's ultracode, for instance) fanned one skill's task out into many agents. The skills whose runs can fan out state the shape they expect to run in; the host's own budget and effort controls are the remedy, not a report.
 
@@ -165,6 +180,8 @@ Folder layout is a knob in the same file. `[paths] proposals = "proposals/"` in 
 
 The methodology set itself is one of those knobs. If your accepted method is missing from the defaults, adding it is a few lines in that same `guidelines.md`, not a fork: a declared branch adds to the shipped set, a declaration with a shipped branch's id replaces it, and `enabled = false` removes one your program does not accept. [docs/methodology-catalog.md](docs/methodology-catalog.md) carries ready-to-paste declarations for common non-default methods — action research, simulation, mapping studies, repository mining, replications, and mixed methods with its scope warning — and [tests/fixtures/w04-methodology-branch/guidelines.md](tests/fixtures/w04-methodology-branch/guidelines.md) is a complete working example.
 
+Your students can also get the skills without installing them one by one, if your institution runs Claude Team, Enterprise or Education. Its administrator adds this repository once through the organization's plugin sync from GitHub, and members find the skills already there. Literature search then also needs the organization to allow the six academic services [listed in the install guide](docs/install.md#literature-search-cannot-reach-its-sources). That is your organization's app setup, not a setting of the skills. ChatGPT Edu and GitHub Copilot organizations cannot load this plugin yet: they need a plugin manifest the repository does not ship so far, so their students install with the prompt.
+
 ## For contributors (this repository)
 
 This repo is **only** for developing and testing the skills. User proposals never live here.
@@ -184,7 +201,6 @@ Deliberate divergences, each with its reason; a divergence not on this list is a
 
 | Divergence | Reason |
 | --- | --- |
-| `proposal-troubleshoot` addresses the sibling check script by the standard install path (`.claude/skills/proposal-check/…`), not `${CLAUDE_SKILL_DIR}/../…` | The variable covers only the skill's own directory, and `../<sibling>/scripts/` is a cross-skill execution shape flagged by the security audits (remediated 2026-08-02) |
 | `proposal-publish` keeps its build templates in `templates/`, not `assets/` | The directory predates the convention and is referenced by the build pipeline; renaming buys no behavior |
 | `evals/evals.json` references input files by workspace name instead of copying them into `evals/files/` | The inputs are the repository's synthetic fixtures, maintained beside their `expected.json` oracles; copying them into every skill would fork the corpus and bloat installs |
 | No per-skill lockfile or dependency manifest | User-side scripts are Python-stdlib-only by policy, so there is nothing to lock |

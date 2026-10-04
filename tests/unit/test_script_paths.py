@@ -19,24 +19,21 @@ SCRIPT_BEARING = sorted(
 
 
 @pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
-def test_no_workspace_root_path_to_a_skills_own_scripts(skill_md):
-    """Own scripts go through the variable. A SIBLING's script keeps the
-    workspace-root form on purpose: `${CLAUDE_SKILL_DIR}/../<sibling>/scripts/`
-    is the `../` cross-skill execution shape ATH flagged and the audit
-    invariants forbid (test_no_cross_skill_script_execution)."""
-    own = f".claude/skills/{skill_md.parent.name}/"
-    assert own not in skill_md.read_text(encoding="utf-8")
+def test_no_workspace_root_path_to_any_skills_scripts(skill_md):
+    """No skill addresses scripts by an install path. A script another skill
+    owns ships as a synchronized copy and is run through the variable like any
+    own script: `.claude/skills/<sibling>/…` broke under user-level and plugin
+    installs, and `${CLAUDE_SKILL_DIR}/../<sibling>/scripts/` is the `../`
+    cross-skill execution shape the audit invariants forbid
+    (test_no_cross_skill_script_execution; change desktop-first-install)."""
+    assert ".claude/skills/proposal-" not in skill_md.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("skill_md", SCRIPT_BEARING, ids=lambda p: p.parent.name)
 def test_script_invocations_use_the_variable(skill_md):
     text = skill_md.read_text(encoding="utf-8")
-    own = f".claude/skills/{skill_md.parent.name}/"
-    bare = [
-        hit for hit in re.findall(r"python3 (?!\$\{CLAUDE_SKILL_DIR\})\S*scripts/\S+", text)
-        if own in hit or not hit.startswith("python3 .claude/skills/")
-    ]
-    assert not bare, f"own-script invocation without ${{CLAUDE_SKILL_DIR}}: {bare}"
+    bare = re.findall(r"python3 (?!\$\{CLAUDE_SKILL_DIR\})\S*scripts/\S+", text)
+    assert not bare, f"script invocation without ${{CLAUDE_SKILL_DIR}}: {bare}"
     assert "${CLAUDE_SKILL_DIR}/scripts/" in text
 
 

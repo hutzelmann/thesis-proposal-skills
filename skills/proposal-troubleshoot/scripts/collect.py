@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import re
 import shutil
@@ -99,18 +100,35 @@ def file_hashes(path: Path) -> dict[str, str]:
 # install identification
 # --------------------------------------------------------------------------
 
-def skill_roots(workspace: Path) -> list[Path]:
-    """Directories that may hold installed `proposal-*` skills. The script's own
-    grandparent is the reliable anchor; the rest cover project and global
-    installs and the per-agent symlink trees the installer creates.
-    """
-    candidates = [
-        HERE.parent.parent,
-        workspace / ".agents" / "skills",
-        workspace / ".claude" / "skills",
-        Path.home() / ".agents" / "skills",
-        Path.home() / ".claude" / "skills",
-    ]
+# Where the three install routes put the skills. Restated rather than imported
+# from the repository's installer, which never ships inside a skill;
+# tests/unit/test_troubleshoot_collect.py pins these against install.py.
+RECORD_NAME = ".thesis-proposal-install.json"
+PACKAGE = "thesis-proposal"
+COPY_DIRS = (  # the installer's and the skills CLI's targets, relative to home or workspace
+    ".agents/skills", ".claude/skills", ".kiro/skills",
+    ".gemini/config/skills", ".gemini/antigravity-cli/skills",
+)
+PLUGIN_CACHES = (  # (app, its plugin install folder for this package, relative to home)
+    ("Claude", f".claude/plugins/cache/{PACKAGE}/{PACKAGE}"),
+    ("ChatGPT/Codex", f".codex/plugins/cache/{PACKAGE}/{PACKAGE}"),
+    ("GitHub Copilot", f".copilot/installed-plugins/{PACKAGE}/{PACKAGE}"),
+)
+# plugins added with Claude's plugin button, as synced into Claude Code sessions
+CLAUDE_SYNCED = ".claude/plugins/synced"
+# VS Code's agent-plugin clone of this repository, under its user-data folder
+VSCODE_PLUGIN = "agentPlugins/github.com/hutzelmann/thesis-proposal-skills"
+# the skills CLI's lock for global (-g) installs; read for presence only
+GLOBAL_LOCKS = (".agents/.skill-lock.json",)
+# Claude marks a superseded or uninstalled plugin version before deleting it
+ORPHANED_MARKER = ".orphaned_at"
+RECORD_SCOPES = {"all", "folder"}
+RECORD_SOURCES = {"default-branch", "url", "zip", "directory"}
+SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|unknown)$")
+TIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)?$")
+
+
+def _existing(candidates: list[Path]) -> list[Path]:
     roots: list[Path] = []
     seen: set[Path] = set()
     for candidate in candidates:
@@ -122,6 +140,54 @@ def skill_roots(workspace: Path) -> list[Path]:
             seen.add(resolved)
             roots.append(resolved)
     return roots
+
+
+def copy_roots(workspace: Path) -> list[Path]:
+    """Directories the installer or the skills CLI may have filled."""
+    return _existing([base / rel for base in (workspace, Path.home()) for rel in COPY_DIRS])
+
+
+def plugin_bases() -> list[tuple[str, Path]]:
+    """(app, folder) wherever an app keeps a plugin install of this package."""
+    home = Path.home()
+    bases = [(app, home / rel) for app, rel in PLUGIN_CACHES]
+    synced = home / CLAUDE_SYNCED
+    if synced.is_dir():
+        bases += [("Claude", p) for p in sorted(synced.glob(f"**/{PACKAGE}")) if p.is_dir()]
+    code_dirs = [home / "Library" / "Application Support" / "Code", home / ".config" / "Code"]
+    if os.environ.get("APPDATA"):
+        code_dirs.append(Path(os.environ["APPDATA"]) / "Code")
+    return bases + [("VS Code", d / VSCODE_PLUGIN) for d in code_dirs]
+
+
+def _orphaned(skill_file: Path, base: Path) -> bool:
+    """Claude marks a superseded or uninstalled version folder before deleting it.
+    Only folders between the plugin folder and the skill are consulted."""
+    inner = skill_file.relative_to(base).parts[:-1]
+    return any((base.joinpath(*inner[:depth]) / ORPHANED_MARKER).exists()
+               for depth in range(len(inner) + 1))
+
+
+def plugin_installs() -> list[tuple[str, Path]]:
+    """(app, folder holding the skills) for every current plugin install of this
+    package, whatever layout the app keeps inside its plugin folder."""
+    found: list[tuple[str, Path]] = []
+    for app, base in plugin_bases():
+        if not base.is_dir():
+            continue
+        roots = {skill.parent.parent for skill in base.rglob("SKILL.md")
+                 if skill.parent.name.startswith(SKILL_PREFIX) and not _orphaned(skill, base)}
+        found += [(app, root) for root in _existing(sorted(roots))]
+    return found
+
+
+def skill_roots(workspace: Path) -> list[Path]:
+    """Directories that may hold installed `proposal-*` skills. The script's own
+    grandparent is the reliable anchor; the rest cover project and user-level
+    copies, the per-agent symlink trees of the skills CLI, and plugin installs.
+    """
+    plugins = [root for _, root in plugin_installs()]
+    return _existing([HERE.parent.parent, *copy_roots(workspace), *plugins])
 
 
 def installed_skills(workspace: Path) -> list[Path]:
@@ -177,6 +243,84 @@ def find_lock(workspace: Path) -> Path | None:
         if candidate.is_file():
             return candidate
     return None
+
+
+def global_lock() -> bool:
+    """Whether the skills CLI recorded a global (-g) install. Presence only: the
+    file lists sources and paths, so it is never copied into the bundle."""
+    candidates = [Path.home() / rel for rel in GLOBAL_LOCKS]
+    if os.environ.get("XDG_STATE_HOME"):
+        candidates.append(Path(os.environ["XDG_STATE_HOME"]) / "skills" / ".skill-lock.json")
+    return any(path.is_file() for path in candidates)
+
+
+def shown_root(root: Path, workspace: Path) -> str:
+    """Workspace- or home-relative, so no user name travels with the report. The
+    more specific base wins, and the home on a tie, so a workspace that is the
+    home folder or lies above it never puts a user name in the report."""
+    candidates = []
+    for base, label in ((Path.home(), "~"), (workspace, ".")):
+        try:
+            rel = root.relative_to(base.resolve())
+        except (ValueError, OSError):
+            continue
+        candidates.append((len(base.resolve().parts), label == "~", label, rel))
+    if not candidates:
+        return "<outside home and workspace>"
+    _, _, label, rel = max(candidates)
+    return f"{label}/{rel.as_posix()}" if rel.parts else label
+
+
+def record_line(where: str, data: object) -> str:
+    """One measured line per install record. Only values of the documented shape
+    are repeated; anything else in the file could be arbitrary text, and the
+    record is never copied into the bundle as it stands."""
+    if not isinstance(data, dict):
+        return f"[measured] install record in {where} is unreadable"
+    checks = {
+        "revision": lambda v: isinstance(v, str) and bool(SHA_RE.match(v)),
+        "scope": lambda v: isinstance(v, str) and v in RECORD_SCOPES,
+        "source": lambda v: isinstance(v, str) and v in RECORD_SOURCES,
+        "installed_at": lambda v: isinstance(v, str) and bool(TIME_RE.match(v)),
+    }
+    shown = {key: data.get(key) if ok(data.get(key)) else "unreadable"
+             for key, ok in checks.items()}
+    return (f"[measured] install record in {where}: revision {shown['revision']}, "
+            f"scope {shown['scope']}, source {shown['source']}, "
+            f"installed {shown['installed_at']}")
+
+
+def install_lines(workspace: Path, lock: Path | None) -> list[str]:
+    """How the skills were installed, from the evidence each route leaves:
+    the installer's records, plugin install folders, the skills CLI's lock."""
+    records = [root for root in copy_roots(workspace) if (root / RECORD_NAME).is_file()]
+    lines: list[str] = []
+    for root in records:
+        try:
+            data = json.loads((root / RECORD_NAME).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        lines.append(record_line(shown_root(root, workspace), data))
+    plugins = sorted({app for app, _ in plugin_installs()})
+    lines += [f"[measured] plugin install found for {app}" for app in plugins]
+    if lock is not None:
+        lines.append("[measured] installer lock record copied to `skills-lock.json` "
+                     "(source and install method; carries no commit identifier)")
+    cli_global = global_lock()
+    if cli_global:
+        lines.append("[measured] skills CLI global lock present (not copied: it lists "
+                     "local paths)")
+    routes = [name for name, present in (("installer", bool(records)), ("plugin", bool(plugins)),
+                                         ("CLI", lock is not None or cli_global)) if present]
+    if not routes:
+        lines.append("[measured] install route: unknown (hand-copied or installed by "
+                     "other means)")
+    else:
+        lines.append(f"[measured] install route: {' + '.join(routes)}")
+        if len(routes) > 1:
+            lines.append("[measured] more than one route present — the host may load "
+                         "every skill twice")
+    return lines
 
 
 # --------------------------------------------------------------------------
@@ -447,7 +591,7 @@ def sibling_artifacts(proposal: Path | None) -> list[str]:
 
 def build_report(level: str, proposal: Path | None,
                  script_outputs: list[tuple[str, str]], hash_count: int,
-                 lock: Path | None) -> str:
+                 install: list[str]) -> str:
     allowed = canonical_titles()
     names = set()
     if proposal is not None:
@@ -484,16 +628,7 @@ def build_report(level: str, proposal: Path | None,
     ]
     sections.extend(environment_lines())
     sections += ["", "## Installed skills", ""]
-    if lock is not None:
-        sections.append(
-            "[measured] installer lock record copied to `skills-lock.json` "
-            "(source and install method; carries no commit identifier)"
-        )
-    else:
-        sections.append(
-            "[measured] no installer lock record found — install method unknown "
-            "(hand-copied or installed by other means)"
-        )
+    sections.extend(install)
     sections.append(
         f"[measured] {hash_count} installed skill file(s) hashed in `hashes.txt`; "
         "resolve them with scripts/identify_release.py in the development repository"
@@ -624,7 +759,8 @@ def plan_bundle(level: str, proposal: Path | None, script_outputs: list[tuple[st
                 workspace: Path) -> Plan:
     lock = find_lock(workspace)
     lines, hash_count = hash_lines(workspace)
-    report = build_report(level, proposal, script_outputs, hash_count, lock)
+    report = build_report(level, proposal, script_outputs, hash_count,
+                          install_lines(workspace, lock))
     # the copies in artifacts/ must obey the level exactly as the report does;
     # writing them verbatim would hand out at minimal what minimal withholds
     allowed = canonical_titles()

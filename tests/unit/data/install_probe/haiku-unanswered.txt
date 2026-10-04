@@ -1,0 +1,3 @@
+Great! I found **Python 3.13.13**, which is newer than 3.11. Now let me ask you about the installation scope:
+
+**Install for all your projects (recommended), or only for this folder?**

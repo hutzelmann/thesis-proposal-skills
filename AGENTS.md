@@ -4,7 +4,7 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ## What this repo is
 
-`thesis-proposal-skills`: ten `proposal-*` agent skills (under `skills/`) that help students write thesis proposals — nine student-side, plus the supervisor-side `proposal-supervise` — and the machinery to test them. Users install the skills into their own workspace; their proposals never live here. Real proposals sit in a private local directory kept out of version control via `.git/info/exclude` — never commit, copy, quote, or name its contents. Developer credentials live in the gitignored `.env` (template: `.env.example`), never beside the real proposals.
+`thesis-proposal-skills`: eleven `proposal-*` agent skills (under `skills/`) that help students write thesis proposals — ten student-side, plus the supervisor-side `proposal-supervise` — and the machinery to test them. Users install the skills on their own machine, through the install prompt that runs the root `install.py`, the `.claude-plugin/` marketplace, or `npx skills add` (`docs/install.md`); their proposals never live here. Real proposals sit in a private local directory kept out of version control via `.git/info/exclude` — never commit, copy, quote, or name its contents. Developer credentials live in the gitignored `.env` (template: `.env.example`), never beside the real proposals.
 
 ## Spec-first workflow (mandatory)
 
@@ -14,10 +14,10 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ## Hard rules
 
-- **Skill scripts are user-side**: Python ≥ 3.11 standard library only, no pip installs, cross-platform. No general YAML parsing (narrow extraction only; TOML via `tomllib`, JSON via `json`). Dev-side tooling (tests, harness) may use the uv-managed environment freely.
-- **Never edit generated copies.** Files marked GENERATED (skill `references/`, vendored scripts in `skills/proposal-import/scripts/` and `skills/proposal-write/scripts/`) come from `shared/` or sibling skills; edit the source, then run `python3 scripts/sync_shared.py`. CI fails on drift.
+- **Skill scripts are user-side**: Python ≥ 3.11 standard library only, no pip installs, cross-platform. No general YAML parsing (narrow extraction only; TOML via `tomllib`, JSON via `json`). The root `install.py` is user-side code under the same rules, plus one more: it must still parse on an older interpreter so it can say which version it needs. Dev-side tooling (tests, harness) may use the uv-managed environment freely.
+- **Never edit generated copies.** Files marked GENERATED (skill `references/`, vendored scripts under `skills/*/scripts/`; the generated block in `.gitattributes` is the authoritative list), and the install prompt inside `README.md` and `docs/install.md`, come from `shared/` or sibling skills; edit the source, then run `python3 scripts/sync_shared.py`. CI fails on drift.
 - **Fixtures are synthetic.** Nothing derived verbatim from real proposals; personal data obviously fake (`Erika Musterfrau`, matriculation `00000000`). Every proposal fixture carries an `expected.json` oracle calibrated against `skills/proposal-check/scripts/check.py`; non-proposal web fixtures (`g` prefix) ship none.
-- **Git**: `main` is the release channel — `npx skills add` installs whatever is on it, so what lands there is live and must be complete. Unfinished work therefore stays off `main`; where it lives instead (a branch, a worktree, a local sequence of commits) is deliberately unspecified. Commit per completed OpenSpec change. After merging work that touched `shared/`, re-run `python3 scripts/sync_shared.py` — the generated copies carry `merge=ours`, so a merge can leave them stale, and CI's drift check is the backstop. Do not push and do not publish to skills.sh — both happen only on explicit request.
+- **Git**: `main` is the release channel — the installer, the plugin marketplace and `npx skills add` all deliver whatever is on it (plugin installs follow it without any action by the user), so what lands there is live and must be complete. Unfinished work therefore stays off `main`; where it lives instead (a branch, a worktree, a local sequence of commits) is deliberately unspecified. Commit per completed OpenSpec change. After merging work that touched `shared/`, re-run `python3 scripts/sync_shared.py` — the generated copies carry `merge=ours`, so a merge can leave them stale, and CI's drift check is the backstop. Do not push and do not publish to skills.sh — both happen only on explicit request.
 - **Credentials**: dev-side keys live in the gitignored `.env` at the repo root (`cp .env.example .env`, fill in) or in the environment; never hardcode, log, or commit them, and never store keys in the private proposals directory — it holds real proposals only. User-side scripts resolve keys via environment, then `$THESIS_PROPOSAL_KEYS`, then `api-keys.env` in the working directory, then `~/.config/thesis-proposal/api-keys.env` — never by searching ancestor directories.
 
 ## Python conventions
@@ -69,7 +69,7 @@ uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # mo
 uv run poe report                  # regenerate README model-support summary + docs/model-support.md from logs
 uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
 uv run poe audit-status            # post-publish: skills.sh verdicts vs audit-baseline.json
-uv run poe install-check           # README install command vs tracked tree (networked; own CI workflow + weekly)
+uv run poe install-check           # README npx command + install.py vs tracked tree (networked; own CI workflow + weekly)
 uv run poe identify <bug-report/>  # resolve a submitted report's hashes.txt to the revision it ran
 ```
 
@@ -154,15 +154,15 @@ Default methodology branches carry provenance: a citation for the taxonomy the b
 Every `SKILL.md` is read twice: by the agent that loads it as instructions, and by anyone who lands on its page at skills.sh, which renders the frontmatter and the body and nothing else. Each body therefore opens with the same four blocks, in this order, before the first `##` heading:
 
 1. **Purpose** — one or two sentences, impersonal, in the vocabulary of someone who has never read this repo. States the deliverable. It must never restate, soften, or paraphrase a rule stated below it: the first statement of a rule fixes that rule's scope. Where the mandate is already purpose-shaped, the purpose block adds the user-facing outcome the mandate omits rather than re-saying it.
-2. **Workflow line** — byte-identical in all ten files, with only the containing skill's own name wrapped in `**`. It is the only way a visitor who lands on one page learns the other nine exist. Materialized from `shared/blocks/workflow.md`.
-3. **Voice block** — byte-identical in all ten files: neutral constructive tone, no praise of the user or their material, no self-praise, short precise chat messages. Chat conduct only — it carries no operational rules. Materialized from `shared/blocks/voice.md`.
+2. **Workflow line** — byte-identical in all eleven files, with only the containing skill's own name wrapped in `**`. It is the only way a visitor who lands on one page learns the other ten exist. Materialized from `shared/blocks/workflow.md`.
+3. **Voice block** — byte-identical in all eleven files: neutral constructive tone, no praise of the user or their material, no self-praise, short precise chat messages. Chat conduct only — it carries no operational rules. Materialized from `shared/blocks/voice.md`.
 4. **Mandate** — the skill's agent-facing opening paragraph, verbatim, pinned in `tests/unit/data/skill_mandates/<skill>.txt`.
 
 No file gets an exception, and nothing is inserted between a mandate and the paragraph beneath it. `tests/unit/test_skill_header_pattern.py` enforces all of it; rewording a mandate means editing its pinned copy in the same change, so the reword shows up as a diff under review.
 
 Every skill except `proposal-troubleshoot` also carries the bug-report offer block verbatim once, in a closing `## When this run fails` section — `proposal-troubleshoot` is where the offer leads, so it does not refer itself. `tests/unit/test_report_offer.py` enforces both halves.
 
-**Three of those blocks are materialized, not retyped.** The workflow line, the voice block, and the report offer live once under `shared/blocks/` and are written into every `SKILL.md` by `scripts/sync_shared.py` — the same script, hook, and `--check` that materialize the file copies. Edit the block in `shared/blocks/`, run the sync; never edit one of those three regions in a `SKILL.md` directly, and never add a marker or banner around them (the file is a rendered page). Adding a skill therefore means editing `shared/blocks/workflow.md` once, not ten files. The regions are located by the positions this section fixes, so a `SKILL.md` whose opening blocks are out of order fails the offline suite rather than getting a block written into the wrong place.
+**Three of those blocks are materialized, not retyped.** The workflow line, the voice block, and the report offer live once under `shared/blocks/` and are written into every `SKILL.md` by `scripts/sync_shared.py` — the same script, hook, and `--check` that materialize the file copies. Edit the block in `shared/blocks/`, run the sync; never edit one of those three regions in a `SKILL.md` directly, and never add a marker or banner around them (the file is a rendered page). Adding a skill therefore means editing `shared/blocks/workflow.md` once, not eleven files. The regions are located by the positions this section fixes, so a `SKILL.md` whose opening blocks are out of order fails the offline suite rather than getting a block written into the wrong place.
 
 Per-skill wording stays hand-maintained on purpose: mandates, their pinned successors, and the load-bearing sentences in `tests/unit/data/pinned_sentences/`. A pin generated from the prose it guards would confirm any reword, including an unintended one.
 

@@ -26,13 +26,13 @@ A problem need not concern a proposal at all. An ideation session that crashed b
 
 ### Rung 0 — stale install
 
-Ask the user to update and retry before anything else:
+Ask the user to update and retry before anything else, the same way they installed:
 
-```
-npx skills add hutzelmann/thesis-proposal-skills
-```
+- a `.thesis-proposal-install.json` sits beside the installed skills (in `.agents/skills` or `.claude/skills`, in their home or working directory) — they used the install prompt: paste it again, from https://github.com/hutzelmann/thesis-proposal-skills#quick-start, and answer its question with the record's `scope` (`all` is all projects, `folder` is only this folder)
+- their app's plugin page lists **Thesis Proposal** — its update action, **Check for updates**
+- they installed from a terminal — `npx skills update`
 
-Do not try to establish whether their install is current by reading a version — the installed skills carry none. The published snapshot can trail the fixed code by weeks, so this rung resolves more reports than every other rung combined. If they confirm they already updated, say so in the report; it saves the maintainer from asking.
+When you cannot tell which, name all three. Do not try to establish whether their install is current by comparing revisions — the record names the installed one, but you cannot know the newest. The published snapshot can trail the fixed code by weeks, so this rung resolves more reports than every other rung combined. If they confirm they already updated, say so in the report; it saves the maintainer from asking.
 
 ### Rung 1 — the model cannot do this task
 
@@ -53,8 +53,10 @@ If the workspace holds `guidelines.md`, read it. When the behavior the user obje
 A shipped script exiting non-zero, a missing `python3`, an absent `pandoc` or `typst`, a network refusal. This is a defect or an environment gap, and both are worth a report. Capture the script's output to a file first — the report carries it as evidence:
 
 ```
-python3 .claude/skills/proposal-check/scripts/check.py <proposal.md> > check-output.txt 2>&1
+python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <proposal.md> > check-output.txt 2>&1
 ```
+
+This skill ships its own copy of the check script, identical to proposal-check's.
 
 The collector records whether `pandoc` and `typst` are present but never their versions: it runs no other program, which is what keeps a shipped script cheap to audit. When a version is plausibly the cause — a PDF that builds but lays out wrongly, for instance — have the user run `typst --version` or `pandoc --version`, capture that to a file too, and pass it in. It then travels as measured evidence rather than as something you asserted.
 
@@ -87,7 +89,7 @@ Only for rungs 3 and 4, for an unidentified cause, or for optional model evidenc
 python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py <proposal.md> --dry-run
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory, where the report bundle is written: the fallback changes where the script is found, never where you work or write. The check invocation above names the standard install path because it belongs to the sibling skill proposal-check — if that skill is installed elsewhere, its script likewise lives in `scripts/` next to its own SKILL.md. If you cannot find a script, say it did not run and name what is therefore unverified — never assemble a report by hand and present it as the collector's output.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, both scripts really live in `scripts/` next to this SKILL.md, so use that path — but keep running the commands from the working directory, where the report bundle and the captured output are written: the fallback changes where a script is found, never where you work or write. If you cannot find a script, say it did not run and name what is therefore unverified — never assemble a report by hand and present it as the collector's output.
 
 **2. Take the disclosure decision from the user, not from yourself.** Three levels, and the default is the most protective:
 
@@ -127,7 +129,7 @@ If reduction never isolates it, record that the attempt was made and failed. Nev
 
 The bundle is local and nothing has been sent. Tell the user their options and stop:
 
-- open a prefilled issue. Build the URL from the filled `report.md`: start with `https://github.com/hutzelmann/thesis-proposal-skills/issues/new?template=skill-defect.yml`, then append URL-encoded query parameters for the form's short fields — `skill` (which skill misbehaved), `rung` (the exact text of the matching triage-outcome option), `what_happened` (that section of the report), `self_reported` (the `[self-reported]` model and harness lines). Give the user the URL and name what is left to do by hand: tick the updated-first box, paste the `[measured]` lines plus `hashes.txt` into the environment field, paste the captured script output, and attach `repro/` if there is one — those are too long to travel in a URL. If the URL itself grows past a few thousand characters, leave `what_happened` out of it and say so.
+- open a prefilled issue. Build the URL from the filled `report.md`: start with `https://github.com/hutzelmann/thesis-proposal-skills/issues/new?template=skill-defect.yml`, then append URL-encoded query parameters for the form's short fields — `skill` (which skill misbehaved), `rung` (the exact text of the matching triage-outcome option), `what_happened` (that section of the report), `self_reported` (the `[self-reported]` model and harness lines), `route` (from the report's install-route line: installer → `Install prompt (the installer)`, plugin → `Plugin button in the app`, CLI → `From a terminal (npx skills)`, several → `More than one of these`, unknown → `Not sure`). Give the user the URL and name what is left to do by hand: tick the updated-first box, paste the `[measured]` lines plus `hashes.txt` into the environment field, paste the captured script output, and attach `repro/` if there is one — those are too long to travel in a URL. If the URL itself grows past a few thousand characters, leave `what_happened` out of it and say so.
 - email `report.md`, or hand it to their supervisor if the material is sensitive enough that they would rather it not be public
 - keep it, and delete `bug-report/` once it has been sent
 

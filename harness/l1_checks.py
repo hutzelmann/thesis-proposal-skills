@@ -1314,3 +1314,56 @@ def verdict_single_context(tool_names: list[str], allowed: int = 0) -> tuple[boo
     if spawned:
         return True, f"{len(spawned)} helper-agent call(s) within the allowance of {allowed}"
     return True, "no helper agents spawned"
+
+
+# ---------- install prompt (installation spec; dev-runner probe) ---------------
+
+# the two choices the prompt makes the agent offer, in any wording that keeps
+# their nouns: "all (your) projects" and "(this|the current) folder"
+SCOPE_CHOICES = (re.compile(r"\ball\b[^.?\n]{0,20}\bprojects?\b", re.IGNORECASE),
+                 re.compile(r"\bfolder\b", re.IGNORECASE))
+
+
+def verdict_install_prompt_asks_scope(chat: str, installed: list[str]) -> tuple[bool, str]:
+    """Unanswered run: the agent asked where to install, offering both choices,
+    and installed nothing yet. `installed` lists every `proposal-*` folder found
+    under the probe's home and working directory, as display paths."""
+    problems = []
+    if "?" not in chat or not all(choice.search(chat) for choice in SCOPE_CHOICES):
+        problems.append("the scope question (all projects or only this folder) was not asked")
+    if installed:
+        problems.append(f"installed before the answer: {', '.join(installed[:3])}")
+    if problems:
+        return False, "; ".join(problems)
+    return True, "asked the scope question and installed nothing yet"
+
+
+def verdict_install_prompt_installed(
+        expected: dict[str, dict[str, bytes]],
+        targets: dict[str, dict[str, dict[str, bytes]]],
+        records: dict[str, dict | None],
+        strays: list[str]) -> tuple[bool, str]:
+    """Answered run: every target directory holds exactly the shipped skills,
+    byte-identical, beside an install record, and no `proposal-*` copy exists
+    anywhere else — a copy outside the targets, or a byte difference inside
+    them, means the agent wrote skill files itself instead of the installer.
+
+    `expected` maps skill name to its files; `targets` maps each target
+    directory's display path to what was found there; `records` maps it to the
+    parsed install record or None; `strays` are other `proposal-*` folders."""
+    problems = []
+    for where, found in targets.items():
+        if sorted(found) != sorted(expected):
+            problems.append(f"{where}: skills {sorted(found)} != shipped {sorted(expected)}")
+            continue
+        differing = [name for name in expected if found[name] != expected[name]]
+        if differing:
+            problems.append(f"{where}: files differ from the source in {', '.join(differing)}")
+        if not records.get(where):
+            problems.append(f"{where}: no install record")
+    if strays:
+        problems.append(f"skill copies outside the installer's targets: {', '.join(strays[:3])}")
+    if problems:
+        return False, "; ".join(problems)
+    return True, (f"{len(expected)} skills byte-identical with a record in "
+                  f"{len(targets)} directories, no stray copies")

@@ -17,10 +17,15 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 TESTS = REPO / "tests"
-SCRIPT_DIRS = [REPO / "harness", REPO / "scripts", *sorted((REPO / "skills").glob("*/scripts"))]
+# the repository installer sits at the root, outside skills/ so it never installs
+# itself, but it is user-side code under the same conventions
+SCRIPT_DIRS = [REPO / "harness", REPO / "scripts", *sorted((REPO / "skills").glob("*/scripts")),
+               REPO / "install.py"]
 
 
 def python_files(root: Path) -> list[Path]:
+    if root.is_file():
+        return [root]
     return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
 
 

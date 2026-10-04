@@ -1,7 +1,8 @@
 name: Install check
 
-# The README's install command against the tracked tree (skill-packaging spec:
-# Installation verified against the tracked tree). Separate workflow on purpose:
+# The README's skills-CLI command and the repository installer (install.py)
+# against the tracked tree (skill-packaging spec: Installation verified against
+# the tracked tree). Separate workflow on purpose:
 # the weekly schedule exists to catch skills-CLI regressions between pushes
 # without re-running the heavy build jobs, and the CLI stays unpinned because
 # users run latest — a red scheduled run with no commit here names the
@@ -18,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install the tracked tree via the README command
+      - name: Install the tracked tree via the README command and install.py
         run: python3 scripts/install_check.py
       - name: Verbatim README command against GitHub (scheduled only)
         if: github.event_name == 'schedule'

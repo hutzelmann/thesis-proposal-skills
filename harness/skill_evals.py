@@ -948,8 +948,8 @@ def troubleshoot_model_rung(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-troubleshoot", "f05-slr-interviews",
         "The write skill produced a draft that ignored half of what I told it. I was "
-        "running claude-haiku-4.5. I have already re-run "
-        "`npx skills add hutzelmann/thesis-proposal-skills` and it still happens. "
+        "running claude-haiku-4.5. I have already updated the skills by pasting the "
+        "install prompt again, and it still happens. "
         "Is this a bug I should report?",
         [troubleshoot_model_rung_l1(), no_spurious_offer()],
         baseline=baseline,

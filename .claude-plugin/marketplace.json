@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "thesis-proposal",
+  "description": "Agent skills that help students write thesis proposals and supervisors give feedback on them",
+  "owner": {
+    "name": "Thomas Hutzelmann",
+    "url": "https://github.com/hutzelmann"
+  },
+  "plugins": [
+    {
+      "name": "thesis-proposal",
+      "displayName": "Thesis Proposal",
+      "description": "All proposal-* skills: ideate, lit-search, write, import, reverse, check, review, publish, customize, supervise, troubleshoot",
+      "source": "./skills",
+      "strict": false,
+      "author": {
+        "name": "Thomas Hutzelmann"
+      },
+      "homepage": "https://github.com/hutzelmann/thesis-proposal-skills",
+      "repository": "https://github.com/hutzelmann/thesis-proposal-skills",
+      "license": "MIT",
+      "keywords": ["thesis", "proposal", "academic-writing", "supervision"],
+      "skills": [
+        "./proposal-check",
+        "./proposal-customize",
+        "./proposal-ideate",
+        "./proposal-import",
+        "./proposal-lit-search",
+        "./proposal-publish",
+        "./proposal-reverse",
+        "./proposal-review",
+        "./proposal-supervise",
+        "./proposal-troubleshoot",
+        "./proposal-write"
+      ]
+    }
+  ]
+}
