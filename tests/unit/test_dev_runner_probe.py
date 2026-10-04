@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from claude_runner import (
+    EVENTS_FILE,
     SCENARIOS,
     SKILLS,
     final_text,
@@ -20,13 +21,14 @@ from claude_runner import (
     host_failure,
     normalized_proposal,
     parse_events,
+    save_events,
     summary,
     supervise_extra,
     supervise_verdict,
     telemetry,
 )
 from l1_checks import HELPER_TOOLS, load_closing_note, verdict_single_context
-from routing import tool_calls
+from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, tool_calls
 
 STREAMS = Path(__file__).resolve().parent / "data" / "routing_streams"
 ARGS = argparse.Namespace(scenario="check_report", model="haiku", no_skill=False)
@@ -138,6 +140,26 @@ def test_host_command_pins_the_stream_flags_and_the_budget_pass_through():
     assert host_command("do it", "sonnet", budget=2)[-2:] == ["--max-budget-usd", "2"]
 
 
+def test_host_command_denies_every_outward_tool_and_keeps_the_ones_runs_need():
+    """Permission prompts are skipped, so the command itself must deny the host's
+    publishing, messaging and scheduling tools (haiku published artifacts in a
+    2026-10-03 run); the supervise verifier and the lookups must stay usable."""
+    command = host_command("do it", "sonnet")
+    denied = command[command.index("--disallowed-tools") + 1:]
+    for tool in OUTWARD_TOOLS:
+        assert tool in denied, tool
+    for needed in ("Agent", "Task", "WebFetch", "WebSearch", "Skill"):
+        assert needed not in denied, needed
+    # the variadic list must not swallow the budget flag that follows it
+    budgeted = host_command("do it", "sonnet", budget=2)
+    assert budgeted[-2:] == ["--max-budget-usd", "2"]
+    assert "Artifact" in OUTWARD_TOOLS
+
+
+def test_routing_rig_denies_the_same_outward_tools():
+    assert set(OUTWARD_TOOLS) <= set(DISALLOWED_TOOLS)
+
+
 def test_host_failure_reports_an_error_result_with_its_detail():
     stream = [{
         "type": "result", "subtype": "error_max_budget_usd", "is_error": True,
@@ -245,8 +267,17 @@ Scope verdict: over-scoped
 
 ## Verification
 
+Verified by: fresh verifier
+
 Contradicted: the regulation the export names for municipal websites.
 """
+
+# the host stream of a run that started its verifier with the shipped brief
+VERIFIER_EVENTS = [{"type": "assistant", "message": {"content": [{
+    "type": "tool_use", "name": "Task",
+    "input": {"description": "Verify feedback",
+              "prompt": "Follow references/verifier-brief.md. Feedback: x-feedback.md"},
+}]}}]
 
 
 def supervise_ws(tmp_path, feedback=SCOPED_FEEDBACK, review=SCOPED_REVIEW):
@@ -268,10 +299,28 @@ def test_normalized_proposal_skips_the_sidecars(tmp_path):
 
 
 def test_supervise_scope_scenario_passes_a_complete_run(tmp_path):
-    passed, why = supervise_verdict(SCENARIOS["supervise_scope"], supervise_ws(tmp_path))
+    passed, why = supervise_verdict(SCENARIOS["supervise_scope"], supervise_ws(tmp_path),
+                                    VERIFIER_EVENTS)
     assert passed, why
     assert "lettered cut options A, B" in why
     assert "workload table" in why
+    assert "fresh verifier started with the brief" in why
+
+
+def test_supervise_scenario_fails_when_the_verifier_was_skipped(tmp_path):
+    """The headless host offers a subagent tool, so checking inline there is
+    a skip, not the fallback (testing-harness spec: skipped verifier fails)."""
+    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"], supervise_ws(tmp_path), [])
+    assert not passed
+    assert "verifier did not run" in why
+
+
+def test_supervise_scenario_fails_without_a_declaration(tmp_path):
+    undeclared = SCOPED_REVIEW.replace("Verified by: fresh verifier\n", "")
+    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"],
+                                    supervise_ws(tmp_path, review=undeclared), VERIFIER_EVENTS)
+    assert not passed
+    assert "does not say who verified" in why
 
 
 def test_supervise_scope_scenario_fails_without_options_or_review_sections(tmp_path):
@@ -287,15 +336,24 @@ def test_supervise_scope_scenario_fails_without_options_or_review_sections(tmp_p
 def test_supervise_scope_scenario_uses_its_own_identity_tokens(tmp_path):
     leaked = SCOPED_FEEDBACK.replace("What to keep:", "Prof. Mustermann agrees. What to keep:")
     passed, why = supervise_verdict(SCENARIOS["supervise_scope"],
-                                    supervise_ws(tmp_path, feedback=leaked))
+                                    supervise_ws(tmp_path, feedback=leaked), VERIFIER_EVENTS)
     assert not passed
     assert "Mustermann" in why
 
 
 def test_supervise_feedback_scenario_skips_the_scope_verdicts(tmp_path):
-    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"], supervise_ws(tmp_path))
+    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"], supervise_ws(tmp_path),
+                                    VERIFIER_EVENTS)
     assert passed, why
     assert "lettered" not in why
+
+
+def test_save_events_writes_jsonl_outside_the_markdown_globs(tmp_path):
+    path = save_events([*VERIFIER_EVENTS, {"type": "result", "result": "done"}], tmp_path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["type"] for line in lines] == ["assistant", "result"]
+    assert path.name == EVENTS_FILE
+    assert not list(tmp_path.glob("*.md"))
 
 
 def test_supervise_scenarios_allow_exactly_one_verifier():
