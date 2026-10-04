@@ -9,9 +9,11 @@ every skill. Stream fixtures live in `tests/unit/data/routing_streams/`.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
+import routing
 from helpers import REPO
 from routing import (
     DEFAULT_PROPOSAL,
@@ -19,6 +21,7 @@ from routing import (
     NO_ROUTE,
     Case,
     Result,
+    case_result,
     classify,
     composition_problems,
     files_named,
@@ -28,6 +31,7 @@ from routing import (
     outcome_label,
     previous_score,
     render_report,
+    report_due,
     route_from_events,
     stage_workspace,
     tool_calls,
@@ -93,6 +97,65 @@ def test_tool_calls_preserve_order():
     assert names == ["Glob", "Read", "Skill"]
 
 
+# ---------- host errors ------------------------------------------------------
+
+CHECK_CASE = Case(id="c", utterance="Please check microservice-technical-debt.md.",
+                  expected="proposal-check", kind="canonical", lang="en")
+NEGATIVE_CASE = Case(id="n", utterance="Format my Python script.", expected=NO_ROUTE,
+                     kind="negative", lang="en")
+BUDGET_OVERRUN = {
+    "type": "result", "subtype": "error_max_budget_usd", "is_error": True,
+    "errors": ["Exceeded USD budget"], "total_cost_usd": 0.31, "num_turns": 4,
+}
+
+
+def test_dead_login_is_an_error_not_an_unrouted_case():
+    """A sweep run on a dead login used to score every case as unrouted: the
+    host's error result carries no skill call, and events had arrived."""
+    outcome = case_result(CHECK_CASE, events("expired-login"), None)
+    assert outcome.route is None
+    assert "OAuth session expired and could not be refreshed" in outcome.error
+    assert "`claude`" in outcome.error
+    assert "`/login`" in outcome.error
+
+
+def test_negative_case_does_not_pass_on_a_host_error():
+    outcome = case_result(NEGATIVE_CASE, events("expired-login"), None)
+    assert not outcome.passed
+    assert classify([outcome]).totals == (0, 0)
+
+
+def test_other_host_errors_name_the_host_reason_without_the_login_remedy():
+    outcome = case_result(CHECK_CASE, [BUDGET_OVERRUN], None)
+    assert outcome.error.startswith("claude failed: error_max_budget_usd: Exceeded USD budget")
+    assert "/login" not in outcome.error
+
+
+def test_an_answer_without_a_skill_call_stays_unrouted():
+    outcome = case_result(NEGATIVE_CASE, events("unrouted-explore") + events("recorded-result"),
+                          None)
+    assert outcome.error is None
+    assert outcome.passed
+
+
+def test_a_route_outranks_every_error():
+    stream = events("routed-check") + events("expired-login")
+    outcome = case_result(CHECK_CASE, stream, "timed out after 90s")
+    assert outcome.route == "proposal-check"
+    assert outcome.error is None
+
+
+def test_a_stream_error_stands_when_the_host_gave_no_reason():
+    assert case_result(CHECK_CASE, [], "no events").error == "no events"
+    timed_out = case_result(CHECK_CASE, events("unrouted-explore"), "timed out after 90s")
+    assert timed_out.error == "timed out after 90s"
+
+
+def test_a_malformed_skill_call_is_an_error():
+    assert "carries no skill name" in case_result(
+        CHECK_CASE, events("malformed-skill-call"), None).error
+
+
 # ---------- classification ---------------------------------------------------
 
 
@@ -136,6 +199,12 @@ def test_per_kind_totals_are_kept_apart():
         result("b", "proposal-check", kind="collision", route="proposal-review"),
     ])
     assert matrix.per_kind == {"canonical": (1, 1), "collision": (0, 1)}
+
+
+def test_report_is_due_only_once_a_measurement_completed():
+    errored = result("e", "proposal-check", error="claude failed: no stderr")
+    assert not report_due(classify([errored]))
+    assert report_due(classify([errored, result("a", "proposal-check", route="proposal-check")]))
 
 
 def test_misroutes_lists_only_wrong_completed_measurements():
@@ -214,6 +283,61 @@ def test_partial_failure_renders_as_a_rate():
         result("c", "proposal-ideate", route="proposal-ideate"),
     ]
     assert "(1/3 epochs)" in render_report(results, classify(results), "sonnet")
+
+
+# ---------- run outcome ------------------------------------------------------
+
+EARLIER_REPORT = "measurements: 120 (119 correct), 3 epochs per case\n"
+
+
+@pytest.fixture
+def offline_rig(tmp_path, monkeypatch):
+    """`routing.main` with the host taken out: each measurement returns the next
+    of the given outcomes, relabelled for the case it stands in for, and the
+    report and run log live in `tmp_path`."""
+    report = tmp_path / "skill-routing.md"
+    report.write_text(EARLIER_REPORT, encoding="utf-8")
+    monkeypatch.setattr(routing, "REPORT_FILE", report)
+    monkeypatch.setattr(routing, "LOG_DIR", tmp_path / "logs")
+    monkeypatch.setattr(routing.shutil, "which", lambda _name: "claude")
+    monkeypatch.setattr(routing, "isolated_config", lambda _prefix: nullcontext(tmp_path))
+
+    def with_outcomes(*outcomes: Result) -> Path:
+        queue = iter(outcomes)
+
+        def measure(case: Case, *_args) -> Result:
+            outcome = next(queue)
+            return Result(case_id=case.id, expected=case.expected, kind=case.kind,
+                          route=outcome.route, error=outcome.error)
+
+        monkeypatch.setattr(routing, "measure", measure)
+        return report
+
+    return with_outcomes
+
+
+DEAD_LOGIN = Result(case_id="", expected="", kind="", error="claude failed: Not logged in")
+
+
+def test_a_run_with_nothing_measured_leaves_the_report_alone(offline_rig, tmp_path):
+    report = offline_rig(DEAD_LOGIN, DEAD_LOGIN)
+    status = routing.main(["--case", "review-canonical", "--epochs", "2", "--jobs", "1"])
+    assert status == 1
+    assert report.read_text(encoding="utf-8") == EARLIER_REPORT
+    assert len(list((tmp_path / "logs").glob("*.json"))) == 1
+
+
+def test_an_errored_measurement_fails_the_run(offline_rig):
+    offline_rig(Result(case_id="", expected="", kind="", route="proposal-review"), DEAD_LOGIN)
+    status = routing.main(["--case", "review-canonical", "--epochs", "2", "--jobs", "1",
+                           "--no-report"])
+    assert status == 1
+
+
+def test_a_clean_run_succeeds(offline_rig):
+    offline_rig(Result(case_id="", expected="", kind="", route="proposal-review"))
+    status = routing.main(["--case", "review-canonical", "--epochs", "1", "--no-report"])
+    assert status == 0
 
 
 # ---------- staging ----------------------------------------------------------

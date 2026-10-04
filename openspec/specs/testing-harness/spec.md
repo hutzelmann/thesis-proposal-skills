@@ -429,6 +429,14 @@ The harness SHALL measure which skill a host agent selects for a user utterance,
 ### Requirement: Isolated measurement environment
 A routing run SHALL execute against an isolated host configuration containing only the skills under measurement — no operator-specific skills, hooks, plugins, or agents — so that results reproduce on any machine and describe a user's install rather than the developer's. A run that cannot establish that isolation SHALL fail with a message naming what is missing, and SHALL NOT fall back to the ambient configuration.
 
+An isolated configuration — the routing rig's, or the dev runner's in isolated mode — SHALL authenticate in one of two ways. If a long-lived token is in the environment, the configuration SHALL hold no credentials of its own. Otherwise it SHALL hold a link to the operator's stored login, never a copy.
+
+While such a link exists, a login refresh the host performs inside the isolated configuration SHALL reach the stored login. The host refreshes by replacing the link with a file of its own. When the replacement expires later than the stored login, the harness SHALL write it to the stored location with owner-only permissions, within a second of the replacement, and SHALL check once more when the run ends. Credentials that do not expire later SHALL never be written. Credential values SHALL NOT be printed, logged, or kept anywhere other than the stored location and the isolated configuration.
+
+The host serializes refreshes only within one configuration directory. A run that starts while the stored login has expired, or is about to, SHALL therefore first hold an exclusive refresh claim beside the stored login. A run that finds the claim held SHALL wait a bounded time for the refreshed login, then proceed with it. If the wait ends without one, the run SHALL refuse with a message naming the cause. A claim left behind by a run that ended without releasing it SHALL stop blocking after a bounded age.
+
+A login the host rejects only once a case is running cannot be detected before the run starts. A routing case that the host ends for that reason SHALL produce no routing verdict, and its recorded error SHALL carry the host's reason and the re-login instruction the dev runner gives for the same failure.
+
 #### Scenario: Ambient configuration excluded
 - **WHEN** the operator's own configuration defines additional skills or session hooks
 - **THEN** the routing run is unaffected by them
@@ -437,8 +445,38 @@ A routing run SHALL execute against an isolated host configuration containing on
 - **WHEN** the isolated configuration cannot authenticate or cannot be created
 - **THEN** the run exits with a diagnostic and produces no routing verdicts
 
+#### Scenario: Login rejected during a case
+- **WHEN** the host ends a routing case with an error result saying it failed to authenticate
+- **THEN** the case produces no routing verdict, and its error carries the host's reason and tells the operator to run `claude` and enter `/login`
+
+#### Scenario: Refresh inside an isolated run reaches the stored login
+- **WHEN** the host replaces the linked credentials with a login that expires later than the stored one
+- **THEN** the stored login holds the refreshed credentials with owner-only permissions, and the isolated configuration links to it again
+
+#### Scenario: Older credentials never written back
+- **WHEN** the host's replacement expires no later than the stored login
+- **THEN** the stored login is left unchanged
+
+#### Scenario: Concurrent runs with an expired login
+- **WHEN** two isolated runs start while the stored login has expired
+- **THEN** only one holds the refresh claim, and the other waits until the refreshed login is written back and starts with it
+
+#### Scenario: Refresh never arrives
+- **WHEN** a run waits on a held claim and the bounded wait ends with the stored login still expired
+- **THEN** the run refuses with a diagnostic naming the held refresh, and the ambient configuration is not used
+
+#### Scenario: Abandoned claim
+- **WHEN** a claim is older than its bounded age
+- **THEN** the next run that needs a refresh takes the claim over
+
+#### Scenario: Long-lived token in the environment
+- **WHEN** the environment carries a long-lived host token
+- **THEN** the isolated configuration holds no credentials, and the stored login is neither linked nor written
+
 ### Requirement: Route determined by the first skill invocation
 A case's route SHALL be the first invocation of a `proposal-*` skill observed in the run, and the run SHALL be terminated as soon as that route is recorded. Preparatory non-skill tool calls SHALL be tolerated up to a bounded number, and a case that exceeds that bound or its time limit SHALL be recorded as unrouted rather than retried. Skill invocations after the first SHALL NOT change the recorded route.
+
+A case the host ends with an error result before any `proposal-*` invocation SHALL be recorded as an error carrying the host's reason — its subtype, its errors or result text, and the cost and turns so far — and SHALL NOT be recorded as unrouted. Unrouted is a finding about the descriptions; a host failure says nothing about them, and a negative case would pass on it.
 
 #### Scenario: Route recorded and run stopped
 - **WHEN** the agent invokes a `proposal-*` skill
@@ -455,6 +493,14 @@ A case's route SHALL be the first invocation of a `proposal-*` skill observed in
 #### Scenario: Skill chains into a sibling
 - **WHEN** the selected skill invokes another `proposal-*` skill
 - **THEN** the recorded route remains the first invocation
+
+#### Scenario: Host ends the case with an error
+- **WHEN** the host ends a case with an error result and no `proposal-*` skill was invoked
+- **THEN** the case is recorded as an error naming the host's reason, it counts neither as unrouted nor toward any kind's total, and a negative case does not pass on it
+
+#### Scenario: Unrouted answer is not an error
+- **WHEN** the host ends a case with a result that is not an error and no `proposal-*` skill was invoked
+- **THEN** the case is recorded as unrouted
 
 ### Requirement: Routing dataset covers canonical, oblique, and contested phrasings
 The routing dataset SHALL be a tracked data file in which each case carries its utterance, its expected skill, and its kind. Every `proposal-*` skill SHALL have at least one case in each of three kinds: the phrasing its description literally promises, an oblique phrasing a user would plausibly type, and a phrasing that lands in a zone contested by another skill. The dataset SHALL further include negative cases whose expected outcome is that no `proposal-*` skill is selected, and cases in German, the language of the intended user population.
@@ -481,6 +527,8 @@ Route extraction and matrix classification SHALL be pure functions over event da
 ### Requirement: Routing reported as a confusion matrix
 A routing run SHALL persist its raw per-case results and SHALL generate a tracked report presenting expected skill against selected skill, so that a failure names the skill that wrongly claimed the utterance. A single aggregate pass rate SHALL NOT be the only reported figure. The report SHALL record the model and case count the run used. A case whose expected skill was never selected and a case claimed by the wrong skill SHALL be reported as distinct outcomes, since one says a description is too narrow and the other says it reaches too far. The report SHALL state the result it supersedes, so a later run is read as a movement rather than as an isolated figure.
 
+A run in which any measurement ended in an error SHALL exit with a failure status, whatever the completed measurements scored. A run in which no measurement completed SHALL leave the tracked report unchanged, so that the report never carries a score no case produced and the next run is still compared against the last real one.
+
 #### Scenario: Mis-route is attributable
 - **WHEN** cases expected to select one skill are routed to another
 - **THEN** the report shows that pairing and the utterances involved
@@ -496,6 +544,14 @@ A routing run SHALL persist its raw per-case results and SHALL generate a tracke
 #### Scenario: Comparison against the previous result
 - **WHEN** a report replaces an earlier one
 - **THEN** it states the earlier score it is being compared against
+
+#### Scenario: Errored measurement fails the run
+- **WHEN** any measurement of a run ends in an error and every completed measurement is correct
+- **THEN** the run exits with a failure status
+
+#### Scenario: Nothing measured
+- **WHEN** every measurement of a run ends in an error
+- **THEN** the tracked report is left unchanged, the raw per-case results are still persisted, and the run exits with a failure status
 
 ### Requirement: Routing runs are on-demand, not a CI gate
 The routing rig SHALL be invocable through a registered task and SHALL NOT be part of the default local test chain or of CI, since it depends on an interactive host installation and subscription credentials. The dataset's structural integrity and the rig's pure functions SHALL be part of the default test chain.
@@ -637,6 +693,7 @@ Because the runner starts the host without permission prompts, it SHALL deny the
 The runner SHALL accept a hard budget cap passed through to the host, and SHALL label each run as measuring the ambient host configuration or an isolated one prepared for the run, naming the isolated directory. Failures SHALL be reported as follows:
 
 - a host result event marked as an error — a budget overrun among them — SHALL end the run as a runner failure whose message carries the host's subtype, its errors, and the cost and turns so far;
+- when that error is a failure to authenticate, the message SHALL also tell the operator that the stored login is no longer valid and must be renewed by running `claude` and entering `/login`;
 - a non-zero host exit without such an event SHALL report the host's stderr;
 - a stream with no result event SHALL be a runner failure, never a silent success with empty telemetry.
 
@@ -678,6 +735,10 @@ The chat the verdicts read SHALL be the result event's final text and nothing el
 - **WHEN** the runner is invoked with a budget cap and the host ends the run with an error result for exceeding it
 - **THEN** the run ends as a runner failure whose message names the host's subtype, its errors, and the cost and turns so far — not as a skill failure and not with an empty message
 
+#### Scenario: Expired login names the remedy
+- **WHEN** the host ends a run with an error result saying it failed to authenticate because the login expired and could not be refreshed
+- **THEN** the runner failure carries the host's reason and tells the operator to run `claude` and enter `/login`
+
 #### Scenario: No result event
 - **WHEN** the host exits without emitting a result event
 - **THEN** the runner fails saying so, and no verdict is computed over partial narration
@@ -688,7 +749,7 @@ The chat the verdicts read SHALL be the result event's final text and nothing el
 
 #### Scenario: Isolated run labelled
 - **WHEN** the runner is invoked in isolated mode
-- **THEN** the child runs against a configuration holding only settings and linked credentials, kept outside the workspace, and the summary labels the run as isolated and names that directory; without the flag it labels the run as ambient
+- **THEN** the child runs against a configuration kept outside the workspace that holds only settings and, unless a long-lived token is in the environment, linked credentials; the summary labels the run as isolated and names that directory; without the flag it labels the run as ambient
 
 ### Requirement: Scoping-vocabulary containment measured against a non-aligned idea
 The harness SHALL exercise research-group scoping with at least one scenario whose student idea is plausible for the stated program and touches none of the scoping fixture's research areas, and at least one whose idea overlaps exactly one area of a multi-area fixture. A scenario whose student idea restates one of the fixture's research areas SHALL NOT be the only coverage of the scoping fetch: vocabulary bleed and legitimate adoption are indistinguishable in such a run, so it measures the fetch but not the containment.
