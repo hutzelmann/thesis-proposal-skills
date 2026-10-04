@@ -37,4 +37,4 @@
 
 - [x] 6.1 Run the pre-commit adversarial verification over the branch diff (spec conformance, regressions, fixture synthetic-ness, generated-copy drift); fix confirmed findings and verify `uv run poe test` and `uv run poe specs` are green
 - [x] 6.2 Present the measurement table and two to three before/after paragraphs from kept workspaces to the user (pipeline stop 2) and record the verdict in `measurement.md`
-- [ ] 6.3 After approval: archive the change with `openspec archive`, commit, merge the branch into `main`, re-run `python3 scripts/sync_shared.py` and `uv run poe test` on `main`; no push
+- [x] 6.3 After approval: archive the change with `openspec archive`, commit, merge the branch into `main`, re-run `python3 scripts/sync_shared.py` and `uv run poe test` on `main`; no push
