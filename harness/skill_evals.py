@@ -82,8 +82,10 @@ CITATION_SCOPE = (
     "Every sentence that reports prior work is recognisably attributed, by its "
     "own citation or by a back-reference continuing a cited sentence in the same "
     "paragraph; no publication or group of publications is cited on consecutive "
-    "sentences while source and topic stay the same; no sentence carries a "
-    "source's content on without a citation or a back-reference."
+    "sentences while source and topic stay the same (a changed set of sources is "
+    "not a repetition); no sentence carries a source's content on without a "
+    "citation or a back-reference. The thesis's own comparisons and conclusions "
+    "about works it has just cited need no citation."
 )
 CITATION_SYNTHESIS = (
     "Prior work is grouped by theme and compared within each group; no paragraph "

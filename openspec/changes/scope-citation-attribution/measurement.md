@@ -123,14 +123,55 @@ Each sonnet repair removes every repetition, keeps all seven sources, and carrie
 
 Across all 72 kept drafts the shipped check emits **no** hindsight warning. The before-state check flagged 14 of them, every one a back-reference continuation the guidance asks for.
 
+### L2 (Inspect, OpenRouter), shipped state
+
+**Run 1: the harness default judge (haiku-4.5).** Inspect tasks `write_rich_seed` and `write_repair_citations`, sonnet-5 and haiku-4.5, 2 epochs. Approved estimate $4.16; **actual cost $5.24**.
+
+| Task | Model | L1 | Citation scope | Synthesis |
+|---|---|---|---|---|
+| rich seed | sonnet | C C | C C | I C |
+| rich seed | haiku | C C | C C | C I |
+| repair | sonnet | C C | C I | I I |
+| repair | haiku | C C | I I | C I |
+
+On the Inspect path haiku passes the repair L1 2/2. Its dev-runner failures are host-specific skill non-adherence.
+
+**Judge defects.** Reading the judge's reasons showed defects in our instrument, not in the drafts:
+
+- It flagged a switch from `[@Ito24Breaking; @Okonjo23Compat]` to `[@Okonjo23Compat]` as a repetition. The rubric says a changed set is not one, and L1 had passed, so no identical set existed.
+- It flagged "Both lines of work inspect …" as an unattributed claim. "Both" is a back-reference, and comparisons in the thesis's own voice are what the synthesis criterion asks for. The rubric did not say so, so the scope criterion penalised what the synthesis criterion required.
+- It accepted only a narrative opener as an anchor and rejected "Most of their warnings …" after a bracketed citation.
+
+The rubric was made precise on all three points, and the scope criterion now states the first and second. The judge also sees only the last 400 characters of its own reasoning in the log, which made the defects slow to see.
+
+**Run 2: re-judged with the fixed rubric and sonnet-5 as judge.** The 12 before-state and 12 shipped-state dev-runner drafts, judged directly. That is 48 calls, approved at about $0.70; **actual cost $2.65**, because sonnet's step-by-step verdicts averaged about 4,700 output tokens instead of the assumed 800. Passes of 3 runs:
+
+| Cell | Scope, before → shipped | Synthesis, before → shipped |
+|---|---|---|
+| repair · sonnet | 1 → **2** | 2 → 1 |
+| repair · haiku | 0 → 0 | 0 → 0 |
+| rich seed · sonnet | 2 → 2 | 2 → **3** |
+| rich seed · haiku | 1 → **2** | 1 → 1 |
+| **total** | **4 → 6** of 12 | **5 → 5** of 12 |
+
+With the fixed rubric the sonnet judge explicitly accepts the source switch and the own-voice synthesis sentences. Its remaining findings on shipped sonnet drafts are real:
+
+- an uncued continuation ("At the same time, one update in eight broke …", the same sentence noted at stop 2);
+- a borderline noun-phrase reference ("The features are …");
+- one uncited source-specific claim in a rich-seed introduction;
+- the Morandi paragraph, which the polishing pass shortens but leaves a one-source summary (synthesis).
+
 ### Bar (design D7, item 6), evaluated at the shipped state
 
 | Criterion | Result |
 |---|---|
-| L1 solid on both models, both scenarios | **Not met** for haiku × repair (0/3): structural breakage, general skill non-adherence. Met for the other three cells. |
+| L1 solid on both models, both scenarios | **Not met** for haiku × repair (0/3 on the dev runner): structural breakage, general skill non-adherence. Met for the other three cells. |
 | L1 solid on the capable tier | **Met**: sonnet 3/3 on both scenarios, in four consecutive states (B, C, review fixes, shipped). |
-| L2 citation scope (both models) and synthesis (sonnet) | Pending: stop 1, cost approval. |
-| The user's eye on before/after samples | Pending: stop 2. |
+| L2 citation scope, both models, every epoch | **Not met.** Shipped 6/12 against 4/12 before, with the fixed rubric and sonnet judge. |
+| L2 synthesis, sonnet, every epoch | **Not met** on repair (1/3, the Morandi one-source paragraph). Met on rich seed (3/3). |
+| The user's eye on before/after samples | **Met**: "professional" (stop 2, 2026-10-04). |
+
+**Outcome.** Repetition is solved on the capable tier: no repeated citation in any sonnet draft since step B, and none in any rich-seed draft of either model since stage A. The hindsight check no longer pushes writers back to repeated citations: 0 of 72 drafts are flagged, against 14 under the old check. Attribution scope improved but is not complete. Some continuations still carry no cue, and a polishing pass does not turn a one-source paragraph into a synthesis. Both are recorded as open, not as met. Escalation was exhausted per the interview, and the user approved archiving at stop 2.
 
 ### Totals across stages
 

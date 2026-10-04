@@ -26,7 +26,7 @@
       "expected_output": "The over-citing draft revised so that no sentence repeats exactly the citations of the sentence before it, every source is still cited, and each continuation refers back to its source in words.",
       "assertions": [
         "A writing pass over an over-citing draft leaves it mechanically sound, no sentence repeating exactly the citations of the sentence before it, and every source still cited.",
-        "Every sentence that reports prior work is recognisably attributed, by its own citation or by a back-reference continuing a cited sentence in the same paragraph; no publication or group of publications is cited on consecutive sentences while source and topic stay the same; no sentence carries a source's content on without a citation or a back-reference.",
+        "Every sentence that reports prior work is recognisably attributed, by its own citation or by a back-reference continuing a cited sentence in the same paragraph; no publication or group of publications is cited on consecutive sentences while source and topic stay the same (a changed set of sources is not a repetition); no sentence carries a source's content on without a citation or a back-reference. The thesis's own comparisons and conclusions about works it has just cited need no citation.",
         "Prior work is grouped by theme and compared within each group; no paragraph summarises one source after another or spends most of its sentences on a single source."
       ]
     },
@@ -40,7 +40,7 @@
       "expected_output": "A complete proposal draft from an eleven-reference seed that cites each source once per continuous use — the run opened by the author-in-text form, later sentences referring back in words — and groups prior work by theme.",
       "assertions": [
         "A draft from a reference-rich seed is mechanically sound, no sentence repeats exactly the citations of the sentence before it, and enough sentences cite that it had the chance to.",
-        "Every sentence that reports prior work is recognisably attributed, by its own citation or by a back-reference continuing a cited sentence in the same paragraph; no publication or group of publications is cited on consecutive sentences while source and topic stay the same; no sentence carries a source's content on without a citation or a back-reference.",
+        "Every sentence that reports prior work is recognisably attributed, by its own citation or by a back-reference continuing a cited sentence in the same paragraph; no publication or group of publications is cited on consecutive sentences while source and topic stay the same (a changed set of sources is not a repetition); no sentence carries a source's content on without a citation or a back-reference. The thesis's own comparisons and conclusions about works it has just cited need no citation.",
         "Prior work is grouped by theme and compared within each group; no paragraph summarises one source after another or spends most of its sentences on a single source."
       ]
     }

@@ -24,8 +24,8 @@
 ## 4. After measurement
 
 - [x] 4.1 Re-run the 12 dev runs of 2.1 on the stage-A commit; record results beside the baseline in `measurement.md`
-- [ ] 4.2 Show the Inspect cost estimate for sonnet and haiku × both tasks × 2 epochs and wait for the user's approval (pipeline stop 1); run, then record L1/L2 scores, judge explanations and actual cost in `measurement.md`
-- [ ] 4.3 Evaluate the bar (design D7): L1 cells solid on both models; L2 citation scope passing on both epochs for both models; L2 synthesis passing on both epochs for sonnet, haiku reported; record the verdict per criterion in `measurement.md`
+- [x] 4.2 Show the Inspect cost estimate for sonnet and haiku × both tasks × 2 epochs and wait for the user's approval (pipeline stop 1); run, then record L1/L2 scores, judge explanations and actual cost in `measurement.md`
+- [x] 4.3 Evaluate the bar (design D7): L1 cells solid on both models; L2 citation scope passing on both epochs for both models; L2 synthesis passing on both epochs for sonnet, haiku reported; record the verdict per criterion in `measurement.md`
 
 ## 5. Ladder (only if 4.3 fails — routed by failing criterion)
 
@@ -36,5 +36,5 @@
 ## 6. Review and close
 
 - [x] 6.1 Run the pre-commit adversarial verification over the branch diff (spec conformance, regressions, fixture synthetic-ness, generated-copy drift); fix confirmed findings and verify `uv run poe test` and `uv run poe specs` are green
-- [ ] 6.2 Present the measurement table and two to three before/after paragraphs from kept workspaces to the user (pipeline stop 2) and record the verdict in `measurement.md`
+- [x] 6.2 Present the measurement table and two to three before/after paragraphs from kept workspaces to the user (pipeline stop 2) and record the verdict in `measurement.md`
 - [ ] 6.3 After approval: archive the change with `openspec archive`, commit, merge the branch into `main`, re-run `python3 scripts/sync_shared.py` and `uv run poe test` on `main`; no push
