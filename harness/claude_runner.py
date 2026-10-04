@@ -22,8 +22,9 @@ verdict, the run's cost, turns, duration, token counts, any helper-agent
 tool calls (Agent/Task/Workflow) and an advisory single-context verdict —
 the probe for the fan-out class of failure, which no other harness path can
 see. `--isolated` runs against a fresh host configuration (the routing rig's
-`prepare_config`), so a run measures the default host rather than the
-operator's session mode; the summary says which (`config`).
+`isolated_config`, which keeps the linked stored login current), so a run
+measures the default host rather than the operator's session mode; the
+summary says which (`config`).
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
 workspace so file edits and script calls work headlessly.
@@ -34,15 +35,18 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+from contextlib import ExitStack
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
+from host_login import RELOGIN
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
@@ -65,7 +69,7 @@ from l1_checks import (
     verdict_supervise_verification_declared,
     verdict_supervise_verifier,
 )
-from routing import OUTWARD_TOOLS, prepare_config, tool_calls
+from routing import OUTWARD_TOOLS, isolated_config, tool_calls
 from sources import MESSY_REQUEST
 
 HARNESS = Path(__file__).resolve().parent
@@ -313,13 +317,27 @@ def host_command(request: str, model: str, budget: float | None = None) -> list[
     return command
 
 
+# the host's wording for a login it cannot use: an expired one that could not be
+# refreshed (recorded 2026-10-03 and 2026-10-04), or none at all
+LOGIN_FAILURE = re.compile(r"Failed to authenticate|OAuth session|Not logged in")
+
+
 def host_failure(events: list[dict], returncode: int, stderr: str) -> str | None:
-    """Why the run is a runner failure, or None. Checked in this order: an error
-    result event (a budget overrun is one — it exits non-zero with nothing on
-    stderr in stream mode, and carries the subtype, errors and cost so far), a
-    non-zero exit without one (the stderr tail), and a zero exit with no result
-    event at all, which the host allows and which would otherwise judge the L1
-    over partial narration with empty telemetry."""
+    """Why the run is a runner failure, or None — with the re-login instruction
+    when the reason is the stored login, which no rerun repairs."""
+    message = host_failure_reason(events, returncode, stderr)
+    if message and LOGIN_FAILURE.search(message):
+        message += f"\nThe stored host login is no longer valid: {RELOGIN}, then rerun."
+    return message
+
+
+def host_failure_reason(events: list[dict], returncode: int, stderr: str) -> str | None:
+    """Checked in this order: an error result event (a budget overrun is one —
+    it exits non-zero with nothing on stderr in stream mode, and carries the
+    subtype, errors and cost so far), a non-zero exit without one (the stderr
+    tail), and a zero exit with no result event at all, which the host allows
+    and which would otherwise judge the L1 over partial narration with empty
+    telemetry."""
     result = result_event(events)
     if result.get("is_error"):
         # an expired login arrives as subtype "success" with no `errors` and the
@@ -622,13 +640,14 @@ def main(argv: list[str] | None = None) -> int:
     ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
     # the isolated config is a sibling temp directory, not inside the workspace,
     # so staging and the verdicts' `*.md` glob never see it; the credentials it
-    # links are as reachable for the child as ~/.claude is in ambient mode
-    config_base = Path(tempfile.mkdtemp(prefix="devrun-config-")) if args.isolated else None
-    config = None
+    # links are as reachable for the child as ~/.claude is in ambient mode, and
+    # a refresh the child performs is written back to them
+    isolation = ExitStack()
     server = None
     try:
-        if config_base:
-            config = prepare_config(config_base)  # exits when no credentials exist
+        # exits when no stored login exists, or when another run's refresh never arrives
+        config = (isolation.enter_context(isolated_config("devrun-config-"))
+                  if args.isolated else None)
         stage(scenario, ws, install_skill=not args.no_skill)
         request = scenario["request"]
         if scenario.get("serve"):
@@ -650,8 +669,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if server:
             server.shutdown()
-        if config_base:
-            shutil.rmtree(config_base, ignore_errors=True)
+        isolation.close()
         if args.keep:
             print(f"\nworkspace kept: {ws}")
         else:

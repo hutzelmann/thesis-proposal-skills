@@ -31,9 +31,13 @@ import sys
 import tempfile
 import time
 import tomllib
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from host_login import CREDENTIALS, LONG_LIVED_TOKEN, RELOGIN, keep_login
 
 HARNESS = Path(__file__).resolve().parent
 REPO = HARNESS.parent
@@ -346,27 +350,43 @@ def prepare_config(base: Path) -> Path:
     credentials live in the config directory. Rather than copy the secret, the
     rig links it — and refuses to run without it, since falling back to the
     ambient configuration would silently measure the operator's own skills,
-    hooks and plugins instead of a user's install.
+    hooks and plugins instead of a user's install. A long-lived token from
+    `claude setup-token` in the environment needs no link: the child inherits
+    it, and nothing in the directory can be refreshed or stranded.
     """
     override = os.environ.get("ROUTING_CONFIG_DIR")
     if override:
         return Path(override)
 
     source = Path(os.environ.get("CLAUDE_REAL_CONFIG_DIR", Path.home() / ".claude"))
-    credentials = source / ".credentials.json"
+    credentials = source / CREDENTIALS
     config = base / "config"
     config.mkdir(parents=True, exist_ok=True)
     (config / "settings.json").write_text("{}\n", encoding="utf-8")
+    if os.environ.get(LONG_LIVED_TOKEN):
+        return config
 
     if not credentials.exists():
         sys.exit(
-            f"no credentials at {credentials}. Log in with `claude` first, or point "
+            f"no stored login at {credentials}: {RELOGIN}, set "
+            f"{LONG_LIVED_TOKEN} (from `claude setup-token`), or point "
             f"ROUTING_CONFIG_DIR at a prepared config directory."
         )
-    link = config / ".credentials.json"
+    link = config / CREDENTIALS
     if not link.exists():
         link.symlink_to(credentials)
     return config
+
+
+@contextmanager
+def isolated_config(prefix: str) -> Iterator[Path]:
+    """A prepared config directory for the duration of a run: the stored login
+    it links is kept current (`host_login.keep_login`), and the directory is
+    removed afterwards."""
+    with tempfile.TemporaryDirectory(prefix=prefix, ignore_cleanup_errors=True) as tmp:
+        config = prepare_config(Path(tmp))
+        with keep_login(config / CREDENTIALS):
+            yield config
 
 
 def files_named(utterance: str) -> list[str]:
@@ -529,11 +549,10 @@ def main(argv: list[str] | None = None) -> int:
     work = [c for c in selected for _ in range(epochs_for(c, args.epochs))]
     print(f"routing: {len(work)} measurements over {len(selected)} cases, model {args.model}")
 
-    with tempfile.TemporaryDirectory(prefix="routing-config-") as tmp:
-        config = prepare_config(Path(tmp))
-        with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-            results = list(pool.map(
-                lambda c: measure(c, config, args.model, args.timeout, args.keep_events), work))
+    with (isolated_config("routing-config-") as config,
+          ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool):
+        results = list(pool.map(
+            lambda c: measure(c, config, args.model, args.timeout, args.keep_events), work))
 
     matrix = classify(results)
     passed, total = matrix.totals
