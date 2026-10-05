@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import support
-from helpers import failing_fetch
+from helpers import failing_fetch, shipped_registry
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -579,8 +579,7 @@ def test_role_price_duplicating_a_roster_row_rejected():
 
 
 def test_shipped_registry_parses_and_covers_all_eval_tasks():
-    registry = support.parse_registry(
-        (REPO / "harness" / "models.toml").read_text(encoding="utf-8"))
+    registry = shipped_registry()
     evals_src = (REPO / "harness" / "skill_evals.py").read_text(encoding="utf-8")
     import re
 
@@ -784,7 +783,7 @@ def test_render_grid_runtime_column_only_when_durations_given(registry):
 
 # ---------- subscription model IDs (add-dev-runner-judge, design D7) ----------
 
-SHIPPED = support.parse_registry((REPO / "harness" / "models.toml").read_text(encoding="utf-8"))
+SHIPPED = shipped_registry()
 
 
 @pytest.mark.parametrize("model_id", [
@@ -842,7 +841,7 @@ def test_matrix_smoke_estimate_only_prints_the_selection(smoke_matrix, capsys):
 
 @pytest.mark.parametrize("other", [
     ["--models", "cheapo-1"], ["--tier", "cheap"], ["--tasks", "write_from_seed"], ["--core"],
-    ["--epochs", "1"],
+    ["--epochs", "1"], ["--epochs", "0"],
 ])
 def test_matrix_smoke_refuses_another_selection(smoke_matrix, other, capsys):
     with pytest.raises(SystemExit) as exc:

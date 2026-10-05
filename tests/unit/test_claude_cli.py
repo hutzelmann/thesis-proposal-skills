@@ -183,11 +183,31 @@ def test_no_grade_line_parses_but_reads_no_grade():
     ("foreign-provider", "'bedrock'"),
     ("no-result", "no result event"),
     ("no-rate-limit", "rate limit not reported, overage cannot be ruled out"),
+    ("no-overage-flag", "without an overage flag, overage cannot be ruled out (Claude Code 2.1."),
+    ("no-cost", "notional cost not reported, the cap cannot be enforced (Claude Code 2.1.284)"),
 ])
 def test_fail_closed_streams_raise_unavailable(name, fragment):
     with pytest.raises(SubscriptionUnavailable) as exc:
         parse_stream(stream(name), MODEL, "medium")
     assert fragment in exc.value.reason
+
+
+@pytest.mark.parametrize("cost", [None, "0.05", True])
+def test_a_cost_that_is_not_a_number_fails_closed(cost):
+    """`True` is an int to Python; a flag where the cost belongs is no cost."""
+    events = stream("success")
+    events[-1]["total_cost_usd"] = cost
+    with pytest.raises(SubscriptionUnavailable, match="notional cost not reported"):
+        parse_stream(events, MODEL, "medium")
+
+
+def test_rate_refusal_reads_only_explicit_reports():
+    """The errored-run classifier: overage or a refused status counts; a stream
+    without a report, or with an allowed one, is no refusal."""
+    assert "overage" in claude_cli.rate_refusal(stream("overage"))
+    assert "'rejected'" in claude_cli.rate_refusal(stream("rejected"))
+    for name in ("success", "allowed-warning", "no-rate-limit", "expired-login"):
+        assert claude_cli.rate_refusal(stream(name)) is None, name
 
 
 def test_mismatched_served_model_names_both_ids():

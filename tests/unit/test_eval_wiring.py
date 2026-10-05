@@ -22,6 +22,7 @@ from types import SimpleNamespace
 import pytest
 import skill_evals
 import support
+from helpers import shipped_registry
 from inspect_ai._util.registry import registry_info
 
 # The full task set with the scorer names each one registers. Update this map
@@ -100,9 +101,7 @@ def test_l1_scorers_keep_the_marker_the_classifier_reads():
 
 # ---------- baseline arm wiring (testing-harness spec) ------------------------
 
-REGISTRY = support.parse_registry(
-    (Path(__file__).resolve().parents[2] / "harness" / "models.toml").read_text(encoding="utf-8")
-)
+REGISTRY = shipped_registry()
 
 
 def test_judge_and_persona_come_from_the_registry_roles():

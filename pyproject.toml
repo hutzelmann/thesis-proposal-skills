@@ -59,12 +59,14 @@ setup = ["_sync_dev", "_hooks", "_merge_driver"]
 # file is loaded, and the runner strips billing variables from every model run
 # (testing-harness spec: Subscription text roles). Steps are commands, not task
 # references (default_item_type), and a failing step does not stop the others.
+# The closing step names every scenario (--expect), so a step that exits before
+# recording its line is listed as a runner failure rather than left out.
 [tool.poe.tasks.smoke]
 sequence = [
     "python harness/claude_runner.py write_from_seed --isolated --max-budget-usd 2 --judge --summary-log logs/devrun/smoke.jsonl",
     "python harness/claude_runner.py import_messy --isolated --max-budget-usd 2 --summary-log logs/devrun/smoke.jsonl",
     "python harness/claude_runner.py customize_override --isolated --max-budget-usd 2 --summary-log logs/devrun/smoke.jsonl",
-    "python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl",
+    "python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl --expect write_from_seed import_messy customize_override",
 ]
 default_item_type = "cmd"
 ignore_fail = "return_non_zero"

@@ -18,10 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import check as check_script
+import support
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURES = REPO / "tests" / "fixtures"
 MODEL_CATALOG = REPO / "tests" / "unit" / "data" / "model_catalog"
+REGISTRY_PATH = REPO / "harness" / "models.toml"
 
 # markdown that sits beside a fixture proposal without being one
 NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
@@ -57,6 +59,12 @@ def fixture_proposal(fixture: str) -> Path:
         p for p in sorted((FIXTURES / fixture).glob("*.md"))
         if p.name not in NON_PROPOSAL_MARKDOWN and not p.name.endswith("-handout.md")
     )
+
+
+def shipped_registry() -> support.Registry:
+    """The registry the harness ships, parsed afresh on every call so that no
+    test can see another's mutation of it."""
+    return support.parse_registry(REGISTRY_PATH.read_text(encoding="utf-8"))
 
 
 def failing_fetch(message: str):

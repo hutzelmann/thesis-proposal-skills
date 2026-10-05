@@ -13,13 +13,12 @@ import json
 import shutil
 import subprocess
 import tomllib
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import claude_cli
 import claude_runner
 import pytest
-import support
 from claude_cli import JudgeCall, RateLimit
 from claude_runner import (
     EVENTS_FILE,
@@ -29,8 +28,10 @@ from claude_runner import (
     EXIT_UNTESTED,
     EXIT_USAGE,
     JUDGE_LABEL,
+    NO_LINE,
     SCENARIOS,
     SKILLS,
+    aggregate_status,
     exit_status,
     final_text,
     host_command,
@@ -47,7 +48,7 @@ from claude_runner import (
     telemetry,
     verdict,
 )
-from helpers import FIXTURES, REPO
+from helpers import FIXTURES, REPO, shipped_registry
 from l1_checks import HELPER_TOOLS, load_closing_note, verdict_l2_grades, verdict_single_context
 from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, tool_calls
 
@@ -436,8 +437,7 @@ def test_l2_grades_fail_when_nothing_was_graded():
 # ---------- served model, exit statuses, billing strip ----------------------
 
 MODEL_UNDER_TEST = "claude-fixture-1-0"
-ROLES = support.parse_registry(
-    (REPO / "harness" / "models.toml").read_text(encoding="utf-8")).roles
+ROLES = shipped_registry().roles
 
 
 def model_stream(*, status="allowed", overage=False, source="none", rate=True,
@@ -526,7 +526,22 @@ def isolated(monkeypatch, tmp_path):
     return config
 
 
-def fake_host(monkeypatch, stdout: str, returncode: int = 0, stderr: str = "") -> dict:
+NO_LOGIN = "no stored login to link: run `claude`, then `/login`, then rerun"
+
+
+def refuse_isolation(monkeypatch, code: object = NO_LOGIN) -> None:
+    """`--isolated` whose preparation exits the way `routing.prepare_config` and
+    `host_login.acquire_claim` do when the subscription cannot serve the run."""
+    @contextmanager
+    def refusing_isolated_config(_prefix):
+        raise SystemExit(code)
+        yield  # a generator, as the real context manager is
+
+    monkeypatch.setattr(claude_runner, "isolated_config", refusing_isolated_config)
+
+
+def fake_host(monkeypatch, stdout: str = "", returncode: int = 0, stderr: str = "",
+              raises: Exception | None = None) -> dict:
     """Replace only the `claude` subprocess; the check script still runs."""
     seen: dict = {}
     real_run = subprocess.run
@@ -535,6 +550,8 @@ def fake_host(monkeypatch, stdout: str, returncode: int = 0, stderr: str = "") -
         if command[0] != "claude":
             return real_run(command, *args, **kwargs)
         seen.update(command=command, env=kwargs.get("env"))
+        if raises is not None:
+            raise raises
         return subprocess.CompletedProcess(command, returncode, stdout, stderr)
 
     monkeypatch.setattr(claude_runner.subprocess, "run", run)
@@ -622,22 +639,97 @@ def test_budget_overrun_is_a_runner_failure_not_a_fail(monkeypatch, tmp_path):
     assert line["why"].startswith("claude failed: error_max_budget_usd: Exceeded USD budget")
 
 
-@pytest.mark.parametrize(("stream", "cause"), [
-    (model_stream(overage=True), "overage"),
-    (model_stream(source="ANTHROPIC_API_KEY"), "'ANTHROPIC_API_KEY'"),
-    (model_stream(rate=False), "rate limit not reported, overage cannot be ruled out"),
-    (model_stream(status="rejected"), "'rejected'"),
+LIMIT_TEXT = "You've hit your limit · resets 3pm"
+
+
+def refused_stream(**rate) -> list[dict]:
+    """A run the host stopped on a rate-limit report, in the shape of the
+    expired-login recording: an error result carrying the host's own text,
+    and (in the cases below) a non-zero exit."""
+    events = model_stream(**rate)
+    events[-1] = {"type": "result", "subtype": "success", "is_error": True, "errors": None,
+                  "result": LIMIT_TEXT, "total_cost_usd": 0, "num_turns": 1,
+                  "duration_ms": 900}
+    return events
+
+
+@pytest.mark.parametrize(("stream", "returncode", "cause"), [
+    (model_stream(overage=True), 0, "overage"),
+    (model_stream(overage=None), 0, "without an overage flag"),
+    (model_stream(source="ANTHROPIC_API_KEY"), 0, "'ANTHROPIC_API_KEY'"),
+    (model_stream(rate=False), 0, "rate limit not reported, overage cannot be ruled out"),
+    (refused_stream(status="rejected"), 1, "'rejected'"),
+    (refused_stream(overage=True), 1, "overage"),
 ])
 @pytest.mark.usefixtures("isolated")
-def test_billed_model_runs_are_untested_and_never_judged(stream, cause, monkeypatch, tmp_path,
-                                                          judge):
-    fake_host(monkeypatch, stdout_of(stream))
+def test_billed_model_runs_are_untested_and_never_judged(stream, returncode, cause, monkeypatch,
+                                                          tmp_path, judge):
+    fake_host(monkeypatch, stdout_of(stream), returncode=returncode)
     log = tmp_path / "log.jsonl"
     code = main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)])
     assert code == EXIT_UNTESTED
     assert judge.prompts == []
     [line] = logged(log)
     assert cause in line["why"]
+    if returncode:  # the host's own message stays, the billing reason is appended
+        assert LIMIT_TEXT in line["why"]
+
+
+def test_budget_overrun_under_an_allowed_rate_limit_stays_a_runner_failure(monkeypatch,
+                                                                           tmp_path):
+    """Only an explicit refusal moves an errored run to untested."""
+    stream = [*model_stream()[:2], *parse_events(BUDGET_OVERRUN)]
+    fake_host(monkeypatch, stdout_of(stream), returncode=1)
+    log = tmp_path / "log.jsonl"
+    assert main(["check_report", "--summary-log", str(log)]) == EXIT_RUNNER
+    assert "not a subscription result" not in logged(log)[0]["why"]
+
+
+def test_isolation_refused_is_untested_and_labelled_isolated(monkeypatch, tmp_path):
+    refuse_isolation(monkeypatch)
+    fake_host(monkeypatch, raises=AssertionError("the model ran without its config"))
+    log = tmp_path / "log.jsonl"
+    assert main(["check_report", "--isolated", "--summary-log", str(log)]) == EXIT_UNTESTED
+    [line] = logged(log)
+    assert (line["outcome"], line["why"]) == ("UNTESTED", NO_LOGIN)
+    assert (line["config"], line["config_dir"]) == ("isolated", None)
+
+
+def test_isolation_exit_without_a_message_is_not_swallowed(monkeypatch):
+    refuse_isolation(monkeypatch, code=5)
+    with pytest.raises(SystemExit) as exc, ExitStack() as stack:
+        claude_runner.enter_isolation(stack, "devrun-config-")
+    assert exc.value.code == 5
+
+
+def test_host_timeout_is_a_runner_failure(monkeypatch, tmp_path):
+    fake_host(monkeypatch, raises=subprocess.TimeoutExpired(["claude"], 5))
+    log = tmp_path / "log.jsonl"
+    assert main(["check_report", "--timeout", "5", "--summary-log", str(log)]) == EXIT_RUNNER
+    [line] = logged(log)
+    assert line["outcome"] == "RUNNER FAILURE"
+    assert line["why"] == "claude did not finish within 5s"
+
+
+def test_runner_crash_is_a_runner_failure_with_its_line(monkeypatch, tmp_path, capsys):
+    fake_run(monkeypatch, write_draft)
+
+    def crash(*_args, **_kwargs):
+        raise RuntimeError("verdict crashed")
+
+    monkeypatch.setattr(claude_runner, "verdict", crash)
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--summary-log", str(log)]) == EXIT_RUNNER
+    [line] = logged(log)
+    assert line["outcome"] == "RUNNER FAILURE"
+    assert line["why"] == "runner crashed: RuntimeError('verdict crashed')"
+    assert "Traceback" in capsys.readouterr().err
+
+
+def test_unwritable_summary_log_is_a_runner_failure_not_a_fail(monkeypatch, tmp_path, capsys):
+    fake_run(monkeypatch, write_draft)
+    assert main(["write_from_seed", "--summary-log", str(tmp_path)]) == EXIT_RUNNER
+    assert "Traceback" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("isolated_run", [False, True])
@@ -818,6 +910,48 @@ def test_rejudge_refuses_a_missing_workspace(monkeypatch, tmp_path, judge):
     assert judge.prompts == []
 
 
+def test_rejudge_with_isolation_refused_is_untested(monkeypatch, tmp_path, judge):
+    no_model_run(monkeypatch)
+    refuse_isolation(monkeypatch)
+    ws = kept_workspace(tmp_path, "a")
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--rejudge", str(ws), "--summary-log", str(log)]) == \
+        EXIT_UNTESTED
+    assert judge.prompts == []
+    [line] = logged(log)
+    assert line["outcome"] == "UNTESTED"
+    assert {(c["grade"], c["why"]) for c in line["l2"]["criteria"].values()} == {
+        ("UNTESTED", NO_LOGIN)}
+
+
+async def _no_claude_binary(*_args, **_kwargs):
+    raise FileNotFoundError(2, "No such file or directory", "claude")
+
+
+def undecodable_draft(ws: Path) -> None:
+    (ws / "drift-detection-proposal.md").write_bytes(b"# Draft\n\n\xff\xfe not UTF-8\n")
+
+
+@pytest.mark.parametrize("crash", ["no-binary", "undecodable-draft"])
+@pytest.mark.usefixtures("isolated", "judge")
+def test_rejudge_crash_is_a_runner_failure_per_workspace(crash, monkeypatch, tmp_path, capsys):
+    no_model_run(monkeypatch)
+    first, second = kept_workspace(tmp_path, "a"), kept_workspace(tmp_path, "b")
+    if crash == "no-binary":
+        monkeypatch.setattr(claude_cli, "preflight", _no_claude_binary)
+    else:
+        undecodable_draft(second)
+    log = tmp_path / "log.jsonl"
+    code = main(["write_from_seed", "--rejudge", str(first), str(second),
+                 "--summary-log", str(log)])
+    assert code == EXIT_RUNNER
+    lines = logged(log)
+    assert [(line["workspace"], line["outcome"]) for line in lines] == [
+        (str(first), "RUNNER FAILURE"), (str(second), "RUNNER FAILURE")]
+    assert all(line["why"].startswith("runner crashed: ") for line in lines)
+    assert "Traceback" in capsys.readouterr().err
+
+
 # ---------- --summary-log and --summarize -------------------------------------
 
 
@@ -868,6 +1002,49 @@ def test_summarize_passes_only_when_every_row_passed(tmp_path):
     assert main(["--summarize", str(log)]) == EXIT_RUNNER, "no log, nothing ran"
 
 
+def test_aggregate_status_reads_any_non_verdict_status_as_a_runner_failure():
+    assert aggregate_status([EXIT_PASS, EXIT_PASS]) == EXIT_PASS
+    assert aggregate_status([EXIT_PASS, EXIT_UNTESTED, EXIT_FAIL]) == EXIT_FAIL
+    for odd in (EXIT_USAGE, 5, -1):
+        assert aggregate_status([EXIT_PASS, odd]) == EXIT_RUNNER
+    assert aggregate_status([]) == EXIT_RUNNER
+
+
+def test_summarize_lists_an_expected_scenario_that_left_no_line(monkeypatch, tmp_path, capsys):
+    """A step that exits before its run records anything — here the usage
+    error of a judge ID the subscription does not serve — is a runner failure
+    in the closing summary, never left out of a summary that reads PASS."""
+    log = tmp_path / "smoke.jsonl"
+    write_log(log, {"import_messy": 0, "customize_override": 0})
+    monkeypatch.setenv("DEV_JUDGE_MODEL", "sonnet")
+    with pytest.raises(SystemExit) as exc:
+        main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)])
+    assert exc.value.code == EXIT_USAGE
+    capsys.readouterr()
+    core = ["write_from_seed", "import_messy", "customize_override"]
+    assert main(["--summarize", str(log), "--expect", *core]) == EXIT_RUNNER
+    out = capsys.readouterr().out
+    assert "=== 3 run(s) ===" in out
+    assert f"RUNNER FAILURE  write_from_seed: {NO_LINE[:60]}" in out
+    assert "=== RUNNER FAILURE ===" in out
+
+
+def test_summarize_with_nothing_logged_lists_every_expected_scenario(tmp_path, capsys):
+    rows = summary_rows([], ["write_from_seed", "import_messy", "write_from_seed"])
+    assert [(r["scenario"], r["exit_status"]) for r in rows] == [
+        ("write_from_seed", EXIT_RUNNER), ("import_messy", EXIT_RUNNER)]
+    assert main(["--summarize", str(tmp_path / "absent.jsonl"),
+                 "--expect", "write_from_seed"]) == EXIT_RUNNER
+    assert "write_from_seed" in capsys.readouterr().out
+
+
+def test_expect_without_summarize_is_a_usage_error(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["write_from_seed", "--expect", "write_from_seed"])
+    assert exc.value.code == EXIT_USAGE
+    assert "--summarize" in capsys.readouterr().err
+
+
 # ---------- customize_override ---------------------------------------------
 
 F00 = "ml-code-review.md"
@@ -910,9 +1087,8 @@ def test_smoke_is_a_subscription_sequence_over_the_core_scenarios():
     assert smoke["ignore_fail"] == "return_non_zero"
     assert "envfile" not in smoke
     *steps, closing = smoke["sequence"]
-    registry = support.parse_registry(
-        (REPO / "harness" / "models.toml").read_text(encoding="utf-8"))
-    assert [step.split()[2] for step in steps] == list(registry.tasks.core)
+    core = list(shipped_registry().tasks.core)
+    assert [step.split()[2] for step in steps] == core
     logs = set()
     for step in steps:
         words = step.split()
@@ -921,7 +1097,9 @@ def test_smoke_is_a_subscription_sequence_over_the_core_scenarios():
         assert "--max-budget-usd" in words
         logs.add(words[words.index("--summary-log") + 1])
     [log] = logs
-    assert closing.split() == ["python", "harness/claude_runner.py", "--summarize", log]
+    # every step is expected, so one that exits before logging is not left out
+    assert closing.split() == ["python", "harness/claude_runner.py", "--summarize", log,
+                               "--expect", *core]
 
 
 def test_metered_smoke_stays_behind_the_key_file_and_the_gate():

@@ -34,3 +34,5 @@ through `parse_stream`. The expired-login case reuses
 | `no-grade.jsonl` | synthetic | a limit-style text with no `GRADE:` line: the call parses, `read_grade` returns `None`, and the judge counts it unavailable |
 | `no-result.jsonl` | synthetic | the host stopped before its `result` event: unavailable |
 | `no-rate-limit.jsonl` | synthetic | the success shape without any `rate_limit_event`: unavailable, because overage cannot be ruled out |
+| `no-overage-flag.jsonl` | synthetic | a `rate_limit_event` without `isUsingOverage`: unavailable, because a renamed or dropped flag must not read as "no overage" |
+| `no-cost.jsonl` | synthetic | a result without `total_cost_usd`: unavailable, because the notional cap and the batch projection would count the call as $0 |

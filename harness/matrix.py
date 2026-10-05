@@ -209,7 +209,9 @@ def select(parser: argparse.ArgumentParser, args: argparse.Namespace,
             args.epochs = support.DEFAULT_EPOCHS
         return (support.select_models(registry, tier=args.tier, ids=args.models),
                 support.select_tasks(registry, names=args.tasks, core_only=args.core))
-    clashing = [f"--{name}" for name in SMOKE_EXCLUSIVE if getattr(args, name) not in (None, False)]
+    # by identity: `0 in (None, False)` holds, so `--epochs 0` would pass a membership test
+    clashing = [f"--{name}" for name in SMOKE_EXCLUSIVE
+                if getattr(args, name) is not None and getattr(args, name) is not False]
     if clashing:
         parser.error(f"--smoke fixes the selection ([roles].smoke × core tasks × 1 epoch); "
                      f"drop {', '.join(clashing)}")

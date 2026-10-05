@@ -25,7 +25,8 @@ Usage:
   uv run python harness/claude_runner.py write_from_seed --isolated --judge --keep
   uv run python harness/claude_runner.py write_from_seed --rejudge /tmp/devrun-write_from_seed-x
   uv run python harness/claude_runner.py write_rich_seed --isolated --judge --max-notional 1
-  uv run python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl
+  uv run python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl \
+      --expect write_from_seed import_messy customize_override
 
 Every run reads the host's stream-json events and prints, beside the L1
 verdict, the run's cost, turns, duration, token counts, any helper-agent
@@ -465,8 +466,10 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
     `result` event carries the chat text plus cost, turns and token usage, and
     the assistant events carry every tool call — including a helper-agent
     spawn, which plain text output never shows. A run the host failed raises
-    `RunnerFailure` (untested when the login was refused); so does a finished
-    run whose stream shows billing other than the subscription.
+    `RunnerFailure` — untested when the login was refused or the stream
+    reports overage or a refused rate-limit status (a run stopped at the plan
+    limit ends with an error result), else a runner failure; so does a
+    finished run whose stream shows billing other than the subscription.
     """
     try:
         result = subprocess.run(
@@ -482,7 +485,12 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
     events = parse_events(result.stdout)
     failure = host_failure(events, result.returncode, result.stderr)
     if failure:
-        raise RunnerFailure(failure, untested=bool(LOGIN_FAILURE.search(failure)), events=events)
+        # only an explicit report counts here: a budget overrun with allowed
+        # statuses stays a runner failure, and so does a stream with no report
+        refusal = claude_cli.rate_refusal(events)
+        message = f"{failure} (not a subscription result: {refusal})" if refusal else failure
+        raise RunnerFailure(message, untested=bool(refusal or LOGIN_FAILURE.search(failure)),
+                            events=events)
     billing = claude_cli.billing_problem(events)
     if billing:
         raise RunnerFailure(f"not a subscription result: {billing}", untested=True,
@@ -542,7 +550,7 @@ def served_model(events: list[dict]) -> tuple[str | None, str | None]:
         return reported, None
     if reported:
         return reported, f"init reports {reported}, modelUsage lists {', '.join(sorted(usage))}"
-    producing = sorted(usage, key=lambda m: -int((usage[m] or {}).get("outputTokens") or 0))
+    producing = sorted(usage, key=lambda m: -claude_cli.output_tokens(usage[m]))
     if producing:
         return producing[0], "no init event; taken from modelUsage"
     return None, None
@@ -582,13 +590,14 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
 def failure_summary(args: argparse.Namespace, failure: RunnerFailure,
                     config: Path | None) -> dict:
     """A run that ended without a verdict, in the same shape: no `l1` key, the
-    outcome and the host's own message instead."""
+    outcome and the host's own message instead. The label follows the request:
+    a run whose isolated config could not be prepared was still not ambient."""
     return {
         **identity(args, failure.events),
         "arm": "baseline" if args.no_skill else "with-skill",
         "outcome": OUTCOMES[failure.status], "exit_status": failure.status,
         "why": failure.message,
-        "config": "isolated" if config else "ambient",
+        "config": "isolated" if args.isolated else "ambient",
         "config_dir": str(config) if config else None,
         **telemetry(failure.events),
     }
@@ -608,11 +617,13 @@ def exit_status(*, runner_failure: bool, failed: bool, untested: bool) -> int:
 
 def aggregate_status(statuses: list[int]) -> int:
     """Several outcomes as one exit status, by the same precedence; nothing
-    recorded at all is a runner failure, never a pass."""
+    recorded at all is a runner failure, never a pass, and so is any status
+    that is not a verdict's (a usage error, or a value a log should not hold)."""
     if not statuses:
         return EXIT_RUNNER
-    return exit_status(runner_failure=EXIT_RUNNER in statuses, failed=EXIT_FAIL in statuses,
-                       untested=EXIT_UNTESTED in statuses)
+    verdicts = (EXIT_PASS, EXIT_FAIL, EXIT_UNTESTED)
+    return exit_status(runner_failure=any(s not in verdicts for s in statuses),
+                       failed=EXIT_FAIL in statuses, untested=EXIT_UNTESTED in statuses)
 
 
 def run_check(ws: Path, proposal: str) -> str:
@@ -1009,16 +1020,12 @@ def load_events(ws: Path) -> list[dict]:
     return parse_events(path.read_text(encoding="utf-8")) if path.exists() else []
 
 
-def rejudge(args: argparse.Namespace, judge: Judge) -> int:
-    """Re-grade kept workspaces of the scenario with the current rubric and
-    request text, never running the model under test. One invocation: one
-    isolated config, one warm-up, and the batch projection before the fan-out."""
+def rejudge_lines(args: argparse.Namespace, judge: Judge,
+                  workspaces: list[Path]) -> list[dict]:
+    """One summary per kept workspace. One invocation: one isolated config,
+    one warm-up, and the batch projection before the fan-out; a config that
+    cannot be prepared leaves every criterion untested."""
     scenario = SCENARIOS[args.scenario]
-    workspaces = list(args.rejudge)
-    missing = [str(ws) for ws in workspaces if not ws.is_dir()]
-    if missing:
-        print(f"--rejudge: not a kept workspace: {', '.join(missing)}", file=sys.stderr)
-        return EXIT_USAGE
     plans = [(ws, *judge_criteria(args.scenario, scenario, ws, scenario["request"]))
              for ws in workspaces]
     flat = [c for _, criteria, _ in plans for c in criteria]
@@ -1029,23 +1036,49 @@ def rejudge(args: argparse.Namespace, judge: Judge) -> int:
         except RunnerFailure as failure:
             run = JudgeRun(tuple(Grade(c.name, None, failure.message) for c in flat), 0.0)
     grades = iter(run.grades)
-    statuses = []
+    lines = []
     for ws, criteria, not_judged in plans:
         served, _ = served_model(load_events(ws))
         l2, status = l2_report(judge, [next(grades) for _ in criteria], not_judged, served)
-        emit({"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
-              "model": served, **l2, "outcome": OUTCOMES[status], "exit_status": status},
-             args.summary_log)
-        statuses.append(status)
-    return aggregate_status(statuses)
+        lines.append({"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
+                      "model": served, **l2, "outcome": OUTCOMES[status],
+                      "exit_status": status})
+    return lines
+
+
+def rejudge(args: argparse.Namespace, judge: Judge) -> int:
+    """Re-grade kept workspaces of the scenario with the current rubric and
+    request text, never running the model under test. A crash is a runner
+    failure with one summary line per workspace, as a dev run's is."""
+    workspaces = list(args.rejudge)
+    missing = [str(ws) for ws in workspaces if not ws.is_dir()]
+    if missing:
+        print(f"--rejudge: not a kept workspace: {', '.join(missing)}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        lines = rejudge_lines(args, judge, workspaces)
+    except Exception as exc:  # a crash still leaves its lines in the summary log
+        traceback.print_exc()
+        failure = RunnerFailure(f"runner crashed: {exc!r}")
+        lines = [{"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
+                  "outcome": OUTCOMES[failure.status], "exit_status": failure.status,
+                  "why": failure.message} for ws in workspaces]
+    for line in lines:
+        emit(line, args.summary_log)
+    return aggregate_status([line["exit_status"] for line in lines])
 
 
 # ---------- the closing summary of a sequence of runs -------------------------------
 
 
-def summary_rows(lines: list[dict]) -> list[dict]:
+NO_LINE = ("no summary line: the step ended before recording one (a usage error, a "
+           "crash outside the run, or a kill)")
+
+
+def summary_rows(lines: list[dict], expected: tuple[str, ...] | list[str] = ()) -> list[dict]:
     """One row per scenario — per workspace for a re-grade — from its latest
-    line, in the order the scenarios first appeared."""
+    line, in the order the scenarios first appeared; then a runner-failure row
+    for each expected scenario that recorded no line at all."""
     latest: dict[tuple, dict] = {}
     for line in lines:
         why = "; ".join(part for part in (line.get("why"), line.get("l2_verdict")) if part)
@@ -1054,21 +1087,29 @@ def summary_rows(lines: list[dict]) -> list[dict]:
             "outcome": line.get("outcome", OUTCOMES[EXIT_RUNNER]),
             "exit_status": int(line.get("exit_status", EXIT_RUNNER)), "why": why,
         }
-    return list(latest.values())
+    rows = list(latest.values())
+    seen = {row["scenario"] for row in rows}
+    rows += [{"scenario": name, "workspace": None, "outcome": OUTCOMES[EXIT_RUNNER],
+              "exit_status": EXIT_RUNNER, "why": NO_LINE}
+             for name in dict.fromkeys(expected) if name not in seen]
+    return rows
 
 
-def summarize(path: Path) -> int:
+def summarize(path: Path, expected: tuple[str, ...] | list[str] = ()) -> int:
     """Print the rows of a summary log, remove it, and exit with the combined
-    status: zero only when every row passed; an absent log means nothing ran."""
-    if not path.exists():
+    status: zero only when every row passed. With `expected`, a scenario that
+    left no line is a runner failure — a step can exit before it records one —
+    and an absent log with nothing expected means nothing ran."""
+    lines = parse_events(path.read_text(encoding="utf-8")) if path.exists() else []
+    rows = summary_rows(lines, expected)
+    if not rows:
         print(f"no runs recorded in {path}: nothing ran")
         return EXIT_RUNNER
-    rows = summary_rows(parse_events(path.read_text(encoding="utf-8")))
     print(f"\n=== {len(rows)} run(s) ===")
     for row in rows:
         where = f" [{row['workspace']}]" if row["workspace"] else ""
         print(f"  {row['outcome']:<15} {row['scenario']}{where}: {row['why'][:160]}")
-    path.unlink()
+    path.unlink(missing_ok=True)
     status = aggregate_status([row["exit_status"] for row in rows])
     print(f"=== {OUTCOMES[status]} ===")
     return status
@@ -1101,24 +1142,33 @@ def build_parser() -> argparse.ArgumentParser:
                              "not money (default %(default).2f)")
     parser.add_argument("--summary-log", type=Path, metavar="PATH",
                         help="append the run's summary to PATH as one JSON line, failures "
-                             "included")
+                             "included (a usage error records none)")
     parser.add_argument("--summarize", type=Path, metavar="PATH",
                         help="print one row per scenario from a summary log, exit non-zero "
                              "unless every row passed, and remove the log")
+    parser.add_argument("--expect", nargs="+", choices=sorted(SCENARIOS), metavar="SCENARIO",
+                        help="with --summarize: the scenarios the sequence ran; one that left "
+                             "no line in the log is a runner failure")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.summarize:
-        return summarize(args.summarize)
-    if not args.scenario:
+    if args.expect and not args.summarize:
+        parser.error("--expect lists the scenarios a --summarize PATH should hold")
+    if not (args.summarize or args.scenario):
         parser.error("a scenario is required (or --summarize PATH)")
-    judge = resolve_judge(args, parser)
-    if args.rejudge:
-        return rejudge(args, judge)
-    return dev_run(args, judge)
+    try:
+        if args.summarize:
+            return summarize(args.summarize, args.expect or ())
+        judge = resolve_judge(args, parser)
+        if args.rejudge:
+            return rejudge(args, judge)
+        return dev_run(args, judge)
+    except Exception:  # whatever escaped the run's own handling never reads as FAIL (1)
+        traceback.print_exc()
+        return EXIT_RUNNER
 
 
 if __name__ == "__main__":

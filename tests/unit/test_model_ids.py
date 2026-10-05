@@ -34,9 +34,7 @@ from dataclasses import dataclass
 import model_currency as mc
 import pytest
 import support
-from helpers import REPO
-
-REGISTRY_PATH = REPO / "harness" / "models.toml"
+from helpers import REPO, shipped_registry
 
 # the vendor families the harness has used; the registry's own lines are added
 # to these at scan time, so a new vendor is covered without editing this list
@@ -210,7 +208,7 @@ def _tracked() -> list[str]:
 
 
 def _scan() -> list[Violation]:
-    registry = support.parse_registry(REGISTRY_PATH.read_text(encoding="utf-8"))
+    registry = shipped_registry()
     pattern = token_pattern(registry)
     found = []
     for rel in _tracked():

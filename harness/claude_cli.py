@@ -7,10 +7,11 @@ login, and the one credential the child may inherit — the subscription's
 long-lived `CLAUDE_CODE_OAUTH_TOKEN` — is passed through by name, unread.
 
 The call fails closed (testing-harness spec: Subscription text roles). A stream
-that shows an error, no output, billing other than the subscription, overage, a
-refused or unknown rate-limit status, no rate-limit report at all, or a model
-other than the requested one raises `SubscriptionUnavailable`: the criterion is
-untested, never a failing grade, and no later call is made.
+that shows an error, no output, no notional cost, billing other than the
+subscription, overage, a refused or unknown rate-limit status, no rate-limit
+report or overage flag at all, or a model other than the requested one raises
+`SubscriptionUnavailable`: the criterion is untested, never a failing grade,
+and no later call is made.
 
 Everything above the async section is pure and L0-tested against synthetic
 streams (`tests/unit/data/claude_cli_streams/`); the async section spawns the
@@ -160,6 +161,16 @@ def model_usage(events: list[dict]) -> dict[str, dict]:
     return usage if isinstance(usage, dict) else {}
 
 
+def output_tokens(usage: Mapping | None) -> int:
+    """One `modelUsage` entry's output tokens; 0 when the entry or count is absent."""
+    return int((usage or {}).get("outputTokens") or 0)
+
+
+def _version_label(events: list[dict]) -> str:
+    """The CLI version for a fail-closed reason: a host change is the usual cause."""
+    return init_event(events).get("claude_code_version") or "unknown"
+
+
 def _rate_limit_infos(events: list[dict]) -> list[dict]:
     return [e.get("rate_limit_info") or {} for e in events if e.get("type") == "rate_limit_event"]
 
@@ -187,16 +198,12 @@ def _source_problem(events: list[dict]) -> str | None:
     return None
 
 
-def _rate_problem(events: list[dict]) -> str | None:
-    """Check 4: a rate-limit report exists, none shows overage, and every status
-    is one the plan allows. Without a report, "$0" would rest on the account
-    setting alone, so its absence fails closed too."""
-    infos = _rate_limit_infos(events)
-    if not infos:
-        version = init_event(events).get("claude_code_version") or "unknown"
-        return (f"rate limit not reported, overage cannot be ruled out "
-                f"(Claude Code {version})")
-    for info in infos:
+def rate_refusal(events: list[dict]) -> str | None:
+    """A rate-limit report that rules the subscription out: overage in use, or
+    a status the plan does not allow. Reads only the reports present, so it
+    also classifies a run the host ended with an error — a run refused at the
+    limit ends that way and is untested, not a runner failure."""
+    for info in _rate_limit_infos(events):
         if info.get("isUsingOverage"):
             return f"overage in use (rate limit {info.get('rateLimitType')})"
         status = info.get("status")
@@ -206,14 +213,42 @@ def _rate_problem(events: list[dict]) -> str | None:
     return None
 
 
+def _rate_problem(events: list[dict]) -> str | None:
+    """Check 4: a rate-limit report exists, none shows overage, every one
+    carries its overage flag, and every status is one the plan allows. Without
+    a report or a flag, "$0" would rest on the account setting alone, so their
+    absence fails closed too — a renamed field must not read as "no overage"."""
+    infos = _rate_limit_infos(events)
+    if not infos:
+        return (f"rate limit not reported, overage cannot be ruled out "
+                f"(Claude Code {_version_label(events)})")
+    refusal = rate_refusal(events)
+    if refusal:
+        return refusal
+    if any(not isinstance(info.get("isUsingOverage"), bool) for info in infos):
+        return (f"rate limit reported without an overage flag, overage cannot be ruled out "
+                f"(Claude Code {_version_label(events)})")
+    return None
+
+
 def billing_problem(events: list[dict]) -> str | None:
     """Why a stream may not count as a subscription result — checks 3 and 4 of
     design D5, shared by the judge and the dev runner's model-under-test run."""
     return _source_problem(events) or _rate_problem(events)
 
 
+def _notional_cost(result: Mapping) -> float | None:
+    """The result's notional cost, or None when it is absent or not a number."""
+    cost = result.get("total_cost_usd")
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+        return None
+    return float(cost)
+
+
 def _result_problem(events: list[dict]) -> str | None:
-    """Check 2: a result exists, has text, produced output, lists its models."""
+    """Check 2: a result exists, has text, produced output, lists its models,
+    and reports its notional cost — without it the cap and the batch
+    projection would count the call as $0, so its absence fails closed."""
     result = result_event(events)
     if not result:
         return "claude emitted no result event"
@@ -223,8 +258,11 @@ def _result_problem(events: list[dict]) -> str | None:
     usage = model_usage(events)
     if not usage:
         return "the result carries no per-model usage"
-    if sum(int((u or {}).get("outputTokens") or 0) for u in usage.values()) <= 0:
+    if sum(output_tokens(u) for u in usage.values()) <= 0:
         return "the result reports zero output tokens"
+    if _notional_cost(result) is None:
+        return (f"notional cost not reported, the cap cannot be enforced "
+                f"(Claude Code {_version_label(events)})")
     return None
 
 
@@ -232,8 +270,7 @@ def _model_problem(events: list[dict], requested: str) -> str | None:
     """Check 5: the requested model, and only it, produced output. An auxiliary
     model listed with zero output tokens is the host's own business."""
     usage = model_usage(events)
-    others = [m for m, u in usage.items()
-              if m != requested and int((u or {}).get("outputTokens") or 0) > 0]
+    others = [m for m, u in usage.items() if m != requested and output_tokens(u) > 0]
     if others:
         return f"served model {', '.join(others)} differs from the requested {requested}"
     if requested not in usage:
@@ -260,7 +297,7 @@ def parse_stream(events: list[dict], requested: str, effort: str) -> JudgeCall:
         cli_version=init_event(events).get("claude_code_version"),
         effort=effort,
         thinking_tokens=int(usage.get("thinkingTokens") or 0),
-        notional_usd=float(result.get("total_cost_usd") or 0.0),
+        notional_usd=_notional_cost(result) or 0.0,  # check 2 ensured a number
         rate_limit=rate_limit(events),  # type: ignore[arg-type]  # check 4 ensured one
     )
 
