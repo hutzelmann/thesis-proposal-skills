@@ -106,6 +106,15 @@ def test_the_request_names_the_paper_but_nothing_inside_it():
     assert "look anything up" in request  # lookups declined: no network in the run
 
 
+def test_the_request_answers_every_preamble_item():
+    """The first turn is measured, so no preamble item may be left for the skill
+    to ask about (testing-harness spec: Preamble fully pre-answered)."""
+    request = SCENARIOS["ideate_paper_foundation"]["request"]
+    for answer in ("Computer Science program", "supervisor or research group",
+                   "Master's thesis", "in English", "five months", "look anything up"):
+        assert answer in request, answer
+
+
 # ---------- what the run read -------------------------------------------------
 
 
@@ -219,6 +228,10 @@ def test_method_content_in_a_notes_file_fails():
     (GOOD_CHAT.replace("your thesis?", "your thesis, and what about the new setting "
                        "makes the result less certain?"), "more than one question"),
     (GOOD_CHAT + " And why this paper?", "more than one question"),
+    # the closing shape of the 2026-10-06 sonnet run: the axis question asked, the
+    # kinds of change listed, then the question re-asked as a choice among them
+    (GOOD_CHAT + " It could be the domain, the data, the method, or a replication. "
+     "Which of those is it, in your own words?", "more than one question"),
     (GOOD_CHAT + " RQ1: How far does pruning carry over?", "research questions of its own"),
     (GOOD_CHAT + " You could apply it to log-based alerting.", "a transfer axis of its own"),
     (GOOD_CHAT + " How about transferring it to rail operations?", "a transfer axis"),

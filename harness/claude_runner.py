@@ -405,9 +405,10 @@ SCENARIOS = {
         "request": (
             "I came across a paper I really like and I'd like to write my thesis on "
             "something similar. It's saved here as quieter-pagers.txt. To answer your "
-            "usual questions up front: I'm in the M.Sc. Computer Science program, it's "
-            "a Master's thesis, the proposal should be in English, I have about five "
-            "months, and no, please don't look anything up online in this session."
+            "usual questions up front: I'm in the M.Sc. Computer Science program. I don't "
+            "have a supervisor or research group yet. It's a Master's thesis, the "
+            "proposal should be in English, I have about five months, and no, please "
+            "don't look anything up online in this session."
         ),
     },
 }
