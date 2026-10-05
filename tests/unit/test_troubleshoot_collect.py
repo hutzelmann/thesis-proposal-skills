@@ -307,6 +307,7 @@ def test_vendored_verdicts_distinguish_untested_from_failing():
 
 
 SHIPPED_SUPPORT = SKILL / "references" / "model-support.json"
+PINS = Path(__file__).parent / "data" / "pinned_sentences"
 
 # the roster as track-model-currency bumps it, plus two keys kept only as
 # guards: the 5.0 opus for the version guard, deepseek-v4 for the colon-form
@@ -369,11 +370,26 @@ def test_resolve_model_matches_claude_code_spellings(support_file, reported, exp
 @pytest.mark.parametrize(("reported", "expected"), [
     ("us.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic/claude-haiku-4.5"),
     ("global.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic/claude-haiku-4.5"),
+    ("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic/claude-haiku-4.5"),
     ("claude-haiku-4-5@20251001", "anthropic/claude-haiku-4.5"),
     ("claude-sonnet-5-5[1m]", "anthropic/claude-sonnet-5.5"),
+    ("claude-sonnet-5-5 [1m]", "anthropic/claude-sonnet-5.5"),
+    ("claude-haiku-4-5-20251001 [1m]", "anthropic/claude-haiku-4.5"),
+    # a non-Anthropic vendor wraps its models the same way on a cloud
+    ("openai.gpt-6-luna-1:0", "openai/gpt-6-luna"),
+    ("us.openai.gpt-6-luna-v1:0", "openai/gpt-6-luna"),
+    ("gpt-6-luna-2026-03-01", "openai/gpt-6-luna"),
 ])
 def test_resolve_model_matches_cloud_and_variant_spellings(support_file, reported, expected):
     assert resolve_model(reported, support_file)[0] == expected
+
+
+@pytest.mark.parametrize(("spelling", "kept"), [
+    ("qwen3.8-max", "qwen3.8-max"),          # a first segment holding a digit is the name
+    ("large-2411", "large-2411"),            # a year-month suffix may be a version
+])
+def test_wrappings_are_stripped_no_wider_than_a_host_spells_them(spelling, kept):
+    assert normalize_model_id(spelling) == kept
 
 
 def test_resolve_model_never_takes_the_verdict_of_another_version(tmp_path):
@@ -437,11 +453,23 @@ def test_the_pinned_rung_one_example_resolves_through_resolve_model(tmp_path):
     statement (design D1): the worked example the agent reads must resolve under
     the code's rule. Rewording the sentence breaks its pin; changing the rule so
     the example no longer resolves breaks this."""
-    pins = Path(__file__).parent / "data" / "pinned_sentences"
-    pin = pins / "proposal-troubleshoot--model-match.txt"
+    pin = PINS / "proposal-troubleshoot--model-match.txt"
     reported, key = re.findall(r"`([^`]+)`", pin.read_text(encoding="utf-8"))[:2]
     only_key = write_support(tmp_path / "only-key.json", [key])
     assert resolve_model(reported, only_key)[0] == key
+
+
+def test_every_wrapping_the_rung_one_rule_names_is_stripped():
+    """The pinned rule sentence lists wrappings by example; each one, put around a
+    bare spelling, must normalise away. A prose example the code does not strip
+    would have the agent match where resolve_model does not."""
+    rule = (PINS / "proposal-troubleshoot--model-rule.txt").read_text(encoding="utf-8")
+    wrappings = re.findall(r"`([^`]+)`", rule)
+    assert len(wrappings) >= 5, wrappings
+    bare = "example-4-5"
+    for wrapping in wrappings:
+        spelled = wrapping + bare if wrapping.endswith((".", "/")) else bare + wrapping
+        assert normalize_model_id(spelled) == normalize_model_id(bare), spelled
 
 
 def test_resolve_model_reports_a_known_failing_skill():

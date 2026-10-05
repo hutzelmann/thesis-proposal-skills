@@ -61,13 +61,22 @@ BUILD_RECIPE_NAMES = frozenset({"makefile", "gnumakefile", "justfile"})
 BUILD_TARGET_RE = re.compile(rf"^{BUILD_STEM}\b[^\n]*:", re.MULTILINE)
 
 # the wrappings normalize_model_id strips from a model identifier, in the order
-# it applies them. Narrow on purpose: the revision needs the colon form a cloud
-# provider uses, since a bare `-v4` is a version and dropping it would let one
-# version match another.
-MODEL_VARIANT_RE = re.compile(r"\[[^\]]*\]$")
-MODEL_CLOUD_PREFIX_RE = re.compile(r"^(?:[a-z]+\.)?anthropic\.")
-MODEL_CLOUD_REVISION_RE = re.compile(r"-v\d+:\d+$")
-MODEL_DATE_RE = re.compile(r"[-@]20\d{6}$")
+# it applies them. Each is as wide as a host spells it and no wider, because a
+# wrapping dropped too eagerly lets one version match another:
+# - a cloud prefix is a vendor segment of letters only, optionally after a
+#   region that may carry dashes (`anthropic.`, `us.anthropic.`, `us-gov.meta.`);
+#   a segment holding a digit, such as `qwen3.`, is part of the name;
+# - a revision needs the colon form (`-v1:0`, `-1:0`); a bare `-v4` is a version;
+# - a date stamp carries year, month and day, compact or dashed (`-20251001`,
+#   `@20251001`, `-2025-10-01`); a shorter suffix such as `-2411` may be a
+#   version and stays.
+# Accepted assumption: a dated snapshot takes the verdict of an undated key with
+# the same version. The roster keys carry no date; when the data holds two
+# snapshots of one version, both share a spelling and neither is chosen.
+MODEL_VARIANT_RE = re.compile(r"\s*\[[^\]]*\]$")
+MODEL_CLOUD_PREFIX_RE = re.compile(r"^(?:[a-z]+(?:-[a-z]+)*\.)?[a-z]+\.")
+MODEL_CLOUD_REVISION_RE = re.compile(r"-v?\d+:\d+$")
+MODEL_DATE_RE = re.compile(r"[-@]20\d{2}(?:\d{4}|-\d{2}-\d{2})$")
 MODEL_DIGIT_DASH_RE = re.compile(r"(?<=\d)-(?=\d)")
 
 
@@ -554,14 +563,16 @@ def normalize_model_id(name: str) -> str:
     The steps run in order, and the order matters: the cloud revision must go
     before the date so the date is trailing, and the date before the digit step
     so its dash is not read as a version dot. SKILL.md rung 1 states this rule
-    in prose; tests/unit/test_troubleshoot_collect.py keeps the two in step.
+    in prose, and the agent applies the prose, not this function. The tests pin
+    that prose and run its worked example and each wrapping it names through
+    this function; they cannot prove the prose names every step.
     """
     name = name.strip().lower()
     name = MODEL_VARIANT_RE.sub("", name)          # a bracketed variant, e.g. `[1m]`
     name = name.rsplit("/", 1)[-1]                 # routing and vendor prefixes
-    name = MODEL_CLOUD_PREFIX_RE.sub("", name)     # `anthropic.`, with `us.`, `eu.`, `global.`
-    name = MODEL_CLOUD_REVISION_RE.sub("", name)   # `-v1:0`; a bare `-v4` is a version
-    name = MODEL_DATE_RE.sub("", name)             # `-20251001` or `@20251001`
+    name = MODEL_CLOUD_PREFIX_RE.sub("", name)     # `anthropic.`, `us.anthropic.`, `us-gov.meta.`
+    name = MODEL_CLOUD_REVISION_RE.sub("", name)   # `-v1:0`, `-1:0`; a bare `-v4` is a version
+    name = MODEL_DATE_RE.sub("", name)             # `-20251001`, `@20251001`, `-2025-10-01`
     return MODEL_DIGIT_DASH_RE.sub(".", name)      # a dash between two digits is a dot
 
 

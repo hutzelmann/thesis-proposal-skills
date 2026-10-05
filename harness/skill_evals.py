@@ -1033,8 +1033,11 @@ def check_report_hardened(baseline: bool = False) -> Task:
 # expected outcome is identical on every model under test: the user says they ran
 # haiku, which the vendored verdicts record as failing proposal-write. The prompt
 # names it as claude-haiku-4-5-20251001, the spelling Claude Code reports, not as
-# the data's dotted key, so a pass also exercises rung 1's spelling-matching rule
-# (tests/unit/test_troubleshoot_collect.py resolves the same spelling).
+# the data's dotted key, so a correct answer needs rung 1's spelling-matching rule.
+# The verdict does not check that the rule was applied: it cannot tell a matched
+# lookup from one that fell through to "unevaluated" (fix-troubleshoot-model-match
+# design, Open Questions). The coverage for the rule is the L0 tests in
+# tests/unit/test_troubleshoot_collect.py, which resolve this same spelling.
 # The prompt also closes rung 0 (already reinstalled), so rung 1 is the target and
 # a model that stops at "update first" is not accidentally graded correct.
 
