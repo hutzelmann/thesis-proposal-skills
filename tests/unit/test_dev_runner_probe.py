@@ -10,23 +10,47 @@ the failure paths are fed synthetic events, since no recorded run hit them.
 
 import argparse
 import json
+import shutil
+import subprocess
+import tomllib
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
+import claude_cli
+import claude_runner
+import pytest
+from claude_cli import JudgeCall, RateLimit
 from claude_runner import (
+    EVENTS_FILE,
+    EXIT_FAIL,
+    EXIT_PASS,
+    EXIT_RUNNER,
+    EXIT_UNTESTED,
+    EXIT_USAGE,
+    JUDGE_LABEL,
+    NO_LINE,
     SCENARIOS,
     SKILLS,
+    aggregate_status,
+    exit_status,
     final_text,
     host_command,
     host_failure,
+    main,
+    model_env,
     normalized_proposal,
     parse_events,
+    save_events,
     summary,
+    summary_rows,
     supervise_extra,
     supervise_verdict,
     telemetry,
+    verdict,
 )
-from l1_checks import HELPER_TOOLS, load_closing_note, verdict_single_context
-from routing import tool_calls
+from helpers import FIXTURES, REPO, shipped_registry
+from l1_checks import HELPER_TOOLS, load_closing_note, verdict_l2_grades, verdict_single_context
+from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, tool_calls
 
 STREAMS = Path(__file__).resolve().parent / "data" / "routing_streams"
 ARGS = argparse.Namespace(scenario="check_report", model="haiku", no_skill=False)
@@ -138,6 +162,26 @@ def test_host_command_pins_the_stream_flags_and_the_budget_pass_through():
     assert host_command("do it", "sonnet", budget=2)[-2:] == ["--max-budget-usd", "2"]
 
 
+def test_host_command_denies_every_outward_tool_and_keeps_the_ones_runs_need():
+    """Permission prompts are skipped, so the command itself must deny the host's
+    publishing, messaging and scheduling tools (haiku published artifacts in a
+    2026-10-03 run); the supervise verifier and the lookups must stay usable."""
+    command = host_command("do it", "sonnet")
+    denied = command[command.index("--disallowed-tools") + 1:]
+    for tool in OUTWARD_TOOLS:
+        assert tool in denied, tool
+    for needed in ("Agent", "Task", "WebFetch", "WebSearch", "Skill"):
+        assert needed not in denied, needed
+    # the variadic list must not swallow the budget flag that follows it
+    budgeted = host_command("do it", "sonnet", budget=2)
+    assert budgeted[-2:] == ["--max-budget-usd", "2"]
+    assert "Artifact" in OUTWARD_TOOLS
+
+
+def test_routing_rig_denies_the_same_outward_tools():
+    assert set(OUTWARD_TOOLS) <= set(DISALLOWED_TOOLS)
+
+
 def test_host_failure_reports_an_error_result_with_its_detail():
     stream = [{
         "type": "result", "subtype": "error_max_budget_usd", "is_error": True,
@@ -162,6 +206,28 @@ def test_host_failure_reads_the_result_text_when_errors_are_empty():
     assert "api_error" in message
     assert "OAuth session expired" in message
     assert "no detail" not in message
+
+
+def test_host_failure_tells_the_operator_to_log_in_again():
+    """The stored login cannot be repaired from inside a run; the only remedy
+    is an interactive login, so the message has to say which one."""
+    stream = [{
+        "type": "result", "subtype": "success", "is_error": True, "errors": None,
+        "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
+        "terminal_reason": "api_error", "total_cost_usd": 0, "num_turns": 1,
+    }]
+    message = host_failure(stream, 0, "")
+    assert "`claude`" in message
+    assert "`/login`" in message
+    assert "/login" in host_failure([], 1, "Not logged in · Please run /login\n")
+
+
+def test_host_failure_names_no_login_remedy_for_other_errors():
+    stream = [{
+        "type": "result", "subtype": "error_max_budget_usd", "is_error": True,
+        "errors": ["Exceeded USD budget"], "total_cost_usd": 0.31, "num_turns": 4,
+    }]
+    assert "/login" not in host_failure(stream, 1, "")
 
 
 def test_host_failure_falls_back_to_stderr_without_a_result():
@@ -245,8 +311,17 @@ Scope verdict: over-scoped
 
 ## Verification
 
+Verified by: fresh verifier
+
 Contradicted: the regulation the export names for municipal websites.
 """
+
+# the host stream of a run that started its verifier with the shipped brief
+VERIFIER_EVENTS = [{"type": "assistant", "message": {"content": [{
+    "type": "tool_use", "name": "Task",
+    "input": {"description": "Verify feedback",
+              "prompt": "Follow references/verifier-brief.md. Feedback: x-feedback.md"},
+}]}}]
 
 
 def supervise_ws(tmp_path, feedback=SCOPED_FEEDBACK, review=SCOPED_REVIEW):
@@ -268,10 +343,28 @@ def test_normalized_proposal_skips_the_sidecars(tmp_path):
 
 
 def test_supervise_scope_scenario_passes_a_complete_run(tmp_path):
-    passed, why = supervise_verdict(SCENARIOS["supervise_scope"], supervise_ws(tmp_path))
+    passed, why = supervise_verdict(SCENARIOS["supervise_scope"], supervise_ws(tmp_path),
+                                    VERIFIER_EVENTS)
     assert passed, why
     assert "lettered cut options A, B" in why
     assert "workload table" in why
+    assert "fresh verifier started with the brief" in why
+
+
+def test_supervise_scenario_fails_when_the_verifier_was_skipped(tmp_path):
+    """The headless host offers a subagent tool, so checking inline there is
+    a skip, not the fallback (testing-harness spec: skipped verifier fails)."""
+    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"], supervise_ws(tmp_path), [])
+    assert not passed
+    assert "verifier did not run" in why
+
+
+def test_supervise_scenario_fails_without_a_declaration(tmp_path):
+    undeclared = SCOPED_REVIEW.replace("Verified by: fresh verifier\n", "")
+    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"],
+                                    supervise_ws(tmp_path, review=undeclared), VERIFIER_EVENTS)
+    assert not passed
+    assert "does not say who verified" in why
 
 
 def test_supervise_scope_scenario_fails_without_options_or_review_sections(tmp_path):
@@ -287,15 +380,24 @@ def test_supervise_scope_scenario_fails_without_options_or_review_sections(tmp_p
 def test_supervise_scope_scenario_uses_its_own_identity_tokens(tmp_path):
     leaked = SCOPED_FEEDBACK.replace("What to keep:", "Prof. Mustermann agrees. What to keep:")
     passed, why = supervise_verdict(SCENARIOS["supervise_scope"],
-                                    supervise_ws(tmp_path, feedback=leaked))
+                                    supervise_ws(tmp_path, feedback=leaked), VERIFIER_EVENTS)
     assert not passed
     assert "Mustermann" in why
 
 
 def test_supervise_feedback_scenario_skips_the_scope_verdicts(tmp_path):
-    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"], supervise_ws(tmp_path))
+    passed, why = supervise_verdict(SCENARIOS["supervise_feedback"], supervise_ws(tmp_path),
+                                    VERIFIER_EVENTS)
     assert passed, why
     assert "lettered" not in why
+
+
+def test_save_events_writes_jsonl_outside_the_markdown_globs(tmp_path):
+    path = save_events([*VERIFIER_EVENTS, {"type": "result", "result": "done"}], tmp_path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["type"] for line in lines] == ["assistant", "result"]
+    assert path.name == EVENTS_FILE
+    assert not list(tmp_path.glob("*.md"))
 
 
 def test_supervise_scenarios_allow_exactly_one_verifier():
@@ -308,3 +410,699 @@ def test_supervise_extra_reports_the_body_length(tmp_path):
     words = supervise_extra(SCENARIOS["supervise_scope"], supervise_ws(tmp_path))
     assert 60 < words["feedback_words"] < 200
     assert supervise_extra(SCENARIOS["check_report"], tmp_path) == {}
+
+
+# ---------- L2 aggregate verdict ---------------------------------------------
+
+
+def test_l2_grades_pass_when_every_criterion_passes():
+    passed, why = verdict_l2_grades({"write_l2_rq_quality": True, "write_l2_density": True})
+    assert passed
+    assert "write_l2_density" in why
+
+
+def test_l2_grades_fail_naming_the_failed_criterion():
+    passed, why = verdict_l2_grades({"write_l2_rq_quality": True, "write_l2_density": False})
+    assert not passed
+    assert "write_l2_density" in why
+    assert "write_l2_rq_quality" not in why
+
+
+def test_l2_grades_fail_when_nothing_was_graded():
+    passed, why = verdict_l2_grades({})
+    assert not passed
+    assert "nothing graded" in why
+
+
+# ---------- served model, exit statuses, billing strip ----------------------
+
+MODEL_UNDER_TEST = "claude-fixture-1-0"
+ROLES = shipped_registry().roles
+
+
+def model_stream(*, status="allowed", overage=False, source="none", rate=True,
+                 served=MODEL_UNDER_TEST, text="Done; the draft is written.") -> list[dict]:
+    """A model-under-test stream in the host 2.1.284 shape: init, a rate-limit
+    report, the result with its per-model usage."""
+    events = [{"type": "system", "subtype": "init", "model": served, "apiKeySource": source,
+               "claude_code_version": "2.1.284"}]
+    if rate:
+        events.append({"type": "rate_limit_event", "rate_limit_info": {
+            "status": status, "rateLimitType": "five_hour", "utilization": 0.2,
+            "isUsingOverage": overage}})
+    events.append({
+        "type": "result", "subtype": "success", "is_error": False, "result": text,
+        "total_cost_usd": 0.41, "num_turns": 9, "duration_ms": 61000,
+        "usage": {"input_tokens": 20, "output_tokens": 900, "cache_read_input_tokens": 5000,
+                  "cache_creation_input_tokens": 700},
+        "modelUsage": {served: {"outputTokens": 900, "provider": "firstParty"}},
+    })
+    return events
+
+
+def stdout_of(events: list[dict]) -> str:
+    return "".join(json.dumps(e) + "\n" for e in events)
+
+
+def test_summary_records_requested_alias_served_model_and_cli_version():
+    out = summary(ARGS, True, "fine", model_stream(), None)
+    assert out["model_requested"] == "haiku"
+    assert out["model"] == MODEL_UNDER_TEST
+    assert out["cli_version"] == "2.1.284"
+
+
+def test_summary_notes_a_served_model_modelusage_does_not_list():
+    events = model_stream()
+    events[-1]["modelUsage"] = {"claude-fixture-2-0": {"outputTokens": 900}}
+    out = summary(ARGS, True, "fine", events, None)
+    assert out["model"] == MODEL_UNDER_TEST
+    assert "claude-fixture-2-0" in out["model_check"]
+
+
+def test_exit_status_precedence_is_runner_failure_then_fail_then_untested():
+    assert (EXIT_PASS, EXIT_FAIL, EXIT_USAGE, EXIT_UNTESTED, EXIT_RUNNER) == (0, 1, 2, 3, 4)
+    assert exit_status(runner_failure=True, failed=True, untested=True) == EXIT_RUNNER
+    assert exit_status(runner_failure=False, failed=True, untested=True) == EXIT_FAIL
+    assert exit_status(runner_failure=False, failed=False, untested=True) == EXIT_UNTESTED
+    assert exit_status(runner_failure=False, failed=False, untested=False) == EXIT_PASS
+
+
+LAUNCH_ENV = {
+    "PATH": "/usr/bin", "ANTHROPIC_API_KEY": "placeholder-not-a-key",
+    "ANTHROPIC_AUTH_TOKEN": "placeholder", "ANTHROPIC_BASE_URL": "https://gateway.invalid",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "remapped", "CLAUDE_CODE_USE_BEDROCK": "1",
+    "CLAUDE_CODE_USE_VERTEX": "1", "CLAUDE_EFFORT": "xhigh", "CLAUDECODE": "1",
+    "CLAUDE_CODE_OAUTH_TOKEN": "placeholder-token", "OPENROUTER_API_KEY": "placeholder",
+}
+
+
+def test_model_env_strips_billing_variables_and_keeps_the_rest(tmp_path):
+    before = dict(LAUNCH_ENV)
+    for config in (None, tmp_path):
+        env = model_env(LAUNCH_ENV, config)
+        assert not [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
+        for kept in ("PATH", "CLAUDE_EFFORT", "CLAUDECODE", "CLAUDE_CODE_OAUTH_TOKEN",
+                     "OPENROUTER_API_KEY"):
+            assert env[kept] == LAUNCH_ENV[kept]
+    assert "CLAUDE_CONFIG_DIR" not in model_env(LAUNCH_ENV, None)
+    assert model_env(LAUNCH_ENV, tmp_path)["CLAUDE_CONFIG_DIR"] == str(tmp_path)
+    assert before == LAUNCH_ENV
+
+
+# ---------- main(argv): fakes for the host, the isolation and the judge -------
+
+
+@pytest.fixture
+def isolated(monkeypatch, tmp_path):
+    """`--isolated` without touching the stored login: a plain directory."""
+    config = tmp_path / "isolated-config"
+    config.mkdir()
+
+    @contextmanager
+    def fake_isolated_config(_prefix):
+        yield config
+
+    monkeypatch.setattr(claude_runner, "isolated_config", fake_isolated_config)
+    return config
+
+
+NO_LOGIN = "no stored login to link: run `claude`, then `/login`, then rerun"
+
+
+def refuse_isolation(monkeypatch, code: object = NO_LOGIN) -> None:
+    """`--isolated` whose preparation exits the way `routing.prepare_config` and
+    `host_login.acquire_claim` do when the subscription cannot serve the run."""
+    @contextmanager
+    def refusing_isolated_config(_prefix):
+        raise SystemExit(code)
+        yield  # a generator, as the real context manager is
+
+    monkeypatch.setattr(claude_runner, "isolated_config", refusing_isolated_config)
+
+
+def fake_host(monkeypatch, stdout: str = "", returncode: int = 0, stderr: str = "",
+              raises: Exception | None = None) -> dict:
+    """Replace only the `claude` subprocess; the check script still runs."""
+    seen: dict = {}
+    real_run = subprocess.run
+
+    def run(command, *args, **kwargs):
+        if command[0] != "claude":
+            return real_run(command, *args, **kwargs)
+        seen.update(command=command, env=kwargs.get("env"))
+        if raises is not None:
+            raise raises
+        return subprocess.CompletedProcess(command, returncode, stdout, stderr)
+
+    monkeypatch.setattr(claude_runner.subprocess, "run", run)
+    return seen
+
+
+def fake_run(monkeypatch, produce=None, events=None) -> list:
+    """Replace `run_claude`: `produce(ws)` writes what the model would have."""
+    runs = []
+
+    def run_claude(ws, request, model, _timeout, budget=None, config=None):
+        runs.append({"request": request, "model": model, "budget": budget, "config": config})
+        if produce:
+            produce(ws)
+        return events if events is not None else model_stream()
+
+    monkeypatch.setattr(claude_runner, "run_claude", run_claude)
+    return runs
+
+
+class FakeJudge:
+    """Stands in for `claude_cli.call`: grades every criterion, at a fixed
+    notional cost, and records each prompt it was handed."""
+
+    def __init__(self, grade="C", cost=0.05):
+        self.grade, self.cost, self.prompts = grade, cost, []
+
+    async def __call__(self, prompt, **kwargs):
+        self.prompts.append(prompt)
+        return JudgeCall(text=f"Reasoned.\nGRADE: {self.grade}", model=kwargs["model"],
+                         cli_version="2.1.284", effort=kwargs["effort"], thinking_tokens=100,
+                         notional_usd=self.cost, rate_limit=RateLimit("allowed", "five_hour", 0.2))
+
+
+async def _no_preflight(*_args, **_kwargs):
+    return None
+
+
+@pytest.fixture
+def judge(monkeypatch):
+    monkeypatch.delenv("DEV_JUDGE_MODEL", raising=False)
+    fake = FakeJudge()
+    monkeypatch.setattr(claude_cli, "call", fake)
+    monkeypatch.setattr(claude_cli, "preflight", _no_preflight)
+    return fake
+
+
+CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+
+
+def write_draft(ws: Path) -> None:
+    """A fresh `<slug>.md` beside the seed — named so that it does not end in
+    `-review.md`, which the draft selection skips beside a seed."""
+    (ws / "drift-detection-proposal.md").write_text(CLEAN_DRAFT, encoding="utf-8")
+
+
+def logged(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+# ---------- runner failures and untested model runs --------------------------
+
+EXPIRED = (STREAMS / "expired-login.jsonl").read_text(encoding="utf-8")
+BUDGET_OVERRUN = stdout_of([{
+    "type": "result", "subtype": "error_max_budget_usd", "is_error": True,
+    "errors": ["Exceeded USD budget"], "total_cost_usd": 2.01, "num_turns": 30,
+}])
+
+
+def test_expired_login_is_untested_with_the_message_unchanged(monkeypatch, tmp_path):
+    fake_host(monkeypatch, EXPIRED)
+    log = tmp_path / "log.jsonl"
+    assert main(["check_report", "--summary-log", str(log)]) == EXIT_UNTESTED
+    [line] = logged(log)
+    assert line["outcome"] == "UNTESTED"
+    assert line["why"] == host_failure(parse_events(EXPIRED), 0, "")
+
+
+def test_budget_overrun_is_a_runner_failure_not_a_fail(monkeypatch, tmp_path):
+    fake_host(monkeypatch, BUDGET_OVERRUN, returncode=1)
+    log = tmp_path / "log.jsonl"
+    assert main(["check_report", "--max-budget-usd", "2", "--summary-log", str(log)]) == EXIT_RUNNER
+    [line] = logged(log)
+    assert line["outcome"] == "RUNNER FAILURE"
+    assert line["why"].startswith("claude failed: error_max_budget_usd: Exceeded USD budget")
+
+
+LIMIT_TEXT = "You've hit your limit · resets 3pm"
+
+
+def refused_stream(**rate) -> list[dict]:
+    """A run the host stopped on a rate-limit report, in the shape of the
+    expired-login recording: an error result carrying the host's own text,
+    and (in the cases below) a non-zero exit."""
+    events = model_stream(**rate)
+    events[-1] = {"type": "result", "subtype": "success", "is_error": True, "errors": None,
+                  "result": LIMIT_TEXT, "total_cost_usd": 0, "num_turns": 1,
+                  "duration_ms": 900}
+    return events
+
+
+@pytest.mark.parametrize(("stream", "returncode", "cause"), [
+    (model_stream(overage=True), 0, "overage"),
+    (model_stream(overage=None), 0, "without an overage flag"),
+    (model_stream(source="ANTHROPIC_API_KEY"), 0, "'ANTHROPIC_API_KEY'"),
+    (model_stream(rate=False), 0, "rate limit not reported, overage cannot be ruled out"),
+    (refused_stream(status="rejected"), 1, "'rejected'"),
+    (refused_stream(overage=True), 1, "overage"),
+])
+@pytest.mark.usefixtures("isolated")
+def test_billed_model_runs_are_untested_and_never_judged(stream, returncode, cause, monkeypatch,
+                                                          tmp_path, judge):
+    fake_host(monkeypatch, stdout_of(stream), returncode=returncode)
+    log = tmp_path / "log.jsonl"
+    code = main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)])
+    assert code == EXIT_UNTESTED
+    assert judge.prompts == []
+    [line] = logged(log)
+    assert cause in line["why"]
+    if returncode:  # the host's own message stays, the billing reason is appended
+        assert LIMIT_TEXT in line["why"]
+
+
+def test_budget_overrun_under_an_allowed_rate_limit_stays_a_runner_failure(monkeypatch,
+                                                                           tmp_path):
+    """Only an explicit refusal moves an errored run to untested."""
+    stream = [*model_stream()[:2], *parse_events(BUDGET_OVERRUN)]
+    fake_host(monkeypatch, stdout_of(stream), returncode=1)
+    log = tmp_path / "log.jsonl"
+    assert main(["check_report", "--summary-log", str(log)]) == EXIT_RUNNER
+    assert "not a subscription result" not in logged(log)[0]["why"]
+
+
+def test_isolation_refused_is_untested_and_labelled_isolated(monkeypatch, tmp_path):
+    refuse_isolation(monkeypatch)
+    fake_host(monkeypatch, raises=AssertionError("the model ran without its config"))
+    log = tmp_path / "log.jsonl"
+    assert main(["check_report", "--isolated", "--summary-log", str(log)]) == EXIT_UNTESTED
+    [line] = logged(log)
+    assert (line["outcome"], line["why"]) == ("UNTESTED", NO_LOGIN)
+    assert (line["config"], line["config_dir"]) == ("isolated", None)
+
+
+def test_isolation_exit_without_a_message_is_not_swallowed(monkeypatch):
+    refuse_isolation(monkeypatch, code=5)
+    with pytest.raises(SystemExit) as exc, ExitStack() as stack:
+        claude_runner.enter_isolation(stack, "devrun-config-")
+    assert exc.value.code == 5
+
+
+def test_host_timeout_is_a_runner_failure(monkeypatch, tmp_path):
+    fake_host(monkeypatch, raises=subprocess.TimeoutExpired(["claude"], 5))
+    log = tmp_path / "log.jsonl"
+    assert main(["check_report", "--timeout", "5", "--summary-log", str(log)]) == EXIT_RUNNER
+    [line] = logged(log)
+    assert line["outcome"] == "RUNNER FAILURE"
+    assert line["why"] == "claude did not finish within 5s"
+
+
+def test_runner_crash_is_a_runner_failure_with_its_line(monkeypatch, tmp_path, capsys):
+    fake_run(monkeypatch, write_draft)
+
+    def crash(*_args, **_kwargs):
+        raise RuntimeError("verdict crashed")
+
+    monkeypatch.setattr(claude_runner, "verdict", crash)
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--summary-log", str(log)]) == EXIT_RUNNER
+    [line] = logged(log)
+    assert line["outcome"] == "RUNNER FAILURE"
+    assert line["why"] == "runner crashed: RuntimeError('verdict crashed')"
+    assert "Traceback" in capsys.readouterr().err
+
+
+def test_unwritable_summary_log_is_a_runner_failure_not_a_fail(monkeypatch, tmp_path, capsys):
+    fake_run(monkeypatch, write_draft)
+    assert main(["write_from_seed", "--summary-log", str(tmp_path)]) == EXIT_RUNNER
+    assert "Traceback" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("isolated_run", [False, True])
+def test_host_receives_the_stripped_environment(isolated_run, monkeypatch, request):
+    for name, value in LAUNCH_ENV.items():
+        if name != "PATH":
+            monkeypatch.setenv(name, value)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    seen = fake_host(monkeypatch, stdout_of(model_stream()))
+    argv = ["check_report"]
+    if isolated_run:
+        config = request.getfixturevalue("isolated")
+        argv.append("--isolated")
+    main(argv)
+    env = seen["env"]
+    assert not [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
+    assert env["CLAUDE_EFFORT"] == "xhigh"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "placeholder-token"
+    if isolated_run:
+        assert env["CLAUDE_CONFIG_DIR"] == str(config)
+    else:
+        assert "CLAUDE_CONFIG_DIR" not in env
+
+
+# ---------- --judge -------------------------------------------------------
+
+
+def refuse_staging(monkeypatch):
+    def no_workspace(*_args, **_kwargs):
+        raise AssertionError("staged before the usage error")
+
+    monkeypatch.setattr(claude_runner.tempfile, "mkdtemp", no_workspace)
+
+
+@pytest.mark.usefixtures("judge")
+def test_judge_without_isolation_is_refused_before_staging(monkeypatch, capsys):
+    refuse_staging(monkeypatch)
+    with pytest.raises(SystemExit) as exc:
+        main(["write_from_seed", "--judge"])
+    assert exc.value.code == EXIT_USAGE
+    assert "--isolated" in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures("judge")
+def test_judge_on_a_scenario_without_a_rubric_is_refused(monkeypatch, capsys):
+    refuse_staging(monkeypatch)
+    with pytest.raises(SystemExit) as exc:
+        main(["check_report", "--isolated", "--judge"])
+    assert exc.value.code == EXIT_USAGE
+    assert "no rubric twin" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("wrong", ["openrouter/lab/judge-1", "sonnet", "anthropic/claude-x-1"])
+def test_metered_or_alias_dev_judge_is_refused_before_any_call(wrong, monkeypatch, judge, capsys):
+    refuse_staging(monkeypatch)
+    monkeypatch.setenv("DEV_JUDGE_MODEL", wrong)
+    with pytest.raises(SystemExit) as exc:
+        main(["write_from_seed", "--isolated", "--judge"])
+    assert exc.value.code == EXIT_USAGE
+    assert "[roles].dev_judge" in capsys.readouterr().err
+    assert judge.prompts == []
+
+
+@pytest.mark.usefixtures("isolated")
+def test_judged_run_reports_l2_beside_l1(monkeypatch, tmp_path, judge):
+    fake_run(monkeypatch, write_draft)
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)]) == 0
+    [line] = logged(log)
+    assert line["l1"] == "PASS"
+    assert line["l2_label"] == JUDGE_LABEL == "dev-runner L2, not comparable to matrix"
+    l2 = line["l2"]
+    assert {name: c["grade"] for name, c in l2["criteria"].items()} == {
+        "write_l2_rq_quality": "PASS", "write_l2_density": "PASS"}
+    assert l2["judge_model"] == l2["judge_served"] == ROLES.dev_judge
+    assert l2["effort"] == ROLES.dev_judge_effort
+    assert l2["cli_version"] == "2.1.284"
+    assert l2["thinking_tokens"] == 200
+    assert l2["notional_usd"] == pytest.approx(0.10)
+    assert line["self_graded"] is False
+    assert line["outcome"] == "PASS"
+    request = SCENARIOS["write_from_seed"]["request"]
+    assert all(request in prompt and CLEAN_DRAFT in prompt for prompt in judge.prompts)
+
+
+@pytest.mark.usefixtures("isolated", "judge")
+def test_judge_graded_by_the_model_under_test_is_flagged(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEV_JUDGE_MODEL", MODEL_UNDER_TEST)
+    fake_run(monkeypatch, write_draft)
+    log = tmp_path / "log.jsonl"
+    main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)])
+    assert logged(log)[0]["self_graded"] is True
+
+
+@pytest.mark.usefixtures("isolated")
+def test_failed_criterion_fails_the_run(monkeypatch, tmp_path, judge):
+    judge.grade = "I"
+    fake_run(monkeypatch, write_draft)
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)]) == 1
+    assert "write_l2_density" in logged(log)[0]["l2_verdict"]
+
+
+@pytest.mark.usefixtures("isolated")
+def test_missing_artifact_is_not_judged(monkeypatch, tmp_path, judge):
+    fake_run(monkeypatch)  # the model wrote nothing
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)]) == 1
+    criteria = logged(log)[0]["l2"]["criteria"]
+    assert {c["why"] for c in criteria.values()} == {"not judged: no artifact"}
+    assert judge.prompts == []
+
+
+@pytest.mark.usefixtures("isolated")
+def test_notional_cap_stops_further_judge_calls(monkeypatch, tmp_path, judge):
+    fake_run(monkeypatch, write_draft)
+    log = tmp_path / "log.jsonl"
+    code = main(["write_from_seed", "--isolated", "--judge", "--max-notional", "0.04",
+                 "--summary-log", str(log)])
+    assert code == EXIT_UNTESTED
+    assert len(judge.prompts) == 1
+    grades = [c["grade"] for c in logged(log)[0]["l2"]["criteria"].values()]
+    assert sorted(grades) == ["PASS", "UNTESTED"]
+
+
+# ---------- --rejudge ------------------------------------------------------
+
+
+def kept_workspace(root: Path, name: str) -> Path:
+    ws = root / name
+    ws.mkdir()
+    write_draft(ws)
+    save_events(model_stream(), ws)
+    return ws
+
+
+def no_model_run(monkeypatch):
+    def run_claude(*_args, **_kwargs):
+        raise AssertionError("re-grading ran the model under test")
+
+    monkeypatch.setattr(claude_runner, "run_claude", run_claude)
+
+
+@pytest.mark.usefixtures("isolated")
+def test_rejudge_grades_kept_workspaces_without_a_model_run(monkeypatch, tmp_path, judge):
+    no_model_run(monkeypatch)
+    first, second = kept_workspace(tmp_path, "a"), kept_workspace(tmp_path, "b")
+    log = tmp_path / "log.jsonl"
+    code = main(["write_from_seed", "--rejudge", str(first), str(second),
+                 "--summary-log", str(log)])
+    assert code == EXIT_PASS
+    assert len(judge.prompts) == 4
+    lines = logged(log)
+    assert [line["workspace"] for line in lines] == [str(first), str(second)]
+    assert all(line["l2_label"] == JUDGE_LABEL for line in lines)
+    assert all(line["self_graded"] is False for line in lines)
+
+
+@pytest.mark.usefixtures("isolated")
+def test_rejudge_projection_over_the_cap_stops_the_batch(monkeypatch, tmp_path, judge, capsys):
+    no_model_run(monkeypatch)
+    judge.cost = 1.0
+    first, second = kept_workspace(tmp_path, "a"), kept_workspace(tmp_path, "b")
+    log = tmp_path / "log.jsonl"
+    code = main(["write_from_seed", "--rejudge", str(first), str(second),
+                 "--max-notional", "2", "--summary-log", str(log)])
+    assert code == EXIT_UNTESTED
+    assert len(judge.prompts) == 1
+    assert "projection" in capsys.readouterr().out
+    second_grades = logged(log)[1]["l2"]["criteria"].values()
+    assert {c["grade"] for c in second_grades} == {"UNTESTED"}
+
+
+@pytest.mark.usefixtures("isolated")
+def test_rejudge_refuses_a_missing_workspace(monkeypatch, tmp_path, judge):
+    no_model_run(monkeypatch)
+    assert main(["write_from_seed", "--rejudge", str(tmp_path / "gone")]) == EXIT_USAGE
+    assert judge.prompts == []
+
+
+def test_rejudge_with_isolation_refused_is_untested(monkeypatch, tmp_path, judge):
+    no_model_run(monkeypatch)
+    refuse_isolation(monkeypatch)
+    ws = kept_workspace(tmp_path, "a")
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--rejudge", str(ws), "--summary-log", str(log)]) == \
+        EXIT_UNTESTED
+    assert judge.prompts == []
+    [line] = logged(log)
+    assert line["outcome"] == "UNTESTED"
+    assert {(c["grade"], c["why"]) for c in line["l2"]["criteria"].values()} == {
+        ("UNTESTED", NO_LOGIN)}
+
+
+async def _no_claude_binary(*_args, **_kwargs):
+    raise FileNotFoundError(2, "No such file or directory", "claude")
+
+
+def undecodable_draft(ws: Path) -> None:
+    (ws / "drift-detection-proposal.md").write_bytes(b"# Draft\n\n\xff\xfe not UTF-8\n")
+
+
+@pytest.mark.parametrize("crash", ["no-binary", "undecodable-draft"])
+@pytest.mark.usefixtures("isolated", "judge")
+def test_rejudge_crash_is_a_runner_failure_per_workspace(crash, monkeypatch, tmp_path, capsys):
+    no_model_run(monkeypatch)
+    first, second = kept_workspace(tmp_path, "a"), kept_workspace(tmp_path, "b")
+    if crash == "no-binary":
+        monkeypatch.setattr(claude_cli, "preflight", _no_claude_binary)
+    else:
+        undecodable_draft(second)
+    log = tmp_path / "log.jsonl"
+    code = main(["write_from_seed", "--rejudge", str(first), str(second),
+                 "--summary-log", str(log)])
+    assert code == EXIT_RUNNER
+    lines = logged(log)
+    assert [(line["workspace"], line["outcome"]) for line in lines] == [
+        (str(first), "RUNNER FAILURE"), (str(second), "RUNNER FAILURE")]
+    assert all(line["why"].startswith("runner crashed: ") for line in lines)
+    assert "Traceback" in capsys.readouterr().err
+
+
+# ---------- --summary-log and --summarize -------------------------------------
+
+
+def test_summary_log_appends_on_success_and_failure_paths(monkeypatch, tmp_path):
+    log = tmp_path / "logs" / "smoke.jsonl"
+    fake_run(monkeypatch, write_draft)
+    main(["write_from_seed", "--summary-log", str(log)])
+    monkeypatch.undo()  # back to the real run_claude; fake only the host from here
+    fake_host(monkeypatch, BUDGET_OVERRUN, returncode=1)
+    main(["check_report", "--summary-log", str(log)])
+    assert [(line["scenario"], line["outcome"]) for line in logged(log)] == [
+        ("write_from_seed", "PASS"), ("check_report", "RUNNER FAILURE")]
+
+
+def test_summary_rows_keep_the_latest_line_per_scenario():
+    rows = summary_rows([
+        {"scenario": "a", "outcome": "FAIL", "exit_status": 1, "why": "first"},
+        {"scenario": "b", "outcome": "PASS", "exit_status": 0, "why": "fine"},
+        {"scenario": "a", "outcome": "PASS", "exit_status": 0, "why": "rerun"},
+    ])
+    assert [(r["scenario"], r["outcome"], r["why"]) for r in rows] == [
+        ("a", "PASS", "rerun"), ("b", "PASS", "fine")]
+
+
+def write_log(path: Path, outcomes: dict[str, int]) -> None:
+    names = {0: "PASS", 1: "FAIL", 3: "UNTESTED", 4: "RUNNER FAILURE"}
+    path.write_text("".join(
+        json.dumps({"scenario": s, "outcome": names[c], "exit_status": c, "why": "x"}) + "\n"
+        for s, c in outcomes.items()), encoding="utf-8")
+
+
+def test_summarize_prints_one_row_per_scenario_and_removes_the_log(tmp_path, capsys):
+    log = tmp_path / "smoke.jsonl"
+    write_log(log, {"write_from_seed": 0, "import_messy": 1, "customize_override": 3})
+    assert main(["--summarize", str(log)]) == EXIT_FAIL
+    out = capsys.readouterr().out
+    for scenario in ("write_from_seed", "import_messy", "customize_override"):
+        assert out.count(scenario) == 1
+    assert not log.exists()
+
+
+def test_summarize_passes_only_when_every_row_passed(tmp_path):
+    log = tmp_path / "smoke.jsonl"
+    write_log(log, {"write_from_seed": 0, "import_messy": 0})
+    assert main(["--summarize", str(log)]) == EXIT_PASS
+    write_log(log, {"write_from_seed": 0, "import_messy": 3})
+    assert main(["--summarize", str(log)]) == EXIT_UNTESTED
+    assert main(["--summarize", str(log)]) == EXIT_RUNNER, "no log, nothing ran"
+
+
+def test_aggregate_status_reads_any_non_verdict_status_as_a_runner_failure():
+    assert aggregate_status([EXIT_PASS, EXIT_PASS]) == EXIT_PASS
+    assert aggregate_status([EXIT_PASS, EXIT_UNTESTED, EXIT_FAIL]) == EXIT_FAIL
+    for odd in (EXIT_USAGE, 5, -1):
+        assert aggregate_status([EXIT_PASS, odd]) == EXIT_RUNNER
+    assert aggregate_status([]) == EXIT_RUNNER
+
+
+def test_summarize_lists_an_expected_scenario_that_left_no_line(monkeypatch, tmp_path, capsys):
+    """A step that exits before its run records anything — here the usage
+    error of a judge ID the subscription does not serve — is a runner failure
+    in the closing summary, never left out of a summary that reads PASS."""
+    log = tmp_path / "smoke.jsonl"
+    write_log(log, {"import_messy": 0, "customize_override": 0})
+    monkeypatch.setenv("DEV_JUDGE_MODEL", "sonnet")
+    with pytest.raises(SystemExit) as exc:
+        main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)])
+    assert exc.value.code == EXIT_USAGE
+    capsys.readouterr()
+    core = ["write_from_seed", "import_messy", "customize_override"]
+    assert main(["--summarize", str(log), "--expect", *core]) == EXIT_RUNNER
+    out = capsys.readouterr().out
+    assert "=== 3 run(s) ===" in out
+    assert f"RUNNER FAILURE  write_from_seed: {NO_LINE[:60]}" in out
+    assert "=== RUNNER FAILURE ===" in out
+
+
+def test_summarize_with_nothing_logged_lists_every_expected_scenario(tmp_path, capsys):
+    rows = summary_rows([], ["write_from_seed", "import_messy", "write_from_seed"])
+    assert [(r["scenario"], r["exit_status"]) for r in rows] == [
+        ("write_from_seed", EXIT_RUNNER), ("import_messy", EXIT_RUNNER)]
+    assert main(["--summarize", str(tmp_path / "absent.jsonl"),
+                 "--expect", "write_from_seed"]) == EXIT_RUNNER
+    assert "write_from_seed" in capsys.readouterr().out
+
+
+def test_expect_without_summarize_is_a_usage_error(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["write_from_seed", "--expect", "write_from_seed"])
+    assert exc.value.code == EXIT_USAGE
+    assert "--summarize" in capsys.readouterr().err
+
+
+# ---------- customize_override ---------------------------------------------
+
+F00 = "ml-code-review.md"
+OVERRIDE = ('# Workspace rules\n\n```toml\n[references]\nmin_count = 8\n\n'
+            '[timeline]\ndetail = "detailed"\n```\n')
+
+
+def customize_ws(tmp_path: Path, guidelines: str | None) -> Path:
+    shutil.copy(FIXTURES / "f00-clean-en" / F00, tmp_path / F00)
+    if guidelines is not None:
+        (tmp_path / "guidelines.md").write_text(guidelines, encoding="utf-8")
+    return tmp_path
+
+
+def test_customize_override_scenario_passes_with_the_nested_override(tmp_path):
+    scenario = SCENARIOS["customize_override"]
+    assert (scenario["fixture"], scenario["skill"]) == ("f00-clean-en", "proposal-customize")
+    passed, why = verdict("customize_override", scenario, customize_ws(tmp_path, OVERRIDE), "")
+    assert passed, why
+
+
+def test_customize_override_scenario_fails_without_the_override(tmp_path):
+    passed, why = verdict("customize_override", SCENARIOS["customize_override"],
+                          customize_ws(tmp_path, None), "")
+    assert not passed
+    assert "guidelines.md not created" in why
+
+
+# ---------- the subscription smoke task (design D8) ---------------------------
+
+
+def poe_tasks() -> dict:
+    return tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["poe"][
+        "tasks"]
+
+
+def test_smoke_is_a_subscription_sequence_over_the_core_scenarios():
+    smoke = poe_tasks()["smoke"]
+    assert smoke["default_item_type"] == "cmd"
+    assert smoke["ignore_fail"] == "return_non_zero"
+    assert "envfile" not in smoke
+    *steps, closing = smoke["sequence"]
+    core = list(shipped_registry().tasks.core)
+    assert [step.split()[2] for step in steps] == core
+    logs = set()
+    for step in steps:
+        words = step.split()
+        assert words[:2] == ["python", "harness/claude_runner.py"]
+        assert "--isolated" in words
+        assert "--max-budget-usd" in words
+        logs.add(words[words.index("--summary-log") + 1])
+    [log] = logs
+    # every step is expected, so one that exits before logging is not left out
+    assert closing.split() == ["python", "harness/claude_runner.py", "--summarize", log,
+                               "--expect", *core]
+
+
+def test_metered_smoke_stays_behind_the_key_file_and_the_gate():
+    smoke_inspect = poe_tasks()["smoke-inspect"]
+    assert smoke_inspect["envfile"] == ".env"
+    assert smoke_inspect["cmd"] == "python harness/matrix.py --smoke"

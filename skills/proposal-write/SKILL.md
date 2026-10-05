@@ -31,6 +31,7 @@ Non-negotiable regardless of overrides:
 Strong defaults (workspace `guidelines.md` may override them):
 
 - One sentence per line in the source file.
+- Draft prior work concept-first: group the sources by the claim they support and compare them. Cite each source once per continuous use — open the run with `@key`, let the sentences after it refer back in words ("they", "their evaluation"), and cite again at a new paragraph, after another source or a claim of the thesis's own, and wherever a sentence would otherwise read as the thesis's own claim.
 - Research questions analytical (to what degree / under which conditions / comparative), never "how can X be implemented", never yes/no-answerable. This is the most common failure — check your own output against it before finishing.
 
 ## The notes file
@@ -99,6 +100,8 @@ Three findings you must **not** "fix":
 One finding is resolved by removal rather than in spite of it:
 
 - **An uncited reference.** `reference-uncited` has exactly two answers, and which one applies turns on whether the proposal has a claim that needs the entry. It does → cite it there. It does not → delete the entry from `references:` and record it in the notes file's Excluded Literature with a one-line reason, or say so in chat when there is no notes file (never create one for this). That deletion is the finding resolved, not silenced — the sentence above is about findings you judge wrong, and this one is right. What you must not do is write a sentence so that the entry is cited: a sentence whose job is to carry a citation fails the guidelines' necessity test, and it is how a neighbouring field's vocabulary ends up in a proposal that has no use for it. A reference the literature search merged is not thereby owed a place in the text.
+
+One warning is binding: **a repeated citation.** `citation-repeated` marks a sentence that cites what the sentence before it already cited. Resolve every one in text this pass wrote or was asked to improve before you report — open the run with `@key` and refer back in words, or merge the sentences into the comparison the paragraph is for. In sections a refinement did not touch, report the findings as suggestions, as the density pass does; where the workspace guidelines require a citation on every sentence, the warning is not binding at all. Never resolve it by deleting the citation or dropping the source: a sentence that loses its citation without a back-reference reads as the thesis's own claim.
 
 ## Finishing a pass
 

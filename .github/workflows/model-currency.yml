@@ -1,0 +1,133 @@
+name: Model currency
+
+# Weekly check of harness/models.toml against OpenRouter's public catalog
+# (testing-harness spec: Weekly model-bump pull request). Bumps arrive as one
+# pull request from a fixed branch, and the pull request is the review: nothing
+# here calls a model, reads a secret beyond the built-in token, or merges.
+#
+# A pull request opened with GITHUB_TOKEN triggers no pull_request workflow, so
+# this workflow dispatches ci.yml on the bump branch itself. If the checks do
+# not show on the pull request, closing and reopening it is the fallback.
+#
+# logs/ is gitignored, so the shipped verdicts cannot be regenerated here: the
+# shipped-verdict L0 test keeps the pull request red until the maintainer runs
+# `uv run poe report` and `python3 scripts/sync_shared.py` and pushes the result.
+# From then on the branch carries a maintainer commit and is never overwritten,
+# whether its pull request is open or closed, until a merged pull request has
+# carried that tip into main. Deleting the branch lets the next run start over.
+
+on:
+  schedule:
+    - cron: "47 6 * * 1" # Mondays 06:47 UTC, after the install-check slot
+  workflow_dispatch:
+
+concurrency: model-currency
+
+permissions:
+  contents: write # push the bump branch
+  pull-requests: write # open, edit, comment on and close the bump pull request
+  actions: write # dispatch ci.yml on the bump branch
+
+env:
+  BRANCH: model-currency/bump
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Plain python3, no uv: the checker is standard library only.
+      - name: Check the registry against the catalog (write mode)
+        id: check
+        run: |
+          set +e
+          python3 harness/model_currency.py --write --json \
+            --pr-body "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/findings.json"
+          status=$?
+          set -e
+          if [ "$status" -eq 2 ]; then
+            echo "::error::model currency unknown: the catalog or an endpoint list could not be read"
+            exit 1
+          fi
+          # Fail closed: a crash exits 1 like a run with findings, so the report
+          # is what tells the two apart. Only a 0 or 1 that ends in a JSON report
+          # is a verdict; anything else stops before a PR is closed or pushed.
+          if [ "$status" -gt 1 ] || ! jq -e '(.findings | type == "array") and (.alerts | type == "array")' \
+              "$RUNNER_TEMP/findings.json" > /dev/null; then
+            echo "::error::the model-currency check failed (exit $status) without a report"
+            exit 1
+          fi
+          {
+            echo "## Model currency"
+            echo
+            jq -r '.findings[] | "- **\(.kind)** `\(.subject)`: `\(.pinned)` → `\(.proposed)` \(.detail)"' \
+              "$RUNNER_TEMP/findings.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if git diff --quiet -- harness/models.toml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "alerts=$(jq -r '.alerts | join(" ")' "$RUNNER_TEMP/findings.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Main is current — close an obsolete bump pull request
+        if: steps.check.outputs.changed == 'false'
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr close "$pr" --comment "main is current: this week's model-currency check found nothing to bump."
+          fi
+
+      - name: Open or update the bump pull request
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          # Inspect the branch as it is now and lease the push against exactly the
+          # inspected commit, so a push landing after the inspection fails the push.
+          git fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>/dev/null \
+            || git update-ref -d "refs/remotes/origin/$BRANCH"
+          expected=$(git rev-parse -q --verify "refs/remotes/origin/$BRANCH" || true)
+          if [ -n "$expected" ]; then
+            # Like Dependabot: once anyone but this workflow has committed to the
+            # bump branch (the regenerated report), it is never overwritten, open
+            # pull request or not. The one exception is a tip that a merged pull
+            # request already carried into main: nothing on it is left to lose.
+            others=$(git log "origin/main..$expected" --format='%an' | grep -v -x 'github-actions\[bot\]' || true)
+            merged=$(gh pr list --head "$BRANCH" --state merged --limit 100 --json headRefOid --jq '.[].headRefOid')
+            if [ -n "$others" ] && ! printf '%s\n' "$merged" | grep -q -x -F "$expected"; then
+              { echo "New model-currency findings. The branch carries commits by others, so it was left untouched."
+                echo "To start over from main instead, delete the branch \`$BRANCH\`."
+                echo; cat "$RUNNER_TEMP/body.md"; } > "$RUNNER_TEMP/comment.md"
+              target=${pr:-$(gh pr list --head "$BRANCH" --state all --limit 1 --json number --jq '.[0].number // empty')}
+              if [ -n "$target" ]; then
+                gh pr comment "$target" --body-file "$RUNNER_TEMP/comment.md"
+              fi
+              echo "::warning::$BRANCH carries commits by others and was left untouched"
+              exit 0
+            fi
+          fi
+          git switch -C "$BRANCH"
+          git add harness/models.toml
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore(models): weekly model-currency bump"
+          git push --force-with-lease="refs/heads/$BRANCH:$expected" origin "HEAD:refs/heads/$BRANCH"
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "Model currency: weekly roster bump" --body-file "$RUNNER_TEMP/body.md"
+          fi
+          gh workflow run ci.yml --ref "$BRANCH"
+
+      - name: Fail on a pin that is missing or expiring with no successor
+        if: steps.check.outputs.alerts != ''
+        env:
+          ALERTS: ${{ steps.check.outputs.alerts }}
+        run: |
+          echo "::error::no writable successor for: $ALERTS"
+          exit 1

@@ -1,0 +1,33 @@
+{
+  "fixture": "w08-rich-seed",
+  "lang": "en",
+  "check": {
+    "exit_code": 1,
+    "errors_contain": [
+      "required section missing: `Introduction to the Topic`",
+      "required section missing: `Contribution to the State-of-the-Art`",
+      "required section missing: `Research Focus and Research Questions`",
+      "required section missing: `Timeline`",
+      "methodology section missing"
+    ],
+    "warnings_contain": [
+      "open [TODO: confirm access to CI histories beyond the public benchmark]"
+    ],
+    "rules": {
+      "errors": [
+        "methodology-missing",
+        "required-section-missing"
+      ],
+      "warnings": [
+        "todo-marker"
+      ]
+    }
+  },
+  "semantic": [
+    "intentionally incomplete ideate seed — the missing sections are the expected starting state for a drafting pass, not defects to fix mechanically",
+    "the seed carries eleven references so that a draft has the material to over-cite: Lindqvist25Flaky alone supplies five distinct findings in note form, which is the temptation to write one sentence per finding and cite the same source on each",
+    "a clean draft introduces Lindqvist25Flaky once per paragraph with the author-in-text form, carries its findings forward in words ('they', 'their analysis'), and cites again only at a new paragraph or a source switch",
+    "a clean draft also groups the further sources by theme — detection by reruns, static prediction, root causes and cost, cross-project transfer — rather than devoting one sentence to each source in turn",
+    "all eleven references are relevant to the idea; which ones a draft cites is the writer's judgment, and none of them is a decoy"
+  ]
+}

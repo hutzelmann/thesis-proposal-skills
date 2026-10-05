@@ -478,6 +478,230 @@ def test_hindsight_rule_ignores_prose_inside_a_code_block():
     assert hindsight("```\nWe demonstrated the effect.\n```") == []
 
 
+# Attribution runs (scope-citation-attribution): the guidance asks for one
+# citation per continuous use, carried on in words. A per-sentence anchor would
+# punish exactly that and reward repeating the citation instead.
+
+CITED = "@Chen25Learning train a transformer on review comments.\n"
+
+
+def test_hindsight_rule_accepts_a_cued_continuation():
+    assert hindsight(CITED + "Their evaluation showed a 30 % reduction in effort.") == []
+    assert hindsight(CITED + "They reduced reviewer effort by 30 %.") == []
+    assert hindsight(CITED + "However, the authors achieved this only on one project.") == []
+    assert hindsight(CITED + "In their evaluation, review effort dropped by 30 %.") == []
+
+
+def test_hindsight_rule_carries_a_run_across_several_cued_sentences():
+    assert hindsight(
+        CITED + "Their model learns from accepted comments.\n"
+        "Their evaluation showed a 30 % reduction in effort."
+    ) == []
+
+
+def test_hindsight_rule_reports_an_uncued_continuation():
+    findings = check.rule_hindsight_leakage(context(
+        "# Topic\n\n" + CITED + "The model reduced reviewer effort by 30 %.\n\n"
+        "---\nreferences: []\n---"))
+    assert rules_of(findings) == ["hindsight-leakage"]
+    assert "(line 4)" in findings[0].message
+    assert '"their …"' in findings[0].message
+
+
+def test_hindsight_rule_ends_a_run_at_the_paragraph():
+    assert hindsight(CITED + "\nTheir evaluation showed a 30 % reduction.") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_ends_a_run_at_an_own_sentence():
+    """An uncited, uncued sentence is the thesis speaking; a `their` after it
+    no longer reaches back to the citation."""
+    assert hindsight(
+        CITED + "Review effort matters to every maintainer.\n"
+        "Their evaluation showed a 30 % reduction."
+    ) == ["hindsight-leakage"]
+
+
+def test_hindsight_rule_ends_a_run_at_a_list_item():
+    assert hindsight(CITED + "- Their evaluation showed a 30 % reduction.") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_accepts_a_german_cued_continuation():
+    cited = "@Chen25Learning trainieren einen Transformer auf Review-Kommentaren.\n"
+    assert hindsight(cited + "Ihre Auswertung zeigte eine deutliche Entlastung.", "de") == []
+    assert hindsight(cited + "Zudem erreichten sie eine Entlastung um 30 %.", "de") == []
+    assert hindsight(cited + "Laut den Autoren zeigte sich ein Effekt.", "de") == []
+    assert hindsight(cited + "Die Auswertung zeigte einen Effekt.", "de") == [
+        "hindsight-leakage"
+    ]
+
+
+def test_hindsight_rule_refuses_cues_that_would_launder_a_claim():
+    """`it`/`es` are expletive as often as they refer back, and `this study` /
+    `diese Arbeit` is how proposals name the thesis itself."""
+    assert hindsight(CITED + "It was shown that effort fell by 30 %.") == ["hindsight-leakage"]
+    assert hindsight(CITED + "This study demonstrated the effect.") == ["hindsight-leakage"]
+    cited_de = "@Chen25Learning trainieren einen Transformer.\n"
+    assert hindsight(cited_de + "Es zeigte sich ein Effekt.", "de") == ["hindsight-leakage"]
+    assert hindsight(cited_de + "Diese Arbeit zeigte einen Effekt.", "de") == [
+        "hindsight-leakage"
+    ]
+
+
+def repeated(prose: str) -> list[check.Finding]:
+    return check.rule_repeated_citations(context(
+        f"# Topic\n\n*Master's Thesis Proposal*\n\n{prose}\n\n---\nreferences: []\n---"))
+
+
+def test_repeated_citation_rule_reports_the_same_key_on_adjacent_sentences():
+    findings = repeated("Bots open pull requests [@Halloran24Update].\n"
+                        "Most are merged unreviewed [@Halloran24Update].")
+    assert rules_of(findings) == ["citation-repeated"]
+    assert "`Halloran24Update` (line 6)" in findings[0].message
+    assert "author-in-text form" in findings[0].message
+
+
+def test_repeated_citation_rule_reports_the_same_group_in_any_order():
+    findings = repeated("Versions mislead [@Vasquez23Semver; @Ito24Breaking].\n"
+                        "Patches break interfaces [@Ito24Breaking; @Vasquez23Semver].")
+    assert "`Ito24Breaking, Vasquez23Semver`" in findings[0].message
+
+
+def test_repeated_citation_rule_counts_author_in_text_as_the_same_citation():
+    """`[@k]` then `@k report …` renders `[1]. Smith et al. [1] report …`."""
+    assert rules_of(repeated("Bots open pull requests [@Halloran24Update].\n"
+                             "@Halloran24Update report that most are merged.")) == [
+        "citation-repeated"
+    ]
+
+
+def test_repeated_citation_rule_ignores_a_source_switch():
+    assert repeated("Versions mislead [@Vasquez23Semver].\n"
+                    "Patches break interfaces [@Vasquez23Semver; @Ito24Breaking].") == []
+
+
+def test_repeated_citation_rule_ignores_a_new_paragraph():
+    assert repeated("Bots open pull requests [@Halloran24Update].\n\n"
+                    "Most are merged unreviewed [@Halloran24Update].") == []
+
+
+def test_repeated_citation_rule_ignores_a_cued_continuation():
+    assert repeated("@Halloran24Update study update bots.\n"
+                    "They find that most pull requests are merged unreviewed.") == []
+
+
+def test_repeated_citation_rule_ignores_code():
+    assert repeated("Annotations such as `@Override` matter.\n"
+                    "Tools read `@Override` too.") == []
+
+
+def test_repeated_citation_rule_reports_each_repeating_sentence():
+    findings = repeated("A [@Halloran24Update].\nB [@Halloran24Update].\nC [@Halloran24Update].")
+    assert [f.message.split(")")[0] for f in findings] == [
+        "`Halloran24Update` (line 6", "`Halloran24Update` (line 7"
+    ]
+
+
+@pytest.mark.parametrize("own", [
+    "We outperformed their baseline by 20 %.",
+    "Unlike their approach, we reduced reruns by 30 %.",
+    "In both settings the prototype reduced water use by 25 %.",
+    "It was shown that their scheduler cuts water use by 20 %.",
+    "This confirmed both hypotheses.",
+    "The study showed that scheduling cuts water use.",
+    "The approach achieved a 30 % reduction.",
+])
+def test_hindsight_rule_does_not_take_a_cue_out_of_its_opening(own):
+    """A cue in object position, a first-person sentence, and the thesis's own
+    prescribed name ("the study") are the thesis speaking, whatever follows a
+    citation — each was a laundering path in the first cut of the run model."""
+    assert hindsight(CITED + own) == ["hindsight-leakage"]
+
+
+@pytest.mark.parametrize("own", [
+    "Wir verbesserten ihr Modell um 12 %.",
+    "Die Studie zeigte eine Einsparung von 25 %.",
+    "Wir haben beide Varianten implementiert und erreichten 30 %.",
+])
+def test_hindsight_rule_does_not_take_a_german_cue_out_of_its_opening(own):
+    cited = "@Chen25Learning trainieren einen Transformer auf Review-Kommentaren.\n"
+    assert hindsight(cited + own, "de") == ["hindsight-leakage"]
+
+
+def test_hindsight_rule_follows_attribution_written_the_way_writers_write_it():
+    """Shape of a measured sonnet repair (2026-10-04) that the positional cues
+    alone flagged: a mid-sentence reporting clause, a referential `it`, and a
+    plural "these studies" each continue the run — a warning there would push
+    the writer back to re-citing, the defect this rule exists to remove."""
+    assert hindsight(
+        "@Halloran24Update study dependency-update bots.\n"
+        "Most projects, they report, merge these pull requests without review.\n"
+        "They find that the bots reduced the median age of dependencies by 40 %.\n"
+        "It uses three signals per update.\n"
+        "Its accuracy dropped by 30 % on unseen projects.\n"
+        "According to these studies, minor releases reduced stability by 10 %."
+    ) == []
+    assert hindsight(
+        "@Halloran24Update untersuchen Update-Bots.\n"
+        "Die meisten Projekte, so die Autoren, übernehmen die Änderungen ungeprüft.\n"
+        "Seine Genauigkeit sank um 30 %.", "de") == []
+
+
+def test_hindsight_rule_keeps_a_run_across_locators_ordinals_and_wrapped_lines():
+    assert hindsight("Ein Transformer wurde trainiert [@Chen25Learning, S. 12]. "
+                     "Ihre Auswertung zeigte eine Entlastung um 30 %.", "de") == []
+    assert hindsight("@Chen25Learning trainieren im 2. Schritt einen Transformer.\n"
+                     "Ihre Auswertung zeigte eine Entlastung um 30 %.", "de") == []
+    assert hindsight("A transformer is trained on comments [@Chen25Learning, pp. 3-5]. "
+                     "Their evaluation showed a 30 % reduction.") == []
+    assert hindsight("@Chen25Learning train a transformer on review comments\n"
+                     "from twelve projects. Their evaluation showed a 30 % reduction.") == []
+
+
+def test_hindsight_rule_does_not_merge_a_sentence_ending_in_a_variable():
+    assert hindsight("@Smith24Bound bound the error by a constant c. "
+                     "We reduced the error by 30 %.") == ["hindsight-leakage"]
+
+
+def test_sentence_split_respects_abbreviations_and_locators():
+    assert len(check.split_sentences("Rivera et al. report a 30 % drop [@Rivera23Survey].")) == 1
+    assert len(check.split_sentences("Detectors, e.g. DDM, use error rates [@Gama04Drift].")) == 1
+    assert len(check.split_sentences("Ansätze, z. B. Wiederholungen, verdecken das.")) == 1
+    assert len(check.split_sentences("Vgl. die Auswertung [@a, S. 4]. Sie zeigt mehr.")) == 2
+    assert len(check.split_sentences("The bound holds for n. It is tight.")) == 2
+
+
+def test_repeated_citation_rule_sees_through_bullets():
+    findings = repeated("- Timing dominates [@Lindqvist25Flaky].\n"
+                        "- Reruns miss a third [@Lindqvist25Flaky].")
+    assert rules_of(findings) == ["citation-repeated"]
+    assert "(line 6)" in findings[0].message
+
+
+def test_repeated_citation_rule_sees_through_locators_and_wrapped_lines():
+    assert rules_of(repeated("Bots öffnen PRs [@H24Update, S. 3].\n"
+                             "Die Projekte übernehmen sie [@H24Update, S. 4].")) == [
+        "citation-repeated"
+    ]
+    assert rules_of(repeated("Bots open pull requests [@H24Update]. Most projects merge\n"
+                             "them unreviewed [@H24Update].")) == ["citation-repeated"]
+
+
+def test_repeated_citation_rule_leaves_table_rows_alone():
+    assert repeated("| Detector | Source |\n|---|---|\n| DDM | [@Gama04Drift] |\n"
+                    "| EDDM | [@Gama04Drift] |") == []
+
+
+def test_hindsight_rule_does_not_split_at_abbreviations():
+    """`e.g.` ending a fragment would make the remainder an uncited sentence."""
+    assert hindsight(
+        "Detectors, e.g. DDM, reduced false alarms by 20 % [@Gama04Learning]."
+    ) == []
+
+
 def test_metadata_present_names_a_block_that_sits_at_the_top():
     """Frontmatter at the top is what every other markdown tool expects, so a
     student arrives at it honestly — and gets five errors none of which say so."""

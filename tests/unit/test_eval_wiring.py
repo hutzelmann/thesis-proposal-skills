@@ -13,17 +13,30 @@ that name an argument rather than a function name, which is exactly the kind of
 indirection this pins down.
 """
 
+import asyncio
+import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import skill_evals
 import support
+from helpers import shipped_registry
 from inspect_ai._util.registry import registry_info
 
 # The full task set with the scorer names each one registers. Update this map
 # in the same change that adds or renames a scorer — never to make a test pass.
 EXPECTED_SCORERS = {
     "write_from_seed": ["write_l1", "write_l2_rq_quality", "write_l2_density"],
+    "write_rich_seed": [
+        "write_rich_seed_l1", "write_rich_seed_l2_citation_scope",
+        "write_rich_seed_l2_synthesis",
+    ],
+    "write_repair_citations": [
+        "write_repair_citations_l1", "write_repair_citations_l2_citation_scope",
+        "write_repair_citations_l2_synthesis",
+    ],
     "review_fixture": ["review_l1", "review_l2_quality", "no_spurious_offer"],
     "review_hollow": ["review_hollow_l1", "review_hollow_l2", "no_spurious_offer"],
     "title_alarm": ["title_l1", "title_l2_alarm"],
@@ -75,7 +88,8 @@ def test_l1_scorers_keep_the_marker_the_classifier_reads():
     deterministic = {
         name for names in EXPECTED_SCORERS.values() for name in names
         if not name.endswith(
-            ("_l2", "_l2_quality", "_l2_alarm", "_l2_rq_quality", "_l2_socratic", "_l2_density")
+            ("_l2", "_l2_quality", "_l2_alarm", "_l2_rq_quality", "_l2_socratic", "_l2_density",
+             "_l2_citation_scope", "_l2_synthesis")
         )
     }
     unmarked = {
@@ -87,9 +101,16 @@ def test_l1_scorers_keep_the_marker_the_classifier_reads():
 
 # ---------- baseline arm wiring (testing-harness spec) ------------------------
 
-REGISTRY = support.parse_registry(
-    (Path(__file__).resolve().parents[2] / "harness" / "models.toml").read_text(encoding="utf-8")
-)
+REGISTRY = shipped_registry()
+
+
+def test_judge_and_persona_come_from_the_registry_roles():
+    """The module holds no model ID of its own: both defaults resolve through
+    `support.role_model` over the registry, each override on its own role."""
+    judge = support.role_model(REGISTRY.roles, "judge", os.environ)
+    persona = support.role_model(REGISTRY.roles, "persona", os.environ)
+    resolved = (skill_evals.JUDGE_MODEL, skill_evals.PERSONA_MODEL)
+    assert resolved == (judge, persona)
 
 
 def test_dialogue_tasks_reject_the_baseline_parameter():
@@ -98,6 +119,42 @@ def test_dialogue_tasks_reject_the_baseline_parameter():
     for task_name in REGISTRY.tasks.dialogue:
         with pytest.raises(TypeError):
             getattr(skill_evals, task_name)(baseline=True)
+
+
+# ---------- matrix judge prompt parity (add-dev-runner-judge, design D6) -------
+
+GOLDEN = Path(__file__).resolve().parent / "data" / "l2_prompts"
+GOLDEN_INPUTS = json.loads((GOLDEN / "inputs.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("golden", sorted(GOLDEN.glob("*.txt")), ids=lambda p: p.stem)
+def test_matrix_judge_sends_exactly_the_golden_prompt(golden, monkeypatch):
+    """The rubric material is shared with the dev runner; the matrix judge must
+    keep sending the bytes it sent before the sharing existed, or shipped
+    verdicts move with no rubric edit under review."""
+    sent: list[tuple[str, str]] = []
+
+    class FakeJudge:
+        def __init__(self, model_id: str):
+            self.model_id = model_id
+
+        async def generate(self, prompt: str):
+            sent.append((self.model_id, prompt))
+            return SimpleNamespace(completion="Reasoning.\nGRADE: C")
+
+    monkeypatch.setattr(skill_evals, "get_model", FakeJudge)
+    passed, _ = asyncio.run(skill_evals.judge(
+        golden.name, GOLDEN_INPUTS["question"], GOLDEN_INPUTS["answer"],
+        GOLDEN_INPUTS["criterion"]))
+    assert passed
+    [(model_id, prompt)] = sent
+    assert model_id == skill_evals.JUDGE_MODEL
+    assert prompt.encode("utf-8") == golden.read_bytes()
+
+
+def test_golden_prompts_cover_every_rubric_file():
+    rubrics = {p.name for p in (skill_evals.REPO / "harness" / "rubrics").glob("*.txt")}
+    assert {p.name for p in GOLDEN.glob("*.txt")} == rubrics
 
 
 def test_single_turn_tasks_build_a_skill_free_baseline():

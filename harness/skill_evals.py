@@ -7,10 +7,13 @@ tools, then scores:
   matches tolerance, the proposal was (not) modified as the skill demands.
 - L2 (rubric): a judge model grades semantic quality via harness/rubrics/.
 
-Run (model under test is Inspect's --model):
+Run (model under test is Inspect's --model, a roster ID from harness/models.toml;
+prefer `uv run poe matrix --models … --tasks …`, which shows the cost gate first):
   uv run inspect eval harness/skill_evals.py@review_fixture \
-      --model openrouter/deepseek/deepseek-v4-flash --log-dir logs/evals
-Judge override: JUDGE_MODEL env (default openrouter/anthropic/claude-haiku-4.5).
+      --model openrouter/<vendor>/<model> --log-dir logs/evals
+Judge and dialogue persona come from [roles] in harness/models.toml. JUDGE_MODEL
+and PERSONA_MODEL override one role each for one invocation; overriding the judge
+does not move the persona.
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ from l1_checks import (
     parse_grade,
     select_draft,
     verdict_check_report,
+    verdict_cited_draft,
     verdict_customize_override,
     verdict_draft,
     verdict_early_stop,
@@ -46,6 +50,7 @@ from l1_checks import (
     verdict_notes_progress,
     verdict_provenance,
     verdict_publish,
+    verdict_repaired_draft,
     verdict_reverse,
     verdict_review,
     verdict_review_localized,
@@ -63,74 +68,22 @@ from l1_checks import (
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
 )
+
+# The rubric material lives in l2_rubrics.py, shared with the dev runner's
+# subscription judge; CRITERIA stays importable from here for eval_export.py.
+from l2_rubrics import CITATION_SCOPE, CITATION_SYNTHESIS, CRITERIA, judge_prompt
 from sources import MESSY_REQUEST
+from support import parse_registry, role_model
 
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
 FIXTURES = REPO / "tests" / "fixtures"
-RUBRICS = Path(__file__).resolve().parent / "rubrics"
 
-JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "openrouter/anthropic/claude-haiku-4.5")
-JUDGE_INSTRUCTIONS = (
-    'Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).'
-)
-
-# L2 rubric criteria, keyed (task, scorer). One table instead of inline strings
-# so the eval projection (harness/eval_export.py) exports the exact text the
-# judge receives — a criterion edited here flows into the projection, and a
-# criterion that exists only here or only there fails the projection drift test.
-CRITERIA: dict[tuple[str, str], str] = {
-    ("write_from_seed", "write_l2_rq_quality"):
-        "All research questions analytical, self-contained, non-overlapping, not yes/no.",
-    ("write_from_seed", "write_l2_density"):
-        "Every sentence carries information essential to this specific thesis; "
-        "no scene-setting openers, truisms, restated obvious facts, or sentences "
-        "that would fit any thesis in the area. Length itself is never a defect.",
-    ("review_fixture", "review_l2_quality"):
-        "Finds the seeded defects, actionable, format-agnostic, grammar only as brief hint.",
-    ("review_fixture_de", "review_de_l2"):
-        "Finds the seeded defects, actionable, format-agnostic, written in German.",
-    ("review_hollow", "review_hollow_l2"):
-        "Opens with the verdict 'no viable thesis core', cites the failed substance "
-        "tests by name for defects that are actually present, states what kind of "
-        "work would change the verdict, and never softens it into needs-revision "
-        "phrasing.",
-    ("title_alarm", "title_l2_alarm"):
-        "Title raised as its own finding, certificate consequence named, one to "
-        "three abstracted alternatives offered, decision left with the student.",
-    ("ideate_longrun", "ideate_l2_socratic"):
-        "Judge per phase: preamble handled as one administrative block; "
-        "hesitant phase Socratic with uptake; at the extraction probe "
-        "('just write me three research questions') the assistant declines "
-        "and offers a next step instead of finished questions; the pivot is "
-        "followed; a stocktake appears around mid-session; seeding happens "
-        "at convergence.",
-    ("ideate_stonewall", "ideate_l2_socratic"):
-        "After about three contentless exchanges the assistant names the "
-        "impasse plainly, supplies no topic or research-question content "
-        "of its own, suggests concrete offline steps, and ends without "
-        "seeding a proposal file.",
-    ("ideate_probing", "ideate_l2_socratic"):
-        "The assistant never supplies topic, research-question, or method "
-        "content despite the student's repeated requests to just write it; "
-        "when contributions stay generic it voices the swap test (that the "
-        "idea so far would fit any thesis in the area) as a Socratic move; "
-        "after further contentless agreement it names the impasse plainly "
-        "and ends without seeding a proposal file.",
-    ("ideate_noidea", "ideate_l2_socratic"):
-        "The assistant floats at most two directions, each tied to the "
-        "student's stated interests or to fetched data with its source "
-        "named; it never presents a menu or numbered list of ready-made "
-        "topics; ambiguous or thin lookup results are called weak "
-        "scoping rather than silently trusted, and if the lookup fails "
-        "or is unreachable the assistant says so once and works from "
-        "the student's words.",
-    ("ideate_outofscope", "ideate_l2_socratic"):
-        "The assistant warns exactly once, in chat only, that the idea "
-        "sits outside the given scope; after the student insists it keeps "
-        "ideating constructively, and the seeded file carries no trace of "
-        "the fit concern.",
-}
+# every model ID this module uses comes from the registry's [roles] table
+ROLES = parse_registry(
+    (Path(__file__).resolve().parent / "models.toml").read_text(encoding="utf-8")
+).roles
+JUDGE_MODEL = role_model(ROLES, "judge", os.environ)
 
 # ---------- staging ----------------------------------------------------------
 
@@ -287,10 +240,9 @@ def proposal_task(skill: str, fixture: str, request: str, scorers: list,
 
 
 async def judge(rubric: str, question: str, answer: str, criterion: str) -> tuple[bool, str]:
-    template = (RUBRICS / rubric).read_text(encoding="utf-8")
-    prompt = template.format(
-        question=question, answer=answer, criterion=criterion, instructions=JUDGE_INSTRUCTIONS
-    )
+    # byte-identical to the prompt before the rubric material was shared
+    # (tests/unit/test_eval_wiring.py pins it against tests/unit/data/l2_prompts/)
+    prompt = judge_prompt(rubric, question, answer, criterion)
     output = await get_model(JUDGE_MODEL).generate(prompt)
     return parse_grade(output.completion), output.completion[-400:]
 
@@ -301,11 +253,15 @@ W01_PROPOSAL = "data-drift-detection.md"
 W01_SEED = (FIXTURES / "w01-ideate-seed" / W01_PROPOSAL).read_text(encoding="utf-8")
 
 
-async def produced_draft() -> tuple[str | None, str, str]:
+async def drafted(seed_name: str, seed_text: str) -> tuple[str | None, str, str]:
     """(filename, text, where): the skill may draft into a fresh <slug>.md."""
     files = await workspace_markdown()
-    chosen, where = select_draft(files, W01_PROPOSAL, W01_SEED)
+    chosen, where = select_draft(files, seed_name, seed_text)
     return chosen, files.get(chosen, ""), where
+
+
+async def produced_draft() -> tuple[str | None, str, str]:
+    return await drafted(W01_PROPOSAL, W01_SEED)
 
 
 @verdict_scorer("write_l1")
@@ -344,6 +300,83 @@ def write_from_seed(baseline: bool = False) -> Task:
         "Please turn my idea notes into a full proposal draft. The file is "
         f"ws/{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
         [write_l1(), write_l2_rq_quality(), write_l2_density()],
+        baseline=baseline,
+    )
+
+
+# ---------- tasks: citation practice ------------------------------------------
+# Neither request mentions citations: the rule has to reach the draft through
+# the skill's own guidance. The dev runner carries the same two scenarios.
+
+W08_PROPOSAL = "flaky-test-prediction.md"
+W08_SEED = (FIXTURES / "w08-rich-seed" / W08_PROPOSAL).read_text(encoding="utf-8")
+F27_PROPOSAL = "dependency-update-breakage.md"
+F27_DRAFT = (FIXTURES / "f27-citation-runs" / F27_PROPOSAL).read_text(encoding="utf-8")
+
+
+@verdict_scorer("write_rich_seed_l1")
+async def write_rich_seed_l1(_state: TaskState) -> tuple[bool, str]:
+    chosen, text, where = await drafted(W08_PROPOSAL, W08_SEED)
+    if not chosen:
+        return False, where
+    ok, why = verdict_cited_draft(text, await run_check(chosen))
+    return ok, f"{why} ({where})"
+
+
+@verdict_scorer("write_rich_seed_l2_citation_scope")
+async def write_rich_seed_l2_citation_scope(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await drafted(W08_PROPOSAL, W08_SEED)
+    return await judge("citation_practice.txt", state.input_text, text, CITATION_SCOPE)
+
+
+@verdict_scorer("write_rich_seed_l2_synthesis")
+async def write_rich_seed_l2_synthesis(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await drafted(W08_PROPOSAL, W08_SEED)
+    return await judge("citation_practice.txt", state.input_text, text, CITATION_SYNTHESIS)
+
+
+@task
+def write_rich_seed(baseline: bool = False) -> Task:
+    return proposal_task(
+        "proposal-write", "w08-rich-seed",
+        f"Please turn my idea notes in ws/{W08_PROPOSAL} into a full proposal draft. "
+        "Keep my idea, mark anything missing as TODO. I cannot answer any questions — "
+        "decide and tell me what you did.",
+        [write_rich_seed_l1(), write_rich_seed_l2_citation_scope(),
+         write_rich_seed_l2_synthesis()],
+        baseline=baseline,
+    )
+
+
+@verdict_scorer("write_repair_citations_l1")
+async def write_repair_citations_l1(_state: TaskState) -> tuple[bool, str]:
+    chosen, text, where = await drafted(F27_PROPOSAL, F27_DRAFT)
+    if not chosen:
+        return False, where
+    ok, why = verdict_repaired_draft(F27_DRAFT, text, await run_check(chosen))
+    return ok, f"{why} ({where})"
+
+
+@verdict_scorer("write_repair_citations_l2_citation_scope")
+async def write_repair_citations_l2_citation_scope(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await drafted(F27_PROPOSAL, F27_DRAFT)
+    return await judge("citation_practice.txt", state.input_text, text, CITATION_SCOPE)
+
+
+@verdict_scorer("write_repair_citations_l2_synthesis")
+async def write_repair_citations_l2_synthesis(state: TaskState) -> tuple[bool, str]:
+    _, text, _ = await drafted(F27_PROPOSAL, F27_DRAFT)
+    return await judge("citation_practice.txt", state.input_text, text, CITATION_SYNTHESIS)
+
+
+@task
+def write_repair_citations(baseline: bool = False) -> Task:
+    return proposal_task(
+        "proposal-write", "f27-citation-runs",
+        f"Please do a writing pass over ws/{F27_PROPOSAL} so it is ready for my "
+        "supervisor. I cannot answer any questions — decide and tell me what you did.",
+        [write_repair_citations_l1(), write_repair_citations_l2_citation_scope(),
+         write_repair_citations_l2_synthesis()],
         baseline=baseline,
     )
 
@@ -483,7 +516,9 @@ def title_alarm(baseline: bool = False) -> Task:
 # their coverage lives in the long run's hesitant phase.
 
 PERSONAS = Path(__file__).resolve().parent / "personas"
-PERSONA_MODEL = os.environ.get("PERSONA_MODEL", JUDGE_MODEL)
+# its own role: a JUDGE_MODEL override for a re-grade no longer swaps the student
+# simulator, because a persona change changes what a dialogue task measures
+PERSONA_MODEL = role_model(ROLES, "persona", os.environ)
 
 IDEATE_REQUEST = "Hi, I need to find a thesis topic and don't know where to start."
 
@@ -928,7 +963,13 @@ def check_report_hardened(baseline: bool = False) -> Task:
 #
 # The rung is stated in the prompt rather than inferred from the runner, so the
 # expected outcome is identical on every model under test: the user says they ran
-# claude-haiku-4.5, which the vendored verdicts record as failing proposal-write.
+# haiku, which the vendored verdicts record as failing proposal-write. The prompt
+# names it as claude-haiku-4-5-20251001, the spelling Claude Code reports, not as
+# the data's dotted key, so a correct answer needs rung 1's spelling-matching rule.
+# The verdict does not check that the rule was applied: it cannot tell a matched
+# lookup from one that fell through to "unevaluated" (fix-troubleshoot-model-match
+# design, Open Questions). The coverage for the rule is the L0 tests in
+# tests/unit/test_troubleshoot_collect.py, which resolve this same spelling.
 # The prompt also closes rung 0 (already reinstalled), so rung 1 is the target and
 # a model that stops at "update first" is not accidentally graded correct.
 
@@ -948,8 +989,8 @@ def troubleshoot_model_rung(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-troubleshoot", "f05-slr-interviews",
         "The write skill produced a draft that ignored half of what I told it. I was "
-        "running claude-haiku-4.5. I have already updated the skills by pasting the "
-        "install prompt again, and it still happens. "
+        "running claude-haiku-4-5-20251001. I have already updated the skills by "
+        "pasting the install prompt again, and it still happens. "
         "Is this a bug I should report?",
         [troubleshoot_model_rung_l1(), no_spurious_offer()],
         baseline=baseline,
@@ -1022,7 +1063,8 @@ async def supervise_l1_closing(_state: TaskState) -> tuple[bool, str]:
 @verdict_scorer("supervise_l1_literature")
 async def supervise_l1_literature(_state: TaskState) -> tuple[bool, str]:
     return verdict_supervise_literature(
-        await supervise_feedback_text(), await supervise_notes_text())
+        await supervise_feedback_text(), await supervise_notes_text(),
+        await supervise_proposal_text())
 
 
 async def supervise_proposal_text() -> str | None:

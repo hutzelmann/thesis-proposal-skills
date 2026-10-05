@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A pull request opened with GITHUB_TOKEN triggers no pull_request run, and
+  # workflow_dispatch is the one event that token may trigger: the weekly
+  # model-currency workflow dispatches CI on its bump branch through it.
+  workflow_dispatch:
 
 jobs:
   l0:

@@ -1,0 +1,44 @@
+You are grading the conversational behavior of an ideation skill across a dialogue transcript.
+
+[BEGIN DATA]
+[Transcript]: Synthetic task given to the model: turn the idea notes in example-notes.md into a full proposal draft. Keep the idea, mark anything missing as TODO.
+[Final seeded file]: # Synthetic Proposal on Example Drift
+
+## Research Questions
+
+1. To what extent does the synthetic factor change the synthetic outcome?
+2. Under which conditions does the effect reverse?
+
+Golden answer marker l2-prompts-7f3a — written by Erika Musterfrau (matriculation 00000000).
+
+[Criterion]: Synthetic criterion: every research question is analytical and self-contained — für diese Arbeit.
+[END DATA]
+
+Two administrative bookends are sanctioned and never count as violations: an
+administrative block at session start (study program, research group, degree
+level, language, available months, lookup consent — direct questions and
+multiple-choice lists are allowed there) and the closing seeding step (exact
+start/submission dates, the offer to record a scoping note — direct questions
+allowed there too).
+
+Between the bookends, grade PASS only if ALL hold:
+- The assistant never asks directly for missing idea content ("which
+  methodology do you want?", "what are your research questions?") — gaps are
+  surfaced through hints, observations, mirrored consequences, or literature
+  contrasts, each anchored in something the student already said.
+- Uptake: assistant turns build on the student's preceding turn rather than
+  advancing an unrelated agenda; at most one question per turn; no praise
+  padding ("Great idea!" openers).
+- The assistant never supplies idea content — topics, research questions, or
+  the method choice for the student's problem. Stating the rules of the game
+  (the closed methodology set, canonical sections, the analytical-RQ
+  convention) is allowed once the student's thinking has surfaced the need.
+  On a direct request for finished content, the assistant declines and offers
+  a next scaffolded step instead.
+- The student does most of the ideation; the assistant refines rather than
+  dictates, and any named paper comes from an actual lookup in this session.
+
+The [Criterion] narrows the focus for this run — judge it within the rules
+above. Grade FAIL if the criterion or any rule is violated.
+
+Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).

@@ -7,6 +7,7 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "anyio>=4.14.2",
     "inspect-ai>=0.3",
     "openai>=2.50.0",
     "poethepoet>=0.48.0",
@@ -34,6 +35,9 @@ install-check = "python3 scripts/install_check.py"
 test-fast = "pytest -n auto --dist loadgroup -m 'not slow'"
 cov = "pytest --cov --cov-report=term-missing --cov-fail-under=78"
 dev = "python harness/claude_runner.py"
+# model currency vs OpenRouter's public catalog: networked, read-only, no key;
+# not part of `test` (L0 replays tests/unit/data/model_catalog/ instead)
+models = "python3 harness/model_currency.py"
 # skill selection, not skill behaviour: needs a host install and a subscription,
 # so it stays out of `test` and out of CI. Its verdict logic is covered there.
 routing = "python harness/routing.py"
@@ -50,8 +54,27 @@ _hooks = "git config core.hooksPath .githooks"
 _merge_driver = "git config merge.ours.driver true"
 setup = ["_sync_dev", "_hooks", "_merge_driver"]
 
+# the everyday smoke: the core scenarios on the subscription dev runner, $0 in
+# money. Each step is isolated with a hard budget cap; no envfile, so no key
+# file is loaded, and the runner strips billing variables from every model run
+# (testing-harness spec: Subscription text roles). Steps are commands, not task
+# references (default_item_type), and a failing step does not stop the others.
+# The closing step names every scenario (--expect), so a step that exits before
+# recording its line is listed as a runner failure rather than left out.
 [tool.poe.tasks.smoke]
-cmd = "python harness/matrix.py --models claude-haiku-4.5 --core --epochs 1"
+sequence = [
+    "python harness/claude_runner.py write_from_seed --isolated --max-budget-usd 2 --judge --summary-log logs/devrun/smoke.jsonl",
+    "python harness/claude_runner.py import_messy --isolated --max-budget-usd 2 --summary-log logs/devrun/smoke.jsonl",
+    "python harness/claude_runner.py customize_override --isolated --max-budget-usd 2 --summary-log logs/devrun/smoke.jsonl",
+    "python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl --expect write_from_seed import_messy customize_override",
+]
+default_item_type = "cmd"
+ignore_fail = "return_non_zero"
+
+# the former metered smoke, behind the matrix cost gate; run it only when the
+# Inspect wiring itself changed. Its model is the registry's [roles].smoke.
+[tool.poe.tasks.smoke-inspect]
+cmd = "python harness/matrix.py --smoke"
 envfile = ".env"
 
 [tool.poe.tasks.matrix]
@@ -96,10 +119,11 @@ pythonpath = [
 source = ["harness", "scripts", "skills"]
 source_pkgs = ["install"]
 omit = [
-    # metered-only: these execute under `inspect eval` or a live model run and
-    # never at L0, so counting them measures nothing and only drags the floor
+    # skill_evals.py runs only under `inspect eval`, never at L0: the L0 suite
+    # builds and stages every task and pins the judge prompt
+    # (test_eval_wiring.py), but its scorer and solver bodies execute only
+    # inside an eval against a model, so the floor leaves the file out.
     "harness/skill_evals.py",
-    "harness/claude_runner.py",
 ]
 
 [tool.coverage.report]

@@ -1,6 +1,7 @@
 """Cost-gated model-support matrix runner (thin shell over inspect_ai + support.py).
 
-Estimates spend from registry pricing before any metered call, requires explicit
+Estimates spend from registry pricing before any metered call, warns about stale
+pins from one free catalog request (never blocking), requires explicit
 confirmation (--yes to bypass), then drives Inspect over the selected models and
 tasks with per-cell epochs. Afterwards prints and persists actual spend and
 merges observed token usage into the estimate history.
@@ -8,18 +9,24 @@ merges observed token usage into the estimate history.
 Usage:
     uv run poe matrix                     # all enabled models, scorable set
     uv run poe matrix --tier cheap
-    uv run poe matrix --models claude-haiku-4.5 --tasks write_from_seed
-    uv run poe smoke                      # first enabled cheap model, core set, 1 epoch
+    uv run poe matrix --models <registry-id-suffix> --tasks write_from_seed
+    uv run poe smoke-inspect              # --smoke: [roles].smoke × core set × 1 epoch
+
+`--smoke` only selects; the estimate and the confirmation run as for any other
+selection. The everyday smoke (`uv run poe smoke`) runs on the subscription dev
+runner instead and never reaches this file.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import model_currency
 import support
 
 HARNESS = Path(__file__).resolve().parent
@@ -60,7 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--models", nargs="+", help="registry IDs or ID suffixes")
     parser.add_argument("--tasks", nargs="+", help="subset of the scorable matrix set")
     parser.add_argument("--core", action="store_true", help="core (smoke) task set")
-    parser.add_argument("--epochs", type=int, default=support.DEFAULT_EPOCHS)
+    parser.add_argument("--epochs", type=int, default=None,
+                        help=f"epochs per cell (default {support.DEFAULT_EPOCHS})")
+    parser.add_argument("--smoke", action="store_true",
+                        help="the metered smoke: the registry's smoke model ([roles].smoke) × "
+                             "the core tasks × 1 epoch; selection only, the cost gate still runs")
     parser.add_argument("--baseline", action="store_true",
                         help="run the without-skill control arm (single-turn tasks only)")
     parser.add_argument("--yes", action="store_true", help="skip the cost confirmation")
@@ -184,15 +195,41 @@ def record_spend(logs, models, tasks, registry, history, log_dir: str) -> None:
         print(f"warning: {errored} eval run(s) did not finish cleanly — check inspect view")
 
 
+# selection flags `--smoke` replaces; passing one beside it is a usage error
+SMOKE_EXCLUSIVE = ("models", "tier", "tasks", "core", "epochs")
+
+
+def select(parser: argparse.ArgumentParser, args: argparse.Namespace,
+           registry: support.Registry) -> tuple[list[support.Model], list[str]]:
+    """The models and tasks to run, and `args.epochs` resolved. `--smoke` is a
+    fixed selection — the smoke role's model, the core tasks, one epoch — and
+    refuses any other selection flag rather than silently overriding it."""
+    if not args.smoke:
+        if args.epochs is None:
+            args.epochs = support.DEFAULT_EPOCHS
+        return (support.select_models(registry, tier=args.tier, ids=args.models),
+                support.select_tasks(registry, names=args.tasks, core_only=args.core))
+    # by identity: `0 in (None, False)` holds, so `--epochs 0` would pass a membership test
+    clashing = [f"--{name}" for name in SMOKE_EXCLUSIVE
+                if getattr(args, name) is not None and getattr(args, name) is not False]
+    if clashing:
+        parser.error(f"--smoke fixes the selection ([roles].smoke × core tasks × 1 epoch); "
+                     f"drop {', '.join(clashing)}")
+    args.epochs = 1
+    smoke = support.role_model(registry.roles, "smoke", os.environ)
+    return (support.select_models(registry, ids=[smoke]),
+            support.select_tasks(registry, core_only=True))
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     registry = support.parse_registry(REGISTRY.read_text(encoding="utf-8"))
-    models = support.select_models(registry, tier=args.tier, ids=args.models)
+    models, tasks = select(parser, args, registry)
     if not models:
         print("no enabled models match the selection", file=sys.stderr)
         return 2
-    tasks = support.select_tasks(registry, names=args.tasks, core_only=args.core)
     if args.baseline:
         tasks = support.select_baseline_tasks(registry, tasks, explicit=bool(args.tasks))
         if not tasks:
@@ -202,6 +239,10 @@ def main(argv: list[str] | None = None) -> int:
 
     estimate = support.estimate_cost(models, tasks, registry, args.epochs, history)
     print_estimate(estimate, models, tasks, args.epochs, history)
+    # directly above the confirmation prompt; informs, never blocks or re-prices
+    print()
+    for line in model_currency.gate_warnings(registry, models, environ=os.environ):
+        print(line)
     if args.estimate_only:
         return 0
     if not confirm_spend(args.yes):

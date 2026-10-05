@@ -1,0 +1,2 @@
+{"type": "system", "subtype": "init", "tools": ["Read", "Glob", "Skill"]}
+{"type": "result", "subtype": "success", "is_error": true, "errors": null, "terminal_reason": "api_error", "result": "Failed to authenticate: OAuth session expired and could not be refreshed", "duration_ms": 412, "num_turns": 1, "total_cost_usd": 0}

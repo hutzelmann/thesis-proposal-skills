@@ -1,0 +1,3 @@
+{"type": "system", "subtype": "init", "model": "claude-fixture-1-0", "apiKeySource": "none", "claude_code_version": "2.1.284", "tools": []}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Every question is"}]}}
+{"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "rateLimitType": "five_hour", "utilization": 0.12, "isUsingOverage": false}}

@@ -1,0 +1,5 @@
+{
+  "question": "Synthetic task given to the model: turn the idea notes in example-notes.md into a full proposal draft. Keep the idea, mark anything missing as TODO.",
+  "answer": "# Synthetic Proposal on Example Drift\n\n## Research Questions\n\n1. To what extent does the synthetic factor change the synthetic outcome?\n2. Under which conditions does the effect reverse?\n\nGolden answer marker l2-prompts-7f3a — written by Erika Musterfrau (matriculation 00000000).\n",
+  "criterion": "Synthetic criterion: every research question is analytical and self-contained — für diese Arbeit."
+}

@@ -1,0 +1,3 @@
+{"type": "system", "subtype": "init", "model": "claude-fixture-1-0", "apiKeySource": "none", "claude_code_version": "2.1.284", "tools": []}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Every question is analytical.\nGRADE: C"}]}}
+{"type": "result", "subtype": "success", "is_error": false, "result": "Every question is analytical, self-contained and distinct.\nGRADE: C", "total_cost_usd": 0.0551, "num_turns": 1, "duration_ms": 9100, "usage": {"input_tokens": 3100, "output_tokens": 420}, "modelUsage": {"claude-fixture-1-0": {"inputTokens": 3100, "outputTokens": 420, "thinkingTokens": 180, "costUSD": 0.0551, "provider": "firstParty"}}, "terminal_reason": "completed"}

@@ -1,0 +1,1 @@
+When that exact string is absent, compare spellings instead: ignore letter case, everything up to the last `/`, a cloud provider's wrapping such as a leading `us.anthropic.` or a trailing `-v1:0`, a trailing date stamp with year, month and day such as `-20251001` or `-2025-10-01`, and a bracketed suffix such as `[1m]`, and read a dash between two digits as a dot.

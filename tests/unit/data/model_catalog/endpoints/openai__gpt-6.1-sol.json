@@ -1,0 +1,77 @@
+{
+  "data": {
+    "id": "openai/gpt-6.1-sol",
+    "endpoints": [
+      {
+        "name": "OpenAI | openai/gpt-6.1-sol-20260929",
+        "provider_name": "OpenAI",
+        "tag": "openai/flex",
+        "pricing": {
+          "prompt": "0.000001",
+          "completion": "0.000005",
+          "input_cache_read": "0.00000005"
+        }
+      },
+      {
+        "name": "Azure | openai/gpt-6.1-sol-20260929",
+        "provider_name": "Azure",
+        "tag": "azure",
+        "pricing": {
+          "prompt": "0.000002",
+          "completion": "0.00001",
+          "input_cache_read": "0.0000001"
+        }
+      },
+      {
+        "name": "OpenAI | openai/gpt-6.1-sol-20260929",
+        "provider_name": "OpenAI",
+        "tag": "openai",
+        "pricing": {
+          "prompt": "0.000002",
+          "completion": "0.00001",
+          "input_cache_read": "0.0000001"
+        }
+      },
+      {
+        "name": "Amazon Bedrock | openai/gpt-6.1-sol-20260929",
+        "provider_name": "Amazon Bedrock",
+        "tag": "amazon-bedrock/us-east-1",
+        "pricing": {
+          "prompt": "0.0000022",
+          "completion": "0.000011",
+          "input_cache_read": "0.00000011"
+        }
+      },
+      {
+        "name": "Azure | openai/gpt-6.1-sol-20260929",
+        "provider_name": "Azure",
+        "tag": "azure/eu",
+        "pricing": {
+          "prompt": "0.0000022",
+          "completion": "0.000011",
+          "input_cache_read": "0.00000011"
+        }
+      },
+      {
+        "name": "Azure | openai/gpt-6.1-sol-20260929",
+        "provider_name": "Azure",
+        "tag": "azure/us",
+        "pricing": {
+          "prompt": "0.0000022",
+          "completion": "0.000011",
+          "input_cache_read": "0.00000011"
+        }
+      },
+      {
+        "name": "OpenAI | openai/gpt-6.1-sol-20260929",
+        "provider_name": "OpenAI",
+        "tag": "openai/fast",
+        "pricing": {
+          "prompt": "0.000004",
+          "completion": "0.00002",
+          "input_cache_read": "0.0000002"
+        }
+      }
+    ]
+  }
+}

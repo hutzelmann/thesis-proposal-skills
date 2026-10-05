@@ -52,7 +52,7 @@ Two instruments SHALL grade student-originated content and tutoring quality:
 - **THEN** the Socratic rubric does not count these as violations
 
 ### Requirement: Inverted-hybrid runners
-Authoritative runs (model matrix, release gates, judge models) SHALL execute over metered API providers with native multi-model comparison and spend caps. Subscription-based CLI runs serve as the cheap everyday dev loop and are not the source of record. CI executes only L0 and lint by default; metered eval runs are budget-capped.
+Authoritative runs — the model matrix, release gates, and the judge and persona models those runs grade with and converse with — SHALL execute over metered API providers with native multi-model comparison and spend caps. Subscription-based CLI runs serve as the cheap everyday dev loop and are not the source of record. That includes the dev runner's own rubric judge: its grades SHALL be labelled as dev-runner results that are not comparable to matrix results, SHALL NOT be written where the support report reads its logs, and SHALL NOT stand in for an authoritative cell. CI executes only L0 and lint by default; metered eval runs are budget-capped.
 
 Every L1 verdict SHALL be defined once as a pure function in the shared verdict module, taking plain values and returning a pass flag with an explanation, and both runners SHALL reach a scenario's verdict through it rather than reimplementing the assertions. Because the verdicts are pure, each SHALL be exercisable by L0 tests without a model call.
 
@@ -65,6 +65,10 @@ Wherever a scenario's skill is licensed to choose the produced file's name — i
 #### Scenario: Release gate
 - **WHEN** a release-gating eval is run
 - **THEN** it executes on the metered authoritative path with per-model logs, not on the subscription dev runner
+
+#### Scenario: Dev-runner grade is not a source of record
+- **WHEN** a dev run is graded by the subscription judge
+- **THEN** its summary labels the grades as dev-runner L2, not comparable to the matrix, and no file the support report reads has been written or changed
 
 #### Scenario: Verdict reached from both runners
 - **WHEN** a scenario's L1 assertions are evaluated on the metered path and on the dev runner
@@ -274,6 +278,21 @@ The review-quality rubric SHALL include the voice-block conduct rules: the grade
 ### Requirement: Pinned model registry
 Matrix runs SHALL take their model roster exclusively from a tracked registry file pinning exact provider-qualified model IDs (the version visible in the ID), each with family, price tier, cached input/output pricing, and an enabled flag. A registry entry MAY carry a free-text note recording a caveat about the model's standing in the matrix — for example that the harness cannot drive it — which SHALL default to empty when absent. The roster SHALL cover at least three model families (Anthropic, OpenAI, open-weight) at cheap and frontier price points. Changing a model version SHALL require editing the registry, never a runtime "latest" resolution, so successive runs stay comparable.
 
+The registry SHALL record the date its prices were copied from the provider's catalog. Prices SHALL be taken from the model vendor's own endpoint at its standard service tier. An entry MAY name the endpoint its prices come from. It SHALL do so when the vendor's provider name differs from its catalog namespace, or when the vendor serves no endpoint of its own.
+
+The registry SHALL also carry a roles table naming every model the harness uses outside the roster:
+
+- the rubric judge of matrix runs;
+- the dialogue persona, which SHALL default to the judge when absent;
+- the metered smoke model, which SHALL name an enabled roster entry;
+- the subscription dev-runner judge, together with its pinned effort level.
+
+Every roster and role ID SHALL be a pinned full ID. A floating alias SHALL make registry parsing fail and name the offending entry. Floating aliases are a bare family name, a `~`-prefixed ID, and an ID ending in `-latest`. The judge's ID SHALL appear only in the roles table; the judge's per-run token budget MAY stay with the task configuration.
+
+Every metered role, that is the judge and the persona, SHALL be priced by the registry: by the roster entry with its ID, or, when no roster entry carries that ID, by a price-only role-price entry under the same price basis and date. A registry whose judge or persona cannot be priced SHALL fail parsing and name the role. A role-price entry that no role names, or that duplicates a roster entry, SHALL fail parsing. All harness price lookups SHALL go through this one resolution.
+
+Harness code SHALL take these IDs from the registry. An environment override MAY replace one role for one invocation, and SHALL NOT carry over to any other role.
+
 #### Scenario: Roster comes from the registry
 - **WHEN** a matrix run is started with a tier filter
 - **THEN** exactly the enabled registry models of that tier are exercised, under their pinned IDs
@@ -285,6 +304,42 @@ Matrix runs SHALL take their model roster exclusively from a tracked registry fi
 #### Scenario: Note is optional
 - **WHEN** a registry entry carries no note
 - **THEN** the registry parses and the model's rendered notes are unchanged
+
+#### Scenario: Role changed in the registry only
+- **WHEN** the judge role is set to a different pinned ID in the registry and no override is present
+- **THEN** the rubric scorers and the cost estimate both use the new ID without any code edit
+
+#### Scenario: Floating alias rejected
+- **WHEN** a roster entry or a role names `sonnet`, `~anthropic/claude-sonnet-latest`, or any ID ending in `-latest`
+- **THEN** registry parsing fails and names the offending entry
+
+#### Scenario: Judge named twice
+- **WHEN** the task configuration still carries a judge model ID beside the roles table
+- **THEN** registry parsing fails and points to the roles table
+
+#### Scenario: Smoke model outside the roster
+- **WHEN** the smoke role names an ID that is not an enabled roster entry
+- **THEN** registry parsing fails
+
+#### Scenario: Persona defaults to the judge
+- **WHEN** the roles table names a judge and no persona
+- **THEN** the persona resolves to the judge's ID
+
+#### Scenario: Judge override does not move the persona
+- **WHEN** an invocation overrides the judge from the environment and does not override the persona
+- **THEN** the persona keeps the registry's persona role
+
+#### Scenario: Held judge priced after leaving the roster
+- **WHEN** the roster entry that carried the judge's ID has been re-pinned and a role-price entry for that ID exists
+- **THEN** the registry parses, and the cost estimate prices the judge from the role-price entry
+
+#### Scenario: Unpriced metered role rejected
+- **WHEN** the judge or persona names an ID that neither a roster entry nor a role-price entry carries
+- **THEN** registry parsing fails and names the role
+
+#### Scenario: Orphaned role price rejected
+- **WHEN** a role-price entry names an ID that no role names, or an ID a roster entry also carries
+- **THEN** registry parsing fails and names the entry
 
 ### Requirement: Cost-gated matrix execution
 Before issuing any metered call, a matrix run SHALL print a cost estimate derived from registry pricing and SHALL wait for explicit operator confirmation; an explicit non-interactive flag MAY bypass the prompt. After the run it SHALL report actual spend per model and in total, computed from recorded token usage and registry pricing, and persist it alongside the run logs.
@@ -429,6 +484,14 @@ The harness SHALL measure which skill a host agent selects for a user utterance,
 ### Requirement: Isolated measurement environment
 A routing run SHALL execute against an isolated host configuration containing only the skills under measurement — no operator-specific skills, hooks, plugins, or agents — so that results reproduce on any machine and describe a user's install rather than the developer's. A run that cannot establish that isolation SHALL fail with a message naming what is missing, and SHALL NOT fall back to the ambient configuration.
 
+An isolated configuration — the routing rig's, or the dev runner's in isolated mode — SHALL authenticate in one of two ways. If a long-lived token is in the environment, the configuration SHALL hold no credentials of its own. Otherwise it SHALL hold a link to the operator's stored login, never a copy.
+
+While such a link exists, a login refresh the host performs inside the isolated configuration SHALL reach the stored login. The host refreshes by replacing the link with a file of its own. When the replacement expires later than the stored login, the harness SHALL write it to the stored location with owner-only permissions, within a second of the replacement, and SHALL check once more when the run ends. Credentials that do not expire later SHALL never be written. Credential values SHALL NOT be printed, logged, or kept anywhere other than the stored location and the isolated configuration.
+
+The host serializes refreshes only within one configuration directory. A run that starts while the stored login has expired, or is about to, SHALL therefore first hold an exclusive refresh claim beside the stored login. A run that finds the claim held SHALL wait a bounded time for the refreshed login, then proceed with it. If the wait ends without one, the run SHALL refuse with a message naming the cause. A claim left behind by a run that ended without releasing it SHALL stop blocking after a bounded age.
+
+A login the host rejects only once a case is running cannot be detected before the run starts. A routing case that the host ends for that reason SHALL produce no routing verdict, and its recorded error SHALL carry the host's reason and the re-login instruction the dev runner gives for the same failure.
+
 #### Scenario: Ambient configuration excluded
 - **WHEN** the operator's own configuration defines additional skills or session hooks
 - **THEN** the routing run is unaffected by them
@@ -437,8 +500,38 @@ A routing run SHALL execute against an isolated host configuration containing on
 - **WHEN** the isolated configuration cannot authenticate or cannot be created
 - **THEN** the run exits with a diagnostic and produces no routing verdicts
 
+#### Scenario: Login rejected during a case
+- **WHEN** the host ends a routing case with an error result saying it failed to authenticate
+- **THEN** the case produces no routing verdict, and its error carries the host's reason and tells the operator to run `claude` and enter `/login`
+
+#### Scenario: Refresh inside an isolated run reaches the stored login
+- **WHEN** the host replaces the linked credentials with a login that expires later than the stored one
+- **THEN** the stored login holds the refreshed credentials with owner-only permissions, and the isolated configuration links to it again
+
+#### Scenario: Older credentials never written back
+- **WHEN** the host's replacement expires no later than the stored login
+- **THEN** the stored login is left unchanged
+
+#### Scenario: Concurrent runs with an expired login
+- **WHEN** two isolated runs start while the stored login has expired
+- **THEN** only one holds the refresh claim, and the other waits until the refreshed login is written back and starts with it
+
+#### Scenario: Refresh never arrives
+- **WHEN** a run waits on a held claim and the bounded wait ends with the stored login still expired
+- **THEN** the run refuses with a diagnostic naming the held refresh, and the ambient configuration is not used
+
+#### Scenario: Abandoned claim
+- **WHEN** a claim is older than its bounded age
+- **THEN** the next run that needs a refresh takes the claim over
+
+#### Scenario: Long-lived token in the environment
+- **WHEN** the environment carries a long-lived host token
+- **THEN** the isolated configuration holds no credentials, and the stored login is neither linked nor written
+
 ### Requirement: Route determined by the first skill invocation
 A case's route SHALL be the first invocation of a `proposal-*` skill observed in the run, and the run SHALL be terminated as soon as that route is recorded. Preparatory non-skill tool calls SHALL be tolerated up to a bounded number, and a case that exceeds that bound or its time limit SHALL be recorded as unrouted rather than retried. Skill invocations after the first SHALL NOT change the recorded route.
+
+A case the host ends with an error result before any `proposal-*` invocation SHALL be recorded as an error carrying the host's reason — its subtype, its errors or result text, and the cost and turns so far — and SHALL NOT be recorded as unrouted. Unrouted is a finding about the descriptions; a host failure says nothing about them, and a negative case would pass on it.
 
 #### Scenario: Route recorded and run stopped
 - **WHEN** the agent invokes a `proposal-*` skill
@@ -455,6 +548,14 @@ A case's route SHALL be the first invocation of a `proposal-*` skill observed in
 #### Scenario: Skill chains into a sibling
 - **WHEN** the selected skill invokes another `proposal-*` skill
 - **THEN** the recorded route remains the first invocation
+
+#### Scenario: Host ends the case with an error
+- **WHEN** the host ends a case with an error result and no `proposal-*` skill was invoked
+- **THEN** the case is recorded as an error naming the host's reason, it counts neither as unrouted nor toward any kind's total, and a negative case does not pass on it
+
+#### Scenario: Unrouted answer is not an error
+- **WHEN** the host ends a case with a result that is not an error and no `proposal-*` skill was invoked
+- **THEN** the case is recorded as unrouted
 
 ### Requirement: Routing dataset covers canonical, oblique, and contested phrasings
 The routing dataset SHALL be a tracked data file in which each case carries its utterance, its expected skill, and its kind. Every `proposal-*` skill SHALL have at least one case in each of three kinds: the phrasing its description literally promises, an oblique phrasing a user would plausibly type, and a phrasing that lands in a zone contested by another skill. The dataset SHALL further include negative cases whose expected outcome is that no `proposal-*` skill is selected, and cases in German, the language of the intended user population.
@@ -481,6 +582,8 @@ Route extraction and matrix classification SHALL be pure functions over event da
 ### Requirement: Routing reported as a confusion matrix
 A routing run SHALL persist its raw per-case results and SHALL generate a tracked report presenting expected skill against selected skill, so that a failure names the skill that wrongly claimed the utterance. A single aggregate pass rate SHALL NOT be the only reported figure. The report SHALL record the model and case count the run used. A case whose expected skill was never selected and a case claimed by the wrong skill SHALL be reported as distinct outcomes, since one says a description is too narrow and the other says it reaches too far. The report SHALL state the result it supersedes, so a later run is read as a movement rather than as an isolated figure.
 
+A run in which any measurement ended in an error SHALL exit with a failure status, whatever the completed measurements scored. A run in which no measurement completed SHALL leave the tracked report unchanged, so that the report never carries a score no case produced and the next run is still compared against the last real one.
+
 #### Scenario: Mis-route is attributable
 - **WHEN** cases expected to select one skill are routed to another
 - **THEN** the report shows that pairing and the utterances involved
@@ -496,6 +599,14 @@ A routing run SHALL persist its raw per-case results and SHALL generate a tracke
 #### Scenario: Comparison against the previous result
 - **WHEN** a report replaces an earlier one
 - **THEN** it states the earlier score it is being compared against
+
+#### Scenario: Errored measurement fails the run
+- **WHEN** any measurement of a run ends in an error and every completed measurement is correct
+- **THEN** the run exits with a failure status
+
+#### Scenario: Nothing measured
+- **WHEN** every measurement of a run ends in an error
+- **THEN** the tracked report is left unchanged, the raw per-case results are still persisted, and the run exits with a failure status
 
 ### Requirement: Routing runs are on-demand, not a CI gate
 The routing rig SHALL be invocable through a registered task and SHALL NOT be part of the default local test chain or of CI, since it depends on an interactive host installation and subscription credentials. The dataset's structural integrity and the rig's pure functions SHALL be part of the default test chain.
@@ -621,26 +732,74 @@ The L0 suite SHALL verify the shape of the shipped supervise closing note, since
 
 ### Requirement: Dev-runner cost and helper-agent telemetry
 
-The dev runner SHALL read the host's event stream rather than its plain text output. Beside each run's L1 verdict it SHALL report:
+The dev runner SHALL read the host's event stream rather than its plain text output, and SHALL save that stream into the run's workspace so a kept workspace carries the run's tool calls and narration for later reading. Beside each run's L1 verdict it SHALL report:
 
+- the model the host served, by the full ID the host reports, beside the name the run requested, and the host CLI version;
 - the run's cost, number of turns and duration;
 - the input and output token counts, with the cache read and cache write counts;
 - the helper-agent tool calls observed (`Agent`, `Task`, `Workflow`);
-- for scenarios that produce a supervise feedback, the feedback body's word count, excluding URLs and the closing note.
+- for scenarios that produce a supervise feedback, the feedback body's word count, excluding URLs and the closing note;
+- for a run graded by the subscription judge, each rubric criterion's grade, the judge's served model ID, its effort and CLI version, its thinking tokens, and the cumulative notional cost of the judge calls, all under a label saying the grades are dev-runner L2 and not comparable to the matrix.
 
 A dedicated verdict function SHALL pass when a run spawned no more helper agents than its scenario allows — none unless the scenario declares an allowance, which a supervise scenario does for its single verifier — and SHALL name the spawning calls when it exceeds the allowance. The runner SHALL report it as a separately labelled advisory verdict that does not change the scenario's exit status.
 
-The runner SHALL accept a hard budget cap passed through to the host, and SHALL label each run as measuring the ambient host configuration or an isolated one prepared for the run, naming the isolated directory. Failures SHALL be reported as follows:
+For the supervise scenarios the verifier is part of the scored L1 verdict, not only of the advisory probe: a run SHALL fail when it spawned no helper whose task carries the skill's verifier brief, and when its review's verification section does not state who verified. The headless host offers a subagent tool, so a run that checks inline has skipped the verifier rather than fallen back.
+
+Because the runner starts the host without permission prompts, it SHALL deny the host's outward-facing tools on every run — publishing artifacts and their comments or data, messaging other sessions, push notifications, remote triggers, scheduling, and design sync — so that no test run can publish, send or schedule anything, whatever the model decides. The routing rig SHALL deny the same tools, from the same list.
+
+The runner SHALL accept a hard budget cap passed through to the host, and SHALL label each run as measuring the ambient host configuration or an isolated one prepared for the run, naming the isolated directory.
+
+The runner SHALL remove from the model-under-test child's environment every variable that can route the host's billing away from the subscription login, in ambient and isolated mode alike: every `ANTHROPIC_`-prefixed variable, which covers the API key, the gateway base URL and its auth token, and every `CLAUDE_CODE_USE_` cloud-provider switch. It SHALL leave every other inherited variable in place, so that the operator's effort and session settings remain part of what a dev run measures.
+
+Failures SHALL be reported as follows:
 
 - a host result event marked as an error — a budget overrun among them — SHALL end the run as a runner failure whose message carries the host's subtype, its errors, and the cost and turns so far;
+- when that error is a failure to authenticate, the message SHALL also tell the operator that the stored login is no longer valid and must be renewed by running `claude` and entering `/login`;
 - a non-zero host exit without such an event SHALL report the host's stderr;
 - a stream with no result event SHALL be a runner failure, never a silent success with empty telemetry.
 
-The chat the verdicts read SHALL be the result event's final text and nothing else. All of this logic — the verdict, the event parsing, the telemetry, the command the runner builds and the summary it prints — SHALL be covered by L0 tests against recorded and synthetic event streams, and the telemetry and final-text readers SHALL be pinned against a recorded result event of the host, so a host field rename fails a test rather than blanking the line.
+The runner's exit status SHALL distinguish four outcomes, so that only a failed verdict reads as a failure of the skill:
+
+- every verdict the run computed passed;
+- a verdict failed — L1, or a graded L2 criterion;
+- the run is untested because the subscription could not serve it. That covers a login the host rejected; a stream reporting overage use, a refused or unknown rate-limit status, or an API-key source; a stream that reports no rate-limit status at all, so overage cannot be ruled out; and a judge call that produced no grade;
+- any other runner failure.
+
+The chat the verdicts read SHALL be the result event's final text and nothing else. All of this logic SHALL be covered by L0 tests against recorded and synthetic event streams:
+
+- the verdicts;
+- the event parsing and the telemetry;
+- the command the runner builds and the judge command;
+- the judge's child environment and the model-under-test child's environment;
+- the stream checks that mark a call unavailable;
+- the exit-status mapping;
+- the summary it prints.
+
+The telemetry and final-text readers SHALL be pinned against a recorded result event of the host, so a host field rename fails a test rather than blanking the line.
 
 #### Scenario: Telemetry printed beside the verdict
 - **WHEN** a dev-runner scenario completes
 - **THEN** its summary carries cost, turns, duration, token counts including the cache pair, the helper-call list, the single-context verdict, and the configuration label
+
+#### Scenario: Served model recorded, not the alias
+- **WHEN** a run is started with a model alias such as `sonnet`
+- **THEN** the summary carries the alias as the requested model, the full model ID the host reported serving, and the host CLI version
+
+#### Scenario: Judged run reports L2 beside L1
+- **WHEN** a scenario with a rubric twin is run with judging and both the run and the judge succeed
+- **THEN** the summary carries each criterion's grade, the judge's served model ID, effort, CLI version, thinking tokens and notional cost under the not-comparable label, and the exit status reads passed only if L1 and every graded criterion passed
+
+#### Scenario: Ungraded judge is untested, not failed
+- **WHEN** the judge call for a criterion is unavailable
+- **THEN** the run exits with the untested status, its summary names the reason, and the run's exit status is not the failed-verdict status
+
+#### Scenario: Event stream kept
+- **WHEN** a run's workspace is kept
+- **THEN** it holds the run's event stream, from which the tool calls and the agent's narration can be read after the fact
+
+#### Scenario: Outward tools denied
+- **WHEN** the runner or the routing rig builds the host command
+- **THEN** the command denies every tool on the shared outward-facing list, so a model that decides to publish its output as an artifact cannot
 
 #### Scenario: Helper spawn detected from a recorded stream
 - **WHEN** a recorded event stream contains a `Task` or `Agent` or `Workflow` tool call and the scenario allows none
@@ -650,13 +809,33 @@ The chat the verdicts read SHALL be the result event's final text and nothing el
 - **WHEN** a supervise scenario that allows one helper records exactly one `Agent` call
 - **THEN** the single-context verdict passes, and a second call makes it fail naming both
 
+#### Scenario: Skipped verifier fails a supervise run
+- **WHEN** a supervise scenario's stream shows no helper call carrying the verifier brief
+- **THEN** the scenario's L1 verdict fails and says the verifier did not run
+
+#### Scenario: Undeclared verification fails a supervise run
+- **WHEN** the review's verification section does not say whether a fresh verifier or inline checks produced the outcome
+- **THEN** the scenario's L1 verdict fails and names the missing declaration
+
 #### Scenario: Feedback length reported
 - **WHEN** a supervise scenario completes
 - **THEN** the summary carries the feedback body's word count, without URLs and the closing note, as information that changes no verdict
 
 #### Scenario: Budget cap passed through
 - **WHEN** the runner is invoked with a budget cap and the host ends the run with an error result for exceeding it
-- **THEN** the run ends as a runner failure whose message names the host's subtype, its errors, and the cost and turns so far — not as a skill failure and not with an empty message
+- **THEN** the run ends as a runner failure whose message names the host's subtype, its errors, and the cost and turns so far — not as a skill failure and not with an empty message — and its exit status is the runner-failure status
+
+#### Scenario: Expired login names the remedy
+- **WHEN** the host ends a run with an error result saying it failed to authenticate because the login expired and could not be refreshed
+- **THEN** the runner failure carries the host's reason and tells the operator to run `claude` and enter `/login`, and the run exits with the untested status
+
+#### Scenario: Overage or API billing on the model run
+- **WHEN** the model-under-test run's stream reports that overage is in use, reports that the session used an API-key source, or carries no rate-limit report at all
+- **THEN** the run exits with the untested status, names the cause, and no judge call is made
+
+#### Scenario: Billing variables never reach the model run
+- **WHEN** the runner is launched, in ambient or isolated mode, from an environment carrying an API key, a gateway base URL with an auth token, a cloud-provider switch and an effort setting
+- **THEN** the model-under-test child's environment carries none of the first three and still carries the effort setting
 
 #### Scenario: No result event
 - **WHEN** the host exits without emitting a result event
@@ -668,7 +847,7 @@ The chat the verdicts read SHALL be the result event's final text and nothing el
 
 #### Scenario: Isolated run labelled
 - **WHEN** the runner is invoked in isolated mode
-- **THEN** the child runs against a configuration holding only settings and linked credentials, kept outside the workspace, and the summary labels the run as isolated and names that directory; without the flag it labels the run as ambient
+- **THEN** the child runs against a configuration kept outside the workspace that holds only settings and, unless a long-lived token is in the environment, linked credentials; the summary labels the run as isolated and names that directory; without the flag it labels the run as ambient
 
 ### Requirement: Scoping-vocabulary containment measured against a non-aligned idea
 The harness SHALL exercise research-group scoping with at least one scenario whose student idea is plausible for the stated program and touches none of the scoping fixture's research areas, and at least one whose idea overlaps exactly one area of a multi-area fixture. A scenario whose student idea restates one of the fixture's research areas SHALL NOT be the only coverage of the scoping fetch: vocabulary bleed and legitimate adoption are indistinguishable in such a run, so it measures the fetch but not the containment.
@@ -742,3 +921,346 @@ This test is a prerequisite for changing the set: it SHALL be in place before a 
 #### Scenario: All sites agree
 - **WHEN** guidance, skill bodies, specifications, and pins name the same set
 - **THEN** the offline suite passes without a model call
+
+### Requirement: Citation-practice coverage
+The fixture corpus SHALL carry two synthetic fixtures for citation practice, each with an `expected.json` oracle calibrated against the mechanical check:
+- an idea seed whose references block holds at least ten entries, one of them central enough to a theme that a draft could lean on it for several sentences;
+- a proposal draft that already carries the overcitation pattern: the same key on at least three consecutive sentences of one paragraph, an identical multi-key group repeated on adjacent sentences, and a contribution paragraph that summarises one source sentence by sentence.
+
+Neither fixture SHALL contain content from a real proposal. The over-citing draft's oracle SHALL record the repeated-citation warning, and every other proposal fixture's oracle SHALL record its absence. This makes the draft the trip case and the rest of the corpus the pass case for that rule.
+
+The harness SHALL exercise a writing pass that drafts from the seed and a writing pass over the draft, both as dev-runner scenarios and as Inspect tasks. Each run SHALL be judged by an L1 verdict that is a pure function in the shared verdict module, testable without a model call. The verdict SHALL fail when two adjacent sentences carry the same non-empty set of citation keys, comparing within a paragraph and across consecutive items of one list. Sentences whose key sets differ pass. A paragraph break, a heading or a table row resets the comparison. The verdict's sentence and block boundaries SHALL be those of the check's repeated-citation rule, pinned to it by L0 tests. For the pass over the draft, the verdict SHALL additionally fail when a reference the input cites is cited nowhere in the output, so that deleting citations is never a way to pass.
+
+Each Inspect task SHALL carry two model-graded scorers following the rubric-template contract and the `*_l2*` naming the support classifier reads:
+- citation scope: every sentence's source is recognisable, no publication is repeated on consecutive sentences while source and topic are unchanged, and no sentence continues a source without a citation or a back-reference cue;
+- synthesis: prior work is grouped and compared by theme rather than summarised one source after another.
+
+#### Scenario: Repeated key fails the run
+- **WHEN** a produced draft cites the same key on two adjacent sentences of one paragraph
+- **THEN** the L1 verdict fails the run, naming the line
+
+#### Scenario: Source switch passes
+- **WHEN** adjacent sentences carry different key sets, such as one key and then that key with a second
+- **THEN** the L1 verdict does not fail on them
+
+#### Scenario: Deletion is not a repair
+- **WHEN** a writing pass over the repetitive draft removes every citation of a reference the input cited
+- **THEN** the L1 verdict fails the run, naming the reference
+
+#### Scenario: Verdict logic covered without a model
+- **WHEN** the verdict's failure modes are tested
+- **THEN** L0 tests call it directly on crafted proposal texts and no model is invoked
+
+#### Scenario: Over-citing draft trips the warning
+- **WHEN** the mechanical check runs over the over-citing draft
+- **THEN** it reports the repeated-citation warning, as the draft's oracle records, and reports no error
+
+#### Scenario: Uncued deletion fails the scope grade
+- **WHEN** a draft keeps one citation per paragraph but leaves the following sentences without a back-reference to the source
+- **THEN** the citation-scope scorer grades the sample incorrect
+
+### Requirement: Model identifiers live only in the registry
+An L0 test SHALL scan the tracked tree for model identifiers. It SHALL recognize the identifier shapes of the vendor families the harness has used, and the version line of every registry entry.
+
+- **Code and configuration:** the harness and repository scripts, the project configuration, and the CI workflows SHALL carry no model identifier.
+- **Any other tracked file:** it MAY name a model only by an identifier that resolves to a current roster entry or role. A resolving identifier is in one of these spellings:
+  - provider-qualified;
+  - without the provider prefix;
+  - the subscription CLI's form, which has dashes between version digits and an optional trailing date.
+
+An explicit allowlist SHALL exempt these, each entry with its reason:
+
+- the registry itself;
+- change records under the OpenSpec changes directory;
+- the main specifications, whose scenarios carry illustrative identifiers, receive them when a change is archived, and change only through a change record;
+- generated report outputs, including the generated region of the README;
+- generated eval projections;
+- model-identifier normalization test data, including an eval scenario whose subject is the model identifier a user reports.
+
+An allowlist entry MAY cover a category of files, a whole file, or a single identifier within one file. An entry that tolerates a violation another change will remove SHALL name that change. Such a parked entry SHALL fail the test once it exempts nothing, and so SHALL an entry for a single identifier, so that a resolved exemption cannot linger. Category entries such as generated outputs and the main specifications stay in place even when their files currently name only current models.
+
+#### Scenario: Hardcoded default rejected
+- **WHEN** a harness module introduces a provider-qualified model ID as a default value
+- **THEN** the L0 suite fails, naming the file, the line and the identifier
+
+#### Scenario: Stale example rejected
+- **WHEN** a documentation file names a model whose version line the registry pins at a different version
+- **THEN** the L0 suite fails, naming the identifier and the current pin of that line
+
+#### Scenario: Unregistered model rejected
+- **WHEN** a documentation file names a model that no roster entry or role tracks
+- **THEN** the L0 suite fails, naming the identifier
+
+#### Scenario: Subscription spelling accepted
+- **WHEN** a tracked issue template names `claude-sonnet-5-5` and the registry pins `anthropic/claude-sonnet-5.5`
+- **THEN** the guard accepts the identifier
+
+#### Scenario: Exhausted parked entry
+- **WHEN** a parked allowlist entry, or an entry for a single identifier, no longer exempts any violation
+- **THEN** the L0 suite fails, naming the entry so it can be removed
+
+#### Scenario: Archived scenario names an outgoing model
+- **WHEN** an archived change has synced a scenario naming a model into a main specification, and a later bump re-pins that model's line
+- **THEN** the guard does not flag the specification
+
+### Requirement: Shipped verdicts list exactly the registry roster
+An L0 test SHALL fail when the generated verdict data or the README model-support summary lists a model set different from the registry roster. Outgoing IDs SHALL count as extra and incoming IDs as missing. A roster edit therefore cannot reach the default branch until the report has been regenerated from the run logs.
+
+#### Scenario: Roster bumped without regeneration
+- **WHEN** a registry entry's ID is replaced and the report has not been regenerated
+- **THEN** the L0 suite fails, naming the outgoing ID as extra and the incoming ID as missing
+
+#### Scenario: Regenerated report
+- **WHEN** the report has been regenerated after the bump
+- **THEN** the test passes, with the new IDs shown as untested until a matrix run measures them
+
+### Requirement: Model currency check
+A checker SHALL compare every roster pin and every role against the provider's public model catalog. It SHALL use no credentials and only the standard library. For each pin it SHALL derive a version line: the identifier with its version number wildcarded and any trailing snapshot-date token ignored. Variants carrying a `:` suffix SHALL be excluded.
+
+An entry MAY override its line with an explicit pattern, or opt out of tracking. An opted-out entry SHALL be reported as untracked, never silently omitted. Subscription-form role IDs SHALL be mapped to catalog IDs: dashes between version digits become dots, a trailing date is dropped, and the vendor namespace is added.
+
+The checker SHALL report each of the following as a structured finding:
+
+- a newer model in the line, newer meaning a higher version, or the same version created later;
+- a pin missing from the catalog;
+- a non-empty expiration date;
+- price drift beyond a fixed relative tolerance against the vendor's own endpoint, for roster entries and role-price entries alike.
+
+It SHALL also report, as informational findings that are never written, the version lines in any vendor namespace the registry uses that no registry entry or role derives and that have a member created after the registry's line-review date. The registry SHALL record that date, and only a maintainer's edit SHALL move it.
+
+Its output SHALL be human-readable by default and JSON on request.
+
+A write mode SHALL apply newer-in-line bumps and refreshed prices to the registry, and update the price date. It SHALL edit lines so that comments and notes are preserved, and running it a second time SHALL change nothing. It SHALL NOT rewrite the matrix judge or the persona role. It SHALL report them as held, because changing either invalidates every rubric-counted cell until a full re-baseline. When it re-pins a roster entry whose outgoing ID a held role still names, it SHALL add a role-price entry for that ID in the same edit, so the held role stays priced. It SHALL NOT change the line-review date. Its logic SHALL be covered by L0 tests over a recorded catalog snapshot, without network access.
+
+#### Scenario: Newer model in the line
+- **WHEN** the roster pins `openai/gpt-5.6-sol` and the catalog lists `openai/gpt-6-sol` and `openai/gpt-6.1-sol`
+- **THEN** the checker reports `openai/gpt-6.1-sol` as the newest model in the line
+
+#### Scenario: Variants and siblings are not successors
+- **WHEN** the catalog lists `:batch` variants, `-pro` or `-prime` siblings, and `~`-prefixed floating aliases next to a pinned model
+- **THEN** none of them is reported as a newer model
+
+#### Scenario: Dated snapshot of the same version
+- **WHEN** the catalog lists a dated snapshot of the pinned version that was created after the pinned entry
+- **THEN** the checker reports the dated snapshot as newer
+
+#### Scenario: Floating pin detected
+- **WHEN** a pinned ID is absent from the catalog while a dated sibling of the same version is listed
+- **THEN** the checker reports the pin as missing and proposes the dated sibling
+
+#### Scenario: Subscription role mapped
+- **WHEN** the dev-runner judge role is `claude-sonnet-5-5` and the catalog lists a newer Sonnet
+- **THEN** the checker reports the newer model and proposes its subscription-form ID for review
+
+#### Scenario: Judge held
+- **WHEN** a newer model exists in the matrix judge's line
+- **THEN** the checker reports it as held and the write mode leaves the judge and persona roles unchanged
+
+#### Scenario: Held judge's roster entry re-pinned
+- **WHEN** the write mode re-pins the roster entry that carries the judge's ID
+- **THEN** the judge role keeps its ID, a role-price entry for that ID is added in the same edit, and the edited registry parses
+
+#### Scenario: New line in a roster vendor namespace
+- **WHEN** the catalog lists `anthropic/claude-fable-5.1`, created after the line-review date, and no registry entry or role tracks the Fable line
+- **THEN** the checker reports the Fable line as an informational finding naming `anthropic/claude-fable-5.1`, exits as it would without it, and the write mode adds no roster entry
+
+#### Scenario: Reviewed new line
+- **WHEN** the maintainer moves the line-review date past the newest member of a reported line
+- **THEN** the checker no longer reports that line
+
+#### Scenario: Write is idempotent
+- **WHEN** the write mode runs twice against the same catalog snapshot
+- **THEN** the second run changes no byte of the registry
+
+#### Scenario: Catalog unreachable
+- **WHEN** the catalog request fails
+- **THEN** the checker exits with a distinct "currency unknown" status and writes nothing
+
+### Requirement: Weekly model-bump pull request
+A CI workflow SHALL run the currency check in write mode weekly and on manual dispatch. When the registry changes, it SHALL keep exactly one open pull request from a fixed branch, creating it or updating it. It SHALL use only the repository's built-in token, with the least permissions this needs.
+
+Pull requests opened with that token trigger no pull-request workflows. The workflow SHALL therefore start the regular CI workflow on the bump branch itself.
+
+It SHALL NOT overwrite the bump branch once the branch carries a commit from anyone else; it SHALL comment on the pull request instead. When main already satisfies every finding, it SHALL close a pull request that is no longer needed.
+
+The pull request description SHALL:
+
+- list every finding, including any role-price entry added for a held role;
+- list the new lines in the registry's vendor namespaces as a roster decision for the maintainer;
+- instruct the maintainer to regenerate the model-support report locally from the run logs and to re-run the shared-copy sync before merging;
+- state that new IDs render as untested until a cost-gated matrix run;
+- flag a bump of a subscription role for a check that the CLI resolves the new ID to itself.
+
+Report-only findings, new lines included, SHALL appear in the run summary. A new line alone SHALL NOT open a pull request or fail the run. A pin that is missing or expiring without a writable successor SHALL fail the scheduled run.
+
+The workflow SHALL NOT call any model, read any secret beyond the built-in token, or merge.
+
+#### Scenario: New model published
+- **WHEN** the weekly run finds a newer model in a roster line
+- **THEN** a pull request from the fixed branch carries the registry edit and a description with the regeneration instructions, and the regular CI workflow runs on that branch
+
+#### Scenario: Pull request already open
+- **WHEN** a bump pull request is open and a later run finds further changes
+- **THEN** the same pull request is updated and no second one is opened
+
+#### Scenario: Maintainer has pushed to the bump branch
+- **WHEN** the bump branch carries a commit not made by the workflow
+- **THEN** the workflow leaves the branch untouched and comments the new findings on the pull request
+
+#### Scenario: Nothing to bump
+- **WHEN** the check finds no writable change
+- **THEN** no pull request is opened, and an open one that main has made obsolete is closed
+
+#### Scenario: Pin about to disappear
+- **WHEN** a pinned model carries an expiration date and no newer model exists in its line
+- **THEN** the scheduled run fails and its summary names the pin
+
+### Requirement: Currency warning at the cost gate
+Before asking for cost confirmation, a matrix run SHALL print stale-model warnings from the same currency check. The warnings SHALL come from a single unauthenticated catalog request with a short timeout. A failed request SHALL print a "model currency unknown" warning. The warning SHALL NOT block the run, alter the estimate, or change the exit status.
+
+The L0 suite SHALL disable the checker's network access for every test by default, so that no test touches the network, including a test that runs a matrix invocation without mentioning the catalog. Tests that assert warnings SHALL substitute a recorded catalog.
+
+#### Scenario: Stale pin warned before confirmation
+- **WHEN** a matrix run selects a model whose line has a newer catalog entry
+- **THEN** the warning naming the newer model is printed before the confirmation prompt, and the estimate is unchanged
+
+#### Scenario: Offline gate
+- **WHEN** the catalog cannot be reached
+- **THEN** a "model currency unknown" warning is printed and the run proceeds to the usual confirmation
+
+#### Scenario: L0 test without a catalog substitute
+- **WHEN** an L0 test runs a matrix invocation and substitutes nothing for the catalog request
+- **THEN** no network request is made, and the gate prints the "model currency unknown" warning
+
+### Requirement: Subscription text roles (dev runner)
+
+The dev runner's text-only role, its rubric judge, SHALL run through the unmodified official host CLI under the operator's subscription login. The judge SHALL be one single-turn text call per rubric criterion, issued under the following constraints.
+
+**Invocation:**
+
+- The model is named by the full model ID that the registry's roles table assigns to the dev judge, never by an alias. An ID that names a metered provider SHALL be refused before any call.
+- The effort is passed explicitly, from the same roles table.
+- Host customizations are disabled, no tools are offered, the call is limited to one turn, and no session is persisted.
+- The host's minimal mode SHALL NOT be used, because it bypasses the subscription login.
+- The prompt is delivered on standard input. The content under grading travels only in the prompt and is never written into a measured workspace.
+- The child runs in a fixed working directory outside every measured workspace.
+
+**Environment and login:**
+
+- The child environment SHALL be built from an allowlist. No API key, no gateway or provider-routing variable, no inherited effort setting and no host-session variable reaches the child.
+- The one credential that MAY reach the child is the subscription's own long-lived login token, when the operator has exported one. The isolated configuration relies on that token, and it is passed through unread. Apart from that token, the harness SHALL NOT read, copy or forward a credential.
+- Before the first call of an invocation, the runner SHALL confirm that the host is logged in with the subscription login: the stored login, or the subscription's long-lived token. Otherwise it SHALL stop with the re-login instruction (`claude`, then `/login`). The remedy for a missing login SHALL never be an API key.
+- Judging SHALL require the isolated configuration, inside which the stored login is kept current.
+- The first judge call of an invocation runs alone. Later calls run at most four at a time across the process.
+
+**Failing closed.** A judge call SHALL count as unavailable, never as a failing grade, when any of the following holds:
+
+- the host's result is marked as an error;
+- the result has no text, zero output tokens or no per-model usage;
+- the host reports a rate-limit status other than `allowed` or `allowed_warning`;
+- the stream carries no rate-limit report at all, so overage cannot be ruled out;
+- overage is in use;
+- the session used an API-key source;
+- the call was served through a provider other than Anthropic's own API;
+- the served model differs from the requested one;
+- the call exceeds its time limit, in which case the child process SHALL be killed;
+- the response carries no grade line.
+
+An unavailable call SHALL stop further judge calls in the same invocation.
+
+**Bounding and records:**
+
+- The runner SHALL keep a cumulative notional-cost total of the judge calls and SHALL stop issuing calls once an operator-set cap is reached; criteria left ungraded then count as untested.
+- Before a batch re-grade fans out, the runner SHALL print a notional estimate projected from the first call's measured cost. It SHALL NOT start the batch when the projection exceeds the cap.
+- Each call SHALL record the host CLI version, the effort, the served model, its thinking tokens and its notional cost. A warning-level rate limit SHALL be reported with its window and utilization.
+
+**Rubrics:**
+
+- The dev judge and the matrix judge SHALL read the same rubric templates and criteria. Each rubric template and criterion SHALL be defined once, and the prompts the matrix judge sends SHALL stay byte-identical to the prompts it sent before that sharing existed.
+- The dev judge's question SHALL be the visible user request. Where the matrix judge's question is an oracle list rather than the request, both judges SHALL use the same list.
+- Kept dev-runner workspaces SHALL be re-gradable without re-running the model under test.
+
+**Smoke:**
+
+- The registered smoke task SHALL run the core scenarios on the dev runner in isolated mode, loading no key file. Its spend SHALL be kept off metered billing in three ways:
+  - no billing variable reaches any host process it starts;
+  - each scenario's model run carries a hard budget cap;
+  - a scenario whose stream shows billing other than through the subscription (an API-key source, overage, or no rate-limit report) is reported untested, never passed.
+- The smoke task SHALL continue past a failing scenario and end with a summary naming each scenario's outcome, exiting non-zero unless every scenario passed.
+- The former metered smoke SHALL remain available as a separate registered task. It takes its model from the registry's roles table and runs behind the matrix cost gate.
+
+#### Scenario: Judge command pinned
+- **WHEN** the judge command is built for the registry's dev-judge ID and effort
+- **THEN** it names that full ID, passes that effort, disables host customizations, offers no tools, limits the call to one turn, persists no session, requests the event stream, carries none of the graded content among its arguments, and never carries the minimal-mode flag
+
+#### Scenario: Metered ID refused as dev judge
+- **WHEN** the dev-judge role names a provider-qualified metered ID or an alias
+- **THEN** the runner refuses before any call and names the role
+
+#### Scenario: Credentials and session settings never forwarded
+- **WHEN** the launching environment carries an API key, a gateway base URL with an auth token, a provider-routing switch, an effort setting and host-session variables
+- **THEN** none of them is present in the judge child's environment, while the path, home, locale, temporary-directory and configuration-directory variables are, and so is the subscription's long-lived login token when one was exported
+
+#### Scenario: API-key login refused
+- **WHEN** the preflight finds the host logged in by any method other than the subscription login
+- **THEN** no judge call is made, and the runner stops with the re-login instruction and the untested status
+
+#### Scenario: Expired login during judging
+- **WHEN** a judge call's result is marked as an error saying the login expired and could not be refreshed
+- **THEN** the criterion is untested, the message carries the host's reason and the re-login instruction, and no further judge call is made
+
+#### Scenario: Overage refuses the grade
+- **WHEN** a judge call's stream reports overage in use, even with a grade line in the result
+- **THEN** the grade is discarded and the criterion is untested
+
+#### Scenario: Unreported rate limit refuses the grade
+- **WHEN** a judge call's stream carries a grade line but no rate-limit report
+- **THEN** the grade is discarded, the criterion is untested, and the reason says that overage could not be ruled out
+
+#### Scenario: Warning-level rate limit still grades
+- **WHEN** a judge call's stream reports the status `allowed_warning` without overage
+- **THEN** the grade counts, and the summary reports the limit window and its utilization
+
+#### Scenario: Served model differs
+- **WHEN** the per-model usage shows that a model other than the requested ID produced the output
+- **THEN** the criterion is untested and the message names both IDs
+
+#### Scenario: Concurrency bounded
+- **WHEN** more than four judge calls are pending in one process
+- **THEN** at most four child processes run at any moment, and the first call of the invocation completed before any other started
+
+#### Scenario: Time limit kills the child
+- **WHEN** a judge call exceeds its time limit
+- **THEN** the child process is no longer running, and the criterion is untested
+
+#### Scenario: Notional cap reached
+- **WHEN** the cumulative notional cost of an invocation's judge calls reaches the operator's cap
+- **THEN** no further judge call is made, and the remaining criteria are reported untested with the cap named
+
+#### Scenario: Batch projection over the cap
+- **WHEN** a batch re-grade's first call projects a total above the cap
+- **THEN** the runner prints the projection, makes no further call, and reports the remaining workspaces untested
+
+#### Scenario: Judging without isolation refused
+- **WHEN** judging is requested for a run in the ambient configuration
+- **THEN** the runner refuses before running the model under test
+
+#### Scenario: Re-grade without a model run
+- **WHEN** kept workspaces of a scenario are re-graded
+- **THEN** each workspace's produced artifact is graded by the dev judge, the model under test is not run, and no metered call is made
+
+#### Scenario: Matrix judge prompt unchanged
+- **WHEN** the matrix judge builds a prompt for a recorded rubric, question, answer and criterion
+- **THEN** the prompt is byte-identical to the golden prompt recorded before the rubric material was shared
+
+#### Scenario: Smoke continues past a failure
+- **WHEN** the first core scenario of the smoke task fails
+- **THEN** the remaining core scenarios still run, the closing summary lists every scenario's outcome, and the task exits non-zero
+
+#### Scenario: Smoke cannot bill silently
+- **WHEN** the smoke task is started from an environment that exports an API key
+- **THEN** no host process it starts receives the key, every scenario's model run carries a budget cap, and a scenario whose stream nevertheless reports an API-key source is listed as untested in the closing summary
+
+#### Scenario: Metered smoke behind the gate
+- **WHEN** the metered smoke task is started
+- **THEN** it prints a cost estimate for the registry's smoke model and waits for explicit confirmation before any metered call

@@ -198,3 +198,5 @@ After the review fixes: `uv run poe test` passed 1980 with 2 skipped, and `poe c
   - "Approve every command" advice being unsafe.
   - Missing failure guidance (an "If it does not work" note was added anyway).
   - Gemini CLI named as an example host.
+
+**Merge of main, 2026-10-05 (5437e66).** Main had rewritten the dev runner (subscription judge, `model_env`, `RunnerFailure`, `isolated_config`) and no longer imports `prepare_config`. The probe now enters `isolated_config` like every isolated dev run, so the stored-login write-back covers it, and reports with the dev runner's exit statuses and `--summary-log`. Its `HOME` override is layered on `model_env`'s environment. Not re-run live: the merge changed the probe's plumbing, not its request or verdicts. After the merge, `uv run poe test` passed 2484 with 2 skipped, `poe specs` is valid, and `poe install-check` passed both arms on the merge commit.

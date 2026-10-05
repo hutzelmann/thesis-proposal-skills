@@ -1,0 +1,49 @@
+You are grading how a thesis proposal cites its sources.
+
+[BEGIN DATA]
+[Task given to the model]: {question}
+[Produced proposal]: {answer}
+[Criterion]: {criterion}
+[END DATA]
+
+Read the proposal body and ignore the trailing metadata block. In the source
+format, `[@key]` renders as a bracketed number and `@key` renders as the
+authors' names followed by the number, so `@key` at the start of a sentence is
+a narrative citation naming the authors.
+
+The citation practice the guidance asks for:
+- When consecutive sentences in one paragraph draw on the same publication,
+  the publication is cited once. The run opens with the narrative form, and the
+  sentences that follow refer back in words ("they", "their evaluation", "the
+  authors", "both studies") instead of repeating the citation.
+- A new paragraph that keeps drawing on the source cites it again. So does a
+  sentence that follows another source or a claim of the thesis's own.
+- Citing a different set of sources on the next sentence (for example `[@a]`
+  then `[@a; @b]`, or `[@a; @b]` then `[@b]`) is a change of source, not a
+  repetition, and correctly keeps its citation. Only the same set of sources
+  on two consecutive sentences, about the same topic, is a repetition.
+- A back-reference may point to the authors or to what they built or studied
+  ("they", "both studies", "their warnings", "the classifier"), as long as a
+  reader can tell which cited work it refers to. A bracketed citation
+  followed by such a back-reference is as recognisable as a narrative opener.
+- A citation must never be dropped without such a back-reference. A sentence
+  that reports a source's content with neither a citation nor a back-reference
+  reads as the thesis's own claim, which misattributes it.
+- Sentences in which the thesis itself compares, evaluates, or draws a
+  conclusion from the works it has just cited ("Both lines of work ignore …",
+  "Projects therefore cannot rely on …") are the writer's synthesis, not
+  borrowed content. They need no citation, and the synthesis criterion asks
+  for them.
+- Prior work is grouped by theme and compared within the group. A paragraph
+  that walks through one source after another, or spends most of its sentences
+  on a single source, is a summary, not a synthesis. Introducing two sources
+  in turn and then comparing them is synthesis.
+
+Grade only against the criterion given above. Do not judge other qualities of
+the proposal: argument, research questions, method, style. TODO markers are
+not defects.
+
+When you fail the proposal, quote at least one offending sentence or pair of
+sentences and say which part of the criterion it violates.
+
+{instructions}

@@ -110,6 +110,7 @@ RULE_IDS = (
     "author-name-typed-bracketed",
     "author-name-typed-in-text",
     "author-in-text-without-author",
+    "citation-repeated",
     "reference-id-shape",
     "reference-id-too-long",
     "min-references",
@@ -936,6 +937,12 @@ def mask_code(body: str) -> str:
     return "\n".join(out)
 
 
+# An `@` that no word character, period or backslash precedes, then the key:
+# the period keeps e-mail addresses out, the backslash is the escape a student
+# uses for an at-sign that is not a citation.
+CITATION_KEY = re.compile(r"(?<![\w.\\])@([A-Za-z][\w:.-]*)")
+
+
 def scan_citations(ctx: Context) -> tuple[dict[str, int], dict[str, int],
                                           list[tuple[str, int, bool]]]:
     """(cited, author-in-text, typed names) with the line each first occurred on."""
@@ -944,10 +951,9 @@ def scan_citations(ctx: Context) -> tuple[dict[str, int], dict[str, int],
     typed_names: list[tuple[str, int, bool]] = []
     for lineno, line in enumerate(mask_code(ctx.body).split("\n"), start=1):
         # a key inside a bracketed group renders as a bare number; one outside
-        # is author-in-text and gets an author label prefixed. `\@` is the
-        # escape a student uses for an at-sign that is not a citation.
+        # is author-in-text and gets an author label prefixed
         depth = 0
-        for m in re.finditer(r"\[|\]|(?<![\w.\\])@([A-Za-z][\w:.-]*)", line):
+        for m in re.finditer(r"\[|\]|" + CITATION_KEY.pattern, line):
             if m.group(0) == "[":
                 depth += 1
             elif m.group(0) == "]":
@@ -1234,42 +1240,223 @@ PRESENT_PASSIVE = {
 }
 
 
-def prose_sentences(body: str):
-    """(sentence, line number) for every prose sentence, headings skipped."""
+# Back-references that carry a cited sentence's attribution into the next one.
+# The guidance asks for exactly these instead of a repeated citation, and the
+# cue has to open the sentence (see `continues_attribution`). `it` counts
+# unless an expletive construction follows ("It was shown …" would launder a
+# claim); German `es` stays out, being expletive far more often than not.
+# Deliberately absent: every name a proposal gives the thesis itself — `this
+# study`, `diese Arbeit`, and `the study`/`die Studie`, which the guidance
+# prescribes for the thesis's own work. Plural "these studies" cannot be it.
+EXPLETIVE = (r"(?:is|are|was|were|has been|had been|seems|seemed|appears|appeared|turns out|"
+             r"turned out|remains|remained|follows|followed|(?:can|could|should|must|may|"
+             r"might|will|would) be)")
+CONTINUATION_CUES = {
+    "en": rf"(?:they|their|its|it\b(?!\s+{EXPLETIVE}\b)|both studies|both|these studies|"
+          r"the authors|these authors|the same study)\b",
+    "de": r"(?:sie|ihre?[mnrs]?|deren|dessen|sein(?:e[mnrs]?)?|beide studien|beide|"
+          r"diese studien|(?:die|den|der) autor(?:en|innen|:innen))\b",
+}
+# a reporting clause naming the cited authors attributes a sentence wherever
+# it stands: "Most projects, they report, merge …", "…, so die Autoren."
+REPORTING_CLAUSE = {
+    "en": r"\b(?:they|the authors|these authors)\s+(?:report|reported|find|found|show|showed|"
+          r"argue|argued|note|noted|observe|observed|conclude|concluded|state|stated)\b",
+    "de": r"\b(?:so die autor(?:en|innen|:innen)|(?:ihnen|den autor(?:en|innen|:innen)) zufolge|"
+          r"(?:berichten|zeigen|argumentieren|folgern) sie)\b",
+}
+# after a preposition only a possessive cue opens the sentence: "In their
+# evaluation …", "Laut den Autoren …" — never "In both settings we …"
+POSSESSIVE_CUES = {
+    "en": r"(?:in|for|from|across|on|under|with|according to)\s+"
+          r"(?:their|its|the authors|these authors|these studies|both studies)\b",
+    "de": r"(?:in|bei|nach|laut|gemäß|mit|aus|unter)\s+(?:ihre?[mnrs]?|deren|dessen|"
+          r"seine[mnrs]?|(?:den|der) autor(?:en|innen|:innen)|diesen studien|beiden studien)\b",
+}
+FIRST_PERSON = {
+    "en": r"\b(?:we|our|ours|us)\b",
+    "de": r"\b(?:wir|unser\w*|uns)\b",
+}
+LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
+# One regex walks a line for brackets and for sentence ends at once: a period
+# inside `[@key, S. 12]` is a locator, never a sentence end.
+SENTENCE_END = re.compile(r"[\[\]]|(?<=[.!?])\s+")
+# a period after one of these does not end the sentence (`S.`/`p.` only as the
+# capital resp. small locator letter, so a sentence ending in "is." stays one)
+ABBREVIATION = re.compile(
+    r"(?:\b(?i:et al|e\.g|i\.e|cf|vs|z\. ?b|d\. ?h|u\. ?a|vgl|bzw|ca|fig|sec|eq|abb|kap|"
+    r"tab|nr|pp)|\b[Sp])\.$"
+)
+# the first half of `z. B.`, `d. h.`, `u. a.` — joined only to a next piece
+# that is itself one letter and a period
+ABBREVIATION_HALF = re.compile(r"\b(?i:[zdu])\.$")
+# German ordinals after an article or preposition: "im 2. Schritt", "am 3. Mai"
+ORDINAL = re.compile(
+    r"\b(?i:im|am|zum|vom|beim|der|die|das|den|dem|des|ein|eine|einem|einen|einer|ab|bis|"
+    r"seit)\s+\d{1,3}\.$"
+)
+
+
+def joins_previous(before: str, piece: str) -> bool:
+    """A sentence-end match that only closed an abbreviation or an ordinal."""
+    return bool(ABBREVIATION.search(before) or ORDINAL.search(before)
+                or (ABBREVIATION_HALF.search(before) and re.match(r"[A-Za-z]\.", piece)))
+
+
+def append_piece(spans: list[tuple[int, str]], start: int, piece: str) -> None:
+    piece = piece.strip()
+    if not piece:
+        return
+    if spans and joins_previous(spans[-1][1], piece):
+        spans[-1] = (spans[-1][0], f"{spans[-1][1]} {piece}")
+    else:
+        spans.append((start, piece))
+
+
+def sentence_spans(text: str) -> list[tuple[int, str]]:
+    """(offset, sentence) for every sentence of a text: split at sentence
+    punctuation outside citation brackets, never inside an abbreviation."""
+    spans: list[tuple[int, str]] = []
+    start = depth = 0
+    for m in SENTENCE_END.finditer(text):
+        if m.group(0) == "[":
+            depth += 1
+        elif m.group(0) == "]":
+            depth = max(0, depth - 1)
+        elif not depth:
+            append_piece(spans, start, text[start:m.start()])
+            start = m.end()
+    append_piece(spans, start, text[start:])
+    return spans
+
+
+def split_sentences(line: str) -> list[str]:
+    return [sentence for _, sentence in sentence_spans(line.strip())]
+
+
+def segment_sentences(segment: list[tuple[int, str]]) -> list[tuple[str, int]]:
+    """A run of lines read as one text, so a wrapped sentence stays one; each
+    sentence reports the line it starts on."""
+    text, starts = "", []
+    for lineno, part in segment:
+        starts.append((len(text), lineno))
+        text += part + " "
+    return [(sentence, max(line for at, line in starts if at <= offset))
+            for offset, sentence in sentence_spans(text)]
+
+
+def prose_blocks(body: str, list_items_break: bool = True) -> list[list[tuple[str, int]]]:
+    """Blocks of (sentence, line number). A blank line or a heading ends a
+    block and a table row is a block of its own. A list item starts a block
+    for attribution runs; for the repetition comparison (`list_items_break`
+    false) consecutive items stay one block, so bullets do not hide repeats,
+    while each item still ends its own last sentence."""
+    blocks: list[list[tuple[str, int]]] = []
+    segments: list[list[tuple[int, str]]] = []
     for lineno, line in enumerate(mask_code(body).split("\n"), start=1):
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        for sentence in re.split(r"(?<=[.!?])\s+", line.strip()):
-            if sentence:
-                yield sentence, lineno
+        text = line.strip()
+        item = bool(LIST_ITEM.match(line))
+        if not text or text.startswith(("#", "|")) or (item and list_items_break):
+            if segments:
+                blocks.append([s for seg in segments for s in segment_sentences(seg)])
+            segments = []
+            if not text or text.startswith("#"):
+                continue
+        if item or text.startswith("|") or not segments:
+            segments.append([])
+        segments[-1].append((lineno, text))
+        if text.startswith("|"):
+            blocks.append(segment_sentences(segments.pop()))
+    if segments:
+        blocks.append([s for seg in segments for s in segment_sentences(seg)])
+    return blocks
+
+
+def citation_keys(text: str) -> frozenset[str]:
+    return frozenset(m.group(1).rstrip(".,;:") for m in CITATION_KEY.finditer(text))
+
+
+def rule_repeated_citations(ctx: Context) -> list[Finding]:
+    """The same references cited on adjacent sentences of one paragraph or list.
+
+    The guidance asks for one citation per continuous use, carried on in
+    words. A sentence citing a different set is a change of source, which the
+    guidance asks to cite, so only an identical set counts. Whether an uncited
+    follow-up still reads as attributed is not judged here.
+    """
+    out = []
+    for block in prose_blocks(ctx.body, list_items_break=False):
+        before: frozenset[str] = frozenset()
+        for sentence, lineno in block:
+            keys = citation_keys(sentence)
+            if keys and keys == before:
+                out.append(warn(
+                    "citation-repeated",
+                    f"`{', '.join(sorted(keys))}` (line {lineno}) repeats the citation "
+                    f"of the sentence before it — cite it once, opening with the "
+                    f"author-in-text form, and refer back in words (\"they\", \"their …\")",
+                ))
+            before = keys
+    return out
+
+
+def continues_attribution(sentence: str, lang: str) -> bool:
+    """The sentence opens with a back-reference to a cited work or its authors:
+    the cue first, after one connective set off by a comma ("However, they"),
+    after a preposition as a possessive ("In their evaluation"), or — German
+    verb-second order — as the subject after the finite verb ("Zudem zeigen
+    sie"). A cue in object position does not open a sentence, and a sentence in
+    the first person is the thesis speaking whatever else it mentions."""
+    text = sentence.lower().lstrip("\"'„“”( ")
+    if re.search(FIRST_PERSON[lang], text):
+        return False
+    if re.search(REPORTING_CLAUSE[lang], text):
+        return True
+    cue = CONTINUATION_CUES[lang]
+    openers = [cue, rf"\w+,\s+{cue}", POSSESSIVE_CUES[lang]]
+    if lang == "de":
+        openers.append(r"\w+\s+\w+\s+(?:sie|beide)\b")
+    return any(re.match(opener, text) for opener in openers)
+
+
+def result_claim(sentence: str, lang: str) -> re.Match | None:
+    """The result verb, or the change word beside a quantity, that states an
+    outcome as obtained — unless present-tense passive makes it a plan."""
+    m = re.search(RESULT_VERBS[lang], sentence, re.IGNORECASE)
+    if m is None and re.search(QUANTITY, sentence):
+        m = re.search(CHANGE_WORDS[lang], sentence, re.IGNORECASE)
+    if m is None or re.search(PRESENT_PASSIVE[lang], sentence[:m.start()], re.IGNORECASE):
+        return None
+    return m
 
 
 def rule_hindsight_leakage(ctx: Context) -> list[Finding]:
-    """Results the proposal cannot have yet, in sentences that cite nobody.
+    """Results the proposal cannot have yet, in sentences attributed to nobody.
 
-    The citation anchor is the whole rule: reporting what prior work
+    The attribution anchor is the whole rule: reporting what prior work
     established is exactly what the contribution section does, so a check that
     could not tell `@Rivera23 showed …` from `we showed …` would fire on every
-    correctly written proposal.
+    correctly written proposal. A sentence is attributed when it cites, or when
+    it continues a cited sentence in the same block through a back-reference —
+    the form the guidance asks for instead of repeating the citation, which a
+    per-sentence anchor would punish.
     """
-    verbs = RESULT_VERBS[ctx.lang]
-    change = CHANGE_WORDS[ctx.lang]
-    for sentence, lineno in prose_sentences(ctx.body):
-        if re.search(r"(?<![\w.\\])@[A-Za-z]", sentence):
-            continue
-        m = re.search(verbs, sentence, re.IGNORECASE)
-        if m is None and re.search(QUANTITY, sentence):
-            m = re.search(change, sentence, re.IGNORECASE)
-        if m is None:
-            continue
-        if re.search(PRESENT_PASSIVE[ctx.lang], sentence[:m.start()], re.IGNORECASE):
-            continue
-        return [warn(
-            "hindsight-leakage",
-            f"`{m.group(0)}` (line {lineno}) states the work as already done, "
-            f"in a sentence citing no source — a proposal plans work that has "
-            f"not happened; attribute the result or write it as a plan",
-        )]
+    for block in prose_blocks(ctx.body):
+        attributed = False
+        for sentence, lineno in block:
+            attributed = bool(CITATION_KEY.search(sentence)) or (
+                attributed and continues_attribution(sentence, ctx.lang))
+            m = None if attributed else result_claim(sentence, ctx.lang)
+            if m is None:
+                continue
+            return [warn(
+                "hindsight-leakage",
+                f"`{m.group(0)}` (line {lineno}) states the work as already done, in a "
+                f"sentence that neither cites a source nor continues a cited one — a "
+                f"proposal plans work that has not happened; attribute the result (cite "
+                f"it, or continue a cited sentence with \"they\" / \"their …\") or write "
+                f"it as a plan",
+            )]
     return []
 
 
@@ -1294,6 +1481,7 @@ RULES = (
     rule_forbidden_sections,
     rule_research_questions,
     rule_citations,
+    rule_repeated_citations,
     rule_reference_id_shape,
     rule_min_references,
     rule_reference_density,

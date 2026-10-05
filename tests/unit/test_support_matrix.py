@@ -5,10 +5,20 @@ from pathlib import Path
 
 import pytest
 import support
+from helpers import failing_fetch, shipped_registry
 
 REPO = Path(__file__).resolve().parents[2]
 
 REGISTRY_TOML = """
+prices_as_of = 2026-08-06
+lines_reviewed_as_of = 2026-08-06
+
+[roles]
+judge = "openrouter/lab/cheapo-1"
+smoke = "openrouter/lab/cheapo-1"
+dev_judge = "lab-sub-2-1"
+dev_judge_effort = "medium"
+
 [[models]]
 id = "openrouter/lab/cheapo-1"
 family = "lab"
@@ -46,7 +56,6 @@ default = { input = 100000, output = 10000 }
 dialog = { input = 500000, output = 20000 }
 
 [tasks.judge]
-model = "openrouter/lab/cheapo-1"
 input = 40000
 output = 4000
 
@@ -382,12 +391,195 @@ def test_render_grid_marks_reduced_and_untested(registry):
     assert "$1.50" in text
 
 
+# --- roles table and role prices (testing-harness spec: Pinned model registry) -
+
+
+def _registry_with(*pairs: tuple[str, str], extra: str = "") -> str:
+    """REGISTRY_TOML with (old, new) substitutions applied once each, plus text
+    appended at the end (after [tasks.skills], so new tables stay valid TOML)."""
+    text = REGISTRY_TOML
+    for old, new in pairs:
+        assert old in text, f"fixture drifted: {old!r} not in REGISTRY_TOML"
+        text = text.replace(old, new, 1)
+    return text + extra
+
+
+def _with_persona(persona: str) -> str:
+    """REGISTRY_TOML with an explicit persona role (it defaults to the judge)."""
+    anchor = 'dev_judge = "lab-sub-2-1"'
+    return _registry_with((anchor, f'persona = "{persona}"\n{anchor}'))
+
+
+def test_roles_parse_and_persona_defaults_to_judge(registry):
+    roles = registry.roles
+    assert roles.judge == "openrouter/lab/cheapo-1"
+    assert roles.persona == roles.judge
+    assert roles.smoke == "openrouter/lab/cheapo-1"
+    assert roles.dev_judge == "lab-sub-2-1"
+    assert roles.dev_judge_effort == "medium"
+
+
+def test_explicit_persona_is_kept():
+    reg = support.parse_registry(_with_persona("openrouter/lab/big-9"))
+    assert reg.roles.persona == "openrouter/lab/big-9"
+    assert reg.roles.judge == "openrouter/lab/cheapo-1"
+
+
+def test_registry_dates_are_parsed(registry):
+    assert registry.prices_as_of.isoformat() == "2026-08-06"
+    assert registry.lines_reviewed_as_of.isoformat() == "2026-08-06"
+
+
+def test_task_config_judge_model_comes_from_roles(registry):
+    assert registry.tasks.judge_model == registry.roles.judge
+
+
+def test_leftover_task_judge_model_points_to_roles():
+    bad = _registry_with(("[tasks.judge]\n", '[tasks.judge]\nmodel = "openrouter/lab/cheapo-1"\n'))
+    with pytest.raises(ValueError, match=r"\[roles\]\.judge"):
+        support.parse_registry(bad)
+
+
+@pytest.mark.parametrize("alias", ["sonnet", "~lab/x-latest", "lab/x-latest"])
+def test_floating_alias_rejected_in_the_roster(alias):
+    bad = _registry_with(('id = "openrouter/lab/off-2"', f'id = "{alias}"'))
+    with pytest.raises(ValueError, match="floating alias") as err:
+        support.parse_registry(bad)
+    assert alias in str(err.value)
+
+
+@pytest.mark.parametrize("role", ["judge", "persona", "smoke", "dev_judge"])
+@pytest.mark.parametrize("alias", ["sonnet", "~lab/x-latest", "lab/x-latest"])
+def test_floating_alias_rejected_in_roles(role, alias):
+    if role == "persona":
+        bad = _with_persona(alias)
+    else:
+        current = {"judge": "openrouter/lab/cheapo-1", "smoke": "openrouter/lab/cheapo-1",
+                   "dev_judge": "lab-sub-2-1"}[role]
+        bad = _registry_with((f'{role} = "{current}"', f'{role} = "{alias}"'))
+    with pytest.raises(ValueError, match="floating alias") as err:
+        support.parse_registry(bad)
+    assert role in str(err.value)
+
+
+@pytest.mark.parametrize("smoke", ["openrouter/lab/off-2", "openrouter/lab/nope-1"])
+def test_smoke_must_name_an_enabled_roster_entry(smoke):
+    bad = _registry_with(('smoke = "openrouter/lab/cheapo-1"', f'smoke = "{smoke}"'))
+    with pytest.raises(ValueError, match="smoke"):
+        support.parse_registry(bad)
+
+
+def test_unknown_dev_judge_effort_rejected():
+    bad = _registry_with(('dev_judge_effort = "medium"', 'dev_judge_effort = "turbo"'))
+    with pytest.raises(ValueError, match="dev_judge_effort"):
+        support.parse_registry(bad)
+
+
+def test_track_and_price_endpoint_are_accepted():
+    reg = support.parse_registry(_registry_with(
+        ('id = "openrouter/lab/big-9"',
+         'id = "openrouter/lab/big-9"\ntrack = "lab/big-*"\nprice_endpoint = "labcloud"'),
+        ('id = "openrouter/lab/off-2"', 'id = "openrouter/lab/off-2"\ntrack = false'),
+    ))
+    by_id = {m.id: m for m in reg.models}
+    assert by_id["openrouter/lab/big-9"].track == "lab/big-*"
+    assert by_id["openrouter/lab/big-9"].price_endpoint == "labcloud"
+    assert by_id["openrouter/lab/off-2"].track is False
+    assert by_id["openrouter/lab/cheapo-1"].track is True  # derived line by default
+    assert by_id["openrouter/lab/cheapo-1"].price_endpoint == ""
+
+
+def test_track_glob_needs_exactly_one_wildcard():
+    big = 'id = "openrouter/lab/big-9"'
+    bad = _registry_with((big, f'{big}\ntrack = "lab/big"'))
+    with pytest.raises(ValueError, match="track"):
+        support.parse_registry(bad)
+
+
+def test_role_model_override_applies_to_its_own_role_only(registry):
+    env = {"JUDGE_MODEL": "openrouter/lab/other-3"}
+    assert support.role_model(registry.roles, "judge", env) == "openrouter/lab/other-3"
+    assert support.role_model(registry.roles, "persona", env) == registry.roles.persona
+    persona_env = {"PERSONA_MODEL": "openrouter/lab/other-4"}
+    assert support.role_model(registry.roles, "persona", persona_env) == "openrouter/lab/other-4"
+    assert support.role_model(registry.roles, "judge", persona_env) == registry.roles.judge
+    assert support.role_model(registry.roles, "judge", {"JUDGE_MODEL": ""}) == registry.roles.judge
+    with pytest.raises(ValueError, match="role"):
+        support.role_model(registry.roles, "critic", {})
+
+
+# a judge whose roster row has moved on: priced by a role-price entry
+_HELD_JUDGE = (
+    ('judge = "openrouter/lab/cheapo-1"', 'judge = "openrouter/lab/cheapo-0"'),
+)
+_HELD_PRICE = """
+[role_prices."openrouter/lab/cheapo-0"]
+input_price = 2.0
+output_price = 8.0
+cache_read_price = 0.2
+"""
+
+
+def test_held_judge_priced_by_role_price_entry():
+    reg = support.parse_registry(_registry_with(*_HELD_JUDGE, extra=_HELD_PRICE))
+    price = support.model_price(reg, "openrouter/lab/cheapo-0")
+    assert (price.input_price, price.output_price, price.cache_read_price) == (2.0, 8.0, 0.2)
+    assert reg.tasks.judge_model == "openrouter/lab/cheapo-0"
+
+
+def test_model_price_prefers_roster_rows_including_disabled(registry):
+    cheap = support.model_price(registry, "openrouter/lab/cheapo-1")
+    assert (cheap.input_price, cheap.output_price) == (1.0, 5.0)
+    assert cheap.cache_read_price == 1.0  # parser default: the input price
+    off = support.model_price(registry, "openrouter/lab/off-2")
+    assert (off.input_price, off.output_price) == (2.0, 10.0)
+    assert support.model_price(registry, "openrouter/lab/ghost-1") is None
+
+
+def test_estimate_cost_prices_a_held_judge_from_role_prices():
+    reg = support.parse_registry(_registry_with(*_HELD_JUDGE, extra=_HELD_PRICE))
+    models = support.select_models(reg, ids=["cheapo-1"])
+    est = support.estimate_cost(models, ["alpha"], reg)
+    # model 3 * $0.15 = $0.45; judge 3 * (0.04M * $2 + 0.004M * $8) = 3 * $0.112
+    assert est.lines[0].usd == pytest.approx(0.45 + 0.336, abs=0.01)
+    assert est.unknown_models == ()
+
+
+def test_price_usage_prices_a_held_judge_from_role_prices():
+    reg = support.parse_registry(_registry_with(*_HELD_JUDGE, extra=_HELD_PRICE))
+    report = support.price_usage({"openrouter/lab/cheapo-0": (1_000_000, 0, 1_000_000)}, reg)
+    assert report.lines[0].usd == pytest.approx(2.2)
+    assert report.unknown_models == ()
+
+
+def test_unpriced_judge_rejected_naming_the_role():
+    bad = _registry_with(*_HELD_JUDGE)
+    with pytest.raises(ValueError, match="judge"):
+        support.parse_registry(bad)
+
+
+def test_unpriced_persona_rejected_naming_the_role():
+    with pytest.raises(ValueError, match="persona"):
+        support.parse_registry(_with_persona("openrouter/lab/ghost-1"))
+
+
+def test_orphaned_role_price_rejected_naming_the_entry():
+    orphan = '\n[role_prices."openrouter/lab/orphan-1"]\ninput_price = 1.0\noutput_price = 2.0\n'
+    with pytest.raises(ValueError, match="orphan-1"):
+        support.parse_registry(REGISTRY_TOML + orphan)
+
+
+def test_role_price_duplicating_a_roster_row_rejected():
+    dup = '\n[role_prices."openrouter/lab/cheapo-1"]\ninput_price = 1.0\noutput_price = 5.0\n'
+    with pytest.raises(ValueError, match="cheapo-1"):
+        support.parse_registry(REGISTRY_TOML + dup)
+
+
 # --- shipped registry stays coherent with the real task set -------------------
 
 
 def test_shipped_registry_parses_and_covers_all_eval_tasks():
-    registry = support.parse_registry(
-        (REPO / "harness" / "models.toml").read_text(encoding="utf-8"))
+    registry = shipped_registry()
     evals_src = (REPO / "harness" / "skill_evals.py").read_text(encoding="utf-8")
     import re
 
@@ -405,6 +597,62 @@ def test_shipped_registry_parses_and_covers_all_eval_tasks():
     assert not set(registry.tasks.extended) & set(registry.tasks.matrix)
 
 
+REGENERATE = "uv run poe report` and `python3 scripts/sync_shared.py"
+
+
+def shipped_roster_mismatch(
+    registry_path: Path = REPO / "harness" / "models.toml",
+    support_path: Path = REPO / "shared" / "model-support.json",
+    readme_path: Path = REPO / "README.md",
+) -> dict[str, set[str]]:
+    """Per shipped artifact, the IDs it lists beyond the roster ("extra") and
+    the roster IDs it lacks ("missing"), routing prefix dropped as the report
+    drops it."""
+    import json
+    import re
+
+    registry = support.parse_registry(registry_path.read_text(encoding="utf-8"))
+    roster = {m.id.removeprefix("openrouter/") for m in registry.models}
+    shipped = {
+        "shared/model-support.json":
+            set(json.loads(support_path.read_text(encoding="utf-8"))["models"]),
+    }
+    readme = readme_path.read_text(encoding="utf-8")
+    region = readme.split(support.START_MARKER, 1)[1].split(support.END_MARKER, 1)[0]
+    shipped["README.md summary"] = set(re.findall(r"^\| `([^`]+)` \|", region, re.MULTILINE))
+    mismatch = {}
+    for name, ids in shipped.items():
+        mismatch[f"{name} extra"] = ids - roster
+        mismatch[f"{name} missing"] = roster - ids
+    return {k: v for k, v in mismatch.items() if v}
+
+
+def test_shipped_verdicts_list_exactly_the_registry_roster():
+    """A roster edit cannot reach main until the report is regenerated: a bump
+    PR is red here until the maintainer regenerates the verdicts from the logs,
+    which only their machine holds (`logs/` is gitignored)."""
+    mismatch = shipped_roster_mismatch()
+    assert not mismatch, (
+        f"shipped verdicts list a different model set than harness/models.toml: {mismatch} — "
+        f"outgoing IDs are extra, incoming ones missing. Regenerate on the machine that holds "
+        f"logs/evals/: `{REGENERATE}`"
+    )
+
+
+def test_shipped_verdict_check_catches_an_unregenerated_bump(tmp_path):
+    registry = (REPO / "harness" / "models.toml").read_text(encoding="utf-8")
+    parsed = support.parse_registry(registry)
+    named_by_roles = {parsed.roles.judge, parsed.roles.persona, parsed.roles.smoke}
+    first = next(m.id for m in parsed.models if m.id not in named_by_roles)
+    bumped = tmp_path / "models.toml"
+    bumped.write_text(registry.replace(f'id = "{first}"', f'id = "{first}-next"'), encoding="utf-8")
+    mismatch = shipped_roster_mismatch(registry_path=bumped)
+    short = first.removeprefix("openrouter/")
+    assert mismatch["shared/model-support.json extra"] == {short}
+    assert mismatch["shared/model-support.json missing"] == {f"{short}-next"}
+    assert mismatch["README.md summary extra"] == {short}
+
+
 def test_select_tasks_allows_extended_by_name_only():
     reg = support.parse_registry(
         REGISTRY_TOML.replace('matrix = ["alpha", "beta", "dialog"]',
@@ -417,6 +665,9 @@ def test_select_tasks_allows_extended_by_name_only():
 # --- cost gate (spec: estimate shown and declined -> no metered call) ---------
 
 
+OFFLINE_GATE = "model currency unknown (catalog unreachable: network disabled in L0 tests)"
+
+
 def test_matrix_gate_declined_makes_no_metered_call(monkeypatch, capsys):
     import matrix
 
@@ -426,6 +677,7 @@ def test_matrix_gate_declined_makes_no_metered_call(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Estimated cost" in out
     assert "aborted before any metered call" in out
+    assert OFFLINE_GATE in out, "the conftest fixture reaches the gate: no live request"
 
 
 def test_matrix_estimate_only_exits_clean(monkeypatch, capsys):
@@ -433,7 +685,22 @@ def test_matrix_estimate_only_exits_clean(monkeypatch, capsys):
 
     monkeypatch.setitem(sys.modules, "inspect_ai", object())
     assert matrix.main(["--estimate-only", "--tier", "cheap"]) == 0
-    assert "TOTAL" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "TOTAL" in out
+    assert OFFLINE_GATE in out
+
+
+# The gate tests that assert stale pins replay the recorded catalog and live in
+# test_model_currency.py, the one test file whose model IDs are snapshot facts.
+
+
+def test_gate_offline_warns_and_keeps_the_exit_status(monkeypatch, capsys):
+    import matrix
+
+    monkeypatch.setitem(sys.modules, "inspect_ai", object())
+    monkeypatch.setattr(matrix.model_currency, "fetch_json", failing_fetch("catalog down"))
+    assert matrix.main(["--estimate-only", "--tier", "cheap"]) == 0
+    assert "model currency unknown (catalog unreachable: catalog down)" in capsys.readouterr().out
 
 
 # ---------- baseline arm (testing-harness spec: Baseline comparison arm) ------
@@ -512,3 +779,79 @@ def test_render_grid_runtime_column_only_when_durations_given(registry):
     assert "runtime" not in without
     assert "runtime" in with_timing
     assert "92s" in with_timing
+
+
+# ---------- subscription model IDs (add-dev-runner-judge, design D7) ----------
+
+SHIPPED = shipped_registry()
+
+
+@pytest.mark.parametrize("model_id", [
+    "claude-fixture-1-0", "claude-fixture-1-0-20260101", SHIPPED.roles.dev_judge,
+])
+def test_full_subscription_ids_are_recognized(model_id):
+    assert support.is_subscription_model(model_id)
+
+
+@pytest.mark.parametrize("model_id", [
+    "fixture", "claude-fixture", "openrouter/lab/claude-fixture-1-0",
+    "anthropic/claude-fixture-1-0", SHIPPED.roles.judge,
+])
+def test_aliases_and_metered_ids_are_not_subscription_ids(model_id):
+    assert not support.is_subscription_model(model_id)
+
+
+def test_the_subscription_rule_adds_no_roster_row():
+    assert not any(support.is_subscription_model(m.id) for m in SHIPPED.models)
+
+
+# ---------- matrix.py --smoke: selection only, gate unchanged -----------------
+
+
+@pytest.fixture
+def smoke_matrix(monkeypatch):
+    import matrix
+
+    monkeypatch.setitem(sys.modules, "inspect_ai", object())
+    monkeypatch.delenv("SMOKE_MODEL", raising=False)
+    return matrix
+
+
+def test_matrix_smoke_selects_the_role_model_core_tasks_and_one_epoch(smoke_matrix, monkeypatch):
+    seen = {}
+
+    def run_matrix(models, tasks, _registry, args):
+        seen.update(models=[m.id for m in models], tasks=tasks, epochs=args.epochs)
+        return []
+
+    monkeypatch.setattr(smoke_matrix, "run_matrix", run_matrix)
+    monkeypatch.setattr(smoke_matrix, "record_spend", lambda *_args: None)
+    assert smoke_matrix.main(["--smoke", "--yes"]) == 0
+    assert seen == {"models": [SHIPPED.roles.smoke], "tasks": list(SHIPPED.tasks.core),
+                    "epochs": 1}
+
+
+def test_matrix_smoke_estimate_only_prints_the_selection(smoke_matrix, capsys):
+    assert smoke_matrix.main(["--smoke", "--estimate-only"]) == 0
+    out = capsys.readouterr().out
+    assert f"models: {SHIPPED.roles.smoke}" in out
+    assert "epochs: 1" in out
+    assert "TOTAL" in out
+
+
+@pytest.mark.parametrize("other", [
+    ["--models", "cheapo-1"], ["--tier", "cheap"], ["--tasks", "write_from_seed"], ["--core"],
+    ["--epochs", "1"], ["--epochs", "0"],
+])
+def test_matrix_smoke_refuses_another_selection(smoke_matrix, other, capsys):
+    with pytest.raises(SystemExit) as exc:
+        smoke_matrix.main(["--smoke", *other])
+    assert exc.value.code == 2
+    assert "--smoke" in capsys.readouterr().err
+
+
+def test_matrix_smoke_declined_makes_no_metered_call(smoke_matrix, monkeypatch):
+    monkeypatch.setattr(smoke_matrix, "confirm_spend", lambda _yes: False)
+    monkeypatch.setattr(smoke_matrix, "run_matrix",
+                        lambda *_args: pytest.fail("run_matrix ran after a declined gate"))
+    assert smoke_matrix.main(["--smoke"]) == 1

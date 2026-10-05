@@ -1,0 +1,247 @@
+{
+  "data": {
+    "id": "moonshotai/kimi-k3",
+    "endpoints": [
+      {
+        "name": "Relace | moonshotai/kimi-k3-20260715",
+        "provider_name": "Relace",
+        "tag": "relace/fp4",
+        "pricing": {
+          "prompt": "0.0000006483",
+          "completion": "0.000013",
+          "input_cache_read": "0.00000045"
+        }
+      },
+      {
+        "name": "InferenceNet | moonshotai/kimi-k3-20260715",
+        "provider_name": "InferenceNet",
+        "tag": "inference-net/fp4",
+        "pricing": {
+          "prompt": "0.00000072",
+          "completion": "0.000014",
+          "input_cache_read": "0.0000007"
+        }
+      },
+      {
+        "name": "Wafer | moonshotai/kimi-k3-20260715",
+        "provider_name": "Wafer",
+        "tag": "wafer",
+        "pricing": {
+          "prompt": "0.00000095",
+          "completion": "0.000013",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Morph | moonshotai/kimi-k3-20260715",
+        "provider_name": "Morph",
+        "tag": "morph/fp8",
+        "pricing": {
+          "prompt": "0.000001906",
+          "completion": "0.000009195",
+          "input_cache_read": "0.00000029"
+        }
+      },
+      {
+        "name": "Phala | moonshotai/kimi-k3-20260715",
+        "provider_name": "Phala",
+        "tag": "phala",
+        "pricing": {
+          "prompt": "0.00000195",
+          "completion": "0.00000975",
+          "input_cache_read": "0.000000195"
+        }
+      },
+      {
+        "name": "Makora | moonshotai/kimi-k3-20260715",
+        "provider_name": "Makora",
+        "tag": "makora",
+        "pricing": {
+          "prompt": "0.00000204",
+          "completion": "0.00001275",
+          "input_cache_read": "0.000000204"
+        }
+      },
+      {
+        "name": "DigitalOcean | moonshotai/kimi-k3-20260715",
+        "provider_name": "DigitalOcean",
+        "tag": "digitalocean",
+        "pricing": {
+          "prompt": "0.00000255",
+          "completion": "0.00001295",
+          "input_cache_read": "0.000000255"
+        }
+      },
+      {
+        "name": "Decart | moonshotai/kimi-k3-20260715",
+        "provider_name": "Decart",
+        "tag": "decart/mxfp4",
+        "pricing": {
+          "prompt": "0.00000264",
+          "completion": "0.0000132",
+          "input_cache_read": "0.000000264"
+        }
+      },
+      {
+        "name": "Together | moonshotai/kimi-k3-20260715",
+        "provider_name": "Together",
+        "tag": "together",
+        "pricing": {
+          "prompt": "0.0000027",
+          "completion": "0.0000135",
+          "input_cache_read": "0.00000027"
+        }
+      },
+      {
+        "name": "Wafer | moonshotai/kimi-k3-20260715",
+        "provider_name": "Wafer",
+        "tag": "wafer/us",
+        "pricing": {
+          "prompt": "0.0000028",
+          "completion": "0.000014",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Sail Research | moonshotai/kimi-k3-20260715",
+        "provider_name": "Sail Research",
+        "tag": "sail-research/fp4",
+        "pricing": {
+          "prompt": "0.0000028",
+          "completion": "0.000014",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "DeepInfra | moonshotai/kimi-k3-20260715",
+        "provider_name": "DeepInfra",
+        "tag": "deepinfra/mxfp4",
+        "pricing": {
+          "prompt": "0.00000285",
+          "completion": "0.00001425",
+          "input_cache_read": "0.000000285"
+        }
+      },
+      {
+        "name": "AkashML | moonshotai/kimi-k3-20260715",
+        "provider_name": "AkashML",
+        "tag": "akashml/fp4",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Amazon Bedrock | moonshotai/kimi-k3-20260715",
+        "provider_name": "Amazon Bedrock",
+        "tag": "amazon-bedrock/us-east-2",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Chutes | moonshotai/kimi-k3-20260715",
+        "provider_name": "Chutes",
+        "tag": "chutes/mxfp4",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Parasail | moonshotai/kimi-k3-20260715",
+        "provider_name": "Parasail",
+        "tag": "parasail/fp4",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Modal | moonshotai/kimi-k3-20260715",
+        "provider_name": "Modal",
+        "tag": "modal/mxfp4",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Fireworks | moonshotai/kimi-k3-20260715",
+        "provider_name": "Fireworks",
+        "tag": "fireworks",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "BaseTen | moonshotai/kimi-k3-20260715",
+        "provider_name": "BaseTen",
+        "tag": "baseten/fp8",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Moonshot AI | moonshotai/kimi-k3-20260715",
+        "provider_name": "Moonshot AI",
+        "tag": "moonshotai/mxfp4",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "input_cache_read": "0.0000003"
+        }
+      },
+      {
+        "name": "Alibaba | moonshotai/kimi-k3-20260715",
+        "provider_name": "Alibaba",
+        "tag": "alibaba",
+        "pricing": {
+          "prompt": "0.00000345",
+          "completion": "0.00001725",
+          "input_cache_read": "0.000000345"
+        }
+      },
+      {
+        "name": "InferenceNet | moonshotai/kimi-k3-20260715",
+        "provider_name": "InferenceNet",
+        "tag": "inference-net/fast",
+        "pricing": {
+          "prompt": "0.0000035",
+          "completion": "0.00002",
+          "input_cache_read": "0.00000045"
+        }
+      },
+      {
+        "name": "Fireworks | moonshotai/kimi-k3-20260715",
+        "provider_name": "Fireworks",
+        "tag": "fireworks/us",
+        "pricing": {
+          "prompt": "0.0000045",
+          "completion": "0.0000225",
+          "input_cache_read": "0.00000045"
+        }
+      },
+      {
+        "name": "Fireworks | moonshotai/kimi-k3-20260715",
+        "provider_name": "Fireworks",
+        "tag": "fireworks/fast",
+        "pricing": {
+          "prompt": "0.0000045",
+          "completion": "0.0000225",
+          "input_cache_read": "0.00000045"
+        }
+      }
+    ]
+  }
+}

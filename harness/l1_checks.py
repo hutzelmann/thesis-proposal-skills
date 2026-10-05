@@ -6,9 +6,12 @@ No sandbox, no model calls — unit-testable and runner-agnostic.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import sys
 import tomllib
+from itertools import pairwise
 from pathlib import Path
 
 # The reference shortfall is the one check error a produced draft may carry: a
@@ -97,6 +100,19 @@ def is_enumerated_review(text: str) -> bool:
 def parse_grade(completion: str) -> bool:
     matches = re.findall(r"GRADE:\s*([CI])", completion)
     return bool(matches) and matches[-1] == "C"
+
+
+def verdict_l2_grades(grades: dict[str, bool]) -> tuple[bool, str]:
+    """The dev runner's aggregate over the rubric criteria its judge graded,
+    by criterion name. Ungraded (untested) criteria are not passed in — they
+    are an exit status of their own, never a failing grade — so an empty
+    mapping means nothing was graded and cannot pass."""
+    if not grades:
+        return False, "nothing graded"
+    failed = [name for name, passed in grades.items() if not passed]
+    if failed:
+        return False, "L2 failed: " + ", ".join(failed)
+    return True, "L2 passed: " + ", ".join(grades)
 
 
 def verdict_draft(proposal_text: str | None, check_output: str) -> tuple[bool, str]:
@@ -504,6 +520,122 @@ def verdict_offtopic_reference(after: str | None,
     if problems:
         return False, "; ".join(problems)
     return True, f"{OFFTOPIC_KEY} {resolution} with a reason, {NEEDED_KEY} not discarded"
+
+
+# ---------- citation practice -------------------------------------------------
+#
+# The writing tasks over w08 and f27 measure whether a draft cites one source
+# on consecutive sentences. Sentence and block boundaries are the check
+# script's own, loaded from its file: the verdict and the `citation-repeated`
+# warning a writer sees must never disagree about what a sentence is. Both
+# runners judge on the host, where the script is a file away; neither puts the
+# skill scripts on the import path, hence the explicit load.
+
+
+def _load_check_script():
+    path = Path(__file__).resolve().parent.parent / "skills/proposal-check/scripts/check.py"
+    spec = importlib.util.spec_from_file_location("proposal_check_script", path)
+    module = importlib.util.module_from_spec(spec)
+    # the script's dataclasses resolve their annotations through sys.modules
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+CHECK_SCRIPT = _load_check_script()
+
+Sentence = tuple[int, str, frozenset[str]]
+
+
+def citation_blocks(text: str) -> list[list[Sentence]]:
+    """Blocks of (line, sentence, cited keys), as the check's repetition rule
+    sees them: a paragraph, or consecutive items of one list."""
+    body, _ = CHECK_SCRIPT.split_proposal(text)
+    return [[(line, sentence, CHECK_SCRIPT.citation_keys(sentence)) for sentence, line in block]
+            for block in CHECK_SCRIPT.prose_blocks(body, list_items_break=False)]
+
+
+def repeated_citation_runs(text: str) -> list[tuple[int, tuple[str, ...]]]:
+    """(line, keys) for every sentence citing exactly the key set of the
+    sentence before it in the same block. A changed set is a source switch,
+    which the guidance asks to cite, so it never counts."""
+    hits = []
+    for block in citation_blocks(text):
+        for (_, _, before), (line, _, keys) in pairwise(block):
+            if keys and keys == before:
+                hits.append((line, tuple(sorted(keys))))
+    return hits
+
+
+def cited_keys(text: str) -> set[str]:
+    return {key for block in citation_blocks(text) for _, _, keys in block for key in keys}
+
+
+def verdict_citation_runs(text: str | None, min_cited: int = 0) -> tuple[bool, str]:
+    """No sentence repeats the citation of the sentence before it.
+
+    `min_cited` guards against a vacuous pass: a draft that cites nothing
+    cannot repeat a citation, so a task built to offer the temptation sets the
+    number of cited sentences below which the run proves nothing.
+    """
+    if text is None:
+        return False, "no proposal file"
+    blocks = citation_blocks(text)
+    cited = sum(1 for block in blocks for _, _, keys in block if keys)
+    pairs = sum(1 for block in blocks for a, b in pairwise(block) if a[2] and b[2])
+    counts = f"{cited} cited sentences, {pairs} adjacent cited pairs"
+    hits = repeated_citation_runs(text)
+    if hits:
+        shown = "; ".join(f"line {line}: {', '.join(keys)}" for line, keys in hits[:5])
+        return False, (f"{len(hits)} sentence(s) repeat the previous sentence's citation "
+                       f"({counts}) — {shown}")
+    if cited < min_cited:
+        return False, f"only {cited} cited sentences (< {min_cited}), the run proves nothing"
+    return True, f"no repeated citation ({counts})"
+
+
+def verdict_citation_repair(before: str, after: str | None) -> tuple[bool, str]:
+    """A writing pass over a draft that overcites removes the repetition
+    without removing a source: every key the input cites is still cited, so
+    deleting citations is never a way to pass."""
+    if after is None:
+        return False, "no proposal file after the writing pass"
+    problems = []
+    lost = sorted(cited_keys(before) - cited_keys(after))
+    if lost:
+        problems.append(f"no longer cited anywhere: {', '.join(lost)} — "
+                        "deleting a citation is not a repair")
+    passed, why = verdict_citation_runs(after)
+    if not passed:
+        problems.append(why)
+    if problems:
+        return False, "; ".join(problems)
+    return True, f"every source still cited, {why}"
+
+
+# A draft from the eleven-reference w08 seed that cites fewer sentences than
+# this never had the chance to repeat a citation, so its pass proves nothing.
+RICH_SEED_MIN_CITED = 6
+
+
+def verdict_cited_draft(text: str | None, check_output: str,
+                        min_cited: int = RICH_SEED_MIN_CITED) -> tuple[bool, str]:
+    """A draft from a reference-rich seed is mechanically sound, no sentence
+    repeats exactly the citations of the sentence before it, and enough
+    sentences cite that it had the chance to."""
+    drafted, why = verdict_draft(text, check_output)
+    cited, detail = verdict_citation_runs(text, min_cited)
+    return drafted and cited, f"{why}; {detail}"
+
+
+def verdict_repaired_draft(before: str, after: str | None,
+                           check_output: str) -> tuple[bool, str]:
+    """A writing pass over an over-citing draft leaves it mechanically sound,
+    no sentence repeating exactly the citations of the sentence before it,
+    and every source still cited."""
+    drafted, why = verdict_draft(after, check_output)
+    repaired, detail = verdict_citation_repair(before, after)
+    return drafted and repaired, f"{why}; {detail}"
 
 
 def verdict_provenance(transcript: str, seed_text: str | None,
@@ -918,18 +1050,22 @@ def _recorded_dois(notes: str | None) -> set[str]:
     return {_clean_doi(m.group(0)) for m in _DOI_TOKEN.finditer(notes or "")}
 
 
-def verdict_supervise_literature(feedback: str | None, notes: str | None) -> tuple[bool, str]:
+def verdict_supervise_literature(feedback: str | None, notes: str | None,
+                                 proposal: str | None = None) -> tuple[bool, str]:
     """supervise: literature the feedback cites is woven, not listed — every
     `https://doi.org/` URL sits in a prose block (a numbered point or the
     strengths block: never on a bulleted line, with a few dozen words around
     it; a paragraph holding several DOI lines is judged line by line), every
     cited DOI is recorded in the companion notes file, and at most three
     distinct papers are cited. A feedback that cites no DOI passes:
-    literature is conditional on the professor's approval and the findings."""
+    literature is conditional on the professor's approval and the findings.
+    A DOI the normalized proposal already carries is the student's own
+    reference, discussed rather than woven in, so it is not counted."""
     if not feedback or not feedback.strip():
         return False, "no feedback draft to check for literature"
+    own = _recorded_dois(proposal)
     cited = [(doi, block) for doi, block in _cited_dois(feedback)
-             if not doi.startswith(_STANDARD_DOI_PREFIXES)]
+             if not doi.startswith(_STANDARD_DOI_PREFIXES) and doi not in own]
     if not cited:
         return True, "no literature cited"
     distinct = sorted({doi for doi, _ in cited})
@@ -1166,6 +1302,53 @@ def verdict_supervise_review_sections(review: str | None) -> tuple[bool, str]:
     return True, "workload table with scope verdict, verification section present"
 
 
+# How a supervise run's verifier is recognised in the host's tool calls: a
+# subagent spawn (not a workflow fan-out) whose task carries the shipped brief,
+# by its file name or by the heading it opens with.
+VERIFIER_SPAWN_TOOLS = ("Agent", "Task")
+_VERIFIER_BRIEF_MARK = re.compile(r"verifier[-_ ]brief", re.IGNORECASE)
+
+
+def verdict_supervise_verifier(calls: list[tuple[str, dict]]) -> tuple[bool, str]:
+    """supervise: the run started the one fresh verifier of the finished
+    feedback (skill-supervise spec: single-context execution). `calls` are the
+    (tool name, input) pairs of the host's event stream. The dev runner's host
+    offers a subagent tool, so a run without the spawn skipped the verifier."""
+    spawns = [inp for name, inp in calls if name in VERIFIER_SPAWN_TOOLS]
+    briefed = [inp for inp in spawns if _VERIFIER_BRIEF_MARK.search(str(inp))]
+    if briefed:
+        return True, "fresh verifier started with the brief"
+    if spawns:
+        return False, f"{len(spawns)} subagent(s) started, none with the verifier brief"
+    return False, "verifier did not run: no subagent started"
+
+
+_VERIFIED_BY = re.compile(
+    r"^[ \t>*_-]*(?:verified by|geprüft von)[*_]*\s*:\s*[*_]*\s*(.+)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_VERIFIER_MODE = re.compile(
+    r"fresh|independent|separate|inline|frisch|unabhängig|eigenständig", re.IGNORECASE)
+
+
+def verdict_supervise_verification_declared(review: str | None) -> tuple[bool, str]:
+    """supervise: the review's verification section states who verified — a
+    fresh verifier, or inline checks because no subagent tool was available — so
+    the professor sees at a glance whether the double check ran."""
+    if not review or not review.strip():
+        return False, "no review file to check"
+    section = _review_section(review, r"(?:Claim\s+)?Verification|Überprüfung|Verifikation")
+    if section is None:
+        return False, "no verification section"
+    line = _VERIFIED_BY.search(section)
+    if not line:
+        return False, "verification section does not say who verified"
+    if not _VERIFIER_MODE.search(line.group(1)):
+        return False, ("'Verified by' names neither a fresh verifier nor inline checks: "
+                       f"{line.group(1)[:60]!r}")
+    return True, f"verified by: {line.group(1).strip()[:60]}"
+
+
 def feedback_body_words(feedback: str | None, closing: dict[str, str] | None = None) -> int:
     """Words in the feedback body, without URLs and the closing note — the
     figure the soft length target is about (locators do not count)."""
@@ -1200,7 +1383,7 @@ def verdict_supervise_feedback_contract(artifacts: dict[str, str], forbidden: tu
         verdict_supervise_tier(feedback),
         verdict_supervise_no_personal_data(artifacts, forbidden),
         verdict_supervise_pointers(feedback, installed),
-        verdict_supervise_literature(feedback, notes),
+        verdict_supervise_literature(feedback, notes, proposal),
         verdict_supervise_substance_only(feedback),
         verdict_supervise_markup(feedback),
     ]

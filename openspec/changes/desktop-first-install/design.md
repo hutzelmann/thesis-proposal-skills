@@ -245,7 +245,7 @@ Two scenarios, `install_prompt` and `install_prompt_answered`, run as `uv run po
 
 **The request** is the shared prompt with the raw GitHub URL replaced by the local one. In the answered variant, the student's answer "install for all my projects" is appended up front.
 
-**Environment.** Claude runs with `HOME` set to a temp directory, and `CLAUDE_CONFIG_DIR` from the routing rig's `prepare_config` so it is logged in without touching the real home.
+**Environment.** Claude runs with `HOME` set to a temp directory, and `CLAUDE_CONFIG_DIR` from the routing rig's `isolated_config` so it is logged in without touching the real home. `isolated_config` also keeps the linked stored login current; the probe used the bare `prepare_config` until main was merged in on 2026-10-05. The `HOME` override is layered on top of the dev runner's child environment.
 
 **Verdicts.** These live in `harness/l1_checks.py` as `verdict_install_prompt_asks_scope` and `verdict_install_prompt_installed`. They have L0 tests on synthetic outcomes, on the recorded final messages of the 2026-10-03 runs (`tests/unit/data/install_probe/`), and on a home the real installer filled, both with and without a hand-copied stray:
 - *unanswered*: the final message contains a scope question naming both options, and the temp home has no `proposal-*` directory;

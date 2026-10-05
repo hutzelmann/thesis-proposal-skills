@@ -2,20 +2,39 @@
 
 L1/L2 skill evals over the fixture corpus (see `openspec/specs/testing-harness/spec.md`). L0 unit tests live in `tests/unit/` and never call models. The L1 verdict logic is shared between both runners via `l1_checks.py` (pure functions, unit-tested).
 
-## Authoritative runs (Inspect + OpenRouter, metered)
+## Which path to use
+
+| Job | Path | Cost |
+|---|---|---|
+| Iterate on a skill with an Anthropic model; quick check after a change | `poe dev <scenario> --model haiku`/`sonnet`/`opus`. Add `--isolated` when the result is cited as a measurement. `poe smoke` runs the core scenarios in one go. | subscription |
+| L2 iteration: rubric grades while working on a skill | `poe dev <scenario> --isolated --judge` (dev-runner L2, not comparable to matrix) | subscription |
+| Re-grade output that already exists | `poe dev <scenario> --rejudge <dir>…` over kept workspaces | subscription — never metered |
+| Skill selection from the descriptions | `poe routing` | subscription |
+| Audit preflight | `harness/audit_llm_preflight.py` | subscription |
+| L2 of record, persona dialogues, confirming a change that targets a shipped verdict | `poe matrix --models … --tasks …` (Inspect) | metered, cost-gated |
+| Non-Anthropic model under test | `poe matrix --models …` | metered, cost-gated — OpenRouter is the only route |
+| The Inspect wiring itself changed | `poe smoke-inspect` | metered, cost-gated |
+
+"Subscription" means no money while the plan's extra usage stays off. It does draw the rolling plan limits, which are shared with the operator's own Claude use. The dev runner strips every `ANTHROPIC_*` variable and `CLAUDE_CODE_USE_*` switch from its model runs, and its judge starts from an allowlisted environment (see Dev runs). The routing rig and the audit preflight still pass the launching shell's environment to `claude -p`. There an exported `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_USE_*` switch outranks the login and bills every call per token with no gate, so unset them before those runs; `claude auth status` still reports the login with `ANTHROPIC_API_KEY` exported. Any metered call on an Anthropic model follows the `AGENTS.md` rule "Metered model calls".
+
+## Inspect runs (OpenRouter, metered — source of record)
+
+This path is reserved for what the table above sends here: L2 rubric scores, persona dialogues, non-Anthropic models, and the runs behind shipped verdicts. A bare `inspect eval`, as in the block below, has no cost gate; for any task the registry admits (the matrix or extended set, `support.select_tasks`) prefer `poe matrix --models … --tasks …`, which prints an estimate and waits for confirmation. Every matrix run writes to `logs/evals`, and `poe report` builds the shipped verdicts from the newest log per cell there, so a check that is not meant for the record passes `--log-dir logs/scratch` or stays on `poe dev`.
 
 Credentials setup (once): `cp .env.example .env`, fill in `OPENROUTER_API_KEY`. Pass the file with `--env-file .env` (uv-native; nothing breaks when `.env` is absent because the flag is per-command).
 
 ```sh
+# metered, ungated: needs explicit approval. check_report has no L2 rubric and is
+# excluded from the matrix; its $0 run is `poe dev check_report --model haiku`.
 uv run --env-file .env inspect eval harness/skill_evals.py@check_report \
     --model openrouter/anthropic/claude-haiku-4.5 --log-dir logs/evals
 
-# model matrix in one invocation (one log per model):
+# model matrix in one invocation (one log per model) — metered, ungated: needs explicit approval
 uv run inspect eval harness/skill_evals.py@review_fixture \
-    --model "openrouter/anthropic/claude-haiku-4.5,openrouter/deepseek/deepseek-v4-flash"
+    --model "openrouter/anthropic/claude-haiku-4.5,openrouter/moonshotai/kimi-k3"
 ```
 
-Judge model: `JUDGE_MODEL` env, default `openrouter/anthropic/claude-haiku-4.5`.
+Judge model: `[roles].judge` in `harness/models.toml`; `JUDGE_MODEL` env overrides it for one invocation. The persona is `[roles].persona`, which defaults to the judge; `PERSONA_MODEL` overrides it. Each override replaces its own role only, so a judge override no longer moves the persona. The judge is pinned and metered on purpose, so shipped L2 verdicts stay comparable from run to run. It is not an ad-hoc grader: re-grading output that already exists runs on the subscription (`poe dev <scenario> --rejudge <dir>…`) and is never metered.
 View transcripts: `uv run inspect view --log-dir logs/evals`.
 
 Tasks: `write_from_seed` (w01 seed to draft; L1 check-clean, L2 RQ rubric), `review_fixture` (f05; L1 review file + untouched proposal, L2 review rubric), `review_fixture_de` (f04; German review), `review_hollow` (f22; a buzzword-generic proposal with no viable thesis core — L1 review file + untouched proposal, L2 rubric: verdict stated outright, failed substance tests named, never softened into needs-revision phrasing), `title_alarm` (f21; the agent-judgment half of the title rule — L1 title raised in writing and never rewritten in the proposal, L2 title rubric: certificate consequence named, one to three abstracted alternatives, decision left with the student), `check_report` (f15; L1 report fidelity + untouched proposal), `ideate_longrun` (~18-round scripted composite dialogue: preamble → hesitant → extraction probe → pivot → convergence → seeding; L1 seed + notes-growth snapshots + provenance, L2 phase-aware Socratic rubric), `ideate_stonewall` (early stop fires: notes saved, no proposal generated), `ideate_noidea` (hints stay few and sourced, never a topic menu; live DBLP noise must read as weak scoping), `ideate_outofscope` (one chat-only warning, ideation continues), `ideate_probing` (agreeable extractor offering only generalities plus pressure to "just write it"; the genericity gate must hold — swap test voiced, impasse named, no seed), `customize_override` (f00; supervisor requirements to valid TOML overrides), `publish_build` (f00; real pandoc/typst pipeline to PDF), `import_messy` (pasted messy text to standard format, personal data stripped), `troubleshoot_model_rung` (user on haiku with rung 0 already closed; the run must resolve rung 1 from the vendored verdicts and assemble no bundle), `litsearch_expand` (w03; live academic APIs — network-dependent, expect flakiness), `supervise_feedback` (s01; a raw student email to paste-ready feedback — L1: feedback present, at most five curated points, verdict tier stated, no fixture personal data in the feedback, every named skill real, closing note verbatim, any literature woven into the points and recorded in the notes rather than listed; the request pre-answers the borderline deferral and declines every lookup — claim checks and literature alike — so the network path is observed only in a dev run with `proposal-lit-search` staged as a sibling; extended set until the next big matrix run). The former 5-round cooperative dialogues (`ideate_socratic`, `ideate_anecdote`) are retired — their coverage lives in `ideate_longrun`'s hesitant phase, and their cooperative-only personas were the blind spot the probes close.
@@ -32,34 +51,53 @@ uv run python harness/eval_export.py         # or --check for the drift verdict
 
 ## Model-support matrix (metered, cost-gated)
 
-`harness/models.toml` pins the nine-model roster (exact OpenRouter IDs, family, price tier, cached $/Mtok pricing, enabled flag) plus the task policy: the scorable `matrix` set, the `core` smoke subset, `heavy` tasks (1 epoch on frontier tier), `excluded_l1` tasks whose `*_l1*` scorers are the environment-fidelity probes (structural score ignored, `*_l2*` rubric counts), `excluded` tasks (env probes without a rubric, live-network tasks), per-tier default epochs, and token priors for the estimate.
+`harness/models.toml` pins the nine-model roster (exact OpenRouter IDs, family, price tier, cached $/Mtok pricing, enabled flag) plus the task policy: the scorable `matrix` set, the `core` smoke subset, `heavy` tasks (1 epoch on frontier tier), `excluded_l1` tasks whose `*_l1*` scorers are the environment-fidelity probes (structural score ignored, `*_l2*` rubric counts), `excluded` tasks (env probes without a rubric, live-network tasks), per-tier default epochs, and token priors for the estimate. The matrix is the source of record for the verdicts the README ships, and the only place an Anthropic model under test needs OpenRouter.
 
 ```sh
-uv run poe smoke                     # haiku × core tasks × 1 epoch (~$1)
+uv run poe smoke                     # subscription: the core scenarios on the dev runner, write_from_seed judged ($0 in money)
+uv run poe smoke-inspect             # metered Inspect-wiring check: [roles].smoke × core tasks × 1 epoch via OpenRouter (cost-gated)
 uv run poe matrix --estimate-only    # price a full run without any metered call
 uv run poe matrix --tier cheap      
-uv run poe matrix --models claude-haiku-4.5 gpt-5.6-luna --tasks write_from_seed
+uv run poe matrix --models claude-haiku-4.5 gpt-5.6-terra --tasks write_from_seed
 uv run poe report                    # regenerate README summary + docs/model-support.md
 ```
 
-Every metered invocation prints a cost estimate (registry pricing × token priors, replaced by measured history from `logs/evals/matrix-usage.json` once it exists) and waits for confirmation; `--yes` skips the prompt. After the run it prints actual spend (recorded token usage × registry pricing), persists a `matrix-cost-*.json` summary next to the logs, and updates the usage history. Per-sample `token_limit` backstops runaway loops.
+Every metered invocation prints a cost estimate (registry pricing × token priors, replaced by measured history from `logs/evals/matrix-usage.json` once it exists) and waits for confirmation; `--yes` skips the prompt. `--yes` is for the operator to type: an agent passes it only after the user approved that run's estimate in chat. After the run it prints actual spend (recorded token usage × registry pricing), persists a `matrix-cost-*.json` summary next to the logs, and updates the usage history. Per-sample `token_limit` backstops runaway loops.
 
 Classification per model×task cell: 3 epochs (per-tier policy in the registry), all pass = solid, mixed = flaky, none = fail. Per model: any fail → warning naming the affected skills (via the registry's task→skill map), any flaky → "flaky on <skills>", all cells solid → supported, solid-but-incomplete coverage → partial (untested count disclosed), no logs at all → untested. Disabled registry models keep their row, marked as disabled. `poe report` derives both the README summary table (pinned ID, verdict, run date) and the full grid with pass rates and per-model run cost from the newest log per cell — nothing in either artifact is hand-written.
+
+### Model currency
+
+`harness/models.toml` is the only place a model ID lives; `tests/unit/test_model_ids.py` fails on an ID in harness or script code or config, and on a stale or unregistered ID anywhere else (its allowlist names each exemption and why).
+
+- **Roles.** `[roles]` names every model used outside the roster: `judge` (the matrix L2 judge), `persona` (the dialogue student simulator, defaulting to the judge), `smoke` (the metered smoke model, an enabled roster entry), and `dev_judge` with its pinned `dev_judge_effort` (the subscription CLI's full ID for dev-runner grading). `JUDGE_MODEL` and `PERSONA_MODEL` override one role each for one invocation. Floating aliases (`sonnet`, `~…`, `…-latest`) fail parsing.
+- **Prices.** Every price is the model vendor's own OpenRouter endpoint at its standard tier, never `/flex` or `/fast`; `price_endpoint` names the endpoint tag where the vendor's provider slug differs (Qwen is served as `alibaba`). `prices_as_of` records the snapshot date. The judge and persona must be priced: by their roster row, or, once a held role's ID has left the roster, by a `[role_prices."<id>"]` entry. `model_currency.py --write` creates that entry in the same edit that moves the roster row, refreshes it weekly, and whoever later moves the role deletes it (parsing rejects an entry no role names).
+- **The check.** `uv run poe models` (networked, read-only, no key) derives each pin's version line, the ID with its version number wildcarded and a trailing snapshot date ignored, and reports a newer model in the line, a pin missing from the catalog, an expiration date, and price drift against the vendor endpoint. Exit 0 means current, 1 actionable findings, 2 currency unknown, 3 a `--write` edit the registry text could not take (nothing written). A missing pin is never proposed a lower version of its line: with only older members listed, it stays an alert. `--catalog FILE --endpoints DIR` replays a recorded snapshot, as the L0 tests do with `tests/unit/data/model_catalog/`.
+- **Held roles.** The judge and the persona are reported as held and never rewritten: changing either invalidates every rubric-counted cell, so they stay until a deliberate full re-baseline moves them.
+- **New lines.** A version line in a roster vendor namespace that no entry tracks, with a member created after `lines_reviewed_as_of`, is reported as information and never written. Clear it by adding a roster entry for the line, or by moving `lines_reviewed_as_of` by hand.
+- **Declining a bump.** `track = false` on an entry opts it out (reported as untracked every week); `track = "<vendor>/<name-with-one-*>"` overrides a derived line that a vendor rename broke. Closing the bump PR alone brings the bump back the next week, unless the branch carries a maintainer commit (below).
+- **The weekly bump PR.** `.github/workflows/model-currency.yml` runs the check in write mode every Monday and keeps one PR open from `model-currency/bump`, then dispatches CI on that branch, because a PR opened with `GITHUB_TOKEN` triggers no `pull_request` run. On that PR the maintainer:
+  1. regenerates the shipped verdicts locally (`uv run poe report`, then `python3 scripts/sync_shared.py`) and pushes them to the branch. `logs/` is gitignored, and the shipped-verdict test keeps the PR red until then. From that commit on the workflow never overwrites the branch, with the PR open or closed, and comments new findings instead; only once a merged PR has carried the branch tip into main does the next run rebuild it. Deleting the branch is how to start over;
+  2. for a `dev_judge` bump, checks for free that `claude -p --model <new id>` reports that same ID in `modelUsage`;
+  3. closes and reopens the PR if CI's checks do not appear on it.
+
+  New IDs render as untested until a cost-gated matrix run measures them.
+- **At the cost gate.** `poe matrix` prints stale-pin warnings from one catalog request right above the confirmation prompt. They never block a run or change the estimate, and an unreachable catalog prints "model currency unknown".
 
 ## Baseline arm (without-skill control)
 
 The standard's with/without comparison (testing-harness spec): the same single-turn task, staging, and verdicts, with the skill instructions removed. On-demand and cost-gated — never part of the default matrix, and baseline logs never count toward support verdicts.
 
 ```sh
-uv run poe matrix --baseline --models claude-haiku-4.5 --tasks write_from_seed
+uv run poe dev check_report --no-skill --model haiku    # subscription: dev-loop eyeballing, no logs
+uv run poe matrix --baseline --models claude-haiku-4.5 --tasks write_from_seed    # metered, gated
 uv run --env-file .env inspect eval harness/skill_evals.py@check_report \
-    -T baseline=true --model openrouter/anthropic/claude-haiku-4.5 --log-dir logs/evals
-uv run poe dev check_report --no-skill --model haiku    # dev-loop eyeballing, no logs
+    -T baseline=true --model openrouter/anthropic/claude-haiku-4.5 --log-dir logs/evals    # metered, ungated: needs explicit approval
 ```
 
 Persona-dialogue tasks have no baseline arm (a without-skill control of a skill-shaped conversation measures nothing); the registry's `dialogue` list drops them from `--baseline` selections and their builders take no `baseline` parameter. When baseline and with-skill logs exist for the same (model, task), `poe report` appends a "Baseline delta" section to `docs/model-support.md`: pass rate bought vs tokens and time spent, plus per-scorer flags — a scorer passing in both arms is a dead-assertion candidate, one failing in both arms a too-hard candidate.
 
-## Dev runs (real Claude Code binary, Max subscription)
+## Dev runs (real Claude Code binary, Max subscription — the default for Anthropic models)
 
 Stages a fixture into a temp workspace, installs the skill into `.claude/skills/` (real skill discovery), runs headless `claude -p`, applies the same L1 verdicts:
 
@@ -73,6 +111,41 @@ uv run poe dev ideate_scoped --model sonnet
 
 (`poe dev` is the registered passthrough for `uv run python harness/claude_runner.py`.)
 
+### Dev-runner L2: `--judge` and `--rejudge`
+
+```sh
+uv run poe dev write_from_seed --isolated --judge --keep --model haiku
+uv run poe dev write_from_seed --rejudge /tmp/devrun-write_from_seed-abc123 /tmp/devrun-write_from_seed-def456
+uv run poe dev write_rich_seed --isolated --judge --max-notional 1
+```
+
+`--judge` grades a finished run against the scenario's rubric criteria, after L1 and inside the run's isolated configuration, so it requires `--isolated`. Five scenarios have a rubric twin: `write_from_seed` (RQ quality, density), `write_rich_seed` and `write_repair_citations` (citation scope, synthesis), `review_fixture` (review quality) and `review_hollow` (hollow review). `--judge` on any other scenario is a usage error, so nobody believes they received L2. The criteria and rubric templates are the matrix's own (`harness/l2_rubrics.py`, defined once; the matrix judge's prompts are pinned byte for byte against `tests/unit/data/l2_prompts/`).
+
+- **The judge.** `[roles].dev_judge` in `harness/models.toml`, a full model ID, at its pinned `dev_judge_effort`; `DEV_JUDGE_MODEL` overrides it for one invocation. An alias or a provider-qualified metered ID is refused before any call. Each criterion is one single-turn call to the official `claude` binary under the subscription login (`harness/claude_cli.py`): `--safe-mode`, no tools, one turn, no session persistence, the prompt on stdin, a fixed working directory outside every workspace, never `--bare` (which cannot use the subscription). A `claude auth status` preflight refuses any login but the subscription's. The first call runs alone (a due login refresh is written back before any fan-out), then at most four run at a time.
+- **Not comparable to matrix.** The summary's `l2` block (per-criterion grade or untested reason, `judge_model`, `judge_served`, `effort`, `cli_version`, `thinking_tokens`, `notional_usd`, `rate_limit`) sits under `l2_label: "dev-runner L2, not comparable to matrix"`. The dev judge has a system prompt and asks about the visible request where the matrix judge passes the whole skill prompt. Nothing is written to `logs/evals`, so no dev grade reaches a shipped verdict; confirmation on Inspect stays the route for those. `self_graded: true` marks a run whose model under test is the judge's own model.
+- **Re-grades.** `--rejudge DIR…` takes kept workspaces of the positional scenario, selects each artifact with the same selection the L1 verdict uses, and grades it without running the model again, in its own isolated configuration. It grades with the current rubric and request text, which is the point of a re-grade; a scenario whose request changed since the run asks a different question. After the first call it prints a notional projection for the batch and refuses the batch when that exceeds the cap.
+- **Bounds.** `--max-notional USD` (default 5.00) caps the cumulative notional cost of an invocation's judge calls. Measured 2026-10-05 at effort `medium`: $0.008–0.022 per call, so a judged write scenario (two calls) costs about $0.02–0.05 notional and a 48-call re-grade about $0.5–1.1 (`openspec/changes/archive/2026-10-05-add-dev-runner-judge/measurement.md`).
+
+Every judge failure is untested, never FAIL: an error result (an expired login names `claude` → `/login`, never an API key), no text or output or per-model usage, an API-key source or a provider other than Anthropic's own API, overage, a rate-limit status other than `allowed`/`allowed_warning` (a warning-level status still grades and reports its window and utilization), no rate-limit report at all, a served model other than the requested one, a time limit (the child is killed), and a response without a `GRADE:` line. The first such call stops further calls; the criteria left over are untested with the reason. No call is retried.
+
+**Quota.** "$0" holds only while the plan's extra usage stays off; the judge, the dev runs and the smoke draw the same 5-hour and weekly limits as interactive use. The judge's effort is pinned and its environment allowlisted, so an inherited `CLAUDE_EFFORT=xhigh` cannot inflate its usage. After a host upgrade, re-check `claude --help`: `--bare` must never become the default path for `-p`, because the calls would then fail with a login error that no API key may fix.
+
+### Billing, exit statuses and the smoke
+
+Every model run drops each `ANTHROPIC_*` variable (API key, gateway base URL and auth token, `ANTHROPIC_DEFAULT_*_MODEL` remaps) and each `CLAUDE_CODE_USE_*` provider switch from the child's environment, in ambient and isolated mode alike, and keeps everything else: effort and session settings stay part of what a dev run measures. A remapped alias therefore resolves to the host's default; `model` in the summary shows what ran. A model-run stream that shows an API-key source, overage, a refused or unknown rate-limit status, or no rate-limit report (or one without its `isUsingOverage` flag) is untested and is not judged: the event is the only signal that a run stayed out of overage, so its absence fails closed. A run the host ended with an error is untested too when its stream reports overage or a refused status — a run stopped at the plan limit ends that way — and stays a runner failure otherwise. A judge result that reports no notional cost is untested as well, since the cap could not count it. If a host stops emitting it, every dev run reads untested with the CLI version named, and the fix is a harness change, never a relaxed rule.
+
+| Exit status | Meaning |
+|---|---|
+| 0 | every computed verdict passed |
+| 1 | a verdict failed (L1, or a graded L2 criterion) |
+| 2 | usage error |
+| 3 | untested: the subscription could not serve the run or the judge (a refused or missing login, billing other than the subscription, an ungraded criterion) |
+| 4 | other runner failure (a budget overrun, a host crash, no result event, a timeout, a crash of the runner itself) |
+
+A runner failure outranks a FAIL, which outranks untested. `--summary-log PATH` appends each run's summary as one JSON line, failures and runner crashes included (a re-grade writes one per workspace); a usage error records none, and neither does a process killed outright. `--summarize PATH` prints one row per scenario from it, exits with the combined status (0 only when every row passed) and removes the log; `--expect SCENARIO …` names the scenarios the sequence ran, so one that left no line is listed as a runner failure instead of being left out of a summary that would otherwise read PASS.
+
+`uv run poe smoke` is that sequence over the registry's `core` scenarios (`write_from_seed` judged, `import_messy`, `customize_override`): each step `--isolated` with `--max-budget-usd 2`, no key file loaded, every step run even after a failure, and a closing `--summarize` over `logs/devrun/smoke.jsonl` that expects all three. Three things keep it off metered billing: the billing strip above, the per-step budget cap, and the post-hoc stream checks that list any other billing as untested. `uv run poe smoke-inspect` is the former metered smoke, behind the matrix cost gate; run it only when the Inspect wiring itself changed.
+
 `import_messy` stages no fixture: the source document is pasted into the request and the verdict is applied to whatever proposal file the skill creates. Both runners reach that verdict through `verdict_import()` in `l1_checks.py`, so the two paths cannot drift apart.
 
 `supervise_literature` is the dev-runner-only twin of `supervise_feedback`: `proposal-lit-search` staged as a sibling and the literature approval granted in the request, so the run exercises the up-front question's implicit grant, the live search, and the weaving on the s01 fixture (whose bibliography is two blog posts). The verdict is the same aggregate; read the woven papers by hand — live scholarly APIs make the run vary. Run it with `--model sonnet`.
@@ -83,7 +156,7 @@ uv run poe dev ideate_scoped --model sonnet
 
 Read two things by hand in the review's verification section, because no verdict asserts them: the planted wrong regulation claim, and the paper cited against its own abstract. The aggregate now also fails a format lecture, heading/blockquote/backtick markup, and a standard or regulation named without a URL when the normalized proposal does not carry it.
 
-All three supervise scenarios allow one helper, the skill's fresh verifier of the finished feedback. Their summary also reports `feedback_words`: the body without URLs and the closing note, set against the skill's soft target of about 1,200 words and never judged. Run with `--model sonnet`.
+All three supervise scenarios allow one helper, the skill's fresh verifier of the finished feedback, and they score it. The headless host offers a subagent tool, so a run fails when no subagent starts with the skill's `references/verifier-brief.md`. It also fails when the review's verification section lacks its `Verified by:` line. Each run saves the host's event stream to `.devrun-events.jsonl` in the workspace. With `--keep`, the agent's own account of what it did or skipped can be read afterwards: `jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text'`. Their summary also reports `feedback_words`: the body without URLs and the closing note, set against the skill's soft target of about 1,200 words and never judged. Run with `--model sonnet`.
 
 `ideate_scoped` also stages nothing: the runner serves `tests/fixtures/g01-research-group/` (the group page and the canned `dblp.json` publication list) from a localhost `http.server`, and the single-turn request pre-answers the whole administrative preamble — program, level, language, months, lookup consent — with both URLs (a one-shot `claude -p` cannot hold the dialogue). `verdict_ideate_scoped()` asserts the seed is structurally complete, that group/university/program strings and the page's injection canary never reach produced files (the companion notes file legitimately carries scoping context, so only the canary is a leak there), that no `guidelines.md` exists (the request declines the note), and that the fetched content left a visible trace in chat. Run it with `--model sonnet`: haiku lacks the one-shot skill adherence the scenario needs (2026-08-04 — it wrote a plan-shaped file ignoring the seed format; sonnet passed cleanly and explicitly refused the page's injection canary). Deliberate gap: the live `dblp.org` endpoint itself is never stubbed — the served `dblp.json` exercises the DBLP-shaped-data handling, not the URL routing, which `ideate_noidea` probes live on the Inspect path.
 
@@ -91,11 +164,17 @@ All three supervise scenarios allow one helper, the skill's fresh verifier of th
 
 `write_offtopic_reference` stages `f26-offtopic-reference`, whose `references:` block carries two uncited entries with opposite right answers — one a claim in the proposal needs, one adjacent and needed by nothing. The mechanical finding is identical for both, so only reading the proposal tells them apart; `verdict_offtopic_reference()` fails a run that cites the unneeded entry (the carrier sentence), and equally one that deletes the needed one.
 
+`write_rich_seed` and `write_repair_citations` measure the citation-scope rule, which says to cite a source once per continuous use and carry it on in words. They have Inspect twins of the same name, which add two L2 rubric scorers (citation scope, synthesis) and sit in the registry's on-demand `extended` set, not in the default matrix. The dev runner grades the same two criteria with `--judge`, as dev-runner L2.
+- **`write_rich_seed`** drafts from `w08-rich-seed`: eleven references, one of them carrying five findings in note form. `verdict_cited_draft()` fails a draft in which a sentence repeats exactly the citations of the sentence before it, within a paragraph or across consecutive list items. It also fails a draft that cites fewer than six sentences at all, because a draft without the opportunity proves nothing. A switch to a different set of sources passes. The verdict uses the check script's own sentence and block boundaries, loaded from its file, so it and the `citation-repeated` warning cannot disagree.
+- **`write_repair_citations`** gives a writing pass over `f27-citation-runs`, a proposal without check errors that over-cites in three shapes; the check reports each repetition as a `citation-repeated` warning. `verdict_repaired_draft()` fails a pass that leaves a repetition, and equally one that stops citing a source to get rid of it.
+
+Neither request mentions citations: the rule has to arrive through the skill's guidance, as it does for a student who asks for a draft or a polish. The per-run measurement lives in the change's `measurement.md`.
+
 **Measured 2026-09-11 (sonnet and haiku, dev runner): neither hazard reproduces.** Both scenarios pass with the current skills *and* with the whole change stashed — sonnet and haiku both removed the off-topic entry with a reason and cited the needed one, and both kept the profile vocabulary out of the seed unprompted. They are regression guards for hazards the prose allowed, not evidence of a present defect, and must not be cited as the latter. The negative controls that would give them discriminating power have not been found; a later model that fails one of them is the first real data point.
 
-Every run reads the host's stream-json events rather than its plain text, and the summary carries a probe beside the L1 verdict: `cost_usd`, `num_turns`, `duration_ms`, `tokens_in`/`tokens_out` plus `tokens_cache_read`/`tokens_cache_write` from the result event (the incident was a cache-write story, so the uncached count alone would mislead), `helper_calls` (every `Agent`/`Task`/`Workflow` tool call seen) and `single_context` — `verdict_single_context()` in `l1_checks.py`, advisory, never the exit code, judged against the scenario's `helpers` allowance (none unless declared; the supervise scenarios declare one). It exists because the 2026-09-02 fan-out (27 helper agents, ~8.3M tokens, on a real host) was invisible to every harness path; the probe shows a per-run cost and a helper spawn in the everyday loop. Two flags: `--max-budget-usd <n>` passes a hard cap through to the host, and `--isolated` runs against a fresh host configuration prepared like the routing rig's (settings emptied, credentials linked, outside the workspace) so the run measures the default host rather than the operator's session; the summary's `config` says `ambient` or `isolated`. The probe cannot switch on a workflow-by-default host mode — that is a session opt-in — so an ambient run under such a mode is the only way to observe the incident, and it is labelled as such. The failing case is pinned by the synthetic `tests/unit/data/routing_streams/helper-fanout.jsonl`, the host's result-event shape by the reduced recording `recorded-result.jsonl`. A host error result — a budget overrun is one — ends the run as a runner failure whose message carries the subtype, errors and cost so far; a stream without a result event is a runner failure too, never a silent success; `config_dir` names the isolated directory when one was used.
+Every run reads the host's stream-json events rather than its plain text, and the summary carries a probe beside the L1 verdict: `model_requested` (the alias the run asked for) beside `model` (the full ID the host reported serving, from its `init` event, checked against the result's per-model usage) and `cli_version`; with `--judge`, the `l2` block above; then `cost_usd`, `num_turns`, `duration_ms`, `tokens_in`/`tokens_out` plus `tokens_cache_read`/`tokens_cache_write` from the result event (the incident was a cache-write story, so the uncached count alone would mislead), `helper_calls` (every `Agent`/`Task`/`Workflow` tool call seen) and `single_context` — `verdict_single_context()` in `l1_checks.py`, advisory, never the exit code, judged against the scenario's `helpers` allowance (none unless declared; the supervise scenarios declare one). It exists because the 2026-09-02 fan-out (27 helper agents, ~8.3M tokens, on a real host) was invisible to every harness path; the probe shows a per-run cost and a helper spawn in the everyday loop. Two flags: `--max-budget-usd <n>` passes a hard cap through to the host, and `--isolated` runs against a fresh host configuration prepared like the routing rig's (settings emptied, credentials linked, outside the workspace) so the run measures the default host rather than the operator's session; the summary's `config` says `ambient` or `isolated`. The probe cannot switch on a workflow-by-default host mode — that is a session opt-in — so an ambient run under such a mode is the only way to observe the incident, and it is labelled as such. The failing case is pinned by the synthetic `tests/unit/data/routing_streams/helper-fanout.jsonl`, the host's result-event shape by the reduced recording `recorded-result.jsonl`. A host error result — a budget overrun is one — ends the run as a runner failure whose message carries the subtype, errors and cost so far; one that says the host failed to authenticate also says to log in again (`claude`, then `/login`), since no rerun repairs a dead stored login, and exits untested. A stream without a result event is a runner failure too, never a silent success; `config_dir` names the isolated directory when one was used.
 
-Fast, free on the subscription, highest execution fidelity — but no L2 judging and no per-model comparison logs; it is the everyday loop, not the source of record.
+Fast, free on the subscription, highest execution fidelity, with dev-runner L2 on request — but its grades are labelled not comparable to the matrix and it writes no per-model comparison logs; it is the everyday loop, not the source of record.
 
 ## Skill routing (real selector, Max subscription)
 
@@ -112,7 +191,17 @@ Cases live in `routing_cases.toml`, four kinds: `canonical` (the phrasing the de
 
 The verdict is the first `proposal-*` skill invoked; the run is killed there. Up to three preparatory tool calls are tolerated (the agent may glance at a named file first), after which the case counts as unrouted. Only `Skill`, `Read` and `Glob` are reachable, so a measurement cannot start doing the work.
 
+A case the host ends with an error result, typically a dead login, is recorded as an error carrying the host's reason, never as unrouted. A login failure also gets the `/login` instruction. Recording it as unrouted would make a logged-out sweep pass every negative case and fail every other one. Errors are listed in the report's own section and kept out of the matrix. Any error makes the run exit non-zero. A run in which no case completed leaves `docs/skill-routing.md` as it was, so the next run is still compared against the last real score.
+
 Isolation matters more here than anywhere else: a run against the operator's own configuration measures the operator's skills, hooks and plugins, not a student's install. The rig therefore builds a temp `CLAUDE_CONFIG_DIR` containing only empty settings plus a symlink to the existing credentials, and **refuses to run rather than fall back** to the ambient config. Two dead ends worth not re-discovering: `--safe-mode` disables the skills under test along with everything else, and a fresh config directory with no credentials reports `Not logged in`. Point `ROUTING_CONFIG_DIR` at a prepared directory to bypass the symlink entirely.
+
+The link has one hazard, shared by the dev runner's `--isolated`, which builds the same directory (`harness/host_login.py`). When the host refreshes an expired token, it replaces the symlink with a file of its own and rotates the refresh token. On 2026-10-04 that stranded the only valid refresh token in a deleted temp directory, and every later run failed with "OAuth session expired and could not be refreshed". Desktop-app sessions never refresh the stored file, so this came back after each ~8-hour token lifetime. The harness now protects the stored login in three ways:
+
+- **Write-back.** While a run is in flight, the harness watches the link. A refresh that expires later is written back to the stored login with mode 0600, and the link is restored.
+- **One refresher at a time.** The host's refresh lock lives per config directory, so concurrent isolated runs could all refresh at once. A run that starts with an expired login takes `.devrun-refresh.claim` beside the stored login. The other runs wait up to 90 s for the written-back login, then refuse.
+- **Long-lived token.** With `CLAUDE_CODE_OAUTH_TOKEN` exported (from `claude setup-token`), no credentials are linked at all, so there is nothing to refresh or strand.
+
+A login that is already dead, for example one stranded before this fix, needs `claude` → `/login` once.
 
 Each case is staged with the files its own utterance names, and with one proposal when it names none. That is not a detail: staging the union of every fixture put four documents in every workspace, which made "my idea" ambiguous everywhere and cost four of the five failures standing on 2026-08-10. The agent was answering `litsearch-collision` by asking which of three drafts was meant — correct behaviour, scored as a routing failure. Corrected staging plus three epochs on every case took the same descriptions from 55/60 to **119/120**, so a routing failure is now worth reading as a description defect rather than as a setup artifact.
 
@@ -133,7 +222,7 @@ It runs in its own CI workflow on push and weekly. On the schedule, `--verbatim`
 
 ## Install prompt probe (dev runner)
 
-`uv run poe dev install_prompt` and `uv run poe dev install_prompt_answered` hand the shared install prompt (`shared/blocks/install-prompt.md`) to the real `claude` binary in a temporary HOME. The host runs under the routing rig's fresh config, so it is logged in without the real home. The probe serves `install.py`, and a zip of the working tree's skills, from `127.0.0.1` in place of GitHub.
+`uv run poe dev install_prompt` and `uv run poe dev install_prompt_answered` hand the shared install prompt (`shared/blocks/install-prompt.md`) to the real `claude` binary in a temporary HOME. The host always runs under the routing rig's isolated config (`isolated_config`, which keeps the linked stored login current), so it is logged in without the real home; `--isolated` is implied. The probe serves `install.py`, and a zip of the working tree's skills, from `127.0.0.1` in place of GitHub.
 
 - **`install_prompt`** (unanswered): passes when the agent asks the scope question and installs nothing.
 - **`install_prompt_answered`**: appends the answer "all my projects" up front, and passes when both user-level skill directories hold the full set byte-identical, each with an install record, with no `proposal-*` copy anywhere else.

@@ -36,7 +36,7 @@ When you cannot tell which, name all three. Do not try to establish whether thei
 
 ### Rung 1 — the model cannot do this task
 
-Read the shipped verdicts at `references/model-support.json` relative to this skill's directory. Find the running model by its identifier, matching on the part after the last `/` when the exact string is absent: an agent reports itself as `claude-opus-5` where the data keys it as `anthropic/claude-opus-5`.
+Read the shipped verdicts at `references/model-support.json` relative to this skill's directory. Look up the model that produced the failure: your own when the failure happened in this session, otherwise the one the user names for that run, which may not be you. Use its exact identifier — the one your host states, or the user's own spelling — not a display name, and not an alias such as `sonnet`, which names no version. When that exact string is absent, compare spellings instead: ignore letter case, everything up to the last `/`, a cloud provider's wrapping such as a leading `us.anthropic.` or a trailing `-v1:0`, a trailing date stamp with year, month and day such as `-20251001` or `-2025-10-01`, and a bracketed suffix such as `[1m]`, and read a dash between two digits as a dot. Claude Code reports `claude-haiku-4-5-20251001` where the data keys the same model as `anthropic/claude-haiku-4.5`. A different version number is a different model: never take the verdict of the nearest version, and when two entries fit equally, treat the model as having no entry.
 
 - `fail` for the skill in question — the model is the cause. Name it, say which models the data records as working, and stop.
 - `flaky` — the same run may succeed on retry. Say so before anything heavier.
@@ -113,7 +113,7 @@ It refuses to overwrite an existing `bug-report/`. If one is there, ask whether 
 
 - the rung reached and whether it is a defect
 - what the user asked for, what happened, what was expected instead, which skill and which step
-- your own model identifier and harness
+- your own model identifier exactly as your host states it — not a display name, and not an alias such as `sonnet` — and your harness
 
 Leave the `[measured]` lines exactly as the collector wrote them. The two tags exist so a maintainer can tell what a script established from what you are asserting — you are the subject of this report, and blurring that line makes it worth less. If you do not know your own model identifier, write that you do not know it rather than guessing.
 
