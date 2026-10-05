@@ -31,6 +31,7 @@
     "install the build tools": "proposal-publish",
     "wants something different": "proposal-customize",
     "bullet points turned into prose": "proposal-write",
+    "polishing pass": "proposal-write",
     "a skill misbehaved": "proposal-troubleshoot"
   },
   "shared": [

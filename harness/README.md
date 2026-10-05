@@ -190,7 +190,7 @@ Fast, free on the subscription, highest execution fidelity, with dev-runner L2 o
 Every task above hands the agent a skill body and measures what it does with it. `uv run poe routing` measures the step before that: with all eleven skills installed and nothing else, which one does the host actually select for a user utterance? The decision is made from the frontmatter `description` alone — no body is loaded — so this is the only place the descriptions are under test.
 
 ```sh
-uv run poe routing                              # 44 cases, sonnet, 3 epochs on the collision kind
+uv run poe routing                              # 46 cases, sonnet, 3 epochs each
 uv run poe routing -- --model haiku             # the stress run: the weakest reader
 uv run poe routing -- --kind collision --jobs 1
 uv run poe routing -- --case review-canonical
@@ -214,7 +214,12 @@ A login that is already dead, for example one stranded before this fix, needs `c
 
 Each case is staged with the files its own utterance names, and with one proposal when it names none. That is not a detail: staging the union of every fixture put four documents in every workspace, which made "my idea" ambiguous everywhere and cost four of the five failures standing on 2026-08-10. The agent was answering `litsearch-collision` by asking which of three drafts was meant — correct behaviour, scored as a routing failure. Corrected staging plus three epochs on every case took the same descriptions from 55/60 to **119/120**, so a routing failure is now worth reading as a description defect rather than as a setup artifact.
 
-The one remaining failure, `ideate-collision`, misses 1 epoch in 3 while `proposal-ideate`'s description already carries that utterance's exact framing ("talk a topic through", "weigh whether it is worth pursuing"). It is model nondeterminism, and widening the description further would spend always-loaded metadata against a coin flip.
+The one remaining failure of that run, `ideate-collision`, misses 1 epoch in 3 while `proposal-ideate`'s description already carries that utterance's exact framing ("talk a topic through", "weigh whether it is worth pursuing"). It is model nondeterminism, and widening the description further would spend always-loaded metadata against a coin flip.
+
+On haiku, the rig and the dev runner can disagree, so a description edit aimed at haiku needs both.
+- **What happened.** On 2026-10-05 the polishing case `write-polish-collision` stayed at 0/3 on the rig before and after `proposal-write`'s description was extended. Over the same request, the dev runner went from 0/3 to 3/3 skill loads, against a same-day control.
+- **Why they can differ.** The rig offers all eleven skills, while the dev runner installs one. The rig also withholds the editing tools that haiku then tries to call.
+- **Details:** `openspec/changes/archive/2026-10-05-route-polish-to-write/measurement.md`.
 
 Claude-only by construction. Other hosts read the same `description` but select through their own prompts, and simulating those prompts would measure our simulation. Not part of `poe test` or CI — it needs a host install and a subscription — but the route extraction, the classification and the dataset's composition are covered by `tests/unit/test_routing.py` against recorded streams, with no model call.
 

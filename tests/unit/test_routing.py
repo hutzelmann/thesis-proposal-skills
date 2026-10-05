@@ -14,6 +14,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
+import claude_runner
 import pytest
 import routing
 from helpers import REPO
@@ -485,6 +486,13 @@ def test_dataset_carries_negatives_and_german_cases():
 
 def test_dataset_kinds_are_known():
     assert {c.kind for c in load_cases()} <= set(KINDS)
+
+
+def test_polish_case_is_the_dev_scenarios_request():
+    """The case exists to reproduce a dev-run routing miss in the cheaper rig;
+    a reworded copy would measure a different sentence from the one that failed."""
+    case = next(c for c in load_cases() if c.id == "write-polish-collision")
+    assert case.utterance == claude_runner.SCENARIOS["write_repair_citations"]["request"]
 
 
 def test_missing_case_kind_is_reported():

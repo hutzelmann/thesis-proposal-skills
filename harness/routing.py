@@ -96,6 +96,7 @@ WORKSPACE_FIXTURES = (
     ("f12-clean-de", "typsystem-einheitenfehler.md"),
     ("w01-ideate-seed", "data-drift-detection.md"),
     ("s01-raw-email", "submission-email.txt"),
+    ("f27-citation-runs", "dependency-update-breakage.md"),
 )
 
 # What a case gets when its utterance names nothing. Not an empty directory: a
