@@ -60,6 +60,16 @@ BUILD_STEM = "proposal-build"
 BUILD_RECIPE_NAMES = frozenset({"makefile", "gnumakefile", "justfile"})
 BUILD_TARGET_RE = re.compile(rf"^{BUILD_STEM}\b[^\n]*:", re.MULTILINE)
 
+# the wrappings normalize_model_id strips from a model identifier, in the order
+# it applies them. Narrow on purpose: the revision needs the colon form a cloud
+# provider uses, since a bare `-v4` is a version and dropping it would let one
+# version match another.
+MODEL_VARIANT_RE = re.compile(r"\[[^\]]*\]$")
+MODEL_CLOUD_PREFIX_RE = re.compile(r"^(?:[a-z]+\.)?anthropic\.")
+MODEL_CLOUD_REVISION_RE = re.compile(r"-v\d+:\d+$")
+MODEL_DATE_RE = re.compile(r"[-@]20\d{6}$")
+MODEL_DIGIT_DASH_RE = re.compile(r"(?<=\d)-(?=\d)")
+
 
 # --------------------------------------------------------------------------
 # hashing
@@ -539,10 +549,30 @@ def build_report(level: str, proposal: Path | None,
 # main
 # --------------------------------------------------------------------------
 
+def normalize_model_id(name: str) -> str:
+    """Reduce one spelling of a model identifier to the form compared at rung 1.
+    The steps run in order, and the order matters: the cloud revision must go
+    before the date so the date is trailing, and the date before the digit step
+    so its dash is not read as a version dot. SKILL.md rung 1 states this rule
+    in prose; tests/unit/test_troubleshoot_collect.py keeps the two in step.
+    """
+    name = name.strip().lower()
+    name = MODEL_VARIANT_RE.sub("", name)          # a bracketed variant, e.g. `[1m]`
+    name = name.rsplit("/", 1)[-1]                 # routing and vendor prefixes
+    name = MODEL_CLOUD_PREFIX_RE.sub("", name)     # `anthropic.`, with `us.`, `eu.`, `global.`
+    name = MODEL_CLOUD_REVISION_RE.sub("", name)   # `-v1:0`; a bare `-v4` is a version
+    name = MODEL_DATE_RE.sub("", name)             # `-20251001` or `@20251001`
+    return MODEL_DIGIT_DASH_RE.sub(".", name)      # a dash between two digits is a dot
+
+
 def resolve_model(reported: str, support_path: Path = SUPPORT) -> tuple[str | None, dict]:
     """Match an agent's self-reported model name against the shipped verdicts.
-    Matching is by suffix on a path boundary, because an agent reports
-    `claude-opus-5` while the roster keys it as `anthropic/claude-opus-5`.
+    The exact identifier wins; otherwise exactly one key must share its
+    normalised spelling, because hosts spell one model several ways: Claude
+    Code reports `claude-haiku-4-5-20251001` where the roster keys
+    `anthropic/claude-haiku-4.5`. Spellings are compared for equality, never as
+    prefixes, so a different version never inherits another's verdict; when
+    two keys fit equally, none is chosen.
     Returns (matched key or None, that model's record).
     """
     if not support_path.is_file():
@@ -555,7 +585,8 @@ def resolve_model(reported: str, support_path: Path = SUPPORT) -> tuple[str | No
     wanted = reported.strip().removeprefix("openrouter/")
     if wanted in models:
         return wanted, models[wanted]
-    hits = [key for key in sorted(models) if key.endswith("/" + wanted)]
+    spelling = normalize_model_id(wanted)
+    hits = [key for key in sorted(models) if normalize_model_id(key) == spelling]
     if len(hits) == 1:
         return hits[0], models[hits[0]]
     return None, {}

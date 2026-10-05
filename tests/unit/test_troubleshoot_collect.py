@@ -8,6 +8,7 @@ computes it differently, every submitted report becomes unidentifiable.
 """
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from collect import (
     file_hashes,
     git_blob_hash,
     main,
+    normalize_model_id,
     notes_log,
     redact_text,
     resolve_model,
@@ -304,16 +306,103 @@ def test_vendored_verdicts_distinguish_untested_from_failing():
     assert "untested" in data["statuses"]
 
 
-def test_resolve_model_matches_a_bare_name_by_suffix():
-    """An agent reports `claude-opus-5`; the roster keys it with a vendor prefix."""
-    key, record = resolve_model("claude-opus-5")
-    assert key == "anthropic/claude-opus-5"
+SHIPPED_SUPPORT = SKILL / "references" / "model-support.json"
+
+# the roster as track-model-currency bumps it, plus two keys kept only as
+# guards: the 5.0 opus for the version guard, deepseek-v4 for the colon-form
+# revision guard. Synthetic, so a roster bump in the shipped file breaks nothing.
+SYNTHETIC_KEYS = (
+    "anthropic/claude-haiku-4.5",
+    "anthropic/claude-sonnet-5.5",
+    "anthropic/claude-opus-5.5",
+    "anthropic/claude-opus-5",
+    "openai/gpt-6-luna",
+    "deepseek/deepseek-v4",
+)
+
+
+def write_support(path: Path, keys) -> Path:
+    """A model-support.json shaped like the shipped one, holding `keys`."""
+    data = {
+        "statuses": {"solid": "every measured epoch passed", "fail": "every measured epoch failed"},
+        "models": {
+            key: {"verdict": "supported", "skills": {"proposal-write": "solid"}} for key in keys
+        },
+    }
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def support_file(tmp_path):
+    return write_support(tmp_path / "model-support.json", SYNTHETIC_KEYS)
+
+
+def claude_code_spelling(key: str) -> str:
+    """How Claude Code states an `anthropic/` roster key: no vendor, dashed version."""
+    return re.sub(r"(?<=\d)\.(?=\d)", "-", key.removeprefix("anthropic/"))
+
+
+@pytest.mark.parametrize("reported", [
+    "anthropic/claude-opus-5.5",
+    "openrouter/anthropic/claude-opus-5.5",
+    "claude-opus-5.5",
+])
+def test_resolve_model_accepts_the_key_a_routing_prefix_and_the_bare_name(support_file, reported):
+    key, record = resolve_model(reported, support_file)
+    assert key == "anthropic/claude-opus-5.5"
     assert "verdict" in record
 
 
-def test_resolve_model_accepts_the_full_key_and_a_routing_prefix():
-    assert resolve_model("anthropic/claude-opus-5")[0] == "anthropic/claude-opus-5"
-    assert resolve_model("openrouter/anthropic/claude-opus-5")[0] == "anthropic/claude-opus-5"
+@pytest.mark.parametrize(("reported", "expected"), [
+    ("claude-haiku-4-5-20251001", "anthropic/claude-haiku-4.5"),
+    ("claude-haiku-4-5", "anthropic/claude-haiku-4.5"),
+    (" Claude-Haiku-4-5 ", "anthropic/claude-haiku-4.5"),
+    ("claude-sonnet-5-5", "anthropic/claude-sonnet-5.5"),
+    ("claude-opus-5-5", "anthropic/claude-opus-5.5"),
+])
+def test_resolve_model_matches_claude_code_spellings(support_file, reported, expected):
+    """Claude Code dashes the version digits and may append a date stamp."""
+    assert resolve_model(reported, support_file)[0] == expected
+
+
+@pytest.mark.parametrize(("reported", "expected"), [
+    ("us.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic/claude-haiku-4.5"),
+    ("global.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic/claude-haiku-4.5"),
+    ("claude-haiku-4-5@20251001", "anthropic/claude-haiku-4.5"),
+    ("claude-sonnet-5-5[1m]", "anthropic/claude-sonnet-5.5"),
+])
+def test_resolve_model_matches_cloud_and_variant_spellings(support_file, reported, expected):
+    assert resolve_model(reported, support_file)[0] == expected
+
+
+def test_resolve_model_never_takes_the_verdict_of_another_version(tmp_path):
+    """5.5 is not 5: a newer version than any recorded stays unevaluated."""
+    only_five = write_support(tmp_path / "only-five.json", ["anthropic/claude-opus-5"])
+    assert resolve_model("claude-opus-5-5", only_five) == (None, {})
+
+
+def test_resolve_model_does_not_match_a_version_prefix(support_file):
+    assert resolve_model("claude-haiku-4", support_file) == (None, {})
+
+
+def test_only_the_colon_form_revision_is_dropped(support_file):
+    """A bare `-vN` is a version, not a cloud revision (design D3)."""
+    assert normalize_model_id("deepseek-v4") != normalize_model_id("deepseek-v3")
+    assert resolve_model("deepseek-v3", support_file) == (None, {})
+
+
+@pytest.mark.parametrize("alias", ["haiku", "sonnet", "opus"])
+def test_an_alias_names_no_version_and_resolves_to_nothing(support_file, alias):
+    assert resolve_model(alias, support_file) == (None, {})
+
+
+def test_two_keys_with_one_spelling_resolve_to_nothing(tmp_path):
+    """Choosing either would report a neighbouring entry's verdict as the user's."""
+    both = write_support(
+        tmp_path / "both.json", ["anthropic/claude-haiku-4.5", "bedrock/claude-haiku-4-5"]
+    )
+    assert resolve_model("claude-haiku-4-5-20251001", both) == (None, {})
 
 
 def test_resolve_model_returns_nothing_for_an_unknown_model():
@@ -323,8 +412,42 @@ def test_resolve_model_returns_nothing_for_an_unknown_model():
     assert record == {}
 
 
+def test_every_shipped_key_resolves_to_itself_without_collisions():
+    """Holds under any roster: the same normalisation runs on both sides, so the
+    only failure is two keys sharing a spelling (design D4)."""
+    keys = json.loads(SHIPPED_SUPPORT.read_text(encoding="utf-8"))["models"]
+    spellings = [normalize_model_id(key) for key in keys]
+    assert len(set(spellings)) == len(spellings), f"keys collide after normalisation: {spellings}"
+    for key in keys:
+        assert resolve_model(key)[0] == key
+
+
+def test_every_shipped_anthropic_key_resolves_from_its_claude_code_spelling():
+    keys = [k for k in json.loads(SHIPPED_SUPPORT.read_text(encoding="utf-8"))["models"]
+            if k.startswith("anthropic/")]
+    assert keys, "no anthropic/ key shipped — the property is vacuous"
+    for key in keys:
+        bare = claude_code_spelling(key)
+        assert resolve_model(bare)[0] == key, bare
+        assert resolve_model(bare + "-20251001")[0] == key, bare + "-20251001"
+
+
+def test_the_pinned_rung_one_example_resolves_through_resolve_model(tmp_path):
+    """Rung 1's prose is the runtime path and resolve_model its executable
+    statement (design D1): the worked example the agent reads must resolve under
+    the code's rule. Rewording the sentence breaks its pin; changing the rule so
+    the example no longer resolves breaks this."""
+    pins = Path(__file__).parent / "data" / "pinned_sentences"
+    pin = pins / "proposal-troubleshoot--model-match.txt"
+    reported, key = re.findall(r"`([^`]+)`", pin.read_text(encoding="utf-8"))[:2]
+    only_key = write_support(tmp_path / "only-key.json", [key])
+    assert resolve_model(reported, only_key)[0] == key
+
+
 def test_resolve_model_reports_a_known_failing_skill():
-    _, record = resolve_model("claude-haiku-4.5")
+    """The measured fact troubleshoot_model_rung relies on, resolved from the
+    spelling its prompt uses — so the eval's expectation and the data move together."""
+    _, record = resolve_model("claude-haiku-4-5-20251001")
     assert record["skills"]["proposal-write"] == "fail"
 
 

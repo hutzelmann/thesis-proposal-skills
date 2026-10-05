@@ -68,7 +68,7 @@ body:
       label: Agent and harness
       description: The `[self-reported]` model and harness lines from report.md
       placeholder: |
-        [self-reported] model: claude-sonnet-5
+        [self-reported] model: claude-sonnet-5-5
         [self-reported] harness: Claude Code CLI
       render: text
     validations:

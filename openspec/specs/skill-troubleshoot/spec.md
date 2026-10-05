@@ -2,7 +2,9 @@
 
 ## Purpose
 Diagnoses problems a user hits while working with the proposal skills, resolves the causes that are not defects, and for the ones that are, assembles a bug report the user reviews and delivers themselves.
+
 ## Requirements
+
 ### Requirement: Triage precedes collection
 
 The skill SHALL work through a fixed diagnostic ladder before it assembles or writes anything. The ladder SHALL be ordered cheapest-resolution-first: a stale install, then an unsupported model, then a workspace guidelines override, then a failing script, then a violated skill mandate, then dissatisfaction with correct output. The skill SHALL name which rung the problem landed on and SHALL state whether that rung is a defect.
@@ -68,6 +70,18 @@ An unsupported model SHALL remain reportable at the user's option, because a fre
 
 The model-support verdicts the ladder consults SHALL ship inside the skill as committed machine-readable data. The skill SHALL NOT depend on network access or on the development repository to reach them, because it runs in a user's workspace which contains neither. When the shipped data has no entry for the running model or the task, the skill SHALL say the rung is unevaluated rather than treat absence as a pass.
 
+The running model SHALL be looked up by the exact identifier its host states. When that exact string is absent from the shipped data, the skill SHALL compare spellings instead. An entry belongs to the running model when both spellings are equal after the same normalisation is applied to each. That normalisation ignores:
+
+- letter case and surrounding whitespace;
+- routing and vendor prefixes, meaning everything up to the last `/`;
+- a cloud provider's wrapping: a leading vendor segment with an optional region, and a trailing revision;
+- a trailing date stamp;
+- a trailing bracketed variant qualifier.
+
+It also reads a dash between two digits as a dot. Hosts spell one model several ways. Claude Code, for one, puts dashes between version digits and appends a date stamp where the data keys the same model with a dotted version under a vendor prefix. A verdict missed for that reason reads to the user as "unevaluated" when the data records a failure.
+
+Normalised spellings SHALL be compared for equality, never as prefixes. A different version number names a different model and SHALL NOT inherit another version's verdict. When more than one entry matches, the skill SHALL choose none and report the rung as unevaluated, because picking one would report a neighbouring model's verdict as the user's.
+
 #### Scenario: Verdicts consulted offline
 
 - **WHEN** the ladder reaches the model rung with no network available
@@ -77,6 +91,21 @@ The model-support verdicts the ladder consults SHALL ship inside the skill as co
 
 - **WHEN** the running model has no entry in the shipped verdicts
 - **THEN** the skill reports the rung as unevaluated for that model and continues down the ladder
+
+#### Scenario: Host spelling differs from the data's key
+
+- **WHEN** the host states the running model as `example-4-5-20251001` and the shipped data keys that model as `lab/example-4.5`
+- **THEN** the skill uses the verdicts recorded under `lab/example-4.5`
+
+#### Scenario: Newer version than any recorded
+
+- **WHEN** the host states the running model as `example-5-5` and the shipped data holds `lab/example-5` but no 5.5 entry
+- **THEN** the skill reports the rung as unevaluated for that model rather than applying the `lab/example-5` verdict
+
+#### Scenario: Two entries match the same spelling
+
+- **WHEN** two entries in the shipped data normalise to the running model's spelling
+- **THEN** the skill applies neither verdict and reports the rung as unevaluated
 
 ### Requirement: Report stays local and is delivered by the user
 
@@ -131,6 +160,8 @@ Every fact in the report SHALL be marked as either measured or self-reported. Fa
 
 The distinction SHALL be visible in the report itself. The agent assembling the report is the subject of the report, so a maintainer must be able to see which half of it is testimony without inferring it.
 
+The self-reported model identity SHALL be the exact identifier the agent's host states, not a display name or an alias such as `sonnet`. An alias names no version, so a maintainer cannot match it to a verdict or a measurement. An agent that does not know its exact identifier SHALL say so rather than supply a guess.
+
 #### Scenario: Environment recorded
 
 - **WHEN** interpreter and tool versions are collected by a script
@@ -140,6 +171,11 @@ The distinction SHALL be visible in the report itself. The agent assembling the 
 
 - **WHEN** the agent contributes its account of the failing exchange or its own model identity
 - **THEN** that content appears marked as self-reported
+
+#### Scenario: Model identity given as the host states it
+
+- **WHEN** the agent fills in its model identity and its host states the identifier `example-5-5`
+- **THEN** the report carries `example-5-5`, not a display name such as "Example 5.5" or an alias such as `example`
 
 ### Requirement: Install identified from workspace evidence
 
@@ -218,4 +254,3 @@ A workspace build definition SHALL be recorded under its own name rather than th
 #### Scenario: Workspace build definition present
 - **WHEN** a report is assembled for a proposal with a workspace build definition beside it
 - **THEN** the report records that definition by name with its size and hash, so a maintainer can see the document was not built by the shipped pipeline
-

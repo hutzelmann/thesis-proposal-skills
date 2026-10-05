@@ -1031,7 +1031,10 @@ def check_report_hardened(baseline: bool = False) -> Task:
 #
 # The rung is stated in the prompt rather than inferred from the runner, so the
 # expected outcome is identical on every model under test: the user says they ran
-# claude-haiku-4.5, which the vendored verdicts record as failing proposal-write.
+# haiku, which the vendored verdicts record as failing proposal-write. The prompt
+# names it as claude-haiku-4-5-20251001, the spelling Claude Code reports, not as
+# the data's dotted key, so a pass also exercises rung 1's spelling-matching rule
+# (tests/unit/test_troubleshoot_collect.py resolves the same spelling).
 # The prompt also closes rung 0 (already reinstalled), so rung 1 is the target and
 # a model that stops at "update first" is not accidentally graded correct.
 
@@ -1051,7 +1054,7 @@ def troubleshoot_model_rung(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-troubleshoot", "f05-slr-interviews",
         "The write skill produced a draft that ignored half of what I told it. I was "
-        "running claude-haiku-4.5. I have already re-run "
+        "running claude-haiku-4-5-20251001. I have already re-run "
         "`npx skills add hutzelmann/thesis-proposal-skills` and it still happens. "
         "Is this a bug I should report?",
         [troubleshoot_model_rung_l1(), no_spurious_offer()],

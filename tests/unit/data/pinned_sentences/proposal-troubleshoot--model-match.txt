@@ -1,0 +1,1 @@
+Claude Code reports `claude-haiku-4-5-20251001` where the data keys the same model as `anthropic/claude-haiku-4.5`. A different version number is a different model: never take the verdict of the nearest version
