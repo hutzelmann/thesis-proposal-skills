@@ -68,6 +68,7 @@ uv run poe dev <scenario> --model haiku   # default for Anthropic models: real C
 uv run poe smoke                   # subscription: the core scenarios on the dev runner, isolated and budget-capped, write_from_seed judged, closing summary
 uv run poe smoke-inspect           # metered, cost-gated, only when the Inspect wiring changed: [roles].smoke × core tasks × 1 epoch via OpenRouter
 uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # model-support matrix: metered OpenRouter, cost-gated — the source of record for shipped verdicts
+uv run poe cache-probe [--estimate-only]   # metered prompt-caching check, cost-gated
 uv run poe report                  # regenerate README model-support summary + docs/model-support.md from logs
 uv run poe models                  # model currency vs the public OpenRouter catalog (networked, read-only)
 uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
