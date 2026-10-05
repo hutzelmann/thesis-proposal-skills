@@ -2,7 +2,7 @@
 """Routing rig: which skill does the real host selector invoke for an utterance?
 
 Every other harness task hands the agent a skill body and measures what it does
-with it. This one measures the step before that: the host reads only the ten
+with it. This one measures the step before that: the host reads only the eleven
 frontmatter descriptions and picks one. The verdict is the first `proposal-*`
 Skill invocation observed, after which the run is killed — everything past the
 selection is paid noise.
