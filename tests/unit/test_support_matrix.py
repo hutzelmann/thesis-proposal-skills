@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import support
+from helpers import failing_fetch
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -694,15 +695,11 @@ def test_matrix_estimate_only_exits_clean(monkeypatch, capsys):
 # test_model_currency.py, the one test file whose model IDs are snapshot facts.
 
 
-def _refuse(*_request):
-    raise OSError("catalog down")
-
-
 def test_gate_offline_warns_and_keeps_the_exit_status(monkeypatch, capsys):
     import matrix
 
     monkeypatch.setitem(sys.modules, "inspect_ai", object())
-    monkeypatch.setattr(matrix.model_currency, "fetch_json", _refuse)
+    monkeypatch.setattr(matrix.model_currency, "fetch_json", failing_fetch("catalog down"))
     assert matrix.main(["--estimate-only", "--tier", "cheap"]) == 0
     assert "model currency unknown (catalog unreachable: catalog down)" in capsys.readouterr().out
 

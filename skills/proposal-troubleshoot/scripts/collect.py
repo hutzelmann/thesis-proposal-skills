@@ -71,8 +71,11 @@ BUILD_TARGET_RE = re.compile(rf"^{BUILD_STEM}\b[^\n]*:", re.MULTILINE)
 #   `@20251001`, `-2025-10-01`); a shorter suffix such as `-2411` may be a
 #   version and stays.
 # Accepted assumption: a dated snapshot takes the verdict of an undated key with
-# the same version. The roster keys carry no date; when the data holds two
-# snapshots of one version, both share a spelling and neither is chosen.
+# the same version. The roster keys carry no year-month-day date, but some carry
+# a short snapshot token (a trailing `-0813`); like any short suffix it stays,
+# so a host spelling without it resolves no key and reads as untested.
+# When the data holds two snapshots of one version, both share a spelling and
+# neither is chosen.
 MODEL_VARIANT_RE = re.compile(r"\s*\[[^\]]*\]$")
 MODEL_CLOUD_PREFIX_RE = re.compile(r"^(?:[a-z]+(?:-[a-z]+)*\.)?[a-z]+\.")
 MODEL_CLOUD_REVISION_RE = re.compile(r"-v?\d+:\d+$")

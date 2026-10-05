@@ -10,7 +10,9 @@ this file are facts of that snapshot, not examples, which is why
 from __future__ import annotations
 
 import ast
+import http.client
 import json
+import subprocess
 import sys
 from dataclasses import fields
 from datetime import date
@@ -18,9 +20,9 @@ from datetime import date
 import model_currency as mc
 import pytest
 import support
-from helpers import REPO
+from helpers import MODEL_CATALOG as DATA
+from helpers import REPO, failing_fetch
 
-DATA = REPO / "tests" / "unit" / "data" / "model_catalog"
 PRE_BUMP = (DATA / "registry-pre-bump.toml").read_text(encoding="utf-8")
 AS_OF = "2026-10-04"
 
@@ -91,8 +93,9 @@ def catalog() -> dict[str, mc.CatalogEntry]:
 
 
 @pytest.fixture
-def replay():
-    return mc.replay_fetch(DATA / "models.json", DATA / "endpoints")
+def replay(catalog_snapshot):
+    """The conftest snapshot replay, under the name the checks here pass it by."""
+    return catalog_snapshot
 
 
 def check(text: str, replay, catalog) -> mc.Result:
@@ -343,6 +346,45 @@ def test_expiring_pin_without_successor_is_an_alert(replay, catalog):
     assert result.exit_code == 1
 
 
+def test_missing_pin_is_never_written_back_to_an_older_version(tmp_path, replay, catalog):
+    """With lab/thirdparty-2 withdrawn, only lab/thirdparty-1 is left in its
+    line: proposing it would downgrade the roster and silence the alert."""
+    text = substituted(LAB_TOML, (
+        'id = "openrouter/lab/thirdparty-1"', 'id = "openrouter/lab/thirdparty-2"'))
+    result = check(text, replay, catalog)
+    missing = findings(result, "roster:openrouter/lab/thirdparty-2")["missing"]
+    assert (missing.writable, missing.proposed) == (False, "")
+    assert "lab/thirdparty-1" in missing.detail
+    assert "roster:openrouter/lab/thirdparty-2" in result.alerts
+    assert not [e for e in result.edits if e.target == "openrouter/lab/thirdparty-2"]
+    code, written = run_main(tmp_path, text, "--write")
+    assert code == 1
+    assert 'id = "openrouter/lab/thirdparty-2"' in written
+
+
+def test_missing_dev_judge_is_never_moved_to_an_older_version(replay, catalog):
+    text = substituted(LAB_TOML, ('dev_judge = "claude-sonnet-5"', 'dev_judge = "claude-sonnet-6"'))
+    result = check(text, replay, catalog)
+    assert not findings(result, "role:dev_judge")["missing"].writable
+    assert "role:dev_judge" in result.alerts
+    assert not [e for e in result.edits if e.target == "dev_judge"]
+
+
+def test_dated_subscription_bump_settles(replay, catalog):
+    """A dated anthropic snapshot listed beside the undated ID: next week the
+    bumped dev_judge compares as that snapshot, not as its undated sibling,
+    which the snapshot would outrank forever."""
+    sonnet = catalog["anthropic/claude-sonnet-5.5"]
+    dated = "anthropic/claude-sonnet-5.5-20260928"
+    catalog = {**catalog, dated: mc.CatalogEntry(dated, sonnet.created + 86_400)}
+    first = check(LAB_TOML, replay, catalog)
+    assert findings(first, "role:dev_judge")["newer"].proposed == "claude-sonnet-5-5-20260928"
+    bumped = mc.apply_edits(LAB_TOML, first.edits, date.fromisoformat(AS_OF))
+    second = check(bumped, replay, catalog)
+    assert not findings(second, "role:dev_judge")
+    assert not [e for e in second.edits if e.target == "dev_judge"]
+
+
 def test_judge_and_persona_are_held_never_written(replay, catalog):
     result = check(LAB_TOML, replay, catalog)
     for role in ("judge", "persona"):
@@ -482,10 +524,14 @@ def test_held_judge_leaving_the_roster_gets_a_role_price(tmp_path):
     assert again == written
 
 
-def test_role_price_drift_is_reported_and_refreshed(tmp_path, replay):
+@pytest.mark.parametrize("header", [
+    '[role_prices."openrouter/lab/judge-1"]',            # as --write spells it
+    "[ role_prices . 'openrouter/lab/judge-1' ]",        # the same table, hand-written
+])
+def test_role_price_drift_is_reported_and_refreshed(tmp_path, replay, catalog, header):
     _, written = run_main(tmp_path, LAB_TOML, "--write")
+    written = written.replace('[role_prices."openrouter/lab/judge-1"]', header)
     reg = support.parse_registry(written)
-    catalog = mc.parse_catalog(json.loads((DATA / "models.json").read_text(encoding="utf-8")))
 
     def repriced(url, timeout):
         raw = replay(url, timeout)
@@ -498,9 +544,30 @@ def test_role_price_drift_is_reported_and_refreshed(tmp_path, replay):
     drift = findings(result, "role_price:openrouter/lab/judge-1")["price_drift"]
     assert drift.writable
     refreshed = mc.apply_edits(written, result.edits, date.fromisoformat(AS_OF))
+    assert refreshed.count("role_prices") == 1, "refreshed in place, never a second table"
     entry = support.parse_registry(refreshed).role_prices["openrouter/lab/judge-1"]
     assert entry.input_price == 1.5
     assert support.parse_registry(refreshed).roles.judge == "openrouter/lab/judge-1"
+
+
+def test_write_finds_a_row_whatever_string_quoting_spells_its_id(tmp_path):
+    text = substituted(PRE_BUMP, (
+        'id = "openrouter/openai/gpt-5.6-sol"', "id = 'openrouter/openai/gpt-5.6-sol'"))
+    code, written = run_main(tmp_path, text, "--write")
+    assert code == 1
+    assert "openrouter/openai/gpt-6.1-sol" in [m.id for m in support.parse_registry(written).models]
+
+
+def test_a_write_the_registry_cannot_take_exits_3_without_a_report(tmp_path, monkeypatch, capsys):
+    def unappliable(*_args):
+        raise ValueError("no [roles] table")
+
+    monkeypatch.setattr(mc, "apply_edits", unappliable)
+    code, written = run_main(tmp_path, PRE_BUMP, "--write", "--json")
+    assert (code, written) == (3, PRE_BUMP)
+    captured = capsys.readouterr()
+    assert captured.out == "", "no JSON report: the workflow tells a failure from findings by it"
+    assert "write failed" in captured.err
 
 
 # ---------- interface ----------------------------------------------------------
@@ -555,6 +622,24 @@ def test_pr_body_lists_files_still_naming_an_outgoing_id():
     assert "`docs/example.md`" in body
 
 
+def test_files_naming_finds_every_spelling_of_an_outgoing_id(tmp_path):
+    files = {
+        "pyproject.toml": 'cmd = "python harness/matrix.py --models claude-haiku-4.5 --core"\n',
+        "docs/qualified.md": "pinned: anthropic/claude-haiku-4.5\n",
+        "docs/subscription.md": "claude -p --model claude-haiku-4-5\n",
+        "docs/other-versions.md": "claude-haiku-4.5-20251001, claude-haiku-4.50\n",
+        "openspec/record.md": "claude-haiku-4.5\n",
+    }
+    for name, body in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(body, encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    assert mc.files_naming(["anthropic/claude-haiku-4.5"], tmp_path) == [
+        "docs/qualified.md", "docs/subscription.md", "pyproject.toml"]
+    assert mc.spellings("openai/gpt-6-luna") == ["openai/gpt-6-luna", "gpt-6-luna"]
+
+
 @pytest.mark.parametrize("catalog_text", [None, '{"data": [{"id": 5}]}', "not json"])
 def test_unknown_currency_exits_2_and_writes_nothing(tmp_path, catalog_text):
     registry = tmp_path / "models.toml"
@@ -565,6 +650,19 @@ def test_unknown_currency_exits_2_and_writes_nothing(tmp_path, catalog_text):
         broken.write_text(catalog_text, encoding="utf-8")
         args += ["--catalog", str(broken), "--endpoints", str(DATA / "endpoints")]
     assert mc.main(args) == 2
+    assert registry.read_text(encoding="utf-8") == PRE_BUMP
+
+
+def test_truncated_catalog_body_is_currency_unknown(tmp_path, monkeypatch):
+    """IncompleteRead is an http.client.HTTPException, neither an OSError nor a
+    ValueError, and must still end as exit 2 rather than a traceback (exit 1)."""
+    def truncated(*_request):
+        raise http.client.IncompleteRead(b"partial")
+
+    monkeypatch.setattr(mc, "fetch_json", truncated)
+    registry = tmp_path / "models.toml"
+    registry.write_text(PRE_BUMP, encoding="utf-8")
+    assert mc.main(["--registry", str(registry), "--write", "--as-of", AS_OF]) == 2
     assert registry.read_text(encoding="utf-8") == PRE_BUMP
 
 
@@ -582,10 +680,6 @@ def _estimate_block(out: str) -> str:
     return "\n".join(line for line in out.splitlines() if not line.startswith("model currency"))
 
 
-def _catalog_down(*_request):
-    raise OSError("catalog down")
-
-
 @pytest.mark.usefixtures("catalog_snapshot")
 def test_gate_prints_stale_pins_after_the_estimate(monkeypatch, capsys):
     import matrix
@@ -598,7 +692,7 @@ def test_gate_prints_stale_pins_after_the_estimate(monkeypatch, capsys):
     assert "is missing from the catalog (newest in its line: qwen/qwen3.8-max-0902)" in warned
     assert warned.index("TOTAL") < warned.index("model currency:"), "warnings follow the estimate"
 
-    monkeypatch.setattr(mc, "fetch_json", _catalog_down)
+    monkeypatch.setattr(mc, "fetch_json", failing_fetch("catalog down"))
     assert matrix.main(["--estimate-only"]) == 0
     offline = capsys.readouterr().out
     assert "model currency unknown (catalog unreachable: catalog down)" in offline

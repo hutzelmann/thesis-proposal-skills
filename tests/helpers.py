@@ -21,6 +21,7 @@ import check as check_script
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURES = REPO / "tests" / "fixtures"
+MODEL_CATALOG = REPO / "tests" / "unit" / "data" / "model_catalog"
 
 # markdown that sits beside a fixture proposal without being one
 NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
@@ -56,3 +57,12 @@ def fixture_proposal(fixture: str) -> Path:
         p for p in sorted((FIXTURES / fixture).glob("*.md"))
         if p.name not in NON_PROPOSAL_MARKDOWN and not p.name.endswith("-handout.md")
     )
+
+
+def failing_fetch(message: str):
+    """A stand-in for `model_currency.fetch_json` whose every read fails the
+    way an unreachable catalog does (an OSError carrying `message`)."""
+    def fetch(*_request: object) -> object:
+        raise OSError(message)
+
+    return fetch

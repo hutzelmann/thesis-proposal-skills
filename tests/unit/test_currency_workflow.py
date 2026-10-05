@@ -18,6 +18,18 @@ WORKFLOWS = REPO / ".github" / "workflows"
 CURRENCY = WORKFLOWS / "model-currency.yml"
 PERMISSIONS = {"contents": "write", "pull-requests": "write", "actions": "write"}
 FORBIDDEN = ("--yes", "poe matrix", "inspect eval", "poe smoke", "OPENROUTER")
+# the lines that keep a crash from passing as "current" and a maintainer's
+# commit on the bump branch from being overwritten (review follow-up 2026-10-05)
+GUARDS = (
+    # a crash exits 1 like a run with findings: only a parsed report is a verdict
+    """jq -e '(.findings | type == "array") and (.alerts | type == "array")'""",
+    # the lease is the commit that was inspected, not a later ls-remote read
+    'expected=$(git rev-parse -q --verify "refs/remotes/origin/$BRANCH" || true)',
+    'git log "origin/main..$expected"',
+    '--force-with-lease="refs/heads/$BRANCH:$expected"',
+    # the others-check runs whatever the PR state; only a merged tip is rebuilt
+    "--state merged",
+)
 
 
 def _uncommented(text: str) -> list[str]:
@@ -65,6 +77,9 @@ def workflow_problems(text: str) -> list[str]:
     if "python3 harness/model_currency.py --write --json" not in text:
         problems.append("the checker does not run in write mode with plain python3")
     problems += [f"forbidden: {word!r}" for word in FORBIDDEN if word in "\n".join(lines)]
+    problems += [f"guard missing: {guard!r}" for guard in GUARDS if guard not in text]
+    if '[ -n "$pr" ] && [ -n "$expected" ]' in text:
+        problems.append("the others-check is gated on an open pull request")
     return problems
 
 
@@ -85,6 +100,23 @@ def test_the_pin_catches_an_extra_permission():
     text = CURRENCY.read_text(encoding="utf-8").replace(
         "permissions:\n", "permissions:\n  id-token: write\n", 1)
     assert any("permissions are" in p for p in workflow_problems(text))
+
+
+@pytest.mark.parametrize(("old", "new", "problem"), [
+    # the first version: no report check, so a crash closed the PR as "current"
+    ("""! jq -e '(.findings | type == "array") and (.alerts | type == "array")'""",
+     "false", "guard missing"),
+    # the first version: the lease read after the inspection, so a push in between was lost
+    ('expected=$(git rev-parse -q --verify "refs/remotes/origin/$BRANCH" || true)',
+     'expected=$(git ls-remote --heads origin "$BRANCH" | cut -f1)', "guard missing"),
+    # the first version: maintainer commits were protected only while a PR was open
+    ('if [ -n "$expected" ]; then', 'if [ -n "$pr" ] && [ -n "$expected" ]; then',
+     "gated on an open pull request"),
+])
+def test_the_pin_catches_the_first_versions_branch_handling(old, new, problem):
+    text = CURRENCY.read_text(encoding="utf-8")
+    assert text.count(old) == 1, f"workflow drifted: {old!r}"
+    assert any(problem in p for p in workflow_problems(text.replace(old, new)))
 
 
 def test_ci_accepts_the_dispatch():

@@ -16,16 +16,19 @@ Usage:
     python3 harness/model_currency.py --catalog models.json --endpoints endpoints/  # replay
 
 Exit status: 0 current (or only informational findings), 1 actionable findings,
-2 currency unknown (catalog or endpoint unreachable or malformed; nothing written).
+2 currency unknown (catalog or endpoint unreachable or malformed; nothing written),
+3 the write mode could not apply an edit to the registry (nothing written).
 """
 
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 import subprocess
 import sys
+import tomllib
 import urllib.request
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass
@@ -160,7 +163,9 @@ def replay_fetch(catalog: Path, endpoints: Path | None = None) -> Fetch:
 def _read(fetch: Fetch, url: str, timeout: float) -> object:
     try:
         return fetch(url, timeout)
-    except (OSError, ValueError) as exc:  # URLError and JSONDecodeError included
+    # URLError and JSONDecodeError included; a truncated body (IncompleteRead)
+    # is an HTTPException, which is neither
+    except (OSError, ValueError, http.client.HTTPException) as exc:
         raise CurrencyUnknown(f"{url}: {exc}") from exc
 
 
@@ -247,6 +252,18 @@ def assess(
         if _order(newest, pattern) > _order(entry, pattern):
             return "newer", newest
     return None, None
+
+
+def is_downgrade(cid: str, line: str | None, proposed: CatalogEntry | None) -> bool:
+    """A missing pin's proposed successor carries a lower version than the pin.
+    Writing it would move the roster backwards, so it is never writable. A pin
+    that does not fit its (overridden) line has no version and never compares
+    higher."""
+    if proposed is None or line is None:
+        return False
+    pattern = _line_regex(line)
+    pinned = _version(cid, pattern)
+    return pinned is not None and (_version(proposed.id, pattern) or ()) < pinned
 
 
 def _line_for(model: support.Model, cid: str) -> str | None:
@@ -388,6 +405,11 @@ def _successor(run: _Run, subject: str, model_id: str, cid: str, line: str | Non
         detail = "absent from the catalog and no member of its line is listed"
         run.add(subject, "missing", model_id, detail=detail)
         return ""
+    if kind == "missing" and is_downgrade(cid, line, newest):
+        run.add(subject, "missing", model_id,
+                detail=f"absent from the catalog; the newest listed member of its line, "
+                f"{proposed}, is an older version and is not proposed")
+        return ""
     detail = "absent from the catalog" if kind == "missing" else f"newer in {line}"
     run.add(subject, kind, model_id, proposed, detail, writable=True)
     return proposed
@@ -452,24 +474,40 @@ def _check_held_roles(run: _Run) -> None:
             run.add(subject, "missing", model_id, newest.id if newest else "",
                     "absent from the catalog; held roles move only with a re-baseline")
         elif kind == "newer":
-            detail = "held until a full re-baseline (Change D)"
+            detail = "held until a deliberate full re-baseline moves it"
             if model_id in written:
                 detail += f'; [role_prices."{model_id}"] written to keep it priced'
             run.add(subject, "held", model_id, newest.id, detail)
 
 
+def subscription_catalog_id(model_id: str, catalog: dict[str, CatalogEntry]) -> str:
+    """catalog_id, except that a dated subscription ID keeps its date when the
+    catalog lists that dated snapshot: compared as its undated sibling, a dated
+    pin would be outranked by itself and re-proposed every week."""
+    cid = catalog_id(model_id)
+    dated = _DATE_SUFFIX_RE.search(model_id)
+    if "/" not in model_id and dated and cid + dated.group(0) in catalog:
+        return cid + dated.group(0)
+    return cid
+
+
 def _check_dev_judge(run: _Run) -> None:
     model_id = run.registry.roles.dev_judge
-    cid = catalog_id(model_id)
+    cid = subscription_catalog_id(model_id, run.catalog)
     subject = "role:dev_judge"
-    kind, newest = assess(cid, derive_line(cid), run.catalog)
+    line = derive_line(cid)
+    kind, newest = assess(cid, line, run.catalog)
     _expiry(run, subject, model_id, cid)
     if kind is None:
         return
-    if newest is None:
-        run.add(subject, "missing", model_id, detail="absent from the catalog")
+    if newest is None or (kind == "missing" and is_downgrade(cid, line, newest)):
+        run.add(subject, "missing", model_id,
+                detail="absent from the catalog, and no member of its line at the same or a "
+                "higher version is listed")
         return
     proposed = subscription_id(newest.id) if cid.startswith("anthropic/") else newest.id
+    if proposed == model_id:
+        return  # the pin itself in another spelling: nothing to move
     run.add(subject, kind, model_id, proposed,
             "subscription role: confirm the CLI resolves the new ID to itself before merging",
             writable=True)
@@ -559,14 +597,39 @@ def _key_re(key: str) -> re.Pattern[str]:
     return re.compile(rf"^(\s*{re.escape(key)}\s*=\s*)(.*?)(\s+#.*)?$")
 
 
-def _blocks(lines: list[str]) -> list[tuple[str, int, int]]:
-    """(header name, first line, end line) per table; the top level is ""."""
-    starts = [(m.group(1), i) for i, line in enumerate(lines) if (m := _HEADER_RE.match(line))]
-    bounds = [("", 0), *starts]
-    return [
-        (name, start, bounds[k + 1][1] if k + 1 < len(bounds) else len(lines))
-        for k, (name, start) in enumerate(bounds)
+def _table_path(header: str) -> tuple[str, ...]:
+    """A table header's key path however it is quoted or spaced, so
+    `[role_prices."x"]` and `[ role_prices . 'x' ]` name the same table."""
+    try:
+        node: object = tomllib.loads(f"[{header}]\n")
+    except tomllib.TOMLDecodeError:
+        return (header,)
+    path = []
+    while isinstance(node, dict) and len(node) == 1:
+        key, node = next(iter(node.items()))
+        path.append(key)
+    return tuple(path)
+
+
+def _blocks(lines: list[str]) -> list[tuple[tuple[str, ...], int, int]]:
+    """(header key path, first line, end line) per table; the top level is ()."""
+    starts = [
+        (_table_path(m.group(1)), i) for i, line in enumerate(lines)
+        if (m := _HEADER_RE.match(line))
     ]
+    bounds = [((), 0), *starts]
+    return [
+        (path, start, bounds[k + 1][1] if k + 1 < len(bounds) else len(lines))
+        for k, (path, start) in enumerate(bounds)
+    ]
+
+
+def _value(text: str) -> object:
+    """A TOML value's meaning, whichever string quoting spells it."""
+    try:
+        return tomllib.loads(f"v = {text}\n")["v"]
+    except tomllib.TOMLDecodeError:
+        return None
 
 
 def _set_key(lines: list[str], start: int, end: int, key: str, value: str | None,
@@ -599,15 +662,14 @@ def _set_prices(lines: list[str], start: int, end: int, quote: Quote) -> None:
 
 
 def _model_block(lines: list[str], model_id: str) -> tuple[int, int]:
-    wanted = f'"{model_id}"'
-    for name, start, end in _blocks(lines):
-        if name != "models":
+    for path, start, end in _blocks(lines):
+        if path != ("models",):
             continue
         for i in range(start, end):
             match = _key_re("id").match(lines[i])
-            if match and match.group(2) == wanted:
+            if match and _value(match.group(2)) == model_id:
                 return start, end
-    raise ValueError(f"no [[models]] block with id {wanted}")
+    raise ValueError(f"no [[models]] block with id {model_id!r}")
 
 
 def _apply_roster(lines: list[str], edit: Edit) -> None:
@@ -619,8 +681,8 @@ def _apply_roster(lines: list[str], edit: Edit) -> None:
 
 
 def _apply_role(lines: list[str], edit: Edit) -> None:
-    for name, start, end in _blocks(lines):
-        if name == "roles":
+    for path, start, end in _blocks(lines):
+        if path == ("roles",):
             _set_key(lines, start, end, edit.target, json.dumps(edit.new_id), "")
             return
     raise ValueError("no [roles] table")
@@ -629,11 +691,13 @@ def _apply_role(lines: list[str], edit: Edit) -> None:
 def _apply_role_price(lines: list[str], edit: Edit) -> None:
     header = f"role_prices.{json.dumps(edit.target)}"
     blocks = _blocks(lines)
-    for name, start, end in blocks:
-        if name == header:
+    for path, start, end in blocks:
+        if path == ("role_prices", edit.target):
             _set_prices(lines, start, end, edit.quote)
             return
-    roles_end = next(end for name, _, end in blocks if name == "roles")
+    roles_end = next((end for path, _, end in blocks if path == ("roles",)), None)
+    if roles_end is None:
+        raise ValueError("no [roles] table")
     at = roles_end
     while at > 0 and not lines[at - 1].strip():
         at -= 1
@@ -716,8 +780,9 @@ def render_pr_body(result: Result, as_of: date, stale_files: list[str]) -> str:
         *(_bullets(actionable) or ["- none"]),
         "",
         "## Held roles",
-        "The matrix judge and the dialogue persona are held until a full re-baseline "
-        "(Change D): the check reports a newer model in their line and never rewrites them.",
+        "The matrix judge and the dialogue persona are held until a deliberate full "
+        "re-baseline moves them: changing either invalidates every rubric-counted cell, so "
+        "the check reports a newer model in their line and never rewrites them.",
         *(_bullets(held) or ([] if role_prices else ["- none reported this run"])),
         *(f'- `[role_prices."{mid}"]` written so the held role stays priced after its '
           "roster row moved" for mid in role_prices),
@@ -750,10 +815,21 @@ def render_pr_body(result: Result, as_of: date, stale_files: list[str]) -> str:
 _SNAPSHOT_PATHS = ("openspec/", "tests/unit/data/model_catalog/")
 
 
+def spellings(cid: str) -> list[str]:
+    """The spellings tracked files use for one catalog ID: vendor-qualified,
+    vendor-stripped (as `poe matrix --models` takes it), and for an anthropic ID the
+    subscription CLI's form; the same spellings the model-ID guard resolves."""
+    found = [cid, cid.split("/", 1)[-1]]
+    if cid.startswith("anthropic/"):
+        found.append(subscription_id(cid))
+    return list(dict.fromkeys(found))
+
+
 def files_naming(ids: Iterable[str], repo: Path) -> list[str]:
     """Best effort: tracked files (outside the change records and the recorded
-    catalog) that still name one of the outgoing IDs as a whole token."""
-    ids = list(ids)
+    catalog) that still name one of the outgoing IDs as a whole token, in any
+    of its `spellings`."""
+    ids = list(dict.fromkeys(s for cid in ids for s in spellings(cid)))
     patterns = [re.compile(rf"(?<![\w.-]){re.escape(i)}(?![\w-]|\.\d)") for i in ids]
     if not patterns:
         return []
@@ -859,7 +935,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     fetched_at = datetime.now(UTC).isoformat(timespec="seconds")
     if args.write:
-        _write(args, text, result)
+        try:
+            _write(args, text, result)
+        except ValueError as exc:  # an edit the registry text could not take
+            print(f"model currency: write failed, nothing written: {exc}", file=sys.stderr)
+            return 3
     if args.pr_body:
         outgoing = [e.target.removeprefix("openrouter/") for e in result.edits
                     if e.kind == "roster" and e.new_id != e.target]

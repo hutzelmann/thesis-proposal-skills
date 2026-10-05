@@ -18,9 +18,7 @@ from pathlib import Path
 
 import model_currency
 import pytest
-from helpers import FIXTURES, REPO, fixture_proposal
-
-MODEL_CATALOG = REPO / "tests" / "unit" / "data" / "model_catalog"
+from helpers import FIXTURES, MODEL_CATALOG, REPO, failing_fetch, fixture_proposal
 
 
 @pytest.fixture(autouse=True)
@@ -31,10 +29,7 @@ def _model_catalog_offline(monkeypatch):
     prints "model currency unknown" instead of making a live request. Raising
     the error the gate already handles keeps such tests free of any knowledge
     of the catalog."""
-    def refuse(*_request: object) -> object:
-        raise OSError("network disabled in L0 tests")
-
-    monkeypatch.setattr(model_currency, "fetch_json", refuse)
+    monkeypatch.setattr(model_currency, "fetch_json", failing_fetch("network disabled in L0 tests"))
 
 
 @pytest.fixture
