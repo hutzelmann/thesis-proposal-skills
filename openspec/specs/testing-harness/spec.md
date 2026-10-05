@@ -1344,7 +1344,7 @@ The harness SHALL provide a metered probe that replays a fixed, synthetic multi-
 - **THEN** the mechanism passes on that model
 
 ### Requirement: Isolated child environment
-An isolated host child SHALL receive an environment built from an allowlist. This covers every routing-rig run and every dev-runner run in isolated mode. It SHALL NOT receive the launching process's environment with only the configuration directory overridden. One function, shared by both runners, SHALL build that environment.
+An isolated host child SHALL receive an environment built from an allowlist. This covers every routing-rig run and the model-under-test child of every dev-runner run in isolated mode. It SHALL NOT receive the launching process's environment with only the configuration directory overridden. One function, shared by both runners, SHALL build that environment. The dev judge's child also runs in an isolated configuration, but its environment is governed by the requirement "Subscription text roles (dev runner)", not by this one.
 
 The allowlist SHALL admit only:
 - `PATH` and `HOME`;
@@ -1385,6 +1385,10 @@ Building the isolated environment SHALL print nothing, and no runner output SHAL
 #### Scenario: Ambient run keeps the operator's environment
 - **WHEN** the dev runner runs without isolated mode
 - **THEN** the child inherits the operator's environment, its effort and session variables included, except the billing variables
+
+#### Scenario: Judge child outside this requirement
+- **WHEN** an isolated dev run is graded by the dev judge
+- **THEN** the judge's child gets the environment that "Subscription text roles (dev runner)" prescribes, and only the model-under-test child is held to this allowlist
 
 #### Scenario: No values printed
 - **WHEN** the isolated environment is built from an environment holding a messaging token
