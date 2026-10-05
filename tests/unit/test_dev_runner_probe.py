@@ -5,13 +5,16 @@ The probe reads the host's stream-json events. Three sources under
 `data/routing_streams/`: the synthetic `helper-fanout.jsonl` pins the failing
 case, the reduced recording `recorded-result.jsonl` pins the host's result-event
 shape — a field rename fails here instead of blanking the telemetry line — and
-the failure paths are fed synthetic events, since no recorded run hit them.
+the failure paths are fed synthetic events, since no recorded run hit them. The
+account-surface checks read the reduced recording `claudeai-surfaces.jsonl` and
+the synthetic `clean-init.jsonl` and `ambient-user-mcp.jsonl`. The host is
+replaced at its stream reader (`follow_stream`), so the check script's own
+subprocess still runs.
 """
 
 import argparse
 import json
 import shutil
-import subprocess
 import tomllib
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
@@ -19,6 +22,7 @@ from pathlib import Path
 import claude_cli
 import claude_runner
 import pytest
+from account_surfaces import PROFILE_DIR
 from claude_cli import JudgeCall, RateLimit
 from claude_runner import (
     DRAFT_SCENARIOS,
@@ -49,7 +53,7 @@ from claude_runner import (
     telemetry,
     verdict,
 )
-from helpers import FIXTURES, REPO, shipped_registry
+from helpers import FIXTURES, REPO, followed, shipped_registry
 from l1_checks import HELPER_TOOLS, load_closing_note, verdict_l2_grades, verdict_single_context
 from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, isolated_env, tool_calls
 
@@ -509,13 +513,27 @@ LAUNCH_ENV = {
 
 
 def test_model_env_strips_billing_variables_in_both_modes(tmp_path):
+    """No inherited `ANTHROPIC_*` value in either mode; the isolated child's one
+    `ANTHROPIC_` name is the empty profile directory the harness sets."""
     before = dict(LAUNCH_ENV)
-    for config in (None, tmp_path):
+    for config, harness_set in ((None, []), (tmp_path, ["ANTHROPIC_CONFIG_DIR"])):
         env = model_env(LAUNCH_ENV, config)
-        assert not [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
+        assert not [k for k in env if k.startswith("CLAUDE_CODE_USE_")]
+        assert [k for k in env if k.startswith("ANTHROPIC_")] == harness_set
         for kept in ("PATH", "CLAUDE_CODE_OAUTH_TOKEN"):
             assert env[kept] == LAUNCH_ENV[kept]
     assert before == LAUNCH_ENV
+
+
+def test_isolated_model_env_names_the_empty_profile_directory(tmp_path):
+    env = model_env({**LAUNCH_ENV, "ANTHROPIC_CONFIG_DIR": "/home/x/.config/anthropic"}, tmp_path)
+    assert env["ANTHROPIC_CONFIG_DIR"] == str(tmp_path / PROFILE_DIR)
+
+
+def test_model_env_switches_connectors_off_in_both_modes(tmp_path):
+    launching = {**LAUNCH_ENV, "ENABLE_CLAUDEAI_MCP_SERVERS": "true"}
+    for config in (None, tmp_path):
+        assert model_env(launching, config)["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
 
 
 def test_ambient_model_env_keeps_the_operator_settings():
@@ -567,20 +585,20 @@ def refuse_isolation(monkeypatch, code: object = NO_LOGIN) -> None:
 
 
 def fake_host(monkeypatch, stdout: str = "", returncode: int = 0, stderr: str = "",
-              raises: Exception | None = None) -> dict:
-    """Replace only the `claude` subprocess; the check script still runs."""
+              raises: Exception | None = None, timed_out: bool = False) -> dict:
+    """Replace only the host's stream reader, which applies the stop condition
+    the runner hands it event by event; the check script's own subprocess
+    still runs. `seen["stop"]` is that condition."""
     seen: dict = {}
-    real_run = subprocess.run
 
-    def run(command, *args, **kwargs):
-        if command[0] != "claude":
-            return real_run(command, *args, **kwargs)
-        seen.update(command=command, env=kwargs.get("env"))
+    def follow(command, **kwargs):
+        seen.update(command=command, env=kwargs["env"], stop=kwargs["stop"])
         if raises is not None:
             raise raises
-        return subprocess.CompletedProcess(command, returncode, stdout, stderr)
+        return followed(parse_events(stdout), kwargs["stop"], returncode=returncode,
+                        stderr=stderr, timed_out=timed_out)
 
-    monkeypatch.setattr(claude_runner.subprocess, "run", run)
+    monkeypatch.setattr(claude_runner, "follow_stream", follow)
     return seen
 
 
@@ -729,7 +747,7 @@ def test_isolation_exit_without_a_message_is_not_swallowed(monkeypatch):
 
 
 def test_host_timeout_is_a_runner_failure(monkeypatch, tmp_path):
-    fake_host(monkeypatch, raises=subprocess.TimeoutExpired(["claude"], 5))
+    fake_host(monkeypatch, timed_out=True)
     log = tmp_path / "log.jsonl"
     assert main(["check_report", "--timeout", "5", "--summary-log", str(log)]) == EXIT_RUNNER
     [line] = logged(log)
@@ -771,15 +789,141 @@ def test_host_receives_the_stripped_environment(isolated_run, monkeypatch, reque
         argv.append("--isolated")
     main(argv)
     env = seen["env"]
-    assert not [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
+    assert not [k for k in env if k.startswith("CLAUDE_CODE_USE_")]
+    inherited = set(LAUNCH_ENV.values())
+    assert not [k for k, v in env.items() if k.startswith("ANTHROPIC_") and v in inherited]
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "placeholder-token"
+    assert env["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
     if isolated_run:
         # the allowlist: the operator's effort setting is not the default host's
         assert "CLAUDE_EFFORT" not in env
         assert env["CLAUDE_CONFIG_DIR"] == str(config)
+        assert env["ANTHROPIC_CONFIG_DIR"] == str(config / PROFILE_DIR)
     else:
         assert env["CLAUDE_EFFORT"] == "xhigh"
         assert "CLAUDE_CONFIG_DIR" not in env
+        assert not [k for k in env if k.startswith("ANTHROPIC_")]
+
+
+# ---------- claude.ai account surfaces (testing-harness spec: Isolated
+# measurement environment; Dev-runner cost and helper-agent telemetry) --------
+
+SURFACES = events("claudeai-surfaces")
+CLEAN_INIT = events("clean-init")
+AMBIENT_MCP = events("ambient-user-mcp")
+
+
+def handed_stop(monkeypatch, tmp_path, config: Path | None):
+    """The stop condition `run_claude` hands the stream reader."""
+    seen = fake_host(monkeypatch, stdout_of(model_stream()))
+    claude_runner.run_claude(tmp_path, "request", "haiku", 5, config=config)
+    return seen["stop"]
+
+
+def test_the_isolated_stop_fires_on_the_recorded_init(monkeypatch, tmp_path):
+    stop = handed_stop(monkeypatch, tmp_path, tmp_path)
+    assert stop(SURFACES[:1])
+    assert stop(SURFACES[:2])  # a tagged command-list change on its own fires too
+    assert not stop(CLEAN_INIT)
+    assert not stop(model_stream())
+
+
+def test_the_ambient_stop_fires_only_on_the_claudeai_server(monkeypatch, tmp_path):
+    stop = handed_stop(monkeypatch, tmp_path, None)
+    assert stop(AMBIENT_MCP)
+    user_only = [{**AMBIENT_MCP[0], "mcp_servers": AMBIENT_MCP[0]["mcp_servers"][:1]}]
+    assert user_only[0]["mcp_servers"][0]["source"] == "user"
+    assert not stop(user_only)
+
+
+def run_with(monkeypatch, tmp_path, stream: list[dict], *, config: Path | None,
+             returncode: int = 0) -> claude_runner.RunnerFailure:
+    fake_host(monkeypatch, stdout_of(stream), returncode=returncode)
+    with pytest.raises(claude_runner.RunnerFailure) as raised:
+        claude_runner.run_claude(tmp_path, "request", "haiku", 5, config=config)
+    return raised.value
+
+
+def test_a_stopped_stream_is_untested_naming_the_surface(monkeypatch, tmp_path):
+    # the recorded leak followed by a host error the stop never lets through
+    failure = run_with(monkeypatch, tmp_path, [*SURFACES, *parse_events(BUDGET_OVERRUN)],
+                       config=tmp_path)
+    assert failure.untested
+    assert "claude.ai Claude Docs" in failure.message
+    assert "opt-outs did not hold" in failure.message
+    assert "claude failed" not in failure.message
+    assert "rate limit not reported" not in failure.message
+    assert failure.events == SURFACES[:1]
+
+
+def test_a_claudeai_connector_stops_an_ambient_run(monkeypatch, tmp_path):
+    failure = run_with(monkeypatch, tmp_path, [*AMBIENT_MCP, *model_stream()], config=None)
+    assert failure.untested
+    assert "claude.ai Claude Docs" in failure.message
+    assert "local-notes" not in failure.message
+    # the operator's own settings were never the opt-out here; the switch was
+    assert "connector switch did not hold" in failure.message
+    assert "disableClaudeAiConnectors" not in failure.message
+
+
+def test_synced_content_outranks_a_timeout(monkeypatch, tmp_path):
+    """A polluted run's other failures say nothing about the skill, so the
+    leak comes first — a deadline included."""
+    (tmp_path / "skills" / "synced" / "x").mkdir(parents=True)
+    fake_host(monkeypatch, stdout_of(model_stream()[:1]), timed_out=True)
+    with pytest.raises(claude_runner.RunnerFailure) as raised:
+        claude_runner.run_claude(tmp_path, "request", "haiku", 5, config=tmp_path)
+    failure = raised.value
+    assert failure.untested
+    assert failure.message.index("skills/synced/x") < failure.message.index(
+        "claude did not finish within 5s")
+
+
+def test_synced_content_left_in_the_configuration_is_untested(monkeypatch, tmp_path):
+    (tmp_path / "skills" / "synced" / "x").mkdir(parents=True)
+    failure = run_with(monkeypatch, tmp_path, model_stream(), config=tmp_path)
+    assert failure.untested
+    assert "skills/synced/x" in failure.message
+    assert failure.events == model_stream()
+
+
+def test_a_configuration_leak_carries_the_host_failure_too(monkeypatch, tmp_path):
+    (tmp_path / "plugins" / "synced" / "y").mkdir(parents=True)
+    failure = run_with(monkeypatch, tmp_path, parse_events(BUDGET_OVERRUN), config=tmp_path,
+                       returncode=1)
+    assert failure.untested
+    assert failure.message.index("plugins/synced/y") < failure.message.index(
+        "claude failed: error_max_budget_usd")
+
+
+def test_a_surface_does_not_hide_overage(monkeypatch, tmp_path):
+    """testing-harness spec: A surface does not hide overage."""
+    overage = model_stream(overage=True)[1]
+    stream = [*CLEAN_INIT[:1], overage, SURFACES[1], *model_stream()[2:]]
+    failure = run_with(monkeypatch, tmp_path, stream, config=tmp_path)
+    assert failure.untested
+    assert "docs" in failure.message
+    assert "overage in use" in failure.message
+
+
+def test_an_ambient_run_measures_the_operators_own_mcp_server(monkeypatch, tmp_path):
+    user_only = [{**AMBIENT_MCP[0], "mcp_servers": AMBIENT_MCP[0]["mcp_servers"][:1]}]
+    fake_host(monkeypatch, stdout_of([*user_only, *model_stream()[1:]]))
+    events = claude_runner.run_claude(tmp_path, "request", "haiku", 5)
+    assert events[0]["mcp_servers"][0]["name"] == "local-notes"
+
+
+@pytest.mark.usefixtures("isolated")
+def test_a_surface_makes_the_run_untested_and_never_judged(monkeypatch, tmp_path, judge):
+    fake_host(monkeypatch, stdout_of([*SURFACES, *model_stream()]))
+    log = tmp_path / "log.jsonl"
+    code = main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)])
+    assert code == EXIT_UNTESTED
+    assert judge.prompts == []
+    [line] = logged(log)
+    assert line["outcome"] == "UNTESTED"
+    assert "l1" not in line
+    assert "claude.ai Claude Docs" in line["why"]
 
 
 # ---------- --judge -------------------------------------------------------

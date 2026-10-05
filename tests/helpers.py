@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import contextlib
 import io
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import check as check_script
 import support
+from routing import Followed
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURES = REPO / "tests" / "fixtures"
@@ -65,6 +67,20 @@ def shipped_registry() -> support.Registry:
     """The registry the harness ships, parsed afresh on every call so that no
     test can see another's mutation of it."""
     return support.parse_registry(REGISTRY_PATH.read_text(encoding="utf-8"))
+
+
+def followed(events: list[dict], stop: Callable[[list[dict]], bool], *, returncode: int = 0,
+             stderr: str = "", timed_out: bool = False) -> Followed:
+    """What `routing.follow_stream` returns for a host that wrote `events`: the
+    caller's stop condition applied event by event, as the real reader applies
+    it, so a fake host still exercises the stop the dev runner hands over. A
+    stopped host's exit status is the harness's own (-15, terminated)."""
+    seen: list[dict] = []
+    for event in events:
+        seen.append(event)
+        if stop(seen):
+            return Followed(seen, -15, "", stopped=True, timed_out=False)
+    return Followed(seen, returncode, stderr, stopped=False, timed_out=timed_out)
 
 
 def failing_fetch(message: str):

@@ -9,10 +9,20 @@ selection is paid noise.
 
 The measurement runs against an isolated CLAUDE_CONFIG_DIR holding exactly the
 skills under test, in an allowlisted environment, so the number describes a
-student's install rather than the developer's machine or session. It needs the
-`claude` binary and a logged-in subscription, which is why it is an on-demand
-instrument and not part of the L0 chain; the pure functions below and the
-dataset's integrity are.
+student's install rather than the developer's machine or session. The
+operator's claude.ai account would otherwise reach it through the linked login:
+the configuration's settings opt out of skill and plugin sync and connectors,
+every child gets the connector switch off and an empty Anthropic profile
+directory (the run is refused while the default one holds any entry), a case
+whose stream shows an account surface is stopped there and
+recorded as an error, and synced content found in the configuration after the
+sweep voids every case (`account_surfaces`). The report records those
+isolation conditions, so a report measured under others is not compared as a
+predecessor. The rig needs the `claude` binary and a logged-in subscription,
+which is why it is an on-demand instrument and not part of the L0 chain; the
+pure functions below and the dataset's integrity are. `follow_stream`, the
+stream reader with its deadline and its stop at the first decisive event, is
+shared with the dev runner.
 
 Usage:
   uv run poe routing
@@ -27,17 +37,32 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from dataclasses import dataclass, field
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from account_surfaces import (
+    CONNECTORS_OFF,
+    PINNED_SETTINGS,
+    PROFILE_VARIABLE,
+    SETTINGS_FILE,
+    SurfaceLeak,
+    config_surfaces,
+    isolation_problem,
+    profile_dir,
+    profile_store_problem,
+    stream_surfaces,
+    surface_reason,
+)
 from host_login import CREDENTIALS, LONG_LIVED_TOKEN, RELOGIN, keep_login, login_remedy
 
 HARNESS = Path(__file__).resolve().parent
@@ -59,6 +84,16 @@ KINDS = ("canonical", "oblique", "collision", "negative")
 # decided yet", it has failed to decide.
 MAX_PREPARATORY_CALLS = 3
 CASE_TIMEOUT_S = 90
+# How long a host asked to terminate gets before it is killed. A host stopped
+# between receiving a rotated login and writing it would strand the login
+# (host_login), so it is asked first and given time to finish the write.
+STOP_GRACE_S = 5
+
+# What the selector could see when a report was measured. Change it only when
+# that changes; an outgoing report that records something else is then
+# presented as measured under different conditions, automatically.
+ISOLATION_CONDITIONS = ("claude.ai account surfaces closed "
+                        "(skill and plugin sync off, connectors off)")
 
 # Uniform, because the assumption behind measuring only the contested cases
 # repeatedly did not survive contact: on 2026-08-10 `litsearch-oblique` — an
@@ -129,6 +164,19 @@ class Result:
     @property
     def passed(self) -> bool:
         return self.error is None and self.selected == self.expected
+
+
+@dataclass(frozen=True)
+class Followed:
+    """What `follow_stream` read from one host process: its events, its exit
+    status, its stderr, and whether the reader stopped it (`stopped`) or the
+    deadline did (`timed_out`)."""
+
+    events: list[dict]
+    returncode: int
+    stderr: str
+    stopped: bool
+    timed_out: bool
 
 
 @dataclass
@@ -258,14 +306,21 @@ def route_from_events(events: list[dict], bound: int = MAX_PREPARATORY_CALLS) ->
 def case_result(case: Case, events: list[dict], stream_error: str | None) -> Result:
     """What one measurement means.
 
-    A route outranks every error: a host that fails after selecting has still
-    selected. Without one, the host's error result outranks the stream's error,
-    so a dead login is reported in the host's words rather than as "no events" —
-    and never as unrouted, which a negative case would count as correct: a
-    sweep run while logged out would otherwise pass every negative case and
-    report every other case as not selected.
+    A claude.ai account surface outranks everything, a route included: a
+    selection made with the account's synced skills competing is not a
+    measurement of the skills under test. Then a route outranks every error: a
+    host that fails after selecting has still selected. Without one, the host's
+    error result outranks the stream's error, so a dead login is reported in
+    the host's words rather than as "no events" — and never as unrouted, which
+    a negative case would count as correct: a sweep run while logged out would
+    otherwise pass every negative case and report every other case as not
+    selected.
     """
     result = Result(case_id=case.id, expected=case.expected, kind=case.kind)
+    leaks = stream_surfaces(events, isolated=True)
+    if leaks:
+        result.error = surface_reason(leaks, isolated=True)
+        return result
     try:
         result.route = route_from_events(events)
     except ValueError as exc:
@@ -292,6 +347,20 @@ def classify(results: list[Result]) -> Matrix:
 
 def misroutes(results: list[Result]) -> list[Result]:
     return [r for r in results if r.error is None and not r.passed]
+
+
+def voided(results: list[Result], leaks: list[SurfaceLeak]) -> list[Result]:
+    """Every result of a sweep whose shared configuration holds synced content
+    afterwards, turned into an error naming that content. The whole sweep, not
+    only the cases after the content landed: a case started after it may have
+    loaded it with no tag in its stream. What each case measured stays in the
+    record — its route, and its own error after the voiding reason — so the
+    persisted run log still shows it; an errored result counts toward no
+    total (`classify`)."""
+    reason = ("synced content in the sweep's configuration voids every case: "
+              f"{surface_reason(leaks, isolated=True)}")
+    return [replace(r, error=reason if r.error is None else f"{reason} The case's own error: "
+                    f"{r.error}") for r in results]
 
 
 def report_due(matrix: Matrix) -> bool:
@@ -325,6 +394,7 @@ def skills_revision() -> str:
 
 
 SCORE_LINE = re.compile(r"measurements: (\d+) \((\d+) correct\)")
+ISOLATION_LINE = re.compile(r"^- isolation: (.+)$", re.MULTILINE)
 
 
 def previous_score(path: Path = REPORT_FILE) -> str | None:
@@ -340,9 +410,19 @@ def previous_score(path: Path = REPORT_FILE) -> str | None:
     return f"{match.group(2)}/{match.group(1)}" if match else None
 
 
+def previous_isolation(path: Path = REPORT_FILE) -> str | None:
+    """The isolation conditions the outgoing report records; None when it
+    records none, as every report measured before they were recorded."""
+    if not path.exists():
+        return None
+    match = ISOLATION_LINE.search(path.read_text(encoding="utf-8"))
+    return match.group(1).strip() if match else None
+
+
 def render_report(results: list[Result], matrix: Matrix, model: str,
                   revision: str | None = None, supersedes: str | None = None,
-                  epochs: int = DEFAULT_EPOCHS, conditions_changed: bool = False) -> str:
+                  epochs: int = DEFAULT_EPOCHS, conditions_changed: bool = False,
+                  isolation: str | None = ISOLATION_CONDITIONS) -> str:
     passed, total = matrix.totals
     earlier = (
         f"- measured under different conditions, not comparable: {supersedes}"
@@ -357,6 +437,7 @@ def render_report(results: list[Result], matrix: Matrix, model: str,
         "",
         f"- model: `{model}`",
         f"- skills revision: `{revision or skills_revision()}`",
+        *([f"- isolation: {isolation}"] if isolation else []),
         f"- measurements: {total} ({passed} correct), {epochs} epochs per case",
         *([earlier] if earlier else []),
         "",
@@ -409,6 +490,12 @@ def prepare_config(base: Path) -> Path:
     hooks and plugins instead of a user's install. A long-lived token from
     `claude setup-token` in the environment needs no link: the child inherits
     it, and nothing in the directory can be refreshed or stranded.
+
+    Account surfaces follow the login, not the directory, so the settings hold
+    the claude.ai opt-outs (`account_surfaces.PINNED_SETTINGS`) and the
+    directory holds the empty profile directory the child's
+    `ANTHROPIC_CONFIG_DIR` names. A `ROUTING_CONFIG_DIR` override is used as
+    it is; `isolated_config` refuses it unless it was prepared the same way.
     """
     override = os.environ.get("ROUTING_CONFIG_DIR")
     if override:
@@ -418,7 +505,9 @@ def prepare_config(base: Path) -> Path:
     credentials = source / CREDENTIALS
     config = base / "config"
     config.mkdir(parents=True, exist_ok=True)
-    (config / "settings.json").write_text("{}\n", encoding="utf-8")
+    (config / SETTINGS_FILE).write_text(json.dumps(dict(PINNED_SETTINGS), indent=2) + "\n",
+                                        encoding="utf-8")
+    profile_dir(config).mkdir(mode=0o700, exist_ok=True)
     if os.environ.get(LONG_LIVED_TOKEN):
         return config
 
@@ -438,9 +527,18 @@ def prepare_config(base: Path) -> Path:
 def isolated_config(prefix: str) -> Iterator[Path]:
     """A prepared config directory for the duration of a run: the stored login
     it links is kept current (`host_login.keep_login`), and the directory is
-    removed afterwards."""
+    removed afterwards. Every configuration, an operator's override included,
+    is checked before the run: one not closed to the claude.ai account
+    surfaces exits with a message naming what is wrong, and the ambient
+    configuration is never used instead. So does a run whose children would
+    find an Anthropic profile in the default profile directory
+    (`account_surfaces.profile_store_problem`); they resolve it from this
+    process's environment, as the check does."""
     with tempfile.TemporaryDirectory(prefix=prefix, ignore_cleanup_errors=True) as tmp:
         config = prepare_config(Path(tmp))
+        problem = isolation_problem(config) or profile_store_problem(os.environ)
+        if problem:
+            sys.exit(problem)
         with keep_login(config / CREDENTIALS):
             yield config
 
@@ -450,7 +548,9 @@ def isolated_config(prefix: str) -> Iterator[Path]:
 # DISABLE_MICROCOMPACT, API_TIMEOUT_MS, ANTHROPIC_BASE_URL — that no `CLAUDE*`
 # filter catches; a desktop-launched child recorded `entrypoint: claude-desktop`
 # on 2026-10-04. A name missing here fails a run loudly; a name leaking past a
-# denylist changes the measurement silently. Add one only with its reason.
+# denylist changes the measurement silently. Add one only with its reason. The
+# account-surface variables (the connector switch, the Anthropic profile
+# directory) are never admitted: `isolated_env` sets them itself.
 ADMITTED_ENV = frozenset({
     "PATH", "HOME",
     "CLAUDE_CODE_OAUTH_TOKEN",  # long-lived login: nothing is linked when it is set
@@ -469,7 +569,11 @@ ADMITTED_ENV = frozenset({
 
 def isolated_env(config: Path, environ: Mapping[str, str] | None = None) -> dict[str, str]:
     """The environment of an isolated host child: the admitted names from
-    `environ` (default: this process's) plus CLAUDE_CONFIG_DIR set to `config`.
+    `environ` (default: this process's) plus three the harness sets, each
+    replacing any inherited value — CLAUDE_CONFIG_DIR set to `config`, the
+    claude.ai connector switch off, and ANTHROPIC_CONFIG_DIR naming the
+    configuration's empty profile directory. That last one is the only
+    `ANTHROPIC_` name the child carries, and it routes no billing.
 
     Prints nothing — the dropped set holds the desktop session's messaging
     token (testing-harness spec: Isolated child environment).
@@ -478,6 +582,8 @@ def isolated_env(config: Path, environ: Mapping[str, str] | None = None) -> dict
     env = {name: value for name, value in source.items()
            if name in ADMITTED_ENV or name.startswith("LC_")}
     env["CLAUDE_CONFIG_DIR"] = str(config)
+    env.update(CONNECTORS_OFF)
+    env[PROFILE_VARIABLE] = str(profile_dir(config))
     return env
 
 
@@ -518,45 +624,151 @@ def stage_workspace(ws: Path, case: Case | None = None) -> None:
         shutil.copy2(FIXTURES / fixture / filename, ws / filename)
 
 
+def halt(proc: subprocess.Popen) -> int:
+    """Stop a host: ask it to terminate, give it STOP_GRACE_S, then kill it.
+    The exit status is the harness's own, not the host's verdict on its run."""
+    proc.terminate()
+    try:
+        return proc.wait(timeout=STOP_GRACE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        return proc.wait()
+
+
+def _read_events(lines: Iterable[str], events: list[dict],
+                 stop: Callable[[list[dict]], bool], timeout: float) -> tuple[bool, bool]:
+    """Append each JSON line to `events` until `stop` accepts them or the
+    deadline has passed; (stopped, late). A line that is not JSON is skipped
+    without a look at either."""
+    deadline = time.monotonic() + timeout
+    for raw in lines:
+        line = raw.strip()
+        if line:
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        if stop(events):
+            return True, False
+        if time.monotonic() > deadline:
+            return False, True
+    return False, False
+
+
+def _own_group(proc: subprocess.Popen) -> int | None:
+    """The process group a followed host leads: on POSIX `follow_stream`
+    starts it in one of its own. None elsewhere, and for a stand-in host."""
+    pid = getattr(proc, "pid", None)
+    if os.name != "posix" or not isinstance(pid, int):
+        return None
+    try:
+        return pid if os.getpgid(pid) == pid else None
+    except OSError:
+        return None
+
+
+def _end_group(group: int | None) -> None:
+    """Kill what is left of a host's process group once the host is stopped.
+    A process the host started that inherited its stdout would otherwise hold
+    the read open past the deadline, for as long as that process lives."""
+    if group is not None:
+        with suppress(ProcessLookupError, PermissionError):
+            os.killpg(group, signal.SIGKILL)
+
+
+def follow_stream(command: Sequence[str], *, cwd: Path, env: Mapping[str, str],
+                  timeout: float, stop: Callable[[list[dict]], bool]) -> Followed:
+    """Run a host and read its stream-json events as they arrive.
+
+    The host is stopped (`halt`) at the first event `stop` accepts, so what it
+    announced there — a route, or a claude.ai account surface — is not left
+    running for the turns after it. A timer stops it at the deadline even when
+    it writes nothing; a line that arrives after the deadline stops it too. On
+    POSIX the host leads its own process group, and the timer kills what is
+    left of the group after the host, so a child holding the host's stdout
+    cannot keep the read open past the deadline. stderr goes to a temporary
+    file rather than a pipe, so a host that writes a lot there cannot block
+    while stdout is read. stdin is closed: with an inherited non-tty stdin the
+    host waits for piped input. Shared by the routing rig and the dev runner.
+    """
+    with tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(
+            list(command), cwd=cwd, env=dict(env), stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=err, text=True, encoding="utf-8", errors="replace",
+            process_group=0 if os.name == "posix" else None,
+        )
+        group = _own_group(proc)
+        expired = threading.Event()
+
+        def at_deadline() -> None:
+            expired.set()
+            halt(proc)
+            _end_group(group)
+
+        timer = threading.Timer(timeout, at_deadline)
+        timer.daemon = True
+        timer.start()
+        events: list[dict] = []
+        stopped = late = False
+        try:
+            stopped, late = _read_events(proc.stdout or (), events, stop, timeout)
+        except BaseException:
+            stopped = True  # whatever went wrong, the host does not outlive the reader
+            raise
+        finally:
+            returncode = _settle(proc, timer, stop_host=stopped or late)
+        err.seek(0)
+        stderr = err.read().decode("utf-8", "replace")
+    return Followed(events, returncode, stderr, stopped=stopped,
+                    timed_out=late or expired.is_set())
+
+
+def _settle(proc: subprocess.Popen, timer: threading.Timer, stop_host: bool) -> int:
+    """End one followed host: stopped by the harness, or waited for — a host
+    that closed its stream exits on its own, and the deadline timer still
+    bounds one that does not. Then the timer is retired and stdout closed."""
+    if stop_host:
+        timer.cancel()
+        returncode = halt(proc)
+    else:
+        returncode = proc.wait()
+    timer.cancel()
+    timer.join()
+    close = getattr(proc.stdout, "close", None)
+    if close is not None:  # a stand-in host's stdout may be a plain iterator
+        close()
+    return returncode
+
+
+def _case_decided(events: list[dict]) -> bool:
+    """The rig's stop condition: a surface in the newest event, or a route."""
+    return bool(stream_surfaces(events[-1:], isolated=True)) or (
+        route_from_events(events) is not None)
+
+
 def stream_events(ws: Path, config: Path, utterance: str, model: str,
                   timeout: int) -> tuple[list[dict], str | None]:
-    """Run one utterance, reading events until a route is decided, then kill."""
-    env = isolated_env(config)
+    """Run one utterance, reading events until a route is decided or a claude.ai
+    account surface appears, then stop the host. A surface is the case's error
+    (testing-harness spec: Isolated measurement environment). On 2.1.284 `init`
+    and the command-list changes precede every assistant event, so a polluted
+    case costs one process start and no turns."""
     command = [
         "claude", "-p", utterance, "--model", model,
         "--output-format", "stream-json", "--verbose",
         "--allowed-tools", *ALLOWED_TOOLS,
         "--disallowed-tools", *DISALLOWED_TOOLS,
     ]
-    proc = subprocess.Popen(
-        command, cwd=ws, env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-    )
-    events: list[dict] = []
-    deadline = time.monotonic() + timeout
-    error = None
-    try:
-        for line in proc.stdout:  # type: ignore[union-attr]
-            line = line.strip()
-            if line:
-                try:
-                    events.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-            if route_from_events(events) is not None:
-                break
-            if time.monotonic() > deadline:
-                error = f"timed out after {timeout}s"
-                break
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-    if not events and error is None:
-        error = (proc.stderr.read() or "").strip()[-300:] or "no events"
-    return events, error
+    seen = follow_stream(command, cwd=ws, env=isolated_env(config), timeout=timeout,
+                         stop=_case_decided)
+    leaks = stream_surfaces(seen.events, isolated=True)
+    if leaks:
+        return seen.events, surface_reason(leaks, isolated=True)
+    if seen.timed_out:
+        return seen.events, f"timed out after {timeout}s"
+    if not seen.events:
+        return seen.events, seen.stderr.strip()[-300:] or "no events"
+    return seen.events, None
 
 
 def measure(case: Case, config: Path, model: str, timeout: int,
@@ -593,10 +805,15 @@ def write_report(results: list[Result], matrix: Matrix, args: argparse.Namespace
     if not report_due(matrix):
         print(f"routing: no measurement completed; {REPORT_FILE.name} left unchanged")
         return
+    supersedes = previous_score(REPORT_FILE)
+    # isolation is a measurement condition recorded in the report itself, so
+    # its change needs no one to remember --conditions-changed
+    isolation_changed = (supersedes is not None
+                         and previous_isolation(REPORT_FILE) != ISOLATION_CONDITIONS)
     REPORT_FILE.write_text(
-        render_report(results, matrix, args.model, supersedes=previous_score(REPORT_FILE),
+        render_report(results, matrix, args.model, supersedes=supersedes,
                       epochs=args.epochs or DEFAULT_EPOCHS,
-                      conditions_changed=args.conditions_changed),
+                      conditions_changed=args.conditions_changed or isolation_changed),
         encoding="utf-8")
     print(f"routing: report written to {REPORT_FILE.relative_to(REPO).as_posix()}")
 
@@ -625,7 +842,8 @@ def main(argv: list[str] | None = None) -> int:
         results = [Result(**r) for r in payload["results"]]
         REPORT_FILE.write_text(
             render_report(results, classify(results), payload["model"],
-                          payload.get("skills_revision")), encoding="utf-8")
+                          payload.get("skills_revision"), isolation=payload.get("isolation")),
+            encoding="utf-8")
         print("routing: report rebuilt from "
               f"{args.render} into {REPORT_FILE.relative_to(REPO).as_posix()}")
         return 0
@@ -651,6 +869,11 @@ def main(argv: list[str] | None = None) -> int:
           ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool):
         results = list(pool.map(
             lambda c: measure(c, config, args.model, args.timeout, args.keep_events), work))
+        # before the directory goes: content the background sync wrote voids
+        # the sweep (testing-harness spec: Synced content found after a sweep)
+        synced = config_surfaces(config)
+    if synced:
+        results = voided(results, synced)
 
     matrix = classify(results)
     passed, total = matrix.totals
@@ -666,6 +889,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "model": args.model,
         "skills_revision": skills_revision(),
+        "isolation": ISOLATION_CONDITIONS,
         "results": [vars(r) for r in results],
     }
     (LOG_DIR / f"{stamp}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

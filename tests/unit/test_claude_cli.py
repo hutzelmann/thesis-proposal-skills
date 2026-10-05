@@ -20,6 +20,7 @@ from pathlib import Path
 import anyio
 import claude_cli
 import pytest
+from account_surfaces import CONNECTORS_OFF, PROFILE_DIR
 from claude_cli import (
     Criterion,
     SubscriptionUnavailable,
@@ -87,7 +88,7 @@ def test_call_sends_the_prompt_on_stdin_never_in_argv(monkeypatch):
     assert seen["stdin"] == prompt
     assert not any("unique-prompt-marker-31" in arg for arg in seen["command"])
     assert seen["cwd"] == claude_cli.workdir()
-    assert seen["env"] == {"PATH": "/usr/bin"}
+    assert seen["env"] == {"PATH": "/usr/bin", **CONNECTORS_OFF}
 
 
 # ---------- child_env ---------------------------------------------------------
@@ -108,9 +109,24 @@ KEPT = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "XDG_RUNT
 
 def test_child_env_keeps_only_the_allowlist():
     env = child_env(LAUNCHING_ENV)
-    assert set(env) == {*KEPT, "CLAUDE_CONFIG_DIR"}
+    assert set(env) == {*KEPT, "CLAUDE_CONFIG_DIR", *CONNECTORS_OFF}
     for name in KEPT:
         assert env[name] == LAUNCHING_ENV[name]
+
+
+def test_child_env_always_switches_claudeai_connectors_off(tmp_path):
+    """testing-harness spec: Connector switch on every host child — the judge's
+    included, whatever the launching environment says."""
+    launching = {**LAUNCHING_ENV, "ENABLE_CLAUDEAI_MCP_SERVERS": "true"}
+    for config in (None, tmp_path):
+        assert child_env(launching, config)["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
+
+
+def test_child_env_names_the_empty_profile_directory_only_with_a_config(tmp_path):
+    launching = {**LAUNCHING_ENV, "ANTHROPIC_CONFIG_DIR": "/home/x/.config/anthropic"}
+    assert "ANTHROPIC_CONFIG_DIR" not in child_env(launching)
+    env = child_env(launching, tmp_path / "cfg")
+    assert env["ANTHROPIC_CONFIG_DIR"] == str(tmp_path / "cfg" / PROFILE_DIR)
 
 
 def test_child_env_drops_credentials_routing_effort_and_session_variables():
@@ -242,6 +258,32 @@ def test_billing_problem_reads_only_source_and_rate_limit():
     assert "rate limit not reported" in claude_cli.billing_problem(stream("no-rate-limit"))
 
 
+def test_billing_signals_read_nothing_from_a_stream_stopped_at_init():
+    """A run stopped at its first event carries no rate-limit report; only an
+    explicit reason may be named beside an account surface."""
+    init = [e for e in stream("success") if e.get("subtype") == "init"]
+    assert init
+    assert claude_cli.billing_signals(init) == []
+    assert claude_cli.billing_signals([]) == []
+
+
+@pytest.mark.parametrize(("name", "fragment"), [
+    ("api-key-source", "'ANTHROPIC_API_KEY'"),
+    ("foreign-provider", "'bedrock'"),
+    ("overage", "overage in use"),
+    ("rejected", "'rejected'"),
+])
+def test_billing_signals_name_each_explicit_reason(name, fragment):
+    [signal] = claude_cli.billing_signals(stream(name))
+    assert fragment in signal
+
+
+def test_billing_signals_read_a_partial_stream():
+    """Overage reported before the run was stopped still counts."""
+    partial = [e for e in stream("overage") if e.get("type") != "result"]
+    assert any("overage" in s for s in claude_cli.billing_signals(partial))
+
+
 # ---------- check_auth_status -------------------------------------------------
 
 PRIVATE = {"email": "erika.musterfrau@example.org", "orgName": "Example Org", "orgId": "org-0000"}
@@ -286,6 +328,8 @@ def test_preflight_runs_auth_status_with_the_child_environment(monkeypatch, tmp_
     assert seen["command"] == ["claude", "auth", "status", "--json"]
     assert "ANTHROPIC_API_KEY" not in seen["env"]
     assert seen["env"]["CLAUDE_CONFIG_DIR"] == str(tmp_path)
+    assert seen["env"]["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
+    assert seen["env"]["ANTHROPIC_CONFIG_DIR"] == str(tmp_path / PROFILE_DIR)
 
 
 def test_preflight_without_json_is_unavailable(monkeypatch, tmp_path):

@@ -2,14 +2,22 @@
 
 The rig itself needs a host install and a subscription, so it never runs here.
 What runs here is everything that decides what a run *means*: which skill an
-event stream selected, how cases classify, and whether the dataset still covers
-every skill. Stream fixtures live in `tests/unit/data/routing_streams/`.
+event stream selected, how cases classify, whether a claude.ai account surface
+voids a case or a sweep, and whether the dataset still covers every skill.
+Stream fixtures live in `tests/unit/data/routing_streams/`. The stream reader
+(`follow_stream`) is driven by stand-in hosts and by real `sys.executable`
+children that write nothing, flood stderr, or leave a process holding their
+stdout, so its deadline and its stderr file are tested without a host install.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
+import sys
+import time
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +28,7 @@ import routing
 from helpers import REPO
 from routing import (
     DEFAULT_PROPOSAL,
+    ISOLATION_CONDITIONS,
     KINDS,
     NO_ROUTE,
     Case,
@@ -28,10 +37,12 @@ from routing import (
     classify,
     composition_problems,
     files_named,
+    follow_stream,
     installed_skills,
     load_cases,
     misroutes,
     outcome_label,
+    previous_isolation,
     previous_score,
     render_report,
     report_due,
@@ -232,6 +243,149 @@ def test_a_malformed_skill_call_is_an_error():
         CHECK_CASE, events("malformed-skill-call"), None).error
 
 
+# ---------- claude.ai account surfaces (testing-harness spec: Isolated
+# measurement environment) ----------------------------------------------------
+
+
+def test_a_surface_outranks_a_recorded_route():
+    """A route chosen with synced competitors on offer is not a measurement."""
+    outcome = case_result(CHECK_CASE, events("claudeai-surfaces") + events("routed-check"), None)
+    assert outcome.route is None
+    assert "claude.ai Claude Docs" in outcome.error
+    assert "opt-outs did not hold" in outcome.error
+    assert classify([outcome]).totals == (0, 0)
+
+
+def test_a_negative_case_does_not_pass_on_a_surface():
+    outcome = case_result(NEGATIVE_CASE, events("claudeai-surfaces"), None)
+    assert not outcome.passed
+    assert classify([outcome]).totals == (0, 0)
+
+
+class RecordingHost:
+    """A stand-in host that logs what the reader does to it: how many lines
+    were read, and the order of terminate, wait and kill. With `stubborn` it
+    outlives the grace, so the kill path runs."""
+
+    def __init__(self, lines: list[str], stubborn: bool = False):
+        self.read, self.calls, self.stubborn = 0, [], stubborn
+        self.stdout = self._lines(lines)
+
+    def _lines(self, lines):
+        for line in lines:
+            self.read += 1
+            yield line + "\n"
+
+    def terminate(self) -> None:
+        self.calls.append("terminate")
+
+    def wait(self, timeout=None) -> int:
+        self.calls.append("wait")
+        if self.stubborn and timeout is not None:
+            raise subprocess.TimeoutExpired("claude", timeout)
+        return -15
+
+    def kill(self) -> None:
+        self.calls.append("kill")
+
+
+def test_follow_stream_stops_at_the_first_accepted_event_and_reads_no_further(
+        monkeypatch, tmp_path):
+    lines = [json.dumps({"n": n}) for n in range(5)]
+    host = RecordingHost(lines, stubborn=True)
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: host)
+    seen = follow_stream(["claude"], cwd=tmp_path, env={}, timeout=60,
+                         stop=lambda evs: evs[-1]["n"] == 2)
+    assert seen.stopped
+    assert not seen.timed_out
+    assert seen.events == [{"n": 0}, {"n": 1}, {"n": 2}]
+    assert host.read == 3
+    assert host.calls == ["terminate", "wait", "kill", "wait"]
+
+
+def test_follow_stream_skips_lines_that_are_not_json(monkeypatch, tmp_path):
+    host = RecordingHost(["host warning: not json", json.dumps({"n": 0})])
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: host)
+    seen = follow_stream(["claude"], cwd=tmp_path, env={}, timeout=60, stop=lambda _evs: False)
+    assert seen.events == [{"n": 0}]
+
+
+def test_follow_stream_stops_the_host_when_the_reader_fails(monkeypatch, tmp_path):
+    """A malformed skill call raises out of the rig's stop condition; the host
+    must not outlive the reader."""
+    host = RecordingHost([json.dumps(e) for e in events("malformed-skill-call")])
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: host)
+    with pytest.raises(ValueError, match="carries no skill name"):
+        routing.stream_events(tmp_path, tmp_path, CHECK_CASE.utterance, "haiku", 90)
+    assert host.calls[0] == "terminate"
+
+
+def test_follow_stream_lets_a_finished_host_exit_on_its_own(monkeypatch, tmp_path):
+    host = RecordingHost([json.dumps({"n": 0})])
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: host)
+    seen = follow_stream(["claude"], cwd=tmp_path, env={}, timeout=60, stop=lambda _evs: False)
+    assert (seen.stopped, seen.timed_out) == (False, False)
+    assert "terminate" not in host.calls
+
+
+def test_follow_stream_stops_a_silent_host_at_the_deadline(tmp_path):
+    """The deadline holds even when the host writes nothing at all: the rig's
+    old loop looked at the clock only when a line arrived."""
+    silent = [sys.executable, "-c", "import time; time.sleep(60)"]
+    started = time.monotonic()
+    seen = follow_stream(silent, cwd=tmp_path, env=dict(os.environ), timeout=0.5,
+                         stop=lambda _evs: False)
+    assert seen.timed_out
+    assert not seen.stopped
+    assert seen.events == []
+    assert time.monotonic() - started < 0.5 + routing.STOP_GRACE_S
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process groups are POSIX")
+def test_follow_stream_deadline_holds_against_a_child_that_inherited_stdout(tmp_path):
+    """A process the host started keeps the host's stdout open after the host
+    is stopped. The deadline still ends the read: the host leads its own
+    process group, and what is left of it is killed at the deadline."""
+    host = [sys.executable, "-c",
+            "import subprocess, sys, time; "
+            "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+            "time.sleep(60)"]
+    started = time.monotonic()
+    seen = follow_stream(host, cwd=tmp_path, env=dict(os.environ), timeout=1,
+                         stop=lambda _evs: False)
+    assert seen.timed_out
+    assert time.monotonic() - started < 1 + routing.STOP_GRACE_S
+
+
+def test_follow_stream_reads_past_a_flood_on_stderr(tmp_path):
+    """stderr goes to a file, so a host that writes more than a pipe holds
+    before its first event cannot block the reader."""
+    noisy = [sys.executable, "-c",
+             "import sys, time; sys.stderr.write('x' * 200_000); sys.stderr.flush(); "
+             "print('{\"type\": \"system\", \"subtype\": \"init\"}', flush=True); time.sleep(60)"]
+    seen = follow_stream(noisy, cwd=tmp_path, env=dict(os.environ), timeout=20,
+                         stop=lambda evs: bool(evs))
+    assert seen.events == [{"type": "system", "subtype": "init"}]
+    assert seen.stopped
+    assert not seen.timed_out
+    assert len(seen.stderr) >= 200_000
+
+
+def test_a_case_is_stopped_at_the_first_surface_before_any_skill_call(monkeypatch, tmp_path):
+    """The tagged command-list change arrives before the model's turn: the case
+    ends there, and the skill call after it is never read."""
+    stream = [events("clean-init")[0], events("claudeai-surfaces")[1], *events("routed-check")]
+    host = RecordingHost([json.dumps(e) for e in stream])
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: host)
+    seen, error = routing.stream_events(tmp_path, tmp_path, CHECK_CASE.utterance, "haiku", 90)
+    assert seen == stream[:2]
+    assert host.read == 2
+    assert "terminate" in host.calls
+    assert "synced skill 'docs'" in error
+    assert route_from_events(seen) is None
+    assert case_result(CHECK_CASE, seen, error).error == error
+
+
 # ---------- classification ---------------------------------------------------
 
 
@@ -352,6 +506,22 @@ def test_a_conditions_change_is_not_a_comparison():
     assert "supersedes" not in changed
 
 
+def test_report_records_its_isolation_conditions(tmp_path):
+    results = [result("a", "proposal-check", route="proposal-check")]
+    text = render_report(results, classify(results), "sonnet")
+    assert f"- isolation: {ISOLATION_CONDITIONS}\n" in text
+    report = tmp_path / "skill-routing.md"
+    report.write_text(text, encoding="utf-8")
+    assert previous_isolation(report) == ISOLATION_CONDITIONS
+
+
+def test_a_report_without_an_isolation_line_records_none(tmp_path):
+    report = tmp_path / "skill-routing.md"
+    report.write_text("measurements: 120 (119 correct), 3 epochs per case\n", encoding="utf-8")
+    assert previous_isolation(report) is None
+    assert previous_isolation(tmp_path / "absent.md") is None
+
+
 def test_partial_failure_renders_as_a_rate():
     results = [
         result("c", "proposal-ideate", route=None),
@@ -374,6 +544,7 @@ def offline_rig(tmp_path, monkeypatch):
     report = tmp_path / "skill-routing.md"
     report.write_text(EARLIER_REPORT, encoding="utf-8")
     monkeypatch.setattr(routing, "REPORT_FILE", report)
+    monkeypatch.setattr(routing, "REPO", tmp_path)  # the report path is printed relative to it
     monkeypatch.setattr(routing, "LOG_DIR", tmp_path / "logs")
     monkeypatch.setattr(routing.shutil, "which", lambda _name: "claude")
     monkeypatch.setattr(routing, "isolated_config", lambda _prefix: nullcontext(tmp_path))
@@ -414,6 +585,61 @@ def test_a_clean_run_succeeds(offline_rig):
     offline_rig(Result(case_id="", expected="", kind="", route="proposal-review"))
     status = routing.main(["--case", "review-canonical", "--epochs", "1", "--no-report"])
     assert status == 0
+
+
+ROUTED = Result(case_id="", expected="", kind="", route="proposal-review")
+
+
+def raw_payload(tmp_path: Path) -> dict:
+    [log] = (tmp_path / "logs").glob("*.json")
+    return json.loads(log.read_text(encoding="utf-8"))
+
+
+def test_synced_content_after_the_sweep_voids_every_case(offline_rig, tmp_path):
+    """testing-harness spec: Synced content found after a sweep — a case
+    started after the content landed may have loaded it with no tag. The raw
+    results keep what each case measured: its route, and its own error."""
+    report = offline_rig(ROUTED, DEAD_LOGIN)
+    (tmp_path / "plugins" / "synced" / "y").mkdir(parents=True)
+    status = routing.main(["--case", "review-canonical", "--epochs", "2", "--jobs", "1"])
+    assert status == 1
+    assert report.read_text(encoding="utf-8") == EARLIER_REPORT
+    results = raw_payload(tmp_path)["results"]
+    assert [raw["route"] for raw in results] == ["proposal-review", None]
+    for raw in results:
+        assert raw["error"].startswith("synced content in the sweep's configuration")
+        assert "plugins/synced/y" in raw["error"]
+    assert results[1]["error"].endswith("The case's own error: claude failed: Not logged in")
+    assert classify([Result(**raw) for raw in results]).totals == (0, 0)
+
+
+def test_the_raw_results_record_the_isolation_conditions(offline_rig, tmp_path):
+    offline_rig(ROUTED)
+    routing.main(["--case", "review-canonical", "--epochs", "1", "--no-report"])
+    assert raw_payload(tmp_path)["isolation"] == ISOLATION_CONDITIONS
+
+
+@pytest.mark.parametrize("outgoing", [
+    EARLIER_REPORT,
+    EARLIER_REPORT + "- isolation: ambient claude.ai surfaces open\n",
+], ids=["no-isolation-line", "other-isolation"])
+def test_other_isolation_conditions_are_not_comparable_without_the_flag(
+        offline_rig, outgoing):
+    report = offline_rig(ROUTED)
+    report.write_text(outgoing, encoding="utf-8")
+    assert routing.main(["--case", "review-canonical", "--epochs", "1"]) == 0
+    text = report.read_text(encoding="utf-8")
+    assert "measured under different conditions, not comparable: 119/120" in text
+    assert "supersedes" not in text
+
+
+def test_the_same_isolation_conditions_supersede(offline_rig):
+    report = offline_rig(ROUTED)
+    report.write_text(f"{EARLIER_REPORT}- isolation: {ISOLATION_CONDITIONS}\n", encoding="utf-8")
+    assert routing.main(["--case", "review-canonical", "--epochs", "1"]) == 0
+    text = report.read_text(encoding="utf-8")
+    assert "supersedes: 119/120" in text
+    assert "not comparable" not in text
 
 
 # ---------- staging ----------------------------------------------------------

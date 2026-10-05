@@ -7,6 +7,13 @@ claude_runner.py). Advisory only — it is NOT part of the default publish gate:
 the real ruleset is unknown and model verdicts vary. Use it to spot obvious
 category hits before publishing, never as proof of a pass.
 
+The child gets the same environment as an ambient dev run
+(`account_surfaces.ambient_env`): every inherited `ANTHROPIC_*` variable and
+`CLAUDE_CODE_USE_*` switch is dropped, so an exported API key, gateway or
+cloud-provider switch cannot bill the calls per token, and the claude.ai
+connector switch is off. Without a subscription login the call fails with
+the host's own login message.
+
 Usage: uv run python harness/audit_llm_preflight.py [--model haiku] [--skill proposal-check]
 Exit codes: 0 = no category flagged, 1 = at least one flagged, 2 = runner failure.
 """
@@ -15,10 +22,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+from account_surfaces import ambient_env
 
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
@@ -86,6 +96,7 @@ def audit_skill(skill_dir: Path, model: str, timeout: int) -> tuple[list[str], d
     )
     result = subprocess.run(
         ["claude", "-p", prompt, "--model", model],
+        env=ambient_env(os.environ),
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
     )
     if result.returncode != 0:

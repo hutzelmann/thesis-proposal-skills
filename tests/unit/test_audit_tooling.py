@@ -1,6 +1,8 @@
 """L0: pure logic of the audit gate tooling — no network, no scanner runs."""
 
 import json
+import os
+import subprocess
 from pathlib import Path
 
 import audit_llm_preflight
@@ -92,3 +94,32 @@ def test_parse_verdict_extracts_json_from_prose():
 
 def test_parse_verdict_none_on_garbage():
     assert audit_llm_preflight.parse_verdict("no json here") is None
+
+
+def test_audit_child_gets_the_ambient_environment(monkeypatch):
+    """testing-harness spec: Audit pre-flight drops billing variables — and its
+    child never fetches the account's claude.ai connectors."""
+    launching = {
+        "ENABLE_CLAUDEAI_MCP_SERVERS": "true",
+        "ANTHROPIC_API_KEY": "placeholder-not-a-key",
+        "ANTHROPIC_BASE_URL": "https://gateway.invalid",
+        "ANTHROPIC_AUTH_TOKEN": "placeholder",
+        "CLAUDE_CODE_USE_BEDROCK": "1",
+        "UNRELATED_SETTING": "kept",
+    }
+    for name, value in launching.items():
+        monkeypatch.setenv(name, value)
+    seen = {}
+
+    def fake_run(command, **kwargs):
+        seen["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(command, 0, '{"categories": {}}', "")
+
+    monkeypatch.setattr(audit_llm_preflight.subprocess, "run", fake_run)
+    flagged, _ = audit_llm_preflight.audit_skill(REPO / "skills" / "proposal-check", "haiku", 5)
+    assert flagged == []
+    env = seen["env"]
+    assert env["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
+    assert not [n for n in env if n.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
+    assert env["UNRELATED_SETTING"] == "kept"
+    assert env["PATH"] == os.environ["PATH"]

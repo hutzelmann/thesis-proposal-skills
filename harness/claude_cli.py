@@ -4,7 +4,11 @@ The dev runner's rubric judge (`harness/claude_runner.py --judge/--rejudge`) is
 one single-turn text call per criterion through the unmodified host CLI, under
 the subscription login. Nothing here handles a token: the host reads its own
 login, and the one credential the child may inherit — the subscription's
-long-lived `CLAUDE_CODE_OAUTH_TOKEN` — is passed through by name, unread.
+long-lived `CLAUDE_CODE_OAUTH_TOKEN` — is passed through by name, unread. The
+child, and its `auth status` preflight, get the claude.ai connector switch off
+and, in an isolated configuration, its empty Anthropic profile directory
+(`account_surfaces`). `billing_signals` names the explicit billing reasons a
+stream carries even when the dev runner stopped it early.
 
 The call fails closed (testing-harness spec: Subscription text roles). A stream
 that shows an error, no output, no notional cost, billing other than the
@@ -29,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import anyio
+from account_surfaces import CONNECTORS_OFF, PROFILE_VARIABLE, profile_dir
 from host_login import LONG_LIVED_TOKEN, RELOGIN, login_remedy
 from l2_rubrics import read_grade
 from routing import error_result_reason, result_event
@@ -123,15 +128,18 @@ def build_command(model: str, effort: str, system_prompt: str) -> list[str]:
 
 def child_env(environ: Mapping[str, str], config: Path | None = None) -> dict[str, str]:
     """The judge child's environment: the allowlist, the subscription's own
-    long-lived token when exported, and the isolated config directory. No API
-    key, gateway or provider switch, inherited effort or host-session variable
-    reaches the child. `environ` is not modified."""
+    long-lived token when exported, the claude.ai connector switch off, and —
+    with an isolated config — that directory and its empty Anthropic profile
+    directory. No API key, gateway or provider switch, inherited effort or
+    host-session variable reaches the child. `environ` is not modified."""
     env = {
         name: value for name, value in environ.items()
         if name in ENV_KEEP or name.startswith(ENV_KEEP_PREFIXES) or name == LONG_LIVED_TOKEN
     }
+    env.update(CONNECTORS_OFF)
     if config is not None:
         env["CLAUDE_CONFIG_DIR"] = str(config)
+        env[PROFILE_VARIABLE] = str(profile_dir(config))
     return env
 
 
@@ -235,6 +243,17 @@ def billing_problem(events: list[dict]) -> str | None:
     """Why a stream may not count as a subscription result — checks 3 and 4 of
     design D5, shared by the judge and the dev runner's model-under-test run."""
     return _source_problem(events) or _rate_problem(events)
+
+
+def billing_signals(events: list[dict]) -> list[str]:
+    """The explicit billing reasons a stream carries, complete or not: an
+    API-key source or a non-first-party provider, and overage in use or a
+    refused rate-limit status. Unlike `billing_problem`, an absent report is
+    no signal — a run stopped at `init` has none yet — so these can be named
+    beside an account surface without inventing a billing problem. The source
+    check needs the `init` event and reads nothing without one."""
+    source = _source_problem(events) if init_event(events) else None
+    return [reason for reason in (source, rate_refusal(events)) if reason]
 
 
 def _notional_cost(result: Mapping) -> float | None:

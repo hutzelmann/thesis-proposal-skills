@@ -15,11 +15,14 @@ import json
 import os
 import threading
 import time
+from contextlib import ExitStack
 from pathlib import Path
 
+import claude_runner
 import host_login
 import pytest
 import routing
+from account_surfaces import PINNED_SETTINGS, PROFILE_DIR, isolation_problem
 from host_login import (
     CLAIM_NAME,
     CREDENTIALS,
@@ -269,6 +272,8 @@ def stored_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_REAL_CONFIG_DIR", str(stored))
     monkeypatch.delenv("ROUTING_CONFIG_DIR", raising=False)
     monkeypatch.delenv(LONG_LIVED_TOKEN, raising=False)
+    # the default Anthropic profile directory the run checks: never the operator's
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     return stored
 
 
@@ -277,6 +282,72 @@ def test_prepare_config_links_the_stored_login(stored_dir, tmp_path):
     config = routing.prepare_config(tmp_path / "base")
     assert (config / CREDENTIALS).is_symlink()
     assert (config / CREDENTIALS).readlink() == source
+
+
+def test_prepare_config_writes_exactly_the_pinned_opt_outs(stored_dir, tmp_path):
+    """testing-harness spec: Account surfaces opted out — the settings hold the
+    three opt-outs and nothing else, beside an empty profile directory."""
+    store(stored_dir / CREDENTIALS, now_ms() + HOUR_MS)
+    config = routing.prepare_config(tmp_path / "base")
+    settings = json.loads((config / "settings.json").read_text(encoding="utf-8"))
+    assert settings == dict(PINNED_SETTINGS)
+    assert all(isinstance(value, bool) for value in settings.values())
+    profile = config / PROFILE_DIR
+    assert profile.is_dir()
+    assert not list(profile.iterdir())
+    if os.name == "posix":
+        assert profile.stat().st_mode & 0o777 == 0o700
+    assert isolation_problem(config) is None
+
+
+@pytest.fixture
+def prepared_override(stored_dir, tmp_path, monkeypatch):
+    """A `ROUTING_CONFIG_DIR` an operator prepared the old way: `{}` settings,
+    no profile directory."""
+    override = tmp_path / "prepared"
+    override.mkdir()
+    (override / "settings.json").write_text("{}\n", encoding="utf-8")
+    store(stored_dir / CREDENTIALS, now_ms() + HOUR_MS)
+    monkeypatch.setenv("ROUTING_CONFIG_DIR", str(override))
+    return override
+
+
+@pytest.mark.usefixtures("prepared_override")
+def test_an_override_without_the_opt_outs_is_refused():
+    with pytest.raises(SystemExit) as refused, routing.isolated_config("test-config-"):
+        pytest.fail("the run started on an unprepared configuration")
+    message = str(refused.value.code)
+    assert "settings.json" in message
+    assert PROFILE_DIR in message
+
+
+@pytest.mark.usefixtures("prepared_override")
+def test_the_refused_override_is_untested_in_a_dev_run():
+    with pytest.raises(claude_runner.RunnerFailure) as refused, ExitStack() as stack:
+        claude_runner.enter_isolation(stack, "devrun-config-")
+    assert refused.value.untested
+    assert "settings.json" in refused.value.message
+
+
+def test_an_override_with_the_opt_outs_is_used_as_it_is(prepared_override):
+    (prepared_override / "settings.json").write_text(json.dumps(dict(PINNED_SETTINGS)),
+                                                     encoding="utf-8")
+    (prepared_override / PROFILE_DIR).mkdir()
+    with routing.isolated_config("test-config-") as config:
+        assert config == prepared_override
+    assert prepared_override.is_dir(), "an operator's directory is never removed"
+
+
+def test_a_profile_in_the_default_directory_refuses_the_run(stored_dir, tmp_path):
+    """Fallback F8: whether the host ignores the default profile directory when
+    ANTHROPIC_CONFIG_DIR names another is unverified (L8 inconclusive)."""
+    store(stored_dir / CREDENTIALS, now_ms() + HOUR_MS)
+    (tmp_path / "xdg" / "anthropic" / "work-profile-name").mkdir(parents=True)
+    with pytest.raises(SystemExit) as refused, routing.isolated_config("test-config-"):
+        pytest.fail("the run started beside a stored Anthropic profile")
+    message = str(refused.value.code)
+    assert str(tmp_path / "xdg" / "anthropic") in message
+    assert "work-profile-name" not in message
 
 
 @pytest.mark.usefixtures("stored_dir")

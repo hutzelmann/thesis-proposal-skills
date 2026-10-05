@@ -36,21 +36,34 @@ tool calls (Agent/Task/Workflow) and an advisory single-context verdict —
 the probe for the fan-out class of failure, which no other harness path can
 see — plus the model the host served and its CLI version. `--isolated` runs
 against a fresh host configuration (the routing rig's `isolated_config`, which
-keeps the linked stored login current) and an allowlisted environment (the
-rig's `isolated_env`), so a run measures the default host rather than the
-operator's session mode; the summary says which (`config`).
+keeps the linked stored login current and holds only the claude.ai opt-out
+settings and an empty Anthropic profile directory) and an allowlisted
+environment (the rig's `isolated_env`), so a run measures the default host
+rather than the operator's session mode; the summary says which (`config`).
+
+The host's stream is read as it arrives (`routing.follow_stream`), and the host
+is stopped at the first event that shows a claude.ai account surface — in an
+isolated run any MCP server, foreign plugin or synced skill, in an ambient run
+a claude.ai connector. A host that announces it before the model's first turn,
+as 2.1.284 does, therefore never leaves a publishing connector live for turns
+that skip permission prompts. Such a run, and an isolated run whose
+configuration holds synced content afterwards, is untested
+(`account_surfaces`).
 
 Billing stays on the subscription: every `ANTHROPIC_*` variable and every
 `CLAUDE_CODE_USE_*` switch is stripped from the model run's environment (an
-isolated run's allowlist admits none of them in the first place), and a
-run whose stream shows an API-key source, overage, a refused rate-limit status
-or no rate-limit report at all is untested, never passed. `--rejudge` re-grades
-kept workspaces without running the model again; `--max-notional` caps the
-judge calls' cumulative notional cost (plan quota, not money).
+isolated run's allowlist admits none of them in the first place; its one
+`ANTHROPIC_` name is the empty profile directory the harness sets), the
+claude.ai connector switch is off in both modes, and a run whose stream shows
+an API-key source, overage, a refused rate-limit status or no rate-limit
+report at all is untested, never passed. `--rejudge` re-grades kept
+workspaces without running the model again; `--max-notional` caps the judge
+calls' cumulative notional cost (plan quota, not money).
 
 Exit status: 0 every computed verdict passed, 1 a verdict failed (L1 or a
 graded L2 criterion), 2 usage error, 3 untested (the subscription could not
-serve the run or the judge), 4 other runner failure.
+serve the run or the judge, or a claude.ai account surface reached it), 4
+other runner failure.
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
 workspace so file edits and script calls work headlessly.
@@ -78,6 +91,13 @@ from pathlib import Path
 import anyio
 import claude_cli
 import support
+from account_surfaces import (
+    SurfaceLeak,
+    ambient_env,
+    config_surfaces,
+    stream_surfaces,
+    surface_reason,
+)
 from claude_cli import Criterion, Grade, JudgeRun, parse_events
 from host_login import LOGIN_FAILURE, login_remedy
 from l1_checks import (
@@ -112,6 +132,7 @@ from l2_rubrics import CRITERIA, DEV_RUBRICS, JUDGE_SYSTEM, judge_prompt, questi
 from routing import (
     OUTWARD_TOOLS,
     error_result_reason,
+    follow_stream,
     isolated_config,
     isolated_env,
     result_event,
@@ -132,9 +153,6 @@ OUTCOMES = {EXIT_PASS: "PASS", EXIT_FAIL: "FAIL", EXIT_UNTESTED: "UNTESTED",
             EXIT_RUNNER: "RUNNER FAILURE"}
 JUDGE_LABEL = "dev-runner L2, not comparable to matrix"
 DEFAULT_MAX_NOTIONAL = 5.00
-# every model run drops these: they can route the host's billing away from the
-# subscription login (API key, gateway base URL and token, cloud providers)
-BILLING_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_USE_")
 
 SCENARIOS = {
     "check_report": {
@@ -594,16 +612,31 @@ class RunnerFailure(Exception):
 def model_env(environ: Mapping[str, str], config: Path | None) -> dict[str, str]:
     """The model-under-test child's environment; `environ` is not modified.
 
-    Ambient: the inherited one minus every variable that can move its billing
-    off the subscription login. Effort and session settings stay — they are
-    part of what an ambient run measures. Isolated: the routing rig's
+    Ambient: `account_surfaces.ambient_env` — the inherited one minus every
+    variable that can move its billing off the subscription login, with the
+    claude.ai connector switch off. Effort and session settings stay — they
+    are part of what an ambient run measures. Isolated: the routing rig's
     allowlisted `isolated_env`, which admits no billing variable and nothing of
     the launching session, effort included, so the run measures the default
     host (testing-harness spec: Isolated child environment)."""
     if config is not None:
         return isolated_env(config, environ)
-    return {name: value for name, value in environ.items()
-            if not name.startswith(BILLING_PREFIXES)}
+    return ambient_env(environ)
+
+
+def surface_failure(leaks: list[SurfaceLeak], events: list[dict],
+                    host_reason: str | None = None, *, isolated: bool) -> RunnerFailure:
+    """An untested run that a claude.ai account surface reached. The surface
+    leads: a polluted run's other failures say nothing about the skill. Every
+    explicit billing reason the stream carries is named beside it, so a
+    surface never hides overage, and so is the host's own failure or its
+    timeout, if any. `isolated` picks which opt-outs the message says failed."""
+    message = surface_reason(leaks, isolated=isolated)
+    for signal in claude_cli.billing_signals(events):
+        message += f" Also not a subscription result: {signal}."
+    if host_reason:
+        message += f" The host also failed: {host_reason}"
+    return RunnerFailure(message, untested=True, events=events)
 
 
 def run_claude(ws: Path, request: str, model: str, timeout: int,
@@ -614,30 +647,40 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
     The stream, not the plain text, is what a run is judged on: the final
     `result` event carries the chat text plus cost, turns and token usage, and
     the assistant events carry every tool call — including a helper-agent
-    spawn, which plain text output never shows. A run the host failed raises
-    `RunnerFailure` — untested when the login was refused or the stream
-    reports overage or a refused rate-limit status (a run stopped at the plan
-    limit ends with an error result), else a runner failure; so does a
-    finished run whose stream shows billing other than the subscription.
+    spawn, which plain text output never shows. It is read as it arrives
+    (`routing.follow_stream`), and the host is stopped at the first event that
+    shows a claude.ai account surface — any in an isolated run, a claude.ai
+    connector in an ambient one. A host that announces it before the model's
+    first turn, as 2.1.284 does, therefore never leaves a publishing connector
+    live for turns that run with permissions skipped. Such a run, and an
+    isolated one whose configuration holds synced content afterwards (finished
+    or timed out), is untested.
+
+    A run the host failed raises `RunnerFailure` — untested when the login was
+    refused or the stream reports overage or a refused rate-limit status (a
+    run stopped at the plan limit ends with an error result), else a runner
+    failure; so does a finished run whose stream shows billing other than the
+    subscription.
     """
     env = model_env(os.environ, config)
     if home is not None:
         # the install probe's scratch home, layered on top of the child's
         # environment so the installer can never touch the operator's skills
         env.update(HOME=str(home), USERPROFILE=str(home))
-    try:
-        result = subprocess.run(
-            host_command(request, model, budget),
-            # stdin must be closed: with an inherited non-tty stdin (backgrounded or
-            # redirected runs) claude blocks waiting for piped input, warns, and can
-            # exit non-zero — a runner failure that looks like a skill failure
-            cwd=ws, env=env, stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        raise RunnerFailure(f"claude did not finish within {timeout}s") from None
-    events = parse_events(result.stdout)
-    failure = host_failure(events, result.returncode, result.stderr)
+    isolated = config is not None
+    seen = follow_stream(host_command(request, model, budget), cwd=ws, env=env,
+                         timeout=timeout,
+                         stop=lambda events: bool(stream_surfaces(events[-1:], isolated)))
+    events = seen.events
+    if seen.stopped:
+        raise surface_failure(stream_surfaces(events, isolated), events, isolated=isolated)
+    late = f"claude did not finish within {timeout}s" if seen.timed_out else None
+    failure = late or host_failure(events, seen.returncode, seen.stderr)
+    synced = config_surfaces(config) if config is not None else []
+    if synced:  # checked before the configuration is removed, a timed-out run included
+        raise surface_failure(synced, events, failure, isolated=True)
+    if late:
+        raise RunnerFailure(late, events=events)
     if failure:
         # only an explicit report counts here: a budget overrun with allowed
         # statuses stays a runner failure, and so does a stream with no report
@@ -1282,8 +1325,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-budget-usd", type=float, default=None,
                         help="hard cost cap passed through to the host")
     parser.add_argument("--isolated", action="store_true",
-                        help="run against a fresh host configuration (settings emptied, "
-                             "credentials linked) instead of the operator's ambient one")
+                        help="run against a fresh host configuration (claude.ai opt-outs "
+                             "set, credentials linked) instead of the operator's ambient one")
     parser.add_argument("--judge", action="store_true",
                         help="grade the scenario's rubric criteria with the subscription dev "
                              "judge ([roles].dev_judge); needs --isolated. Dev-runner L2, not "

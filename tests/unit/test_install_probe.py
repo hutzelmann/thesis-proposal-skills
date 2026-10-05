@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 import tempfile
 import zipfile
 from contextlib import contextmanager
@@ -20,6 +19,7 @@ from urllib.parse import urlsplit
 
 import claude_runner
 import pytest
+from claude_cli import parse_events
 from claude_runner import (
     EXIT_FAIL,
     EXIT_PASS,
@@ -29,7 +29,7 @@ from claude_runner import (
     RunnerFailure,
     main,
 )
-from helpers import REPO
+from helpers import REPO, followed
 from l1_checks import verdict_install_prompt_asks_scope, verdict_install_prompt_installed
 
 import install
@@ -279,19 +279,18 @@ def probe(monkeypatch, tmp_path):
 
     monkeypatch.setattr(claude_runner, "isolated_config", fake_isolated_config)
     host = {"config": config, "temp": temp, "calls": [], "stdout": host_stdout(ASKED),
-            "raises": None}
+            "timed_out": False}
 
-    def run(command, **kwargs):
+    def follow(command, **kwargs):
         request = command[2]
         url = LOCAL_INSTALLER.search(request).group(0)
         host["calls"].append({"request": request, "url": url,
                               "served": fetch(url), "cwd": kwargs["cwd"], "env": kwargs["env"],
                               "home_empty": not any(Path(kwargs["env"]["HOME"]).iterdir())})
-        if host["raises"] is not None:
-            raise host["raises"]
-        return subprocess.CompletedProcess(command, 0, host["stdout"], "")
+        return followed(parse_events(host["stdout"]), kwargs["stop"],
+                        timed_out=host["timed_out"])
 
-    monkeypatch.setattr(claude_runner.subprocess, "run", run)
+    monkeypatch.setattr(claude_runner, "follow_stream", follow)
     return host
 
 
@@ -309,7 +308,11 @@ def test_the_host_runs_in_the_probe_home_under_the_isolated_config(probe, tmp_pa
     assert env["HOME"] == env["USERPROFILE"] == str(home)
     assert call["home_empty"]
     assert env["CLAUDE_CONFIG_DIR"] == str(probe["config"])
-    assert not [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
+    assert not [k for k in env if k.startswith("CLAUDE_CODE_USE_")]
+    # the only `ANTHROPIC_` name is the empty profile directory the harness sets
+    assert [k for k in env if k.startswith("ANTHROPIC_")] == ["ANTHROPIC_CONFIG_DIR"]
+    assert env["ANTHROPIC_CONFIG_DIR"] == str(probe["config"] / "anthropic-empty")
+    assert env["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
     # the request names the local installer, which points at the local archive
     assert claude_runner.RAW_INSTALLER_URL not in call["request"]
     assert claude_runner.ANSWER not in call["request"]
@@ -328,17 +331,17 @@ def test_the_answered_variant_appends_the_answer(probe, tmp_path):
     assert call["request"].endswith(claude_runner.ANSWER)
 
 
-@pytest.mark.parametrize(("scenario", "stdout", "raises", "status"), [
-    ("install_prompt", host_stdout(ASKED), None, EXIT_PASS),
-    ("install_prompt", host_stdout("Installed everything for you."), None, EXIT_FAIL),
+@pytest.mark.parametrize(("scenario", "stdout", "timed_out", "status"), [
+    ("install_prompt", host_stdout(ASKED), False, EXIT_PASS),
+    ("install_prompt", host_stdout("Installed everything for you."), False, EXIT_FAIL),
     # nothing landed in the probe home, so the answered verdict fails
-    ("install_prompt_answered", host_stdout("Installed."), None, EXIT_FAIL),
-    ("install_prompt", host_stdout(ASKED, overage=True), None, EXIT_UNTESTED),
-    ("install_prompt", "", subprocess.TimeoutExpired(["claude"], 5), EXIT_RUNNER),
+    ("install_prompt_answered", host_stdout("Installed."), False, EXIT_FAIL),
+    ("install_prompt", host_stdout(ASKED, overage=True), False, EXIT_UNTESTED),
+    ("install_prompt", "", True, EXIT_RUNNER),
 ])
 def test_each_outcome_exits_with_its_status_and_logs_one_line(
-        scenario, stdout, raises, status, probe, tmp_path):
-    probe["stdout"], probe["raises"] = stdout, raises
+        scenario, stdout, timed_out, status, probe, tmp_path):
+    probe["stdout"], probe["timed_out"] = stdout, timed_out
     log = tmp_path / "log.jsonl"
     assert main([scenario, "--summary-log", str(log)]) == status
     [line] = logged(log)
