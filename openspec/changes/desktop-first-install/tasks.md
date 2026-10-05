@@ -91,7 +91,11 @@
 - [x] 7.1 `uv run poe test` green, `uv run poe cov` holds the floor, and `uv run poe specs` validates strictly.
 - [x] 7.2 Run an adversarial multi-lens review workflow of the full diff: correctness, cross-platform behaviour, security/audit surface, student UX of the prompt and docs, and spec ↔ implementation fidelity. Fix the confirmed findings and record them here.
 
-## 8. Maintainer verification (manual, before merge)
+## 8. Maintainer verification (manual, against main)
+
+- [x] 8.0 Merge into `main` before the runs. On 2026-10-05 the maintainer decided against a separate test branch: everything lands on `main` and the runs happen there, with the shipped prompt and the plain marketplace `hutzelmann/thesis-proposal-skills`. This replaces the earlier rule that the change stays off `main` until the runs pass.
+  - Until a recipe is run, it stays stamped `*unverified*` on `main`, and the change stays open.
+  - The release is the push of `main`, which only the maintainer does.
 
 - [ ] 8.1 ChatGPT desktop app (Codex view, free plan): paste the prompt in a fresh folder, answer the scope question, approve as asked, open a new chat, then ask "help me develop a thesis idea". Record the app version and date in the recipe stamp.
 - [ ] 8.2 Claude desktop: run the plugin button (Customize > Plugins > Add marketplace > `hutzelmann/thesis-proposal-skills`) on a paid plan, and the prompt in the Code tab on another machine or a clean profile. Stamp the recipe. This run also settles design D7's open question: does claude.ai honour the marketplace entry's `skills` list, and do all eleven skills appear under Customize > Skills? Also paste the prompt once into the Chat tab and check that the agent stops with the chat-only pointer instead of installing into its sandbox.
@@ -104,7 +108,7 @@
   - check that `python`, not `python3`, is what then answers.
 
   Correct the "No Python yet?" subsection if any of that differs. On a Mac, likewise confirm that the python.org installer followed by Install Certificates.command leaves the literature search working.
-- [ ] 8.6 Remove any recipe not run, then merge into `main`, re-run `python3 scripts/sync_shared.py`, and archive the change. Archiving makes `test_install_docs.py` reject any recipe still stamped `unverified`.
+- [ ] 8.6 Remove any recipe not run (with the matching edit to `test_install_docs.py::test_the_featured_apps_have_recipes`), re-run `python3 scripts/sync_shared.py`, and archive the change on `main`. Archiving makes `test_install_docs.py` reject any recipe still stamped `unverified`.
 
 ## Notes
 
