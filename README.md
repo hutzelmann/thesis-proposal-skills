@@ -134,7 +134,7 @@ Model support, measured by the metered eval matrix on **2026-08-10** (3 epochs p
 
 | Model (pinned version) | Verdict | Notes |
 |---|---|---|
-| `anthropic/claude-haiku-4.5` | ❌ not recommended | fails: proposal-customize, proposal-review, proposal-write |
+| `anthropic/claude-haiku-4.5` | ❌ not recommended | fails: proposal-customize, proposal-review, proposal-write; with all skills installed, polishing and editing requests are not reliably routed to proposal-write (0/3 on the routing rig, 2026-10-05) — use sonnet or opus for such passes |
 | `anthropic/claude-sonnet-5.5` | ❔ untested |  |
 | `anthropic/claude-opus-5.5` | ❔ untested |  |
 | `openai/gpt-6-luna` | ❔ untested | the eval harness could not drive the previous luna pin (Azure strict tool schemas reject Inspect's tools); this pin is not yet re-probed — untested is a harness limitation, not a quality signal |

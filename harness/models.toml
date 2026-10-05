@@ -41,6 +41,11 @@ output_price = 5.0
 cache_read_price = 0.1
 cache_write_price = 1.25
 enabled = true
+# Routing, not a matrix cell: with only proposal-write installed (dev runner)
+# haiku loads it for a polishing request 3/3, but with all skills installed
+# (routing rig) the polish case reaches no skill, 0/3 before and after the
+# description edit (2026-10-05-route-polish-to-write/measurement.md).
+note = "with all skills installed, polishing and editing requests are not reliably routed to proposal-write (0/3 on the routing rig, 2026-10-05) — use sonnet or opus for such passes"
 
 [[models]]
 id = "openrouter/anthropic/claude-sonnet-5.5"
