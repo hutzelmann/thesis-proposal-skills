@@ -1,0 +1,524 @@
+# Design
+
+## Context
+
+**Order.** This change lands after `add-codex-dev-runner` (change 3), which lands after `close-claudeai-surfaces` (change 1) and `add-harness-claude-login` (change 2). It is change 4, and it builds on what changes 1 to 3 leave in place.
+
+- **`harness/hosts.py`**: `Host`, `RunView` and `JudgeBackend`. `HOSTS` is built late in `claude_runner`, alongside `host_for(args)`, `stage(scenario, ws, install_skill, skill_dir)`, `--host`, and the `host`/`label` summary keys.
+- **`harness/host_login.py`**:
+  - the frozen `HostLogin` record with change 3's fields `strip_suffixes`, `stop_signal`, `outside_tempdir` and `child_vars`, plus `RECORDS`, `state_root`, `check_location(..., tempdir)`, marker, seed and `wipe`;
+  - `allowlisted_env(record, config, environ)`, `login_env`, `AGENT_MARKERS`;
+  - `LoginProblem(cause, remedy, client)`, `NOTES`, `login_note`, `refusal` and `login_remedy(message, source, record)`;
+  - `run_lock`/`RunLockBusy`/`LOCK_WAIT_S`, and `run_host(record, argv, *, cwd, env, timeout, input, pass_fds)` with the Linux parent-death signal;
+  - `TERM_GRACE_S` and `stop_child(proc, sig)`;
+  - `main(argv)` behind `poe host-login`, `host-status` and `host-logout`.
+- **The `read_quota` seam**, from change 3's Decision 9. It runs a client child under the run lock and makes no model call.
+- **Judge isolation per backend**, from change 3's Decision 13. The Claude judge enters a fresh isolated Claude configuration for a run on another host.
+- **The exit statuses**: 0 pass, 1 fail, 2 usage, 3 untested, 4 runner failure. Untested has three reasons: subscription, isolation and precondition.
+
+**Shared blocks.**
+
+- This change MODIFIES four requirements:
+  - "Harness-owned host logins", "Dev-runner host adapters" and "Dev-runner cost and helper-agent telemetry". Each starts from change 3's current text, which itself folds in change 2's text as revised on 2026-10-05 and change 3's host-generic rewording.
+  - "Isolated child environment". Change 3 does not modify it, so its block starts from change 2's text.
+- Change 3's generic wording leaves "Inverted-hybrid runners", "Measured environments carry no eval definitions" and "Subscription text roles (dev runner)" with no sentence that counts the hosts. They therefore stay unmodified (Decision 2).
+- If change 2 or 3 is revised again before it is archived, these blocks are rebased (tasks 0.1 and 9.3).
+
+**Copilot facts this design relies on.**
+
+- All of them were verified at CLI 1.0.67, by byte offset in the unpacked `app.js`, by strings in `runtime.node`, and in the local help and fetched docs (design brief, 2026-10-05).
+- D-C3(b) pins 1.0.91. Task 1.2's V-pass re-derives every one of them from the 1.0.91 package before any fixture is written. A fact that changed in a way that alters a rule is revised through `openspec-update-change`, never patched in code alone.
+
+The facts:
+
+- **Credential precedence.** `COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`, then `GITHUB_TOKEN`, then a stored OAuth token (keyring, or a plaintext file under `storeTokenPlaintext`), then a `gh auth token` fallback run by `runtime.node`.
+  - Classic `ghp_` tokens are rejected in `-p` mode.
+  - The hidden `--no-auto-login` disables both the stored-token and the `gh` fallbacks (`app.js` 8388924 and 8395006; supported per `changelog.md:166`).
+- **`gh` reaches the keyring.** `gh` links godbus and go-keyring. godbus uses a non-empty `DBUS_SESSION_BUS_ADDRESS` verbatim, and otherwise falls back to `/run/user/<uid>/bus` whatever `XDG_RUNTIME_DIR` says.
+- **The stdout stream.**
+  - `--output-format json` writes events outside a filter set (`app.js` 8182243):
+    - `tool.execution_start` and `tool.execution_complete`;
+    - `assistant.message`;
+    - `subagent.started`;
+    - `session.error` and `session.warning`;
+    - a closing `result` line (8183071).
+  - `assistant.usage` reaches neither stdout nor disk.
+  - `session.skills_loaded` and `session.mcp_servers_loaded` are ephemeral. They pass the filter but may be emitted before the writer subscribes.
+- **On disk.** `<COPILOT_HOME>/session-state/<uuid>/events.jsonl` holds:
+  - `session.start`, which echoes the creation options only (3318314);
+  - `skill.invoked` (`name`, `path`, `source`, `trigger`);
+  - `session.shutdown` (`totalNanoAiu`, `totalPremiumRequests`, `modelMetrics`);
+  - `session.model_change`, `hook.*` and `system.message`.
+  - `--session-id` sets the UUID of a new session (8379791).
+- **Quota.**
+  - `account.getCurrentAuth` returns `copilotUser.quota_snapshots` raw.
+  - `getQuota` coerces a missing `overage_permitted` to `false` and a missing `overage_count` to `0` (`EZ`, 905928). It also fetches `/copilot_internal/user` itself when `copilotUser` is absent (3273391).
+  - The CLI reads the `chat` snapshot for `free_limited_copilot` and `premium_interactions` otherwise (2314646 and 7175749).
+  - A missing `total_nano_aiu` reads as 0 (2357086).
+  - The relevant error codes are `session_limits` and `ai_credit_soft_cap_exhausted` (3118451 and 3118639).
+- **Configuration.**
+  - `config.json` overrides `settings.json` key by key (`runtime.node` string).
+  - `sandbox.allowBypass` and `sandbox.auth.{git,gh}` default to true (`cli-config-dir-reference.md:498-501`).
+  - **The deny-list key path is contradicted.** The docs name `sandbox.userPolicy.deniedPaths` (`cli-config-dir-reference.md:506`). The 1.0.67 package names only `sandbox.userPolicy.filesystem.deniedPaths`: its `runtime.node` strings carry that path once and `userPolicy.deniedPaths` zero times, and `schemas/api.schema.json` nests `deniedPaths` under `SandboxConfigUserPolicyFilesystem`, with `additionalProperties: false` at every level. A sandbox key that the CLI does not read is ignored silently (`changelog.md:398`, 1.0.79).
+  - `sandbox.allowDevToolAccess` (renamed from `allowDevToolCaches` at 1.0.79) defaults to on, and since 1.0.83 it grants the sandboxed shell and file tools developer-tool configuration, "including token-bearing registry config such as ~/.npmrc" (`changelog.md:263`, `:398`, `:426`).
+  - `--sandbox` exists since 1.0.70. When the sandbox is unavailable it only warns that it was "ignored" and runs the shell unconfined (`changelog.md:640`). Only an administrator's managed `sandbox.failIfUnavailable` turns that into a block (`cli-config-dir-reference.md:431`), so a personal account cannot.
+  - Since 1.0.83 the Linux sandbox needs `slirp4netns`, `nsenter`, `iptables`, `ip6tables`, `iptables-restore` and `ip6tables-restore` on `PATH`, besides `bwrap` (`changelog.md:277`).
+  - Windows cannot enforce `deniedPaths` (`:506`).
+  - At 1.0.89 the sandboxed shell "can access session files and logs" (`changelog.md:48`), which are under `COPILOT_HOME`.
+  - The 1.0.67 SDK declares model-free shell calls on a session, `shell.exec` and `shell.executeUserRequested` (`copilot-sdk/generated/rpc.d.ts:14641`, `:14657`, both experimental). Whether they run inside the session's sandbox is UNVERIFIED.
+- **Auto-update.** Unless `--no-auto-update` or `COPILOT_AUTO_UPDATE=false` is set, the loader runs the newest cached `app.js` it finds, the operator's `~/.cache/copilot/pkg` included.
+- **Skill discovery.**
+  - In a folder that is not a git repo, the CLI reads `.agents/skills`, `.github/skills` and `.claude/skills` in every parent folder as `inherited` (measured).
+  - `~/.agents/skills` is not read when `COPILOT_HOME` is set (changelog 1.0.66, measured).
+  - The bundled `customize-cloud-agent` skill is always listed.
+- **Exit codes.** Since 1.0.87, a failed child task can still exit 0, and a `model_call` error does not change the exit code.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- Copilot is a third `Host` behind the one runner. `dev_run` gains no Copilot branch. Every Claude and Codex test passes unchanged, apart from the seams the tasks name.
+- No environment, configuration or account state lets a Copilot run do any of these:
+  - bill anything but included credits;
+  - act with any credential but the harness PAT;
+  - load anything of the operator's.
+
+  Every way it could is refused before the run, or marked untested after it.
+- Every check is a pure function over a stream, a status reply, a directory listing or an environment mapping. Each is tested offline on synthetic fixtures derived from the 1.0.91 package.
+- No agent and no test ever needs a Copilot token. Live runs refuse until the token file exists, and the first model call waits for the user's explicit go.
+
+**Non-Goals:**
+
+- **Recorded streams and the K5–K7 outcomes.** They belong to `record-copilot-streams`, after the first approved run. The deny-path probe, formerly K6c, is no longer among them: it runs at $0 before every run, once the V-pass confirms a model-free shell call (Decision 13). Only if the V-pass finds none does it move to `record-copilot-streams`.
+- **The auto-routed variant (D-C1(b)), and organization seats (D-C1(c))** beyond the guard's refusal of a seat that permits overage.
+- **Per-scenario network policy for the sandboxed shell (D-C4(c)).** It is a recorded follow-up.
+- **Out of scope as well:**
+  - `smoke-copilot`, routing on Copilot, a Copilot judge and a Copilot install probe;
+  - anything that feeds `report.py` or the matrix, and a registry role;
+  - `--usage-output-file` as a telemetry source (P3);
+  - VS Code's Copilot. Only the CLI is driven.
+
+## Decisions
+
+### 1. The user's decisions (2026-10-05) and the rejected alternatives
+
+| Decision | Chosen | Rejected, and why |
+|---|---|---|
+| D-C1, plan | The account's free Copilot Pro for teachers: pinned models, about 1,500 credits a month | (b) Free or Student, auto-only: runs would be labelled "auto-routed", about 5–10 a month, and never comparable across runs. (c) An organization seat: the administrator controls overage. The guard still refuses any seat whose overage permission reads true. |
+| D-C2, credential | (a) A fine-grained PAT carrying only "Copilot Requests", in `<state>/hosts/copilot.token` at 0600 beside the home, injected as `COPILOT_GITHUB_TOKEN`, with `--no-auto-login` on every child | (b) The same PAT exported as `THESIS_PROPOSAL_COPILOT_TOKEN`. The same relaxation applies, but the token sits in every process's environment, agents included. (c) An OAuth device login into the home. See below. |
+| D-C3, version | (b) Upgrade to 1.0.91, pin that version exactly, and V-pass first | (a) Stay on 1.0.67. See below. (c) No pin: the event schema and the stdout filter change between versions. |
+| D-C4, shell confinement | (b) Sandbox required: `--sandbox`, the pinned block with `allowBypass:false`, `allowDevToolAccess:false`, `auth.git/gh:false` and a deny list built by construction; a confinement probe before every run; refuse when unavailable or ignored, and refuse on Windows | (a) No sandbox: the model's shell could run `gh` against the operator's keyring, and read the token file and `~/.ssh`. (c) Network limits per scenario: their behaviour in `-p` mode is UNVERIFIED, so they are a recorded follow-up after K6. |
+| Budget | No Copilot budget at all: the user deletes every budget | A $0 budget with "Stop usage" ticked. The CLI reads `overage_entitlement > 0` as "a budget exists", and the shape of a $0 budget is UNVERIFIED. Deleting leaves nothing to misread. |
+
+Why D-C2(c), the OAuth device login, was rejected:
+
+- it works on Linux only, because it needs the D-Bus cut-off plus `storeTokenPlaintext`;
+- it carries the `repo` and `gist` scopes;
+- it can only be revoked together with the operator's own CLI logins, and it counts toward GitHub's 10-token cap;
+- it forfeits `--no-auto-login`;
+- its logout goes through the Rust `authManagerLogout`, which may touch the operator's keyring entry.
+
+Why D-C3(a), staying on 1.0.67, was rejected:
+
+- it has no `claude-sonnet-5.5` or `opus-5.5`;
+- it has no `--sandbox`, so D-C4(b) would be impossible;
+- `--effort` would have to be refused;
+- it still has the shell-secret debug-log leak that 1.0.87 fixed.
+
+The cost of D-C3(b) is nil in schedule, because changes 1 to 3 gate this change's code anyway.
+
+### 2. Spec shape
+
+- **One ADDED and four MODIFIED requirements.**
+  - ADDED "Copilot plan billing guard".
+  - MODIFIED "Harness-owned host logins": the per-record credential kind is D-C2's relaxation.
+  - MODIFIED "Dev-runner host adapters" and "Dev-runner cost and helper-agent telemetry".
+  - MODIFIED "Isolated child environment".
+- **Why "Isolated child environment" is modified.** Change 2 leaves a later client's child to "the same function … from that client's own description". The Copilot token is added *after* that function, by the caller, so that the builder stays pure and reads no credential. The requirement now says exactly that: one variable added for a token-file client, and none of it reaching any other child.
+- **The D-C2 relaxation, line by line.** Change 3's "never … an access-token login" (`:241`), "the operator's own [environment], so that a browser can open" (`:243`) and the credential rules (`:310-314`) stay true for client-login records. Each is scoped to that kind, and the token-file kind gets its own exact limits:
+  - one file read, kept beside the home rather than in it;
+  - handed only to that client's children, under one variable;
+  - only its prefix inspected, and otherwise used only to scrub the children's output;
+  - never printed, logged or copied.
+- **Not modified: "Inverted-hybrid runners", "Measured environments carry no eval definitions" and "Subscription text roles (dev runner)".**
+  - Change 3 words them per host: "several host CLIs", "whichever host the run uses", "every non-Claude host".
+  - Copilot's label scenario and staging scenario sit in "Dev-runner host adapters". The judge's token isolation sits in "Isolated child environment".
+- **Not modified: "Isolated measurement environment".** Change 2 scopes it to Claude configurations.
+- **Scenario names.** All 81 scenario names of the four base blocks are kept, checked name by name. Task 0.1 and task 9.3 repeat the check.
+
+### 3. The `COPILOT` record and the credential kind
+
+`HostLogin` gains two fields, with defaults that leave `CLAUDE` and `CODEX` unchanged:
+
+- `credential: Literal["client-login", "token-file"] = "client-login"`;
+- `token_env: str | None = None`.
+
+| Field | Value |
+|---|---|
+| `name`, `binary`, `home_var` | `copilot`, `copilot`, `COPILOT_HOME` |
+| `credential`, `token_env` | `token-file`, `COPILOT_GITHUB_TOKEN` |
+| `login_argv`, `status_argv`, `logout_argv` | all `None`. `main` takes the token-file branch for login and logout, and status dispatches to `copilot_cli.read_status` |
+| `admitted` | `CLAUDE.admitted` minus `CLAUDE_CODE_OAUTH_TOKEN` |
+| `login_strip_prefixes`, `strip_suffixes` | `COPILOT_`, `GITHUB_`, `GH_`, `CAPI_`, `OTEL_`, `OPENAI_`, `ANTHROPIC_`, `AZURE_OPENAI_`; `_TOKEN`, `_API_KEY`. Plus the exact names `BASH_ENV` and `SSH_AUTH_SOCK` |
+| `seed` | `settings.json` = `pinned_settings(home, account_home)`, and an empty `gh/` |
+| `forbidden` | everything outside the allow-list (Decision 6) |
+| `failure` | `session.error` with `errorType` authentication or authorization, which maps to the PAT remedy |
+| `stop_signal`, `outside_tempdir` | default (SIGTERM), False. 1.0.67 handles SIGTERM, SIGINT, SIGHUP and SIGQUIT alike, and the V-pass re-checks this at the pin |
+| `child_vars(home)` | change 3's signature, unchanged: the home-derived and constant variables of Decision 5. The scratch variables come from `copilot_cli.run_env`, as Codex's do |
+
+- **`account_home`.** It comes from the password database (`pwd.getpwuid(os.getuid()).pw_dir`), never from `$HOME`. The children's `HOME` is a scratch directory, so a `~` in `deniedPaths` would deny a path under scratch and leave the operator's real home readable. `pinned_settings` writes absolute paths for that reason. The preflight recomputes it and compares the result with `settings.json` for equality.
+- **`pinned_settings`** is the brief's object plus the sandbox block:
+
+  ```json
+  {"autoUpdate": false, "continueOnAutoMode": false, "customAgents": {"defaultLocalOnly": true},
+   "disableAllHooks": true, "experimental": false, "ide": {"autoConnect": false},
+   "memory": false, "storeTokenPlaintext": true,
+   "sandbox": {"enabled": true, "allowBypass": false, "allowDevToolAccess": false,
+               "auth": {"git": false, "gh": false},
+               "userPolicy": {"filesystem": {"deniedPaths": DENY}}}}
+  ```
+
+  - **`DENY` is built by construction**, not picked entry by entry: `<acct>` (the whole account home), `/run/user/<uid>` (the session bus, and the `gcr`, `ssh-agent` and `gpg-agent` sockets a model could reach by setting `DBUS_SESSION_BUS_ADDRESS` or `SSH_AUTH_SOCK` itself), `<state>` when the state root lies outside `<acct>`, and the token file. A hand-picked list missed `~/.git-credentials`, `~/.netrc`, the other harness homes, `~/.claude`, `~/.codex` and the repository's `.env`; the whole home covers them and any later one. The workspace and the scratch `HOME` lie in the run's scratch directory, outside all of these; the parent-folder scan refuses a workspace under `<acct>` (Decision 7).
+  - **The key path is UNVERIFIED.** The block above follows the 1.0.67 package, `sandbox.userPolicy.filesystem.deniedPaths`, against the docs' `sandbox.userPolicy.deniedPaths` (Context). Task 1.2 derives the exact path from the 1.0.91 `runtime.node` strings and settings schema, and the block follows the package. A missing unknown-key warning on stderr is not proof that a key is read. K6, at $0 before P2, reads the effective policy (Decision 13).
+  - **Whether the client's own tools need anything under `<acct>`** inside the sandbox, the package cache under `<state>/cache/copilot` above all (the bundled `rg`), is UNVERIFIED. K6 runs `python3` and one skill script under the pinned policy at $0, and P2's tool results show whether `grep` and `glob` still work. If one of them fails, the deny list is revised through `openspec-update-change`, never widened in code alone.
+  - K3 confirms that the CLI accepts every key with no unknown-key warning. A key it rejects is revised through `openspec-update-change`.
+- **`check_location`** also refuses `~/.copilot`, an inherited `$COPILOT_HOME` and `~/.config/github-copilot` for every record, extending change 2's list of client directories.
+- **The login note.** `NOTES["copilot"] = ("Your own Copilot login is not affected", None, True)`. A token-file client has no revocation check, so its caveat slot is empty and its pass flag is constant.
+- **Imports.** `copilot_cli` imports `host_login` at module level. `host_login.main` imports `copilot_cli` inside the token-file branches only, so there is no import cycle.
+
+### 4. The token file
+
+- **Where it lives.** `token_path(home) = home.parent / "copilot.token"`, that is `<state>/hosts/copilot.token`: a 0600 sibling of the home, never inside it. Since 1.0.89 the sandboxed shell is granted the session files and logs under `COPILOT_HOME`, and how that grant interacts with a deny entry inside the same home is unknown. A file outside the home is covered by no grant on the home, and it stays on the deny list.
+- **`host-login copilot`** runs these steps in order:
+  1. the terminal check and the agent-marker check, unchanged;
+  2. `check_location`;
+  3. seed;
+  4. `run_lock`;
+  5. on an existing token file, delete it; on `--reset`, delete it, wipe the marked home and reseed it;
+  6. `getpass.getpass("Fine-grained token (Copilot Requests only): ")`;
+  7. `token_problem(prefix)` refuses `ghp_` by name, and any prefix other than `github_pat_`. Only the first 11 characters are compared, and the message never echoes them;
+  8. write the file with `os.open(path, O_WRONLY|O_CREAT|O_EXCL, 0o600)`;
+  9. `record_stop(home, "approval", "first run not yet approved")` (Decision 9);
+  10. `read_status`, then the preflight with the approval stop set aside. Exit 0 when ready, otherwise 3. The message says that the first run waits for `uv run poe host-login copilot --clear-stop`.
+- **`host-login copilot --clear-stop`** takes the same speed bumps and the lock. It removes the `stop` key from `quota.json`, whatever its kind, and touches nothing else (Decision 9). Clearing the approval stop is the user's go for the next model call, so the go is given at a terminal an agent does not drive, not only in chat.
+- **`host-logout copilot`** takes the lock, unlinks the token file, and prints "Revoke the token at github.com/settings/personal-access-tokens." It runs no client logout and touches nothing else.
+- **During a run**, `token_env(record, home) -> dict[str, str]` reads the file, strips one trailing newline and re-checks the prefix. `copilot_cli.spawn` merges the result into the environment after `allowlisted_env` and `run_env`, and then calls `assert_copilot_env`. The value never enters an argv, a log line, a `RunnerFailure` message or the saved events.
+- **Scrubbing.** The CLI's own redaction is not the only guard: it failed before (shell secrets in debug logs until 1.0.87, `changelog.md:116`), and the model may still read the value from the live process. The pure `scrub(text, token) -> (text, hit)` replaces every occurrence with `[copilot-token]`. `copilot_cli` applies it to the child's stderr, every `RunnerFailure` text, the stdout events and the reduced records before they are saved, and to the judge's input. A hit makes the run untested for isolation and records an isolation stop (Decision 9). `--secret-env-vars=COPILOT_GITHUB_TOKEN` stays as the CLI-side backstop that strips the variable from the model's shell environment and redacts the value from the output.
+- **Where it never lives.** Not in the repository's `.env`, which dev tasks deliberately do not load. And never under `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN` in any file a shell loads, because those names would silently replace the operator's own Copilot and `gh` logins. `harness/README.md` says so.
+
+### 5. The Copilot child environment
+
+- **Admitted.** The shared machine variables (`PATH`, locale, `TZ`, `SHELL`, proxy and certificate-trust variables, and the Windows basics).
+- **`COPILOT.child_vars(home)`**, change 3's signature, holds only what the home determines and constants:
+  - `TERM=dumb` and `NO_COLOR=1`;
+  - `DBUS_SESSION_BUS_ADDRESS=disabled:`. It is set, not dropped, because godbus falls back to the fixed bus path when the variable is empty;
+  - `COPILOT_HOME=<home>`, `COPILOT_CACHE_HOME=<state>/cache/copilot` with `<state> = home.parent.parent`, and `COPILOT_AUTO_UPDATE=false`. The cache is persistent, so that the 140 MB package is not unpacked into scratch on every run. It lies outside the home, so that the home's allow-list stays small;
+  - `GH_CONFIG_DIR=<home>/gh`, an empty directory.
+
+  `allowlisted_env` and the assertion's exemption read it exactly as they read `CODEX.child_vars(home)`, so no record and neither function changes signature.
+- **`copilot_cli.run_env(env, scratch)`**, like `codex_cli.run_env`, then sets `HOME` and `XDG_{CONFIG,CACHE,DATA,STATE}_HOME` under the per-run or per-call scratch directory, and `XDG_RUNTIME_DIR=<scratch>/run`.
+- **Added by the caller:** `COPILOT_GITHUB_TOKEN` (Decision 4), except for `host-status copilot --no-token`, whose read gets the same environment without it.
+- **`assert_copilot_env(env)`** raises `BillingEnvError`, naming the variable and never its value, in either of these cases:
+  - a key matches the strip families and is neither in `COPILOT.child_vars` nor `token_env`;
+  - a token-shaped variable other than `token_env` is present. A name is token-shaped when it ends in `_TOKEN` or `_API_KEY`. A value is token-shaped when it starts with `github_pat_`, `ghp_`, `gho_`, `ghu_`, `ghs_` or `ghr_`.
+
+  `spawn` is the single function that starts any Copilot child: the run, `--version`, `--headless` (the status read and the confinement probe), `skill list` and `mcp list`.
+- **L0 pins** mirror change 3's Decision 8:
+  - a builder monkeypatched to leak `GH_TOKEN`, then `COPILOT_PROVIDER_BASE_URL`, then `XYZ=github_pat_…`, leads to no `Popen`;
+  - `run_env` patched to add `GITHUB_TOKEN` after the builder still fires the assertion;
+  - an environment holding only the record's names plus the token passes.
+
+### 6. Status read, preflight and the clean-home allow-list
+
+- **`read_status(home, env, *, models=False)`.**
+  - It spawns `copilot --headless --stdio --no-auto-login --no-auto-update --log-level none` under the lock.
+  - It speaks Content-Length-framed JSON-RPC.
+  - It calls `account.getCurrentAuth`, and `models.list` when asked or before a run.
+  - It stops at `STATUS_TIMEOUT_S = 20` through `stop_child`.
+  - The method names and the handshake are re-derived by the V-pass and confirmed by K1 and K2.
+- **`parse_status(reply) -> Status`** is pure. It keeps exactly the values the spec lists, and the raw reply is dropped at the parse. A runner-bug refusal names the method and the exception class only.
+- **`choose_snapshot(user)`** picks `chat` when `access_type_sku == "free_limited_copilot"`, and `premium_interactions` otherwise.
+- **`status_problem(status, model, effort) -> LoginProblem | None`** is a table of rows, so complexity stays at or below 12:
+  - auth: no login, auth errors, a type other than `env`, a host other than `https://github.com`;
+  - billing: the five rows of the guard;
+  - model: the model is not listed or its policy is not enabled, or the effort is not in `supportedReasoningEfforts`.
+- **Preflight order.** Nothing spawns before the location is known to be safe: a refused state-directory override must find nothing created, and `copilot --version` already unpacks the package into `COPILOT_CACHE_HOME`, which lies under the state root. Then cheap and local checks, then everything under one lock hold:
+  1. the location (`check_location`);
+  2. the marker and mode;
+  3. `copilot --version` against `COPILOT_PINNED_VERSION = (1, 0, 91)`, the first `spawn`;
+  4. `check_copilot_home`;
+  5. the token file and its prefix;
+  6. a recorded stop of any kind. `--preflight-only` prints it and goes on;
+  7. `/etc/github-copilot/managed-settings.json`;
+  8. the sandbox tools (Decision 13);
+  9. the parent-folder scan (Decision 7);
+  10. under the lock: `read_status`, then `status_problem`, then the rosters (Decision 7), then the confinement probe (Decision 13). After those come the run and the read after it.
+- **`check_copilot_home(home, account_home)`** is an allow-list, because `config.json` overrides `settings.json`. It checks three things:
+  - `settings.json` must equal `pinned_settings`;
+  - every top-level key of `config.json` must lie in `MANAGED_STATE_KEYS`. That set starts from the four keys the operator's own home shows (`expAssignmentsCache`, `firstLaunchAt`, `lastLoggedInUser`, `loggedInUsers`); K3 fixes it at the pin, and widening it is a reviewed change;
+  - the only entries allowed are `settings.json`, `config.json`, `session-store.db*`, an empty `session-state/`, an empty `gh/`, `.harness-home`, `.harness-run.lock` and `quota.json`. The token file lives beside the home (Decision 4), so it is not on the list.
+
+  It names the first offending key path or entry.
+- **The status command** prints exactly the spec's Copilot keys:
+  - `home`, `marker`, `token_present`, `auth_type` and `host_ok`;
+  - `plan_class`, `token_based_billing`, `overage_permitted`, `overage_count`, `overage_entitlement`, `remaining_pct` and `reset_date`;
+  - `stop` (none, or its kind and cause), `clean` (or the offending names), `cli_version`/`pinned_version`, `sandbox` (each sandbox tool found or missing) and `runs_use`.
+
+  Two options add a read each. `--models` adds one row per model: id, policy and efforts. `--no-token` repeats the read without the token and prints `logged_in: no` when the CLI finds no other credential, which is K1's isolation proof.
+
+*Rejected for the status read:*
+
+- `getQuota`'s mapped values. Its `EZ` coercion fails open.
+- The harness calling `/copilot_internal/user` itself with the token. That would be a second use of the credential, and it is undocumented.
+- The REST billing usage API. It needs a classic PAT, reports only what was consumed, and excludes teacher plans.
+- `assistant.usage` quota snapshots. They reach neither stdout nor disk.
+
+### 7. Workspace, staging, the parent-folder scan and the rosters
+
+- **The workspace.** `ws = tempfile.mkdtemp(dir=<run scratch>)`, with the scratch `HOME` as a sibling. The workspace is not a git repo, and it lies outside the real home and the repository. `stage(..., skill_dir=(".agents", "skills"))` is change 3's, unchanged; it already leaves `evals/` out.
+- **Why `.agents/skills`.**
+  - `install.py --scope folder` writes `./.agents/skills` and `./.claude/skills`. Copilot lists the `.agents` copy as `project` and hides the `.claude` copy, so staging `.agents/skills` alone reproduces what the CLI sees in a student's folder install.
+  - The "all projects" layout, `~/.agents/skills`, cannot be reproduced at all. With `COPILOT_HOME` set, the CLI never reads it.
+- *Rejected staging options:*
+  - staging both folders: it adds a scan exception and changes nothing observable;
+  - `$COPILOT_HOME/skills`, `COPILOT_SKILLS_DIRS`, `--add-dir` and `--plugin-dir`: none of them is a student layout, and the first pollutes the login home;
+  - `git init` to stop the parent walk: it adds git context to the prompt, and it departs from the Codex workspace and from a typical student folder.
+- **`scan_parents(ws, exists)`** is pure over an injected `exists` predicate. It walks from `ws` to `/` and reports any of these, outside the staged skill directory:
+  - `.agents/skills`, `.github/skills` and `.claude/skills`;
+  - `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` and `GEMINI.md`;
+  - `.github/copilot-instructions.md` and `.github/instructions/`;
+  - `.github/agents/`, `.claude/agents/` and `.claude/rules/`;
+  - `.github/hooks/`, `.github/copilot/settings*.json` and `.github/allowed_models.txt`;
+  - `.claude/settings.json`, `.mcp.json`, `.github/mcp.json` and `.github/extensions/`.
+
+  It also reports a `ws` that lies under the real home or the repository.
+- **Rosters.** `copilot skill list --json` and `copilot mcp list --json` run through `spawn`, in the run's environment and with `cwd=ws`, under the lock.
+  - `roster_problem(skills, mcps, staged)` is pure. Skills must equal the staged names plus `BUILTIN_SKILLS = ("customize-cloud-agent",)`. MCP servers must be a subset of `BUILTIN_MCP` with source `builtin`.
+  - Both sets are pinned per CLI version by the V-pass.
+- **`--preflight-only`** runs every step of Decision 6's order, plus staging, the rosters and the confinement probe, prints each result, deletes the workspace and the probe's session folder, and exits 0 or 3. A recorded stop is printed and does not decide the exit status, so K3 runs while the approval stop still holds. It starts no `-p` child. K3 and K6 use it.
+
+### 8. The command
+
+```
+copilot -p <prompt> --output-format json --stream off --no-color
+  --session-id=<uuid4>                       # harness-chosen; session-state/<uuid> must not exist
+  --model <id> [--effort <level>]            # effort only when listed for the model
+  --allow-all-tools
+  --available-tools=bash,read_bash,write_bash,stop_bash,list_bash,view,create,edit,apply_patch,glob,grep,rg,skill,report_intent,update_todo
+      [+task,read_agent,list_agents,write_agent   scenario declares helpers]
+      [+web_fetch                                  needs_network(scenario)]
+  --deny-tool=memory --deny-tool=github-mcp-server --deny-tool='shell(gh:*)' --deny-tool='shell(git push)'
+      [--allow-url=<host> per host in url_hosts(scenario); never --allow-all-urls]
+  --disable-builtin-mcps --no-custom-instructions --no-ask-user --no-remote --no-remote-export
+  --no-auto-login --no-auto-update --no-bash-env --disallow-temp-dir --secret-env-vars=COPILOT_GITHUB_TOKEN
+  --sandbox
+  --log-level warning --log-dir <scratch>/logs --max-ai-credits <N>
+```
+
+- **Visibility, approval and denial.** `--available-tools` decides what the model sees. `--allow-all-tools` approves without prompting, which `-p` needs. `--deny-tool` always wins over approval.
+- **`needs_network`** is change 3's predicate, so both hosts treat the same scenarios as network scenarios.
+- **`url_hosts(scenario)`** is pure.
+  - A served fixture gets `127.0.0.1`, which is where `claude_runner` binds its fixture server.
+  - The import, lit-search and reverse skills map, through a pinned `SKILL_HOSTS` table, to the API hosts their scripts contact.
+  - An L0 test extracts every `https?://host` from those skills' `scripts/` and asserts that each one appears in the table. A new host then fails a test rather than a run.
+- **`auto` is refused** as a usage error. Under D-C1(a) the served model could never equal the request, so every run would be untested.
+- **Flag provenance.**
+  - Every flag is in the 1.0.67 help, except two: the hidden `--no-auto-login`, and `--sandbox`, which arrived in 1.0.70.
+  - The 1.0.85 parser rewrite moved argument parsing into Rust, so the V-pass re-checks every flag at 1.0.91.
+  - The pinned `command()` test fails on any drift.
+- **Never passed:** `--add-dir`, `--plugin-dir`, `--allow-all-paths`, `--allow-all-urls`, `--enable-memory`, `--share*`, `--agent`, `--resume` and `--continue`.
+
+### 9. The run, the reduction and the stops
+
+`copilot_cli.run_copilot(...)`:
+
+1. Take the lock, run the preflight, and keep `before = read_status(...)`.
+2. Start the child through `spawn`, with `Popen`, `pass_fds=(lock_fd,)` and the parent-death `preexec_fn`, under the wall-clock timeout. On timeout, `stop_child(proc, SIGTERM)`, then kill after `TERM_GRACE_S`.
+3. Capture stdout and stderr.
+4. Read `<home>/session-state/<uuid>/events.jsonl`. Its path is known even after a timeout. Reduce it, and append the result as `copilot.*` records. When a `result` line exists, cross-check its `sessionId`. Pass stdout, stderr and the records through `scrub` before anything is saved or reported (Decision 4).
+5. Keep `after = read_status(...)`.
+6. Delete `session-state/<uuid>/` and the scratch logs, which are never saved.
+7. Release the lock.
+
+Then:
+
+- **`reduce_session(lines)`** keeps:
+  - `session.start.copilotVersion`;
+  - `skill.invoked{name, path, source, trigger}`;
+  - `session.shutdown{shutdownType, errorReason, totalPremiumRequests, totalNanoAiu, modelMetrics}`;
+  - `session.model_change{cause, previousModel, newModel}`;
+  - the type alone of each `hook.*`;
+  - the sandbox-active and sandbox-ignored events, and the effort-unapplied event, each as the V-pass names them.
+
+  It drops `system.message` and everything else. The reason: the session file carries prompts, system text and unknown fields, and a kept workspace should hold only what the readers use, as change 3's Decision 10 argues for Codex.
+- **`billing_after(before, after, view, cap) -> (problem, stop)`** is pure. `after` is `None` when the read after the run is unavailable. The `stop` flag is set for these cases:
+  - the overage grew;
+  - `after is None`, because overage growth cannot then be ruled out;
+  - consumption above twice the cap;
+  - zero nano-AIU with tokens reported;
+  - no `session.shutdown`. The problem is then a runner failure, not untested (Decision 11);
+  - `session_limits` or `ai_credit_soft_cap_exhausted`.
+- **Stops persist across invocations.** `poe dev` takes one scenario per invocation (`claude_runner.py:1276`), so "skip the remaining scenarios" can only mean "refuse later invocations". `record_stop(home, kind, cause)` writes `{"stop": {"kind", "cause", "at"}}` into `quota.json` with `os.replace`; a second cause found by the same run is appended to `cause`. The kinds:
+  - `billing`, from `billing_after`;
+  - `isolation`, from the sandbox ignored or not reported active, and from a `scrub` hit (Decision 4);
+  - `approval`, from every `host-login copilot` that writes a token file (Decision 4).
+
+  The preflight refuses while that entry exists, and only `host-login copilot --clear-stop` or `--reset` removes it; a reset records a new approval stop.
+  - *Rejected:* a stop that lasts within one invocation only, which would be vacuous; clearing through `host-status`, which agents may run; and no stop at all, because the next preflight catches drawn overage but not a soft-cap overshoot, broken accounting, or a sandbox that silently stopped confining.
+  - *Rejected for the go:* a go given only in chat. At K3 an agent runs the exact live command with `--preflight-only` added, so one dropped flag would spend credits without it. The approval stop makes the go something the user does at a terminal.
+
+### 10. Readers, canonical tool calls and `RunView`
+
+- **`copilot_tool_calls(events)`** is a dictionary dispatch over `tool.execution_start`, paired with `tool.execution_complete` by `toolCallId`. The mapping table:
+
+  | Copilot | Canonical |
+  |---|---|
+  | `bash`, `read_bash`, `write_bash`, `stop_bash`, `list_bash` | `Bash` |
+  | `edit`, `create`, `apply_patch`, `str_replace`, `insert` | `Edit` |
+  | `view` | `Read`, plus `skill_file_read` for `…/proposal-*/SKILL.md` |
+  | `glob` / `grep`, `rg` | `Glob` / `Grep` |
+  | `skill` | `Skill {"skill": arguments.skill}`, without any `<plugin>:` prefix; `success:false` counts as an attempt |
+  | `task` | `Agent {"prompt"}`, cross-checked with `subagent.started` |
+  | `web_fetch` / `web_search` | `WebFetch` / `WebSearch` |
+  | `mcpServerName` and `mcpToolName` | `mcp__<server>__<tool>` |
+  | `report_intent`, `update_todo`, `task_complete`, `store_memory`, `ask_user`, `sql`, `fetch_copilot_cli_documentation` | internal |
+
+  Any other name is an `unknown_tool` finding.
+- **`routing.tool_calls`** appends `copilot_tool_calls(events)` after the Claude and Codex shapes. The event types never collide, so these all work unchanged: `HELPER_TOOLS`, `verdict_supervise_verifier`, `verdict_single_context` and `route_from_events`, which needs `payload["skill"]` (`routing.py:247-252`).
+- **`copilot_read(events, args) -> RunView`:**
+  - `final_text` is the last top-level `assistant.message.content`;
+  - `model_requested` is `args.model`;
+  - `model` is the set of top-level `assistant.message.model` values together with the `modelMetrics` keys: one name, several names, or `"unreported"`. That these name the served model is UNVERIFIED until K5;
+  - `cli_version` comes from `copilot.session_start`, cross-checked with the preflight.
+- **Telemetry:**
+  - `cost_usd = None`;
+  - `ai_credits = totalNanoAiu / 1e9`;
+  - `notional_usd = ai_credits × 0.01`, with `notional_basis = "copilot credits, not billed"`;
+  - tokens from `modelMetrics.*.usage`, the reasoning count included;
+  - `premium_requests`;
+  - `cap_credits`;
+  - `overage_before` and `overage_after`, and `remaining_before` and `remaining_after`;
+  - `ignored_env`.
+- **Effort.** Requested only when the listing offers it for the model. Until the V-pass and K5 pin the unapplied event, `effort_served` reads "requested, not verified". `session.start.reasoningEffort` and `selectedModel` echo the creation options (byte 3318314) and are never used as evidence.
+- **Isolation findings** come from `isolation_after(view, staged, ws)`:
+  - no `session.skills_loaded`, or one that differs from the roster. Until K5 says otherwise, absence counts;
+  - a `skill.invoked` whose source is outside `{project, builtin}`, or whose path lies outside `ws/.agents/skills`;
+  - any `mcpServerName`, or a connected server in `mcp_servers_loaded`. That check is presence-only;
+  - any `hook.*`.
+
+### 11. Exit mapping
+
+| Finding | Exit, untested reason |
+|---|---|
+| A preflight row: version, home, token, auth, the guard's rows, model, managed settings, scan, roster, sandbox tools, confinement probe, stop, lock | 3: subscription, isolation or precondition, per the spec's list. A stop maps by kind: billing to subscription, isolation to isolation, approval to precondition |
+| `session.error`, authentication or authorization | 3, subscription, with the PAT remedy and the not-affected note |
+| `errorType` quota or rate_limit | 3, subscription: "limit reached, not a result" |
+| `session_limits` or `ai_credit_soft_cap_exhausted`; overage grew; the read after the run unavailable; more than twice the cap; zero nano-AIU with tokens | 3, subscription, with a billing stop recorded |
+| An isolation finding (Decision 10) | 3, isolation |
+| The sandbox ignored or not reported active; a `scrub` hit | 3, isolation, with an isolation stop recorded |
+| Served model differs (outside a helper scenario's usage); `model_change.cause == "rate_limit_auto_switch"`; effort reported unapplied; an unknown tool | 3, precondition |
+| A non-zero exit with no classifiable event, no `result` line, or a timeout | 4 |
+| No `session.shutdown` | 4, with a billing stop recorded |
+| A verdict | 0 or 1 |
+
+The process exit code is never trusted on its own.
+
+### 12. The judge
+
+- Change 3's Decision 13 applies unchanged. `completed_run` calls `judge.backend.isolation(stack)` after `run_copilot` has returned, so the Copilot lock is released and the child has exited.
+- The L0 pin is extended: the recorded judge environment and its login check carry neither `COPILOT_GITHUB_TOKEN` nor any value of the synthetic token, nor the Copilot home path. The judge's input is the scrubbed run (Decision 4), so a fake run that prints the synthetic token reaches the judge without it.
+- The Claude sonnet-5.5 dev judge's load lands on Max, not on Copilot.
+
+### 13. The sandbox (D-C4(b))
+
+- **Why confinement is checked before the run.** An unavailable sandbox only warns "ignored" and runs the shell unconfined (Context), and a personal account cannot set `failIfUnavailable`. Checked only after the run, the first unconfined run has already happened. So the tools are checked, the confinement is probed, and a failure after the run leaves a stop behind.
+- **Before the run.**
+  - `sys.platform == "win32"` is a usage error.
+  - On Linux, `sandbox_problem(which)` checks every tool of `SANDBOX_TOOLS`, which the V-pass fixes from the 1.0.91 package: at 1.0.83 that is `bwrap`, `slirp4netns`, `nsenter`, `iptables`, `ip6tables`, `iptables-restore` and `ip6tables-restore`. A missing tool is untested (precondition), with the remedy naming the tool.
+  - macOS is allowed and labelled unverified.
+  - **The confinement probe**, under the lock and after the rosters. `confinement_probe(home, env)` starts the headless server through `spawn`, creates a session carrying the run's sandbox settings and the scratch workspace as its working directory, and runs fixed commands through the session's model-free shell call (`session.shell.exec` at 1.0.67). Each command discards its own output and prints one word, `denied` or `readable`, or its exit code:
+    - read the token file;
+    - read `/proc/<pid>/environ` of the headless server, whose pid the harness knows and whose environment holds the token, as the run's client process does;
+    - list the operator's real `~/.ssh` and `~/.config/gh`;
+    - `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<uid>/bus gh auth token >/dev/null 2>&1; echo $?`, and `git credential fill` for `github.com`, with terminal prompts off and its output discarded;
+    - run `python3 -c 'print(1)'` and one skill script's `--help` from the staged workspace, which must succeed, so that the deny list has not broken the skills.
+
+    `probe_problem(results)` is pure. Any target `readable`, or an exit code of 0 from `gh` or `git`, refuses the run for isolation; a failing skill line refuses it as a precondition. The message names the target and never any output. The probe's session folder is deleted afterwards. Because its commands are fixed in code and print no output, agents may run it through `--preflight-only`, unlike K1's `run-env`, which takes any command.
+  - **UNVERIFIED until task 1.2:** that the 1.0.91 headless server offers a model-free shell call that runs inside the session's sandbox, or a read of the session's resolved sandbox policy. If neither exists, the probe is dropped from the spec through `openspec-update-change` (task 1.3), K6 falls back to the after-run checks of P2, and the go request for P2 names the deny list as unverified (task 8.1).
+- **After the run.** The run is untested for isolation, and an isolation stop is recorded, in either case:
+  - the CLI's "sandbox … ignored" warning appears, from `session.warning` or stderr, with the text the V-pass names;
+  - the event the V-pass names as the sandbox-active report is absent. K6b confirms which event that is on the first run. Until then an absent report also stops, and the user clears the stop after reading the kept events.
+- **Residual risk with the sandbox.**
+  - The token file lies outside the home since this revision (Decision 4), so the 1.0.89 session-file grant cannot cover it. Whether the deny list holds for it, and for the CLI process's environment, is what the probe measures before every run.
+  - Until the V-pass confirms the probe, the token's reach is bounded by its scope (Copilot Requests only), its expiry, revocation on its own, and `scrub`. The README states the deny claim as unverified until K6 passes.
+- **Network.** Whether the sandboxed shell reaches the network by default is observed in K6b, on the first network scenario the user approves. If it does not, network scenarios on Copilot are refused as a usage error, through `openspec-update-change`, until D-C4(c) lands, so that a blocked network never reads as a skill failure.
+
+### 14. Synthetic fixtures: `tests/unit/data/copilot_streams/`
+
+- **Provenance.** Each file is a saved event list: stdout events plus reduced `copilot.*` records. They are derived from the V-pass's reading of the 1.0.91 `app.js` and `schemas/session-events.schema.json`.
+- **Raw inputs:**
+  - `events-raw.jsonl`, which carries extra fields the reduction must drop;
+  - headless replies `status-*.json`;
+  - roster outputs `skills-*.json` and `mcp-*.json`.
+- **Model names** are synthetic, `copilot-fixture-a` and `copilot-fixture-b`, which the model-ID guard's heads do not match.
+- **The README** gives one row per file: "synthetic, from @github/copilot 1.0.91 `<file>`", and what the file pins.
+- **The fakes.**
+  - A fake `copilot` is a Python script under `tmp_path`, named by an injectable binary path. It emits a fixture stream, writes a session folder, optionally traps SIGTERM, and reports whether it saw the lock descriptor and which token-shaped variables it received, by name only.
+  - A fake headless server speaks Content-Length JSON-RPC, including session creation and the shell call the confinement probe uses.
+  - **No test can run the real `copilot`, and that is enforced, not assumed.** The full suite reruns at task 9.1 after a real token exists in the default state root, so a test that missed a seam would spend credits without a go. An autouse fixture in `tests/unit/conftest.py` therefore points `copilot_cli`'s binary seam at a sentinel that raises, and sets `THESIS_PROPOSAL_DEV_STATE` to a `tmp_path` directory. A test that needs the fake binary, another state directory or the default one sets or removes them itself. An L0 case asserts that an unpatched `run_copilot` and `read_status` raise rather than spawn.
+
+### 15. V-pass, live checks and USER ACTIONS
+
+| Check | Who and how | Model call | Settles |
+|---|---|---|---|
+| CLI 1.0.91 | **USER ACTION** `yay -S github-copilot-cli-bin`; the agent then runs `copilot --version` in a scratch environment without network | no | D-C3 precondition |
+| V-pass (P1b) | agent: reads the package unpacked into a scratch cache under `unshare -rn`: `app.js`, `runtime.node` strings, `schemas/`, the SDK's `rpc.d.ts`, `--help`, `copilot help <topic>` | no | every fact under Context at 1.0.91, plus the Copilot shell's exported variables, the sandbox events, the effort-unapplied event, the exact deny-list key path, `SANDBOX_TOOLS`, and whether a model-free shell call or a resolved-policy read runs inside the session's sandbox |
+| K1 | agent: `host-status copilot`, then `--no-token`. **USER ACTION**: the `gh auth token` exit-code check in the run environment | no | `type=env` and host `github.com`; unauthenticated without the token; `gh` cut off |
+| K2 | agent: `host-status copilot`, three times | no | the raw snapshot is present under the PAT; overage values with no budget; what `percent_remaining` means; the read makes no model call |
+| K4 | agent: `host-status copilot --models` (run before K3, which needs the chosen id) | no | the candidate ids, their policies and efforts |
+| K3 | agent: `poe dev check_report --host copilot --model <id from K4> --max-ai-credits 30 --preflight-only`, plus stderr | no | settings accepted; the `config.json` key set; the rosters |
+| K6a | agent: `bwrap --ro-bind / / --dev /dev true; echo $?`, and `command -v` for each tool of `SANDBOX_TOOLS` | no | the sandbox tools are installed and `bwrap` works here |
+| K6 | agent: the confinement probe through K3's `--preflight-only`, when the V-pass confirmed it (Decision 13) | no | the effective policy denies the token file, the server's environment, `~/.ssh`, `~/.config/gh`, `gh` and git authentication, and still runs the skills. This is the former K6c, now at $0 before P2 |
+| P2 | **gated on the user's explicit go**, given by clearing the approval stop after K1–K6 passed: one `check_report` run on the model the user names from K4, with other Copilot clients closed | yes, credits | K5 and K6b, plus K7 if it times out |
+
+K1's `gh` check needs the exact run environment. `copilot_cli.main(argv)` therefore offers one subcommand, `run-env -- <cmd…>`. It runs a command in a Copilot child's environment (scratch `HOME`, `DBUS_SESSION_BUS_ADDRESS=disabled:`, empty `GH_CONFIG_DIR`), without the token variable, and it is never used by a run. The user runs it, because a failing cut-off would hand the operator's `gh` token to whatever command it runs.
+
+"No model call" is evidenced two ways. Statically, the V-pass shows which endpoints the two RPCs call. Live, K2 shows `remaining_pct` and `overage_count` unchanged across three reads.
+
+## Risks / Trade-offs
+
+- **[The V-pass finds that a 1.0.67 fact changed at 1.0.91]** → The change is revised through `openspec-update-change` before any fixture exists (task 1.3).
+- **[The AUR package is no longer at 1.0.91 when the user upgrades]** → The pin is exact. A different version is a revision of D-C3 before the V-pass, never a silent bump.
+- **[The raw `quota_snapshots` is absent under a PAT]** (copilot-sdk discussion 1532) → Every run refuses as an unavailable read, which is the fail-closed choice. K2 finds this at $0 before any model call. Reopening it is the user's decision.
+- **[The PAT does not work with the teacher plan, or K1 shows a fallback credential]** → Every run refuses. K1 finds this at $0, and D-C2 reopens with the user.
+- **[`skills_loaded` or the sandbox-active report never reaches the stream]** → P2 is untested by construction, and the kept events show what does arrive. Relaxing either check is a reviewed change in `record-copilot-streams`. The pre-run roster and the `--sandbox` flag stay.
+- **[The sandboxed shell reads the token file or the CLI's environment]** → The probe refuses the run before it starts, `scrub` keeps the value out of everything saved, and a hit records an isolation stop. The token can make Copilot requests and nothing else. It expires, and it is revoked on its own with `host-logout copilot` plus revocation on GitHub. The exposure is of the same class as Claude's unsandboxed runs today.
+- **[The pinned deny-list key is not the one the CLI reads]** → The CLI ignores an unknown sandbox key silently, so a wrong path would leave the whole account home readable. The V-pass derives the path from the 1.0.91 package, and K6 measures the effective policy at $0 before P2. A missing warning on stderr is never taken as proof.
+- **[Denying the whole account home breaks the client's own tools or the skills]** → K6's skill line and the after-run tool results show it. The deny list is then revised through `openspec-update-change`, never carved open in code alone.
+- **[The soft cap overshoots]** → No budget exists, so an overshoot can draw only included credits. More than twice the cap records a billing stop.
+- **[The pool is shared with the operator's VS Code and CLI]** → The before/after reads compare overage only, and P2 runs with the other clients closed.
+- **[Experimental RPC methods or the event schema change]** → The exact pin, and a V-pass at every bump.
+- **[Server-managed settings override a pin, and telemetry to GitHub cannot be switched off]** → Accepted. A personal account carries no managed policy, and the local managed-settings file refuses.
+- **[Training on inputs is on by default]** → The fixtures are synthetic, and workspaces never include the repository or the private proposals directory. The training opt-out is an optional USER ACTION.
+- **[Terms on automated use]** → The `-p` mode is documented for automation. Runs are serial, a few a day, and never in CI. That is a reading of the terms, not a ruling.
+- **[The teacher plan lapses into Free]** → The pinned model is no longer listed as enabled, so the model row refuses.
+- **[macOS]** → Allowed, but unverified. The README says "verified on Linux only".
+- **[Change 2 or 3 is revised after this proposal]** → Tasks 0.1 and 9.3 rebase the four blocks and recheck the three unmodified ones.
+
+## Migration Plan
+
+1. **Start: change 1 archived, changes 2 and 3 implemented with their spec text final.** Change 1 is necessarily archived by then, because change 2's own precondition requires it before change 2's code is written, so change 1's text is read from the archived main spec, never from its change folder. Only the archives of changes 2 and 3 may still be pending: change 2's waits on its L1, and change 3's on change 2's archive.
+2. **Before the code.** The CLI upgrade (USER ACTION) and the V-pass. Then the fixtures, the tests, the code and the docs. One commit after `poe test`, `poe cov` and `poe specs` are green. No model call is involved.
+3. **Account setup.** The USER ACTIONS (plan check, budget deletion, PAT, `host-login copilot`), then K1–K4, K6a and K6.
+4. **P2,** on the user's explicit go, given by clearing the approval stop once every check of step 3 has passed.
+5. **Archive,** after changes 1 to 3 are archived in order. P2 is either done, or marked deferred and carried into `record-copilot-streams`.
+
+**Rollback.** A revert, after the USER ACTIONS `uv run poe host-logout copilot` and revoking the PAT on GitHub. Claude and Codex runs are unaffected either way.
+
+## Open Questions
+
+- **The variables a Copilot shell exports,** which become Copilot's agent markers. The V-pass reads them from `app.js`, and the guard does not depend on them.
+- **The `config.json` key set a token-mode home develops** (K3). `MANAGED_STATE_KEYS` starts from the operator's home and is fixed at K3.
+- **What `percent_remaining` measures on a credit plan** (K2). The threshold of 10 stays; only the README's wording may change.
+- **The exit code after SIGTERM, and whether `session.shutdown` is still written** (K7). A missing shutdown is already a runner failure with a stop, so the answer changes no rule.
+- **Whether `--no-custom-instructions` also covers user-level instructions** (K3). The home holds none, and the allow-list refuses them anyway.
