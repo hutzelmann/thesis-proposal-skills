@@ -11,7 +11,9 @@ Ground rules for every task below:
 
 ## 0. Precondition
 
-- [ ] 0.1 Confirm that both earlier changes are implemented, with their spec text final. Change 1 is already archived, because change 2's own precondition (its task 0.1) requires that before change 2's code is written. Only change 2's archive may still be pending: it waits for its L1, more than 8 h of idle time after its login (design, Migration Plan). Check:
+- [x] 0.1 Confirm that both earlier changes are implemented, with their spec text final.
+
+  *Done 2026-10-06.* Both earlier changes are archived (main 526a1bf); `openspec list` shows neither, and `host_login` exposes every listed name. Change 2 was archived with a later text than the 2026-10-05 revision, so `openspec validate --strict` failed on four dropped scenario names ("Relative override refused", "Unmarked directory never adopted", "Failed logout stops a re-login", "Profile directory bars the login commands"). Rebased through `openspec-update-change`: the three shared blocks now start from the archived main spec (also folded in: the Claude status check without the token, the label following how the configuration was prepared, the install-probe label, a judge error naming its billing reason, and the two scenario THEN clauses change 2 extended). Choice: the default-profile-directory rule is scoped to Claude, because a Codex client reads no Anthropic profile (design Context notes the rebase). Both isolation requirements still scope their Claude clauses to Claude, so no further blocks were needed; the name-by-name check passes, and `openspec validate add-codex-dev-runner --strict` is valid with no INFO line, since change 2 is archived. Change 1 is already archived, because change 2's own precondition (its task 0.1) requires that before change 2's code is written. Only change 2's archive may still be pending: it waits for its L1, more than 8 h of idle time after its login (design, Migration Plan). Check:
   - `openspec list` no longer shows `close-claudeai-surfaces`;
   - both changes' code sections and gates are checked off in their `tasks.md` (change 1's in its archived copy);
   - `harness/host_login.py` exposes `HostLogin`, `RECORDS`, `allowlisted_env`, `login_env`, `AGENT_MARKERS`, `TERM_GRACE_S`, `stop_child`, `LoginProblem`, `refusal`, `login_note`, `L3_PASSED`, `login_remedy` and `main`, and `routing.follow_stream` stops through `stop_child`. `run_host` is not expected: this change adds it (task 3.1).
@@ -24,7 +26,9 @@ Ground rules for every task below:
 
 ## 1. Fixtures
 
-- [ ] 1.1 Create `tests/unit/data/codex_streams/` with synthetic saved event lists. Each file is exec events plus reduced `codex.*` records (design Decision 10), derived from the rust-v0.160.0 sources: `exec_events.rs`, `event_processor_with_jsonl_output.rs`, `protocol.rs`, and the `manager.rs` messages. Model names are `gpt-fixture-a` and `gpt-fixture-b`. Files:
+- [x] 1.1 Create `tests/unit/data/codex_streams/` with synthetic saved event lists.
+
+  *Done 2026-10-06.* All listed files exist, with a README row each; `test_model_ids.py` stays green. Choices: each saved list ends with the runner's own `codex.harness` record (duration, exit status, stderr tail, the quota read before the run), so a faked `run_codex` still yields quota before and after; `__WS__` stands for the workspace and the tests substitute it; `quota-reached.json` keeps its window at 88 % so that it pins the reached-limit refusal rather than the 90 % one. Deviation: the feature listings are shaped after the brief's 0.133 default-on set, not captured from the local CLI, because this run starts no `codex` at all; X7 (task 6.2) confirms the format. Each file is exec events plus reduced `codex.*` records (design Decision 10), derived from the rust-v0.160.0 sources: `exec_events.rs`, `event_processor_with_jsonl_output.rs`, `protocol.rs`, and the `manager.rs` messages. Model names are `gpt-fixture-a` and `gpt-fixture-b`. Files:
   - `success.jsonl`;
   - `skill-read.jsonl` (`cat …/.agents/skills/proposal-check/SKILL.md`);
   - `helper-spawn.jsonl` (`collab_tool_call spawn_agent` with a verifier-brief prompt);
@@ -53,7 +57,7 @@ Ground rules for every task below:
 
 ## 2. Failing tests first
 
-- [ ] 2.1 Codex record and home, in `tests/unit/test_host_login.py`, as a new section. Use `THESIS_PROPOSAL_DEV_STATE` under `tmp_path`, and `check_location(..., tempdir=<a separate directory>)`. Cases:
+- [x] 2.1 Codex record and home, in `tests/unit/test_host_login.py`, as a new section. Use `THESIS_PROPOSAL_DEV_STATE` under `tmp_path`, and `check_location(..., tempdir=<a separate directory>)`. Cases:
   - **Default path.** The Codex home is `…/hosts/codex`.
   - **Temporary directory.** A root inside the passed `tempdir` is refused for `CODEX` and accepted for `CLAUDE`.
   - **Overlap.** An override equal to `~/.codex`, inside it, or containing `$CODEX_HOME` is refused.
@@ -68,7 +72,9 @@ Ground rules for every task below:
     - `LoginProblem` built without `client` still renders change 2's Claude sentences, so change 2's `refusal` and `login_note` tests pass unmodified.
 
   Verify that the tests fail before the record exists.
-- [ ] 2.2 Codex commands, in the CLI section of `tests/unit/test_host_login.py`. Fake the binary through the runner seam, never the real `codex`. Cases:
+
+  *Done 2026-10-06* (failed with `AttributeError` before 3.1). The seeding-order case lives with the CLI cases of 2.2.
+- [x] 2.2 Codex commands, in the CLI section of `tests/unit/test_host_login.py`. Fake the binary through the runner seam, never the real `codex`. Cases:
   - **Login environment.** It drops `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_BASE_URL` and every `CODEX_*`, keeps `DISPLAY`, and sets `CODEX_HOME=<home>`.
   - **Login argv.** It is `login`, with `--device-auth` passed through, and never `--with-api-key` or `--with-access-token`.
   - **Existing login.** Logout runs before login while the run lock is held.
@@ -79,7 +85,9 @@ Ground rules for every task below:
   - **`status codex --quota`.** It takes the run lock and prints the parsed windows from a fake app-server beside `last_quota`. With `quota-free.json` it names the plan and exits 3.
 
   Verify that these fail before the change.
-- [ ] 2.3 Run lock and stopping a child, in `tests/unit/test_codex_cli.py`, POSIX only and skipped on Windows. Cases:
+
+  *Done 2026-10-06* (failed before 3.1). Choice: the cases live in `tests/unit/test_host_login_cli.py`, which is where the CLI section actually is. The probes (`--version`, `login status`, `features list`) are faked at `codex_cli.probe` and the quota read at `codex_cli.read_quota`; the login and logouts at `host_login.run_client`. Added: a held run lock makes `logout codex` exit 3 with the one template, and `--device-auth`/`--quota` are usage errors for Claude.
+- [x] 2.3 Run lock and stopping a child, in `tests/unit/test_codex_cli.py`, POSIX only and skipped on Windows. Cases:
   - **Waiting.** A second `run_lock` on a held lock raises `RunLockBusy` after a patched short `LOCK_WAIT_S`. Its `problem` is a `LoginProblem` with `client="codex"` whose cause names the held lock, and `refusal(err.problem)` renders it in the one template.
   - **The child holds the lock.** A fake child started with the descriptor in `pass_fds` keeps the lock after the parent's descriptor is closed, and releases it when it exits.
   - **Interrupt before kill.**
@@ -91,7 +99,9 @@ Ground rules for every task below:
   - **Windows guard.** On a platform without `fcntl` (patched), the Codex runner refuses with a usage error.
 
   Verify that these fail before the change.
-- [ ] 2.4 Billing guard, in `tests/unit/test_codex_cli.py`. Cases:
+
+  *Done 2026-10-06* (collection failed: no `codex_cli`). The pass-fds case runs a real child through `run_host` and checks the lock from a second open file description.
+- [x] 2.4 Billing guard, in `tests/unit/test_codex_cli.py`. Cases:
   - **The builder.** `allowlisted_env(CODEX, home, environ)` plus `run_env`: no strip-family name survives, `CODEX_HOME`, `HOME`, `USERPROFILE` and the four XDG variables are set, `CLAUDE_CODE_OAUTH_TOKEN` is dropped, and `ignored_env` lists the names.
   - **The pre-spawn assertion, on the final environment.** `Popen` is patched to record calls.
     - With `host_login.allowlisted_env` monkeypatched to leak `CODEX_API_KEY`, then `CODEX_ACCESS_TOKEN`, then `CODEX_FOO`, `spawn()` raises `BillingEnvError` naming the variable (never its value) before any `Popen`, and the run is untested.
@@ -110,7 +120,9 @@ Ground rules for every task below:
   - **Quota snapshot.** It holds only windows, reset times and the plan type.
 
   Verify that these fail before the change.
-- [ ] 2.5 Command, readers and canonical tool calls, in `tests/unit/test_codex_cli.py`. Cases:
+
+  *Done 2026-10-06* (failed before 3.2). Added: the quota handshake against a fake app-server script on a `PATH` of its own (initialize, initialized, the read with id 1), a reader that cannot start, and `run_codex` refusing a leak before the quota read starts anything.
+- [x] 2.5 Command, readers and canonical tool calls, in `tests/unit/test_codex_cli.py`. Cases:
   - **The `command()` template.**
     - `--json`, `--strict-config`, `--skip-git-repo-check`, `-C <ws>`, `-s workspace-write`, `-m` verbatim, and the prompt on stdin;
     - every `DISABLED_FEATURES` entry as `--disable`;
@@ -129,7 +141,9 @@ Ground rules for every task below:
   - **`capture_rollout`.** Over `rollout-success.jsonl` placed under a fake home's `sessions/…`, it appends only the reduced records, drops the extra `session_meta` fields, writes `quota.json`, and deletes `sessions/`. With no record, the run is untested with "plan use cannot be confirmed".
 
   Verify that these fail before the change.
-- [ ] 2.6 Host seam and CLI, in a new `tests/unit/test_hosts.py` plus `tests/unit/test_dev_runner_probe.py`. Cases:
+
+  *Done 2026-10-06* (failed before 3.2). The untested checks run through `codex_cli.run_problem(events, skill_root=, effort=)`, which `codex_read` does not call: a re-grade reads the same events and must not refuse. The notional figure comes from `claude_runner.codex_rates` (the registry lives outside `codex_cli`). Added: `run_codex` end to end against a fake `codex` (quota read, feature listing, exec with the scratch `HOME` and no `CODEX_API_KEY`, capture), and both pre-exec refusals.
+- [x] 2.6 Host seam and CLI, in a new `tests/unit/test_hosts.py` plus `tests/unit/test_dev_runner_probe.py`. Cases:
   - **Default host.** `main([...])` without `--host` behaves exactly as before. Every existing test in `test_dev_runner_probe.py` passes unmodified, apart from the added `host` and `label` summary keys.
   - **Usage errors** (exit 2, nothing staged, no process started) for:
     - `--host codex` without `--model`;
@@ -147,9 +161,11 @@ Ground rules for every task below:
 
   Verify that these fail before the change.
 
+  *Done 2026-10-06* (collection failed before 3.3). `test_dev_runner_probe.py` needed no edit: every existing test passes unmodified. Added: a billing refusal records `billing` (so the smoke gate's log logic applies), a stubbed preflight refusal is untested and labelled, and the real preflight refuses a state root under the system temporary directory and creates nothing.
+
 ## 3. Implementation
 
-- [ ] 3.1 In `harness/host_login.py`:
+- [x] 3.1 In `harness/host_login.py`:
   - add the `HostLogin` fields `strip_suffixes`, `stop_signal`, `outside_tempdir` and `child_vars`, with defaults that keep `CLAUDE` byte-identical in behaviour;
   - add `CODEX`, `PINNED_CONFIG`, `PINNED_CONFIG_TOML`, `CODEX_MIN_VERSION`, `check_codex_home`, `codex_status`, `codex_version`, `run_lock`, `RunLockBusy` and `LOCK_WAIT_S`;
   - give `check_location` its `tempdir` parameter;
@@ -160,7 +176,16 @@ Ground rules for every task below:
   - read the Codex `last_written` age with `os.stat` only; nothing in the module opens `auth.json`.
 
   Wire `main(argv)` for `login|status|logout codex`, `--device-auth` and `status --quota` per design Decision 4, mapping `RunLockBusy` to exit 3. Verify that 2.1, 2.2 and 2.3 pass, that `uv run ruff check harness/host_login.py` reports no C901, that `grep -n "auth.json" harness/host_login.py` shows no `open`/`read_text`/`json.load` on it, and that the Claude sections of `test_host_login.py` are unchanged and green.
-- [ ] 3.2 Create `harness/codex_cli.py`, stdlib-only and importing `host_login` only:
+
+  *Done 2026-10-06.* All three checks hold. Choices and deviations, none changing a rule:
+  - `child_vars(config)` is a method of `HostLogin` derived from the existing `home_var`, `fixed_env` and `profile` fields rather than a callable field, which keeps `CLAUDE` byte-identical; `HostLogin` also gains `allowed` (for `skills/.system`), `stripped(name)`, and `login_command`/`reset_command`.
+  - `stop_child(proc, sig=SIGTERM)` still calls `terminate()` for SIGTERM (and on Windows) and `send_signal` otherwise, so the routing tests' stand-in hosts, which offer only `terminate()`, stay unmodified.
+  - `run_host` gains an optional `start` (the Codex runner passes the starter that asserts the final environment), re-raises `TimeoutExpired` carrying what the child wrote, and starts children with `child_preexec(record)` (Linux `PR_SET_PDEATHSIG`).
+  - The lock file is opened with `Path.open("ab")` and set to 0600 rather than `os.open(…, 0o600)`, because `test_repo_conventions.py` reads any `.open(` without `encoding=` as text I/O.
+  - `check_location(…, record=, tempdir=)`; callers fill `tempdir` from `system_tempdir()`, the seam the L0 tests replace. `profile_problem` applies to the Claude commands only (the rebased spec scopes it so).
+  - `host_login.cmd_status_codex` imports `codex_cli` inside the function: `codex_cli` imports `host_login`, and the status needs its probes.
+  - Added beside the listed names: `check_codex_login`, `check_codex_version`, `config_difference`, `codex_offenders`, `auth_age`, `client_lock`, `version_text`, `system_tempdir`.
+- [x] 3.2 Create `harness/codex_cli.py`, stdlib-only and importing `host_login` only:
   - `DISABLED_FEATURES`, `needs_network`, `command`;
   - `run_env`, `ignored_env`, `assert_codex_env` (on the final environment, exempting exactly `CODEX.child_vars`), `spawn`;
   - `read_quota`, `parse_quota`, `Quota`/`Window`, `quota_problem`, `QUOTA_STOP_PERCENT`, `QUOTA_TIMEOUT_S`, `ALLOWED_PLANS`;
@@ -169,7 +194,14 @@ Ground rules for every task below:
   - `run_codex(...)`, which takes the lock, then runs the quota read, the features preflight, the spawn with `pass_fds`, the capture, and the release.
 
   Findings are frozen dataclasses, and failure tables are data, so complexity stays at 12 or below. Verify that 2.4 and 2.5 pass and that `uv run ruff check harness/codex_cli.py` is clean.
-- [ ] 3.3 Create `harness/hosts.py` with `Host`, `RunView` and `JudgeBackend`. In `harness/claude_runner.py`, add:
+
+  *Done 2026-10-06.* Both hold. Choices:
+  - `codex_cli` imports `host_login` and the shape module `hosts` (for `RunView`; `hosts` itself imports only `host_login`), never `routing` or `claude_cli`, so no cycle arises.
+  - `start(argv, *, cwd, env, stdin, pass_fds)` is the single `Popen` of every Codex child and asserts the final environment first; `spawn` (the app-server, left running) and `run` (to completion, through `host_login.run_host(start=start)`) both build the environment with `child_env` and go through it. `probe` wraps the short model-free commands.
+  - The feature allowlist is checked under the run lock just before the run (and by `host-status codex`), not a second time in `preflight`; `preflight` checks the location, the CLI version, the home and marker, the ChatGPT login, then cleanliness, in the spec's order.
+  - The after-run checks live in `run_problem` (failure with any explicit billing signal, then the billing guard, the isolation, the served effort); the claude_runner adapter maps them, as it maps `RunLockBusy`, `CodexRefused` and `CodexRunFailed`, onto the runner's outcomes. `RunProblem`, `Quota`, `Window`, `Credits` and `Rates` are frozen dataclasses.
+  - A failed run whose session record shows an explicit billing signal is untested for billing, naming both (the Claude runner's precedent); a missing report is no explicit signal there.
+- [x] 3.3 Create `harness/hosts.py` with `Host`, `RunView` and `JudgeBackend`. In `harness/claude_runner.py`, add:
   - the late-bound `HOSTS` and `host_for`;
   - `--host`, `--effort`, and the `--model` default change;
   - the usage guards of design Decision 3, including the `logs/evals` summary-log guard;
@@ -180,7 +212,9 @@ Ground rules for every task below:
   - the host-aware `rejudge_lines`.
 
   In `harness/routing.py`, make `tool_calls` append `codex_cli.codex_tool_calls(events)`. Verify that 2.6 passes, that the whole `tests/unit/test_dev_runner_probe.py`, `test_routing.py`, `test_install_probe.py` and `test_isolated_env.py` stay green, and that `grep -n '".claude", "skills"' harness/claude_runner.py` shows only the Claude host's `skill_dir`.
-- [ ] 3.4 Update the module docstrings and usage lines:
+
+  *Done 2026-10-06.* All hold. Choices: `Host` also carries `label` (the login label) and `always_isolated` (Codex), so `summary` and `failure_summary` hold no host branch; `RunView` carries `model_check`. `--rejudge --host codex` needs no `--model`. The usage guards are one table (`usage_problem`), checked before staging, and include `--host codex` without POSIX file locks. Re-grade lines also carry `host`.
+- [x] 3.4 Update the module docstrings and usage lines:
   - `claude_runner.py`: the `--host codex` usage, the Codex billing guard, and the not-comparable label;
   - `codex_cli.py`;
   - `hosts.py`;
@@ -188,9 +222,11 @@ Ground rules for every task below:
 
   Verify by reading the diff, and confirm with `grep -nE 'gpt-[0-9]' harness/*.py pyproject.toml` (empty) that no model slug entered the code.
 
+  *Done 2026-10-06.* The grep is empty.
+
 ## 4. Documentation
 
-- [ ] 4.1 Update `harness/README.md`:
+- [x] 4.1 Update `harness/README.md`:
   - **A new "Codex dev runner" section:**
     - dev loop only, with the label, never fed to `report.py`;
     - the one-time setup (CLI ≥ 0.160; after Plus, credit balance 0 and auto-reload off; then `host-login codex`);
@@ -205,7 +241,9 @@ Ground rules for every task below:
   - **"Known limitations".** Replace the "other agents remain untested (spec risk S5)" line: the dev runner covers Claude Code and Codex CLI, and the Codex parsers are pinned on synthetic streams until `record-codex-streams`.
 
   Verify that `uv run poe test` stays green, since README text is pinned by some L0 tests.
-- [ ] 4.2 Update the `AGENTS.md` Commands block:
+
+  *Done 2026-10-06.* The X-check lines record every check as pending, with the installed CLI (0.133.0) named.
+- [x] 4.2 Update the `AGENTS.md` Commands block:
   - `uv run poe dev <scenario> --host codex --model <slug>` (subscription; plan quota; never a matrix input);
   - `uv run poe host-login codex [--reset] [--device-auth]` (the user only);
   - `uv run poe host-status codex [--quota]` (agents may run it; no model call);
@@ -213,27 +251,43 @@ Ground rules for every task below:
 
   Also add one sentence: the first Codex model call after any login needs the user's explicit go, like a metered run. Verify by reading the diff and with `uv run poe test`.
 
+  *Done 2026-10-06.*
+
 ## 5. Gate
 
-- [ ] 5.1 Run `uv run poe test` (not `test-fast`) and confirm it is green: pytest, ruff with the full rule set, `test_repo_conventions.py` (`main(argv)`, no `sys.path`, every `verdict_*` tested), the drift check and conform.
-- [ ] 5.2 Run `uv run poe cov` and confirm that the 78 % floor holds with the new modules counted.
-- [ ] 5.3 Run `uv run poe specs` and `openspec validate add-codex-dev-runner --strict`, and confirm both pass.
+- [x] 5.1 Run `uv run poe test` (not `test-fast`) and confirm it is green: pytest, ruff with the full rule set, `test_repo_conventions.py` (`main(argv)`, no `sys.path`, every `verdict_*` tested), the drift check and conform.
+
+  *Done 2026-10-06:* green (pytest, ruff, drift, conform).
+- [x] 5.2 Run `uv run poe cov` and confirm that the 78 % floor holds with the new modules counted.
+
+  *Done 2026-10-06:* total 91 %; `codex_cli.py` 90 %, `hosts.py` 100 %, `host_login.py` 95 %, `claude_runner.py` 92 %.
+- [x] 5.3 Run `uv run poe specs` and `openspec validate add-codex-dev-runner --strict`, and confirm both pass.
+
+  *Done 2026-10-06:* 20 of 20 items valid; the change is valid.
 
 ## 6. CLI update and rehearsal on the free plan (D6(b), no model call)
 
 - [ ] 6.1 **USER ACTION:** `sudo pacman -S openai-codex` (to 0.160 or later). The agent then runs `codex --version` and records the version string here. Pass: at or above `CODEX_MIN_VERSION`.
+
+  *Pending: user action (2026-10-06).* The installed CLI is 0.133.0, below the minimum; the preflight refuses it with the update remedy (pinned by `test_codex_version_parses_and_refuses_an_old_cli`).
 - [ ] 6.2 X7, run by the agent, with no login and no network, so no model call is possible:
   1. Create an empty scratch `CODEX_HOME` at `${XDG_CACHE_HOME:-~/.cache}/thesis-proposal-dev/x7-probe`, holding only `PINNED_CONFIG_TOML`, and an empty scratch `HOME` beside it. The session scratchpad and its parent both lie under `/tmp`, where Codex refuses to place its helper binaries, so they are not used here. Before running, confirm that the resolved scratch `CODEX_HOME` lies neither inside the directory `python3 -c 'import tempfile; print(tempfile.gettempdir())'` prints nor inside the repository; if it does (for example because `XDG_CACHE_HOME` points into `/tmp`), stop and report.
   2. Run `unshare -rn env -i PATH="$PATH" HOME=<scratch-home> CODEX_HOME=<scratch-codex-home> codex features list <the run's --disable flags>`. Record each feature's name and state.
   3. Repeat once with an unknown nested key added to the scratch `config.toml`, passing `--strict-config` where the subcommand accepts it. Record whether it is refused.
 
   Pass: every pinned key is accepted, and only the allowlist reads enabled. Otherwise update `PINNED_CONFIG`/`DISABLED_FEATURES` (and their fixtures) through the `openspec-update-change` skill and rerun 5.1. Delete `${XDG_CACHE_HOME:-~/.cache}/thesis-proposal-dev/x7-probe` and the scratch `HOME`, and record the outcome in the README's X-check lines.
+
+  *Pending: live check (2026-10-06)*, after 6.1: X7 is meant for the 0.160 CLI, and this run starts no `codex`.
 - [ ] 6.3 X1, **USER ACTION:** in a terminal, `uv run poe host-login codex` with the free ChatGPT account. Add `--device-auth` only if it is enabled in the ChatGPT security settings. The agent then runs `uv run poe host-status codex`. Pass requires all of these: `marker: yes`, `logged_in: yes`, `auth_method: chatgpt`, `config_pinned: yes`, `clean: yes`, `features_ok: yes`. Record the values, booleans and enums only. From here on the home holds a free-plan login. Every `--host codex` run refuses on the plan rule before any `exec`, and no agent starts one before task 7.3.
+
+  *Pending: user action, then live check (2026-10-06).*
 - [ ] 6.4 X8, **USER ACTION** (observation, no command beyond these):
   1. With a ChatGPT session open in the desktop app or on the web, run `uv run poe host-logout codex`, then `uv run poe host-login codex`.
   2. Confirm that the other session still works without a new sign-in.
 
   The agent records `stat -c %Y ~/.codex/auth.json` before and after (mtime only), and it must be unchanged. Pass: both hold. Then set `host_login.X8_PASSED = True`, which swaps the caveat for "Your own Codex login is not affected" in every message, and confirm that `uv run poe test` stays green. Do it here if this change is not yet archived, otherwise as a task in `record-codex-streams`. If the other session was signed out, keep `X8_PASSED = False`, document it in the README, and relay it to the user.
+
+  *Pending: user action (2026-10-06).* `X8_PASSED` is False; the L0 tests cover both values.
 - [ ] 6.5 X4b, run by the agent, with no model call: `uv run poe host-status codex --quota`. Record:
   - whether the handshake answered;
   - the window durations and used percentages;
@@ -241,6 +295,8 @@ Ground rules for every task below:
   - whether a credits block is present.
 
   On the free plan the command exits 3 by design, because the plan rule refuses; that is not a failure of X4b. Pass: an answer with at least one window. If the handshake fails, D2(a) makes Codex unusable. Record the failure and relay the D2 choice to the user. If the answer carries no credits block, record it and tell the user that every run will refuse on that read until the Plus answer in 7.2 shows the block, or a reviewed change relaxes the rule. Do not change either refusal on your own.
+
+  *Pending: live check (2026-10-06)*, after 6.1 and 6.3.
 
 ## 7. After Plus (gated)
 
@@ -251,7 +307,11 @@ If Plus has not been bought when sections 0 to 6 are done, mark each task here a
   - optionally turn "Improve the model for everyone" off.
 
   Confirm here, yes or no only.
+
+  *Pending: user action (2026-10-06).*
 - [ ] 7.2 **USER ACTION:** `uv run poe host-login codex --reset`, so that the login carries the Plus plan. The agent runs `uv run poe host-status codex --quota`. Pass: ready (exit 0), the plan type reads `plus`, and a credits block is present with a zero balance and no credits available. Record the window usage. If the credits block is absent, every run refuses; record it and relay the choice to the user, whose relaxation of the rule would go through `openspec-update-change`. Do not proceed to 7.3 meanwhile.
+
+  *Pending: user action, then live check (2026-10-06).*
 - [ ] 7.3 The first Codex model call: **gated on the user's explicit go**, asked for in chat with the planned command. It uses plan quota, not money. Command: `uv run poe dev check_report --host codex --model <slug the user names> --keep`. Pass requires all of these:
   - the outcome is not untested for a billing, login or isolation reason;
   - the summary records the CLI version, `effort_served`, and quota before and after;
@@ -260,11 +320,17 @@ If Plus has not been bought when sections 0 to 6 are done, mark each task here a
 
   Record the results here, then delete the kept workspace after `record-codex-streams` has reduced it. Do not run a second Codex scenario, or `--judge`, without a new go.
 
+  *Pending: live check, gated on the user's explicit go (2026-10-06).*
+
 ## 8. Close
 
 - [ ] 8.1 Commit the code, tests, fixtures, docs and this change folder as one commit for the completed change, off `main` until it is complete. Do not push. Verify with `git status` (clean) and `git show --stat HEAD`.
+
+  *Pending: live checks (2026-10-06).* The L0 implementation (sections 0–5) is committed on branch `host-runners`, off `main`, not pushed; the closing commit follows sections 6 and 7.
 - [ ] 8.2 Archive through the `openspec-archive-change` skill, after sections 0 to 6, with section 7 either done or marked deferred as its preamble says, and only once both earlier changes are archived (`openspec list` shows neither `close-claudeai-surfaces` nor `add-harness-claude-login`). Change 2's archive waits for its L1. Before archiving:
   - repeat task 0.1's rebase check, scoping check and name-by-name check against the archived main spec;
   - run `openspec validate add-codex-dev-runner --strict`, which must pass with no "Archive would refuse" line.
 
   Verify that `openspec validate --all --strict` is green afterwards. The follow-up change `record-codex-streams` (recorded fixtures, X4/X9 outcomes, and the `X8_PASSED` flip if it happens after this archive) is separate.
+
+  *Pending: live checks (2026-10-06).* Both earlier changes are archived; this change stays open until sections 6 and 7 are done or deferred.

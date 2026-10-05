@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"0199a0f0-0000-7000-8000-000000000015"}
+{"type":"turn.started"}
+{"type":"turn.failed","error":{"message":"Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again."}}
+{"type":"codex.session","id":"0199a0f0-0000-7000-8000-000000000015","cli_version":"0.160.0","model_provider":"openai"}
+{"type":"codex.harness","duration_ms":2100,"exit_code":1,"stderr_tail":"","quota_before":null}

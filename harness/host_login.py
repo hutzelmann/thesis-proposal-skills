@@ -40,12 +40,37 @@ record (testing-harness spec: Harness-owned host logins):
 **One child environment.** `allowlisted_env(record, config)` builds the
 environment of every host child that runs in an isolated configuration — the
 routing rig's, the isolated dev run's, the judge's and its preflight, and the
-harness login's status checks — from the record's allowlist, plus the
-configuration directory, the connector switch and the empty profile directory.
+harness login's status checks — from the record's allowlist, plus what the
+record sets (`HostLogin.child_vars`): for Claude the configuration directory,
+the connector switch and the empty profile directory; for Codex `CODEX_HOME`
+alone.
 
-**Stopping a child.** `stop_child` asks a host to terminate and kills it only
-after `TERM_GRACE_S`, so a host part-way through writing a refreshed login can
-finish (whether Claude Code does is live check L9).
+**The Codex record** (`CODEX`, add-codex-dev-runner). Its home,
+`state_root()/hosts/codex`, must also lie outside the system temporary
+directory (`check_location(..., tempdir=)`), where Codex refuses to place its
+helper binaries. Before the first login it is seeded with `PINNED_CONFIG_TOML`
+(OpenAI's provider, the ChatGPT login required, a file credential store, and
+web search, the update check, history, analytics, feedback and bundled skills
+off), which every run compares key by key (`check_codex_home`). Its login is
+`codex login [--device-auth]`, never an API-key or access-token login, in a
+login environment without any `CODEX_*`, `OPENAI_*`, `OPENROUTER_*` or
+`*_API_KEY` variable. Its `auth.json` is never opened: `auth_age` reads only
+its modification time. Until live check X8 passes (`X8_PASSED`), every message
+whose remedy is `host-login codex` says that its effect on the operator's
+other ChatGPT sessions is unverified (`NOTES`, `login_note(remedy, client)`).
+
+**The Codex run lock.** `run_lock` takes an exclusive `flock` on
+`<home>/.harness-run.lock` within `LOCK_WAIT_S`, else raises `RunLockBusy`
+(untested, exit 3). Runs, the quota read, logins, logouts, resets and
+`status codex --quota` take it; a run's child receives the descriptor and
+holds the lock for as long as it lives (`run_host(..., pass_fds=)`), and on
+Linux gets a parent-death interrupt (`child_preexec`).
+
+**Stopping a child.** `stop_child` sends the client's own stop request — a
+termination request to Claude, an interrupt to Codex (`HostLogin.stop_signal`),
+which ends its turn — and kills only after `TERM_GRACE_S`, so a host part-way
+through writing a refreshed login can finish (whether Claude Code does is live
+check L9).
 
 **The linked login.** An isolated configuration holds a symlink to the
 `.credentials.json` it uses: the harness home's by default, the directory
@@ -58,29 +83,39 @@ with a claim beside that target. Credential values are copied byte for byte
 and never printed; only `expiresAt` is ever read out of them.
 
 Usage:
-  uv run poe host-login claude [--reset]   # the operator, in a terminal
-  uv run poe host-status [claude]          # anyone; no model call
-  uv run poe host-logout claude            # the operator
+  uv run poe host-login claude [--reset]                 # the operator, in a terminal
+  uv run poe host-login codex [--reset] [--device-auth]  # the operator, in a terminal
+  uv run poe host-status [claude]                        # anyone; no model call
+  uv run poe host-status codex [--quota]                 # anyone; no model call
+  uv run poe host-logout claude|codex                    # the operator
 """
 
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import tomllib
 import uuid
-from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager, suppress
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import ExitStack, contextmanager, nullcontext, suppress
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePath
+
+try:  # POSIX file locks: the Codex run lock; the Codex runner refuses without them
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None  # type: ignore[assignment]
 
 from account_surfaces import (
     CONNECTORS_OFF,
@@ -133,11 +168,32 @@ RESET_COMMAND = f"{LOGIN_COMMAND} --reset"
 L3_PASSED = True
 NOT_AFFECTED = "Your own Claude login is not affected"
 L3_CAVEAT = "Whether this logs out your other Claude sessions is unverified (L3)"
+# Live check X8, the same question for Codex, whose logout revokes the home's
+# refresh token and whose login revokes the previous one held there
+# (`cli_login.rs:122-153` @0.160). add-codex-dev-runner task 6.4 flips it once
+# the user has observed it pass; the L0 tests cover both values.
+X8_PASSED = False
+CODEX_NOT_AFFECTED = "Your own Codex login is not affected"
+X8_CAVEAT = "Whether this logs out your other ChatGPT sessions is unverified (X8)"
+# per client: the not-affected sentence, the caveat, and the name of its pass
+# flag (read at call time, so a flip or a test's monkeypatch takes effect)
+NOTES = {"claude": (NOT_AFFECTED, L3_CAVEAT, "L3_PASSED"),
+         "codex": (CODEX_NOT_AFFECTED, X8_CAVEAT, "X8_PASSED")}
+
+# The Codex run lock (design Decision 7): judgment, not a host constant. Runs
+# are serial by design, and a waiter is a second invocation the operator
+# started, which should fail fast rather than queue behind a ten-minute run.
+LOCK_NAME = ".harness-run.lock"
+LOCK_WAIT_S = 30
+LOCK_POLL_S = 0.2
+PR_SET_PDEATHSIG = 1
 
 # Variables a Claude Code session, or Codex's sandboxed shell, exports to the
 # commands it runs. Their presence refuses `login` (a speed bump, not a guard:
-# a marker can be unset). Whether the Codex pair is complete is unverified;
-# add-codex-dev-runner pins it with the Codex record.
+# a marker can be unset). Whether the Codex pair is complete is unverified:
+# observing an unsandboxed Codex shell's exports would take a model call, so
+# add-codex-dev-runner keeps the pair (design, Open Questions); the AGENTS.md
+# rule that agents never log in is the guard.
 AGENT_MARKERS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID",
                  "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED")
 
@@ -153,9 +209,14 @@ class HostLogin:
     """What the harness needs to know about one host client's login.
 
     `seed` maps a path inside the home to its content (a trailing `/` makes a
-    directory); `forbidden` lists globs whose matches make a home unclean;
-    `fixed_env` and `profile` are what `allowlisted_env` sets beside the
-    admitted names; `failure` is the host's wording for a login it cannot use."""
+    directory); `forbidden` lists globs whose matches make a home unclean,
+    `allowed` the matches that stay allowed; `fixed_env` and `profile` are
+    what `allowlisted_env` sets beside the admitted names; `failure` is the
+    host's wording for a login it cannot use. The defaulted fields came with
+    the Codex record and leave Claude's behaviour as it was: `strip_suffixes`
+    widens the stripped families, `stop_signal` is the client's own stop
+    request, and `outside_tempdir` bars a home inside the system temporary
+    directory."""
 
     name: str
     binary: str
@@ -173,6 +234,35 @@ class HostLogin:
     profile: tuple[str, str] | None
     credentials: str
     failure: re.Pattern
+    strip_suffixes: tuple[str, ...] = ()
+    stop_signal: int = signal.SIGTERM
+    outside_tempdir: bool = False
+    allowed: tuple[str, ...] = ()
+
+    def child_vars(self, config: PurePath) -> dict[str, str]:
+        """What the harness itself sets in every child of this client, replacing
+        any inherited value: the configuration directory, the fixed variables
+        and the profile directory. For Codex that is `CODEX_HOME` alone, which
+        makes it the pre-spawn assertion's exact exemption set."""
+        env = {self.home_var: str(config), **self.fixed_env}
+        if self.profile:
+            variable, directory = self.profile
+            env[variable] = str(config / directory)
+        return env
+
+    def stripped(self, name: str) -> bool:
+        """Whether an inherited variable belongs to the families every login,
+        logout and (for Codex) child drops."""
+        return name.startswith(self.login_strip_prefixes) or (
+            bool(self.strip_suffixes) and name.endswith(self.strip_suffixes))
+
+    @property
+    def login_command(self) -> str:
+        return f"uv run poe host-login {self.name}"
+
+    @property
+    def reset_command(self) -> str:
+        return f"{self.login_command} --reset"
 
 
 # What an isolated Claude child inherits: the machine, never the launching
@@ -229,16 +319,105 @@ CLAUDE = HostLogin(
     # be refreshed (recorded 2026-10-03 and 2026-10-04), or none at all
     failure=re.compile(r"Failed to authenticate|OAuth session|Not logged in"),
 )
-RECORDS: Mapping[str, HostLogin] = {"claude": CLAUDE}
+
+# The Codex home's configuration (design Decision 5), written before the first
+# login and compared key by key on every run. The stdlib has no TOML writer, so
+# this is one fixed text and one parse, and an L0 test holds them equal. The key
+# names are unverified for 0.160 until live check X7; every run also passes
+# `--strict-config`, which fails a misspelled key visibly.
+PINNED_CONFIG_TOML = """\
+model_provider = "openai"
+forced_login_method = "chatgpt"
+cli_auth_credentials_store = "file"
+web_search = "disabled"
+check_for_update_on_startup = false
+
+[history]
+persistence = "none"
+
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[skills.bundled]
+enabled = false
+"""
+PINNED_CONFIG = {
+    "model_provider": "openai",
+    "forced_login_method": "chatgpt",
+    "cli_auth_credentials_store": "file",
+    "web_search": "disabled",
+    "check_for_update_on_startup": False,
+    "history": {"persistence": "none"},
+    "analytics": {"enabled": False},
+    "feedback": {"enabled": False},
+    "skills": {"bundled": {"enabled": False}},
+}
+CODEX_CONFIG = "config.toml"
+CODEX_AUTH = "auth.json"
+# the first catalog that serves the current Plus models
+CODEX_MIN_VERSION = (0, 160, 0)
+CODEX_UPDATE = "update the Codex CLI through your package manager to {} or later"
+
+CODEX = HostLogin(
+    name="codex",
+    binary="codex",
+    home_var="CODEX_HOME",
+    # the ChatGPT login only: never `--with-api-key` or `--with-access-token`;
+    # `--device-auth` is appended on request
+    login_argv=("login",),
+    status_argv=("login", "status"),
+    logout_argv=("logout",),
+    # the same machine plumbing, without Claude's long-lived token
+    admitted=CLAUDE_ADMITTED - {LONG_LIVED_TOKEN},
+    admitted_prefixes=("LC_",),
+    # every variable that could bill a run per token or steer it at another
+    # login: `exec` honours CODEX_API_KEY above every stored login
+    login_strip_prefixes=("CODEX_", "OPENAI_", "OPENROUTER_"),
+    seed={CODEX_CONFIG: PINNED_CONFIG_TOML},
+    # an instruction file, a start-up environment file, hooks, skills other
+    # than the client's bundled system skills, and memories
+    forbidden=("AGENTS.md", "AGENTS.override.md", ".env", "hooks.json", "skills/*",
+               "memories/*"),
+    plugin_record=None,
+    fixed_env={},
+    profile=None,
+    credentials=CODEX_AUTH,
+    # the refresh failures (`manager.rs:206-208` @0.160), the login
+    # restriction's logout line, and no login at all
+    failure=re.compile(r"refresh token (?:has expired|was already used|was revoked)"
+                       r"|ChatGPT login is required, but an API key is currently being used"
+                       r"|Not logged in"),
+    strip_suffixes=("_API_KEY",),
+    # an interrupt ends the turn, so a pending auth.json write can finish
+    stop_signal=signal.SIGINT,
+    outside_tempdir=True,
+    allowed=("skills/.system",),
+)
+RECORDS: Mapping[str, HostLogin] = {"claude": CLAUDE, "codex": CODEX}
 LOGIN_FAILURE = CLAUDE.failure
 
 
 @dataclass(frozen=True)
 class LoginProblem:
-    """Why the harness login cannot serve a run: the cause and its one remedy."""
+    """Why the harness login cannot serve a run: the cause, its one remedy, and
+    the client whose login note closes the refusal."""
 
     cause: str
     remedy: str
+    client: str = "claude"
+
+
+class RunLockBusy(Exception):
+    """The Codex run lock stayed held past `LOCK_WAIT_S`. Carries the
+    `LoginProblem` that `refusal` renders; the runner maps it to untested and
+    `main` to exit 3."""
+
+    def __init__(self, problem: LoginProblem):
+        super().__init__(problem.cause)
+        self.problem = problem
 
 
 class LoginSource(Enum):
@@ -264,47 +443,134 @@ def allowlisted_env(record: HostLogin, config: PurePath,
     `ANTHROPIC_` name the child carries, and it routes no billing.
 
     Prints nothing — the dropped set holds the desktop session's messaging
-    token (testing-harness spec: Isolated child environment)."""
+    token (testing-harness spec: Isolated child environment). For Codex, the
+    record's own allowlist and `CODEX_HOME` make the base of every Codex
+    child's environment (testing-harness spec: Codex plan billing guard)."""
     source = os.environ if environ is None else environ
     env = {name: value for name, value in source.items()
            if name in record.admitted or name.startswith(record.admitted_prefixes)}
-    env[record.home_var] = str(config)
-    env.update(record.fixed_env)
-    if record.profile:
-        variable, directory = record.profile
-        env[variable] = str(config / directory)
+    env.update(record.child_vars(config))
     return env
 
 
 def login_env(record: HostLogin, home: Path, environ: Mapping[str, str]) -> dict[str, str]:
     """The environment of every login and logout: the operator's own, so that
-    a browser can open, less every billing and host-session variable, with the
-    configuration directory set to the home and the profile directory to the
-    home's empty one. `environ` is not modified."""
-    env = {name: value for name, value in environ.items()
-           if not name.startswith(record.login_strip_prefixes)}
-    env[record.home_var] = str(home)
-    env.update(record.fixed_env)
-    if record.profile:
-        variable, directory = record.profile
-        env[variable] = str(home / directory)
+    a browser can open, less every billing and host-session variable of the
+    client, with the configuration directory set to the home (and for Claude
+    the profile directory to the home's empty one). `environ` is not
+    modified."""
+    env = {name: value for name, value in environ.items() if not record.stripped(name)}
+    env.update(record.child_vars(home))
     return env
 
 
-# ---------- stopping a child ------------------------------------------------------
+# ---------- stopping a child, and running one to completion ---------------------------
 
 
-def stop_child(proc: subprocess.Popen) -> int:
-    """Stop a host: ask it to terminate, give it TERM_GRACE_S, then kill it.
-    On Windows `terminate()` is TerminateProcess, so the kill is the request.
-    The exit status is the harness's own, not the host's verdict on its run."""
+def stop_child(proc: subprocess.Popen, sig: int = signal.SIGTERM) -> int:
+    """Stop a host: send the client's own stop request — a termination request
+    by default, the record's `stop_signal` where a caller passes it (an
+    interrupt for Codex, which ends its turn) — give it TERM_GRACE_S, then kill
+    it. On Windows `terminate()` is TerminateProcess, so the kill is the
+    request. The exit status is the harness's own, not the host's verdict."""
     with suppress(ProcessLookupError):
-        proc.terminate()
+        if sig == signal.SIGTERM or os.name != "posix":
+            proc.terminate()
+        else:
+            proc.send_signal(sig)
     try:
         return proc.wait(timeout=TERM_GRACE_S)
     except subprocess.TimeoutExpired:
         proc.kill()
         return proc.wait()
+
+
+def child_preexec(record: HostLogin) -> Callable[[], None] | None:
+    """On Linux, a `preexec_fn` that makes the kernel send the child the
+    record's stop signal when the harness dies (`prctl(PR_SET_PDEATHSIG)`):
+    an interrupt for Codex, not a kill, so a pending login write can finish.
+    None elsewhere — macOS has no such signal, which the README states."""
+    if not sys.platform.startswith("linux"):
+        return None
+    libc = ctypes.CDLL(None, use_errno=True)  # loaded before the fork
+    stop = int(record.stop_signal)
+
+    def set_parent_death_signal() -> None:
+        libc.prctl(PR_SET_PDEATHSIG, stop, 0, 0, 0)
+
+    return set_parent_death_signal
+
+
+Starter = Callable[..., subprocess.Popen]
+
+
+def _popen(argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], stdin: int,
+           pass_fds: Sequence[int], record: HostLogin) -> subprocess.Popen:
+    return subprocess.Popen(list(argv), cwd=cwd, env=dict(env), stdin=stdin,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            encoding="utf-8", errors="replace", pass_fds=tuple(pass_fds),
+                            preexec_fn=child_preexec(record))
+
+
+def run_host(record: HostLogin, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str],
+             timeout: float, input: str | None = None, pass_fds: Sequence[int] = (),
+             start: Starter | None = None) -> tuple[int, str, str]:
+    """Run a host child to completion and return its exit status, stdout and
+    stderr. At `timeout` the child gets the record's stop request
+    (`stop_child`), and `TimeoutExpired` is re-raised carrying what the child
+    wrote. `pass_fds` hands it descriptors — the Codex run lock, which it then
+    holds for as long as it lives. `start` replaces the plain `Popen`: the
+    Codex runner passes the starter that checks the final environment first."""
+    starter = start or partial_popen(record)
+    proc = starter(argv, cwd=cwd, env=env,
+                   stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+                   pass_fds=pass_fds)
+    try:
+        out, err = proc.communicate(input, timeout=timeout)
+    except subprocess.TimeoutExpired as late:
+        stop_child(proc, record.stop_signal)
+        late.output, late.stderr = proc.communicate()
+        raise
+    return proc.returncode, out or "", err or ""
+
+
+def partial_popen(record: HostLogin) -> Starter:
+    def start(argv: Sequence[str], **kwargs) -> subprocess.Popen:
+        return _popen(argv, record=record, **kwargs)
+
+    return start
+
+
+@contextmanager
+def run_lock(home_dir: Path, wait: float | None = None) -> Iterator[int]:
+    """The Codex run lock: an exclusive `flock` on `<home>/.harness-run.lock`,
+    taken within `wait` (default LOCK_WAIT_S) or refused with `RunLockBusy`.
+    Yields the descriptor, which a child receives through `pass_fds`: `flock`
+    binds to the open file description, so the lock stays held while that
+    child lives, even after the harness is killed. The harness never unlocks
+    explicitly — that would release the child's hold too; it only closes."""
+    if fcntl is None:
+        raise RuntimeError("the Codex run lock needs POSIX file locks")
+    path = home_dir / LOCK_NAME
+    handle = path.open("ab")  # binary: the lock file holds nothing
+    with suppress(OSError):
+        path.chmod(0o600)
+    deadline = time.monotonic() + (LOCK_WAIT_S if wait is None else wait)
+    while True:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                handle.close()
+                raise RunLockBusy(LoginProblem(
+                    f"another Codex run holds the harness home ({path})", "rerun after it ends",
+                    CODEX.name)) from None
+            time.sleep(LOCK_POLL_S)
+    try:
+        yield handle.fileno()
+    finally:
+        handle.close()
 
 
 # ---------- the harness home ---------------------------------------------------------
@@ -345,33 +611,51 @@ def _client_dirs(environ: Mapping[str, str], user: Path) -> list[Path]:
                    if environ.get(name)]
 
 
+def system_tempdir() -> str:
+    """The system temporary directory, which a Codex home may not lie in; the
+    seam L0 tests replace, since their own `tmp_path` lies inside it."""
+    return tempfile.gettempdir()
+
+
 def check_location(root: Path, environ: Mapping[str, str], repo: Path = REPO,
-                   user_home: Path | None = None) -> LoginProblem | None:
+                   user_home: Path | None = None, *, record: HostLogin | None = None,
+                   tempdir: str | Path | None = None) -> LoginProblem | None:
     """Refuse a state root that is not absolute, that equals or contains the
     user's home, that equals, contains or lies inside a client's own
-    configuration directory, or that lies inside the repository. Applied to
-    every resolved root, the default included; containment is tested on
-    resolved paths, so a symlink cannot route around it. A relative root would
-    resolve against whichever directory a command runs in — the home itself,
-    for a login — and a link to it would dangle."""
+    configuration directory, or that lies inside the repository — and, for a
+    record that must live `outside_tempdir` (Codex, which refuses to place its
+    helper binaries there), one at or inside `tempdir`. Applied to every
+    resolved root, the default included; containment is tested on resolved
+    paths, so a symlink cannot route around it. A relative root would resolve
+    against whichever directory a command runs in — the home itself, for a
+    login — and a link to it would dangle. The pure check takes the temporary
+    directory as an argument; callers fill it from `system_tempdir()`."""
+    record = record or CLAUDE
     remedy = (f"point {STATE_VAR} at a directory of its own, outside the repository and every "
               f"client's configuration directory, or unset it")
     if not root.is_absolute():
         return LoginProblem(f"the harness state directory {root} is not an absolute path",
-                            f"give {STATE_VAR} an absolute path, or unset it")
+                            f"give {STATE_VAR} an absolute path, or unset it", record.name)
     user = (Path.home() if user_home is None else user_home).resolve()
     resolved = root.resolve()
     if _within(user, resolved):
         return LoginProblem(f"the harness state directory {root} equals or contains your home "
-                            f"directory {user}", remedy)
+                            f"directory {user}", remedy, record.name)
     for client in _client_dirs(environ, user):
         target = client.resolve()
         if _within(resolved, target) or _within(target, resolved):
             return LoginProblem(f"the harness state directory {root} overlaps the client "
-                                f"configuration directory {client}", remedy)
+                                f"configuration directory {client}", remedy, record.name)
     if _within(resolved, repo.resolve()):
         return LoginProblem(f"the harness state directory {root} lies inside the repository "
-                            f"{repo}", remedy)
+                            f"{repo}", remedy, record.name)
+    if record.outside_tempdir and tempdir is not None and _within(resolved,
+                                                                  Path(tempdir).resolve()):
+        return LoginProblem(f"the harness state directory {root} lies inside the system "
+                            f"temporary directory {tempdir}, where {record.binary} refuses to "
+                            "place its helper binaries",
+                            f"point {STATE_VAR} or XDG_STATE_HOME at a directory outside "
+                            f"{tempdir}, or unset it", record.name)
     return None
 
 
@@ -411,41 +695,45 @@ def seed(record: HostLogin, home_dir: Path) -> None:
             path.write_text(content, encoding="utf-8")
 
 
-def not_harness_made(home_dir: Path) -> LoginProblem | None:
+def not_harness_made(home_dir: Path, record: HostLogin | None = None) -> LoginProblem | None:
     """Why `home_dir` is no home the harness created: a symbolic link, or a
     path without the marker. The harness neither deletes nor adopts it."""
+    record = record or CLAUDE
     if home_dir.is_symlink():
         return LoginProblem(f"{home_dir} is a symbolic link, not a harness login home",
-                            f"remove the link, then run `{LOGIN_COMMAND}`")
+                            f"remove the link, then run `{record.login_command}`", record.name)
     if not (home_dir / MARKER).is_file():
         return LoginProblem(f"{home_dir} carries no {MARKER} marker, so the harness did not "
-                            "create it", f"move it aside, then run `{LOGIN_COMMAND}`")
+                            "create it", f"move it aside, then run `{record.login_command}`",
+                            record.name)
     return None
 
 
-def wipe(home_dir: Path) -> LoginProblem | None:
+def wipe(home_dir: Path, record: HostLogin | None = None) -> LoginProblem | None:
     """Delete the home — only a marked home that is not a symbolic link.
     Otherwise refuse, naming the directory, and delete nothing."""
-    problem = not_harness_made(home_dir)
+    problem = not_harness_made(home_dir, record)
     if problem:
         return problem
     shutil.rmtree(home_dir)
     return None
 
 
-def check_presence(home_dir: Path) -> LoginProblem | None:
+def check_presence(home_dir: Path, record: HostLogin | None = None) -> LoginProblem | None:
     """The home exists, carries its marker and is owner-only (POSIX). A
     directory without the marker is not adopted, so its remedy is the same
     as `wipe`'s: move it aside."""
-    remedy = f"run `{LOGIN_COMMAND}`"
+    record = record or CLAUDE
+    remedy = f"run `{record.login_command}`"
     if not home_dir.is_dir():
-        return LoginProblem(f"the harness login home {home_dir} does not exist", remedy)
+        return LoginProblem(f"the harness login home {home_dir} does not exist", remedy,
+                            record.name)
     if not (home_dir / MARKER).is_file():
-        return not_harness_made(home_dir)
+        return not_harness_made(home_dir, record)
     mode = home_dir.stat().st_mode & 0o777
     if os.name == "posix" and mode & 0o077:
         return LoginProblem(f"the harness login home {home_dir} has mode {mode:04o}, wider "
-                            "than owner-only (0700)", remedy)
+                            "than owner-only (0700)", remedy, record.name)
     return None
 
 
@@ -484,13 +772,132 @@ def home_offenders(record: HostLogin, home_dir: Path) -> list[str]:
 def check_home(record: HostLogin, home_dir: Path) -> LoginProblem | None:
     """The home is clean. A dirty home means the opt-outs failed under this
     account, so the remedy is to remove the entry or start over."""
-    offenders = home_offenders(record, home_dir)
+    offenders = (codex_offenders(home_dir) if record.name == CODEX.name
+                 else home_offenders(record, home_dir))
     if not offenders:
         return None
     return LoginProblem(f"the harness login home {home_dir} is not clean: it holds "
                         f"{', '.join(offenders)}",
                         f"remove {'it' if len(offenders) == 1 else 'them'}, or run "
-                        f"`{RESET_COMMAND}`")
+                        f"`{record.reset_command}`", record.name)
+
+
+def _first_difference(actual: object, pinned: object, path: str = "") -> str | None:
+    """The first key path at which a parsed configuration departs from the
+    pinned one: a changed value (compared with its type, so `0` never passes
+    for `false`), a missing key or an extra key."""
+    if isinstance(actual, dict) and isinstance(pinned, dict):
+        for key in sorted(set(actual) | set(pinned)):
+            where = f"{path}.{key}" if path else key
+            if key not in pinned:
+                return f"extra key {where}"
+            if key not in actual:
+                return f"missing key {where}"
+            found = _first_difference(actual[key], pinned[key], where)
+            if found:
+                return found
+        return None
+    if type(actual) is not type(pinned) or actual != pinned:
+        return f"{path} differs from the pinned value"
+    return None
+
+
+def config_difference(home_dir: Path) -> str | None:
+    """Why the Codex home's `config.toml` is not exactly the pinned one, by
+    key path, or None when it is."""
+    try:
+        actual = tomllib.loads((home_dir / CODEX_CONFIG).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "missing"
+    except (OSError, ValueError):
+        return "unreadable"
+    return _first_difference(actual, PINNED_CONFIG)
+
+
+def codex_offenders(home_dir: Path) -> list[str]:
+    """What makes the Codex home unclean, by path inside it: a configuration
+    that departs from the pinned one, or a forbidden entry. Host state —
+    plugin caches, `log/`, `*.sqlite`, `installation_id`, the models cache,
+    `shell_snapshots/`, `skills/.system`, the run lock and the quota
+    snapshot — is allowed."""
+    found = []
+    difference = config_difference(home_dir)
+    if difference:
+        found.append(f"{CODEX_CONFIG} ({difference})")
+    for pattern in CODEX.forbidden:
+        found += sorted(rel for rel in (path.relative_to(home_dir).as_posix()
+                                        for path in home_dir.glob(pattern))
+                        if rel not in CODEX.allowed)
+    return found
+
+
+def check_codex_home(home_dir: Path) -> LoginProblem | None:
+    """The Codex home's configuration equals the pinned one key by key — the
+    backstop should `--strict-config` miss a nested key — and it holds nothing
+    forbidden."""
+    return check_home(CODEX, home_dir)
+
+
+def codex_status(stderr: str) -> str:
+    """The login method `codex login status` reports (on stderr): `chatgpt`,
+    `api-key`, `access-token`, `other` or `none`. Only the method is kept, so
+    the masked key fragment of an API-key line is dropped at the parse."""
+    if "Logged in using ChatGPT" in stderr:
+        return "chatgpt"
+    if "Logged in using an API key" in stderr:
+        return "api-key"
+    if "access token" in stderr and "Logged in" in stderr:
+        return "access-token"
+    if "Logged in" in stderr:
+        return "other"
+    return "none"
+
+
+def check_codex_login(method: str, home_dir: Path) -> LoginProblem | None:
+    """The home holds the ChatGPT login. The pinned configuration requires it,
+    so an API-key login reads as no login, and its remedy is a new login."""
+    if method == "chatgpt":
+        return None
+    held = "no login" if method == "none" else f"a {method} login, not the ChatGPT login"
+    return LoginProblem(f"the harness login home {home_dir} holds no ChatGPT login ({held})",
+                        f"run `{CODEX.login_command}`", CODEX.name)
+
+
+_CODEX_VERSION = re.compile(r"codex-cli\s+(\d+)\.(\d+)\.(\d+)")
+
+
+def codex_version(stdout: str) -> tuple[int, int, int] | None:
+    """The version `codex --version` prints (`codex-cli X.Y.Z`), or None."""
+    match = _CODEX_VERSION.search(stdout)
+    return (int(match[1]), int(match[2]), int(match[3])) if match else None
+
+
+def version_text(version: tuple[int, int, int] | None) -> str:
+    return ".".join(map(str, version)) if version else "unknown"
+
+
+def check_codex_version(version: tuple[int, int, int] | None) -> LoginProblem | None:
+    """The installed CLI is at least CODEX_MIN_VERSION."""
+    minimum = version_text(CODEX_MIN_VERSION)
+    if version is None:
+        return LoginProblem("the Codex CLI reported no version (is `codex` installed and on "
+                            "PATH?)", f"install the Codex CLI {minimum} or later", CODEX.name)
+    if version < CODEX_MIN_VERSION:
+        return LoginProblem(f"the installed Codex CLI is {version_text(version)}, older than "
+                            f"the pinned minimum {minimum}", CODEX_UPDATE.format(minimum),
+                            CODEX.name)
+    return None
+
+
+def auth_age(home_dir: Path, now: float | None = None) -> str:
+    """How long ago the Codex login was last written, by login or refresh:
+    the modification time of `auth.json`, which Codex rewrites on both
+    (`storage.rs:206-223` @0.160). The file is never opened."""
+    try:
+        written = (home_dir / CODEX_AUTH).stat().st_mtime
+    except OSError:
+        return "never"
+    return f"{_span(max(0.0, (time.time() if now is None else now) - written))} ago"
 
 
 def check_status(status: Mapping, home_dir: Path) -> LoginProblem | None:
@@ -521,20 +928,23 @@ def check_status(status: Mapping, home_dir: Path) -> LoginProblem | None:
     return None
 
 
-def login_note(remedy: str) -> str:
-    """The closing sentence of a refusal: the operator's own login is not
-    affected — unless the remedy runs the harness login command while L3 is
-    unverified, because that command logs out first."""
-    if not L3_PASSED and "host-login" in remedy:
-        return L3_CAVEAT
-    return NOT_AFFECTED
+def login_note(remedy: str, client: str = "claude") -> str:
+    """The closing sentence of a refusal: the operator's own login of that
+    client is not affected — unless the remedy runs that client's harness
+    login command (with or without `--reset`) while its revocation check is
+    unverified (L3 for Claude, X8 for Codex), because that command logs out
+    first, and a Codex login revokes the refresh token the home held."""
+    affected, caveat, flag = NOTES[client]
+    if not globals()[flag] and f"host-login {client}" in remedy:
+        return caveat
+    return affected
 
 
 def refusal(problem: LoginProblem) -> str:
     """The one template: untested, the cause, the one remedy, the login note."""
     remedy = problem.remedy[:1].upper() + problem.remedy[1:]
     return (f"untested: {problem.cause.rstrip('.')}. {remedy.rstrip('.')}. "
-            f"{login_note(problem.remedy)}.")
+            f"{login_note(problem.remedy, problem.client)}.")
 
 
 def run_client(argv: Sequence[str], env: Mapping[str, str], *, interactive: bool,
@@ -638,25 +1048,29 @@ def login_dir(config: Path | None, environ: Mapping[str, str]) -> Path | None:
     return (planned / CREDENTIALS).resolve().parent
 
 
-def relogin(source: LoginSource) -> str:
+def relogin(source: LoginSource, record: HostLogin | None = None) -> str:
     """The one remedy for a login that no longer serves, as a clause; the
-    harness login's closes with the login note."""
+    harness login's closes with that client's login note."""
+    record = record or CLAUDE
     if source is LoginSource.HARNESS:
-        remedy = f"run `{LOGIN_COMMAND}`"
-        return f"{remedy}, then rerun. {login_note(remedy)}"
+        remedy = f"run `{record.login_command}`"
+        return f"{remedy}, then rerun. {login_note(remedy, record.name)}"
     if source is LoginSource.TOKEN:
         return ("run `claude setup-token` and export the new token as "
                 f"{LONG_LIVED_TOKEN}, then rerun")
     return f"{RELOGIN}, then rerun"
 
 
-def login_remedy(message: str, source: LoginSource) -> str:
+def login_remedy(message: str, source: LoginSource, record: HostLogin | None = None) -> str:
     """`message`, plus the one remedy for the login the run used when the
-    reason is that login — which no rerun repairs. Shared by the dev runner,
-    the judge and the routing rig."""
-    if not LOGIN_FAILURE.search(message):
+    reason is that login — which no rerun repairs. Shared by the dev runner
+    (on each host: `record` picks the client's wording and remedy), the judge
+    and the routing rig."""
+    record = record or CLAUDE
+    if not record.failure.search(message):
         return message
-    return f"{message}\nThe {source.value} login is no longer valid: {relogin(source)}."
+    return (f"{message}\nThe {source.value} login is no longer valid: "
+            f"{relogin(source, record)}.")
 
 
 # ---------- the linked login, kept current ---------------------------------------------
@@ -839,10 +1253,24 @@ def agent_session_markers(environ: Mapping[str, str]) -> list[str]:
     return [name for name in AGENT_MARKERS if name in environ]
 
 
-def logout_note() -> None:
-    """Printed before every logout until L3 has passed."""
-    if not L3_PASSED:
-        print(f"host-login: {L3_CAVEAT[:1].lower()}{L3_CAVEAT[1:]}.", flush=True)
+def logout_note(client: str = "claude") -> None:
+    """Printed before every logout of that client until its revocation check
+    (L3 for Claude, X8 for Codex) has passed."""
+    _, caveat, flag = NOTES[client]
+    if not globals()[flag]:
+        print(f"host-login: {caveat[:1].lower()}{caveat[1:]}.", flush=True)
+
+
+@contextmanager
+def client_lock(record: HostLogin, home_dir: Path) -> Iterator[None]:
+    """What a logout, a reset or a login over a login holds: the lock the
+    client's runs take — Claude's refresh claim, the Codex run lock."""
+    if record.name == CODEX.name:
+        with run_lock(home_dir):
+            yield
+    else:
+        with held_claim(home_dir):
+            yield
 
 
 def _logout(record: HostLogin, home_dir: Path, environ: Mapping[str, str]) -> int:
@@ -864,21 +1292,23 @@ def _speed_bumps(environ: Mapping[str, str]) -> str | None:
 
 def _start_over(record: HostLogin, home_dir: Path, environ: Mapping[str, str], *,
                 reset: bool, logged_in: bool) -> LoginProblem | None:
-    """Under the claim: log out of the home's login, if it holds one, and
-    with `reset` wipe and reseed the home. A logout that fails stops here:
+    """Under the client's lock: log out of the home's login, if it holds one,
+    and with `reset` wipe and reseed the home. A logout that fails stops here:
     wiping or logging in over a login whose logout did not go through could
-    orphan a live grant."""
+    orphan a live grant. Claude takes its refresh claim here; a Codex login
+    already holds the run lock for its whole sequence (`cmd_login`)."""
     if logged_in:
-        logout_note()
-    with held_claim(home_dir):
+        logout_note(record.name)
+    with held_claim(home_dir) if record.name == CLAUDE.name else nullcontext():
         code = _logout(record, home_dir, environ) if logged_in else 0
         if code != 0:
-            again = RESET_COMMAND if reset else LOGIN_COMMAND
+            again = record.reset_command if reset else record.login_command
             return LoginProblem(f"the client's logout in {home_dir} exited {code}, so the "
                                 "login there was neither replaced nor wiped",
-                                f"rerun `{again}` once the client can log out")
+                                f"rerun `{again}` once the client can log out", record.name)
         if reset:
-            problem = wipe(home_dir)
+            # Claude's wipe is called as it always was (its tests replace it)
+            problem = wipe(home_dir) if record.name == CLAUDE.name else wipe(home_dir, record)
             if problem:
                 return problem
             seed(record, home_dir)
@@ -886,21 +1316,34 @@ def _start_over(record: HostLogin, home_dir: Path, environ: Mapping[str, str], *
 
 
 def _home_or_problem(record: HostLogin, environ: Mapping[str, str]) -> Path | LoginProblem:
+    """The record's home, or why no command may touch it: its location, and
+    for Claude the default Anthropic profile directory (a Codex client reads
+    no Anthropic profile)."""
     root = state_root(environ)
-    return (check_location(root, environ) or profile_problem(environ)
-            or root / "hosts" / record.name)
+    claude_only = profile_problem(environ) if record.name == CLAUDE.name else None
+    return (check_location(root, environ, record=record, tempdir=system_tempdir())
+            or claude_only or root / "hosts" / record.name)
 
 
 def _holds_login(record: HostLogin, home_dir: Path) -> bool:
-    """An existing home's login: its credentials file (Linux), or the host's
-    own status, where the login is no file (the macOS Keychain)."""
-    return ((home_dir / record.credentials).exists()
-            or bool(read_status(record, home_dir).get("loggedIn")))
+    """An existing home's login: its credentials file (Linux; for Codex, whose
+    pinned configuration keeps it in a file, only that — never opened), or
+    Claude's own status, where the login is no file (the macOS Keychain)."""
+    if (home_dir / record.credentials).exists():
+        return True
+    return record.name == CLAUDE.name and bool(read_status(record, home_dir).get("loggedIn"))
+
+
+def _login_argv(record: HostLogin, args: argparse.Namespace) -> list[str]:
+    device = ["--device-auth"] if getattr(args, "device_auth", False) else []
+    return [record.binary, *record.login_argv, *device]
 
 
 def cmd_login(record: HostLogin, args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     """Seed a missing home; refuse an existing one the harness did not make,
-    with or without `--reset`; log out first over an existing login."""
+    with or without `--reset`; log out first over an existing login. A Codex
+    login holds the run lock from the logout to the end of the login, and
+    takes it again on the reseeded home after a reset."""
     bump = _speed_bumps(environ)
     if bump:
         print(bump, file=sys.stderr)
@@ -910,20 +1353,27 @@ def cmd_login(record: HostLogin, args: argparse.Namespace, environ: Mapping[str,
         print(refusal(home_dir), file=sys.stderr)
         return EXIT_NOT_READY
     existed = home_dir.exists() or home_dir.is_symlink()
-    foreign = not_harness_made(home_dir) if existed else None
+    foreign = not_harness_made(home_dir, record) if existed else None
     if foreign:
         print(refusal(foreign), file=sys.stderr)
         return EXIT_NOT_READY
     if not existed:
         seed(record, home_dir)
     logged_in = existed and _holds_login(record, home_dir)
-    if logged_in or (existed and args.reset):
-        problem = _start_over(record, home_dir, environ, reset=args.reset, logged_in=logged_in)
-        if problem:
-            print(refusal(problem), file=sys.stderr)
-            return EXIT_NOT_READY
-    run_client([record.binary, *record.login_argv], login_env(record, home_dir, environ),
-               interactive=True, cwd=home_dir)
+    codex = record.name == CODEX.name
+    with ExitStack() as hold:
+        if codex:
+            hold.enter_context(run_lock(home_dir))
+        if logged_in or (existed and args.reset):
+            problem = _start_over(record, home_dir, environ, reset=args.reset,
+                                  logged_in=logged_in)
+            if problem:
+                print(refusal(problem), file=sys.stderr)
+                return EXIT_NOT_READY
+            if codex and args.reset:  # the wipe took the lock file with it
+                hold.enter_context(run_lock(home_dir))
+        run_client(_login_argv(record, args), login_env(record, home_dir, environ),
+                   interactive=True, cwd=home_dir)
     return cmd_status(record, args, environ)
 
 
@@ -939,12 +1389,12 @@ def cmd_logout(record: HostLogin, _args: argparse.Namespace,
     if not (home_dir.exists() or home_dir.is_symlink()):
         print(f"no harness login home at {home_dir}: nothing to log out")
         return EXIT_READY
-    foreign = not_harness_made(home_dir)
+    foreign = not_harness_made(home_dir, record)
     if foreign:
         print(refusal(foreign), file=sys.stderr)
         return EXIT_NOT_READY
-    logout_note()
-    with held_claim(home_dir):
+    with client_lock(record, home_dir):
+        logout_note(record.name)
         code = _logout(record, home_dir, environ)
     print(f"host-logout: the client's logout exited {code}; the home keeps its marker and "
           "settings")
@@ -997,8 +1447,31 @@ def status_report(record: HostLogin, home_dir: Path, status: Mapping,
     }
 
 
-def cmd_status(record: HostLogin, _args: argparse.Namespace,
+def cmd_status_codex(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """`status codex [--quota]`: the keys of the spec's status list, from the
+    home, `codex --version`, `codex login status` and `codex features list`
+    (no model call; `auth.json` is never opened), and with `--quota` a fresh
+    plan quota read under the run lock. Exit 0 ready, 3 not ready."""
+    import codex_cli  # deferred: codex_cli imports this module
+
+    root = state_root(environ)
+    home_dir = root / "hosts" / CODEX.name
+    problem = check_location(root, environ, record=CODEX, tempdir=system_tempdir())
+    lines, found = codex_cli.status(home_dir, environ, live_quota=getattr(args, "quota", False),
+                                    run_probes=problem is None)
+    for key, value in lines.items():
+        print(f"{key}: {value}")
+    problem = problem or found
+    if problem:
+        print(refusal(problem), file=sys.stderr)
+        return EXIT_NOT_READY
+    return EXIT_READY
+
+
+def cmd_status(record: HostLogin, args: argparse.Namespace,
                environ: Mapping[str, str]) -> int:
+    if record.name == CODEX.name:
+        return cmd_status_codex(args, environ)
     root = state_root(environ)
     home_dir = root / "hosts" / record.name
     problem = check_location(root, environ) or profile_problem(environ)
@@ -1024,17 +1497,32 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("client", choices=sorted(RECORDS))
     login.add_argument("--reset", action="store_true",
                        help="log out, wipe the marked home, seed it again, then log in")
+    login.add_argument("--device-auth", action="store_true",
+                       help="codex only: the client's device-code login instead of a browser")
     status = sub.add_parser("status", help="report the harness home; no model call")
     status.add_argument("client", nargs="?", default="claude", choices=sorted(RECORDS))
+    status.add_argument("--quota", action="store_true",
+                        help="codex only: also read the plan quota now (under the run lock; "
+                             "a GET of plan usage, not a model call)")
     logout = sub.add_parser("logout", help="run the client's logout in the harness home")
     logout.add_argument("client", choices=sorted(RECORDS))
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Exit 0 ready, 2 usage or refused to start, 3 not ready (untested)."""
-    args = build_parser().parse_args(argv)
-    return COMMANDS[args.command](RECORDS[args.client], args, os.environ)
+    """Exit 0 ready, 2 usage or refused to start, 3 not ready (untested) —
+    a held Codex run lock included."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    for option, given in (("--device-auth", getattr(args, "device_auth", False)),
+                          ("--quota", getattr(args, "quota", False))):
+        if given and args.client != CODEX.name:
+            parser.error(f"{option} applies to the codex client only")
+    try:
+        return COMMANDS[args.command](RECORDS[args.client], args, os.environ)
+    except RunLockBusy as busy:
+        print(refusal(busy.problem), file=sys.stderr)
+        return EXIT_NOT_READY
 
 
 if __name__ == "__main__":

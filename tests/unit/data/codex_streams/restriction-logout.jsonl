@@ -1,0 +1,3 @@
+{"type":"thread.started","thread_id":"0199a0f0-0000-7000-8000-000000000016"}
+{"type":"error","message":"ChatGPT login is required, but an API key is currently being used. Logging out."}
+{"type":"codex.harness","duration_ms":900,"exit_code":1,"stderr_tail":"","quota_before":null}

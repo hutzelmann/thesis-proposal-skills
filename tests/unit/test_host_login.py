@@ -927,3 +927,220 @@ def test_the_write_back_target_is_the_labelled_login_directory(linked_home, opte
     config = routing.prepare_config(tmp_path / "token")
     assert login_dir(config, os.environ) is None
     assert writeback_target(config / CREDENTIALS) is None
+
+
+# ---------- the Codex record and home (add-codex-dev-runner) -----------------------
+#
+# The Codex home must lie outside the system temporary directory, and `tmp_path`
+# lies inside it, so these tests hand `check_location` a temporary directory of
+# their own (`tempdir=`) that does not contain `tmp_path`.
+
+CODEX_NOTE = "Your own Codex login is not affected"
+X8_NOTE = "Whether this logs out your other ChatGPT sessions is unverified (X8)"
+
+
+def test_the_default_codex_home_is_under_the_state_root_and_not_the_operators(tmp_path):
+    """testing-harness spec: Default home location."""
+    user = tmp_path / "home"
+    root = state_root({}, "linux", user)
+    home = host_login.home(host_login.CODEX, {STATE_VAR: str(root)})
+    assert home == user / ".local" / "state" / "thesis-proposal-dev" / "hosts" / "codex"
+    assert home != user / ".codex"
+
+
+def test_a_root_in_the_temporary_directory_is_refused_for_codex_only(user_home, tmp_path):
+    """testing-harness spec: Codex home in the temporary directory."""
+    fake_tmp = tmp_path / "system-tmp"
+    root = fake_tmp / "state"
+    environ = {STATE_VAR: str(root)}
+    problem = check_location(root, environ, tmp_path / "repo", user_home=user_home,
+                             record=host_login.CODEX, tempdir=fake_tmp)
+    assert isinstance(problem, LoginProblem)
+    assert str(root) in problem.cause
+    assert "temporary directory" in problem.cause
+    assert problem.client == "codex"
+    assert check_location(root, environ, tmp_path / "repo", user_home=user_home,
+                          record=CLAUDE, tempdir=fake_tmp) is None
+    elsewhere = tmp_path / "state"
+    assert check_location(elsewhere, {STATE_VAR: str(elsewhere)}, tmp_path / "repo",
+                          user_home=user_home, record=host_login.CODEX,
+                          tempdir=fake_tmp) is None
+
+
+@pytest.mark.parametrize("case", ["equals-dot-codex", "inside-dot-codex", "contains-codex-home"])
+def test_the_codex_location_guard_refuses_an_overlap(case, user_home, tmp_path):
+    """testing-harness spec: Override overlapping the operator's configuration."""
+    codex_home = tmp_path / "elsewhere" / "codex-home"
+    root, environ = {
+        "equals-dot-codex": (user_home / ".codex", {}),
+        "inside-dot-codex": (user_home / ".codex" / "state", {}),
+        "contains-codex-home": (tmp_path / "elsewhere", {"CODEX_HOME": str(codex_home)}),
+    }[case]
+    problem = check_location(root, {STATE_VAR: str(root), **environ}, tmp_path / "repo",
+                             user_home=user_home, record=host_login.CODEX,
+                             tempdir=tmp_path / "system-tmp")
+    assert isinstance(problem, LoginProblem)
+    assert str(root) in problem.cause
+    assert "client configuration directory" in problem.cause
+
+
+def test_the_pinned_codex_configuration_is_one_text_and_one_parse():
+    import tomllib
+
+    assert tomllib.loads(host_login.PINNED_CONFIG_TOML) == host_login.PINNED_CONFIG
+    assert host_login.PINNED_CONFIG["model_provider"] == "openai"
+    assert host_login.PINNED_CONFIG["forced_login_method"] == "chatgpt"
+    assert host_login.PINNED_CONFIG["cli_auth_credentials_store"] == "file"
+    assert host_login.CODEX.seed == {"config.toml": host_login.PINNED_CONFIG_TOML}
+
+
+@pytest.fixture
+def codex_home(tmp_path):
+    home = tmp_path / "codex-home"
+    host_login.seed(host_login.CODEX, home)
+    return home
+
+
+def test_a_seeded_codex_home_is_clean(codex_home):
+    assert (codex_home / MARKER).is_file()
+    assert host_login.check_codex_home(codex_home) is None
+    assert check_presence(codex_home, host_login.CODEX) is None
+
+
+@pytest.mark.parametrize(("old", "new", "named"), [
+    ('model_provider = "openai"', 'model_provider = "openrouter"', "model_provider"),
+    ("[analytics]\nenabled = false", "[analytics]\nenabled = true", "analytics.enabled"),
+    ("[analytics]\nenabled = false", "[analytics]\nenabled = 0", "analytics.enabled"),
+    ("[history]\npersistence = \"none\"", "[history]\npersistence = \"save-all\"",
+     "history.persistence"),
+    ("check_for_update_on_startup = false\n", "", "check_for_update_on_startup"),
+    ("[skills.bundled]\nenabled = false", "[skills.bundled]\nenabled = false\nextra = 1",
+     "skills.bundled.extra"),
+    ("[feedback]", "[mcp_servers.docs]\ncommand = \"docs\"\n\n[feedback]", "mcp_servers"),
+])
+def test_check_codex_home_names_the_differing_key_path(old, new, named, codex_home):
+    """testing-harness spec: Codex home not clean — a changed, missing or extra key,
+    compared as parsed values, so `0` never passes for `false`."""
+    text = host_login.PINNED_CONFIG_TOML
+    assert old in text
+    (codex_home / "config.toml").write_text(text.replace(old, new), encoding="utf-8")
+    problem = host_login.check_codex_home(codex_home)
+    assert problem is not None
+    assert named in problem.cause
+    assert "uv run poe host-login codex --reset" in problem.remedy
+    assert problem.client == "codex"
+
+
+def test_check_codex_home_names_a_missing_configuration(codex_home):
+    (codex_home / "config.toml").unlink()
+    problem = host_login.check_codex_home(codex_home)
+    assert problem is not None
+    assert "config.toml" in problem.cause
+
+
+@pytest.mark.parametrize("entry", [
+    "AGENTS.md", "AGENTS.override.md", ".env", "hooks.json", "skills/x/SKILL.md",
+    "memories/note.md"])
+def test_check_codex_home_names_each_forbidden_entry(entry, codex_home):
+    path = codex_home / entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic\n", encoding="utf-8")
+    problem = host_login.check_codex_home(codex_home)
+    assert problem is not None
+    assert "/".join(entry.split("/")[:2]) in problem.cause
+
+
+def test_check_codex_home_allows_the_host_state(codex_home):
+    for entry in ("skills/.system/x/SKILL.md", "log/codex-tui.log", "quota.json",
+                  ".harness-run.lock", "installation_id", "state.sqlite",
+                  "shell_snapshots/s.sh", "plugins/cache/c", "models_cache.json"):
+        path = codex_home / entry
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    assert host_login.check_codex_home(codex_home) is None
+
+
+MASKED = "sk-proj-***SYNTH"
+
+
+@pytest.mark.parametrize(("stderr", "method"), [
+    ("Logged in using ChatGPT\n", "chatgpt"),
+    (f"Logged in using an API key - {MASKED}\n", "api-key"),
+    ("Logged in using an access token\n", "access-token"),
+    ("Logged in using a method from the future\n", "other"),
+    ("Not logged in\n", "none"),
+    ("", "none"),
+])
+def test_codex_status_maps_the_login_line_and_drops_the_key(stderr, method):
+    """testing-harness spec: Codex status reveals no key."""
+    parsed = host_login.codex_status(stderr)
+    assert parsed == method
+    assert MASKED not in repr(parsed)
+
+
+def test_codex_version_parses_and_refuses_an_old_cli():
+    """testing-harness spec: Codex CLI too old."""
+    assert host_login.codex_version("codex-cli 0.160.0\n") == (0, 160, 0)
+    assert host_login.codex_version("codex-cli 1.2.3-alpha.4") == (1, 2, 3)
+    assert host_login.codex_version("not a version") is None
+    assert host_login.CODEX_MIN_VERSION == (0, 160, 0)
+    assert host_login.check_codex_version((0, 160, 0)) is None
+    problem = host_login.check_codex_version((0, 159, 9))
+    assert problem is not None
+    assert "0.159.9" in problem.cause
+    assert "0.160.0" in problem.cause
+    assert "update the Codex CLI" in problem.remedy
+    assert problem.client == "codex"
+    installed = host_login.check_codex_version((0, 133, 0))  # the CLI installed on 2026-10-06
+    assert installed is not None
+    assert "0.133.0" in installed.cause
+    unknown = host_login.check_codex_version(None)
+    assert unknown is not None
+    assert "update the Codex CLI" not in unknown.cause
+
+
+@pytest.mark.parametrize("passed", [False, True], ids=["X8-open", "X8-passed"])
+@pytest.mark.parametrize("remedy", [
+    "run `uv run poe host-login codex`",
+    "remove AGENTS.md, or run `uv run poe host-login codex --reset`",
+    "update the Codex CLI through your package manager to 0.160.0 or later",
+    "report it: the pinned feature list does not match this CLI"])
+def test_a_codex_refusal_closes_with_the_codex_login_note(remedy, passed, monkeypatch):
+    """testing-harness spec: Codex login note until X8."""
+    monkeypatch.setattr(host_login, "X8_PASSED", passed)
+    message = refusal(LoginProblem("the harness login home /fake/codex holds no login", remedy,
+                                   "codex"))
+    assert message.startswith("untested: the harness login home /fake/codex holds no login. ")
+    if "host-login codex" in remedy and not passed:
+        assert message.endswith(f"{X8_NOTE}.")
+        assert "not affected" not in message
+    else:
+        assert message.endswith(f"{CODEX_NOTE}.")
+    assert "Claude" not in message
+
+
+@pytest.mark.parametrize("passed", [False, True])
+def test_the_claude_note_ignores_x8_and_codex_ignores_l3(passed, monkeypatch):
+    monkeypatch.setattr(host_login, "X8_PASSED", passed)
+    monkeypatch.setattr(host_login, "L3_PASSED", True)
+    assert login_note(f"run `{LOGIN_COMMAND}`") == NOT_AFFECTED
+    assert refusal(LoginProblem("cause", f"run `{LOGIN_COMMAND}`")).endswith(f"{NOT_AFFECTED}.")
+    monkeypatch.setattr(host_login, "L3_PASSED", False)
+    assert login_note("run `uv run poe host-login codex`", "codex") == (
+        CODEX_NOTE if passed else X8_NOTE)
+    assert login_note(f"run `{LOGIN_COMMAND}`", "codex") == CODEX_NOTE
+
+
+@pytest.mark.parametrize("passed", [False, True], ids=["X8-open", "X8-passed"])
+def test_a_codex_login_failure_names_the_codex_remedy(passed, monkeypatch):
+    """testing-harness spec: Codex login failure names the Codex remedy."""
+    monkeypatch.setattr(host_login, "X8_PASSED", passed)
+    reason = ("codex failed: Your access token could not be refreshed because your refresh "
+              "token was already used. Please log out and sign in again.")
+    message = login_remedy(reason, LoginSource.HARNESS, host_login.CODEX)
+    assert message.startswith(reason)
+    assert "uv run poe host-login codex" in message
+    assert message.rstrip(".").endswith(CODEX_NOTE if passed else X8_NOTE)
+    assert login_remedy("codex failed: something else", LoginSource.HARNESS,
+                        host_login.CODEX) == "codex failed: something else"
+    assert login_remedy(reason, LoginSource.HARNESS) == reason  # Claude's wording differs

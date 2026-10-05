@@ -1,16 +1,36 @@
-"""Dev runner: exercise a skill with the real Claude Code binary on the Max subscription.
+"""Dev runner: exercise a skill with a real host CLI on the operator's subscription.
 
-Stages a fixture into a temp workspace, installs the skill under test into
-`<ws>/.claude/skills/` (real skill discovery, closer to production than the
-Inspect agent loop), runs headless `claude -p` with the user request, then
+Stages a fixture into a temp workspace, installs the skill under test into the
+host's skill directory (real skill discovery, closer to production than the
+Inspect agent loop), runs the host headless with the user request, then
 applies the same L1 verdicts as the authoritative evals (harness/l1_checks.py).
 
-Dev loop only — not the source of record. `--judge` adds dev-runner L2: the
-scenarios with a rubric twin are graded by the subscription judge
-(`[roles].dev_judge` in harness/models.toml, at its pinned effort) against the
-same rubric templates and criteria as the matrix (harness/l2_rubrics.py). Its
-grades are labelled "dev-runner L2, not comparable to matrix", are never written
-where the support report reads, and never stand in for a matrix cell.
+Two hosts sit behind one runner (`HOSTS`, harness/hosts.py; testing-harness
+spec: Dev-runner host adapters):
+
+- **Claude Code** (`--host claude`, the default): headless `claude -p` on the
+  Max subscription, skills under `<ws>/.claude/skills/`. Described below.
+- **Codex** (`--host codex --model <name>`): `codex exec --json` in the
+  harness's own Codex login home on the operator's ChatGPT plan quota
+  (harness/codex_cli.py), skills under `<ws>/.agents/skills/`. It needs a model
+  named on the command line (passed on unchanged, never provider-qualified),
+  refuses `--max-budget-usd` (Codex offers no cap) and the install-prompt
+  scenarios, and always runs isolated. Its plan billing guard reads the plan
+  quota before each run, under a run lock its child also holds, and the session
+  record after it; every refusal is untested. Codex reports no cost: the
+  summary carries the quota windows before and after instead.
+
+Dev loop only — not the source of record. Every summary carries its host and
+the label "dev-runner (<host>), not comparable to matrix", and a
+`--summary-log` inside `logs/evals` (where the support report reads) is a usage
+error. `--judge` adds dev-runner L2: the scenarios with a rubric twin are
+graded by the subscription judge (`[roles].dev_judge` in harness/models.toml,
+at its pinned effort) against the same rubric templates and criteria as the
+matrix (harness/l2_rubrics.py), on every host: a Codex run is graded in a fresh
+isolated Claude configuration of the judge's own, prepared after the Codex
+child has exited. Its grades are labelled "dev-runner L2, not comparable to
+matrix", are never written where the support report reads, and never stand in
+for a matrix cell.
 
 Usage:
   uv run python harness/claude_runner.py check_report [--model haiku]
@@ -27,6 +47,9 @@ Usage:
   uv run python harness/claude_runner.py write_from_seed --isolated --judge --keep
   uv run python harness/claude_runner.py write_from_seed --rejudge /tmp/devrun-write_from_seed-x
   uv run python harness/claude_runner.py write_rich_seed --isolated --judge --max-notional 1
+  uv run python harness/claude_runner.py check_report --host codex --model <name> --keep
+  uv run python harness/claude_runner.py write_from_seed --host codex --model <name> --judge
+  uv run python harness/claude_runner.py write_from_seed --host codex --rejudge /tmp/devrun-x
   uv run python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl \
       --expect write_from_seed import_messy customize_override
 
@@ -73,11 +96,14 @@ calls' cumulative notional cost (plan quota, not money).
 
 Exit status: 0 every computed verdict passed, 1 a verdict failed (L1 or a
 graded L2 criterion), 2 usage error, 3 untested (the subscription could not
-serve the run or the judge, or a claude.ai account surface reached it), 4
-other runner failure.
+serve the run or the judge — on Codex, the plan billing guard refused it —, a
+claude.ai account surface or, on Codex, a foreign skill or an MCP call reached
+it, or a Codex precondition did not hold: the run lock, the CLI minimum, the
+feature allowlist, the served effort), 4 other runner failure.
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
-workspace so file edits and script calls work headlessly.
+workspace so file edits and script calls work headlessly; Codex runs in its
+`workspace-write` sandbox, with network only for the scenarios that need it.
 """
 
 from __future__ import annotations
@@ -101,6 +127,7 @@ from pathlib import Path
 
 import anyio
 import claude_cli
+import codex_cli
 import host_login
 import support
 from account_surfaces import (
@@ -111,7 +138,8 @@ from account_surfaces import (
     surface_reason,
 )
 from claude_cli import Criterion, Grade, JudgeRun, parse_events
-from host_login import LOGIN_FAILURE, LoginSource, login_remedy
+from host_login import LOGIN_FAILURE, LoginSource, login_remedy, refusal
+from hosts import Host, JudgeBackend, RunView
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
@@ -545,7 +573,12 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
-def stage(scenario: dict, ws: Path, install_skill: bool = True) -> None:
+def stage(scenario: dict, ws: Path, install_skill: bool = True,
+          skill_dir: tuple[str, str] | None = None) -> None:
+    """Copy the scenario's fixture into the workspace and install the skill
+    under test and its siblings into the host's skill directory —
+    `.claude/skills` for Claude, `.agents/skills` for Codex — without `evals/`."""
+    skills = ws.joinpath(*(skill_dir or HOSTS["claude"].skill_dir))
     if scenario.get("fixture"):
         fixture = FIXTURES / scenario["fixture"]
         for f in fixture.iterdir():
@@ -560,12 +593,10 @@ def stage(scenario: dict, ws: Path, install_skill: bool = True) -> None:
     # being measured (testing-harness spec: Measured environments carry no
     # eval definitions). User installs legitimately carry it; measured ones not.
     no_evals = shutil.ignore_patterns("evals")
-    skill_home = ws / ".claude" / "skills" / scenario["skill"]
-    shutil.copytree(SKILLS / scenario["skill"], skill_home, ignore=no_evals)
+    shutil.copytree(SKILLS / scenario["skill"], skills / scenario["skill"], ignore=no_evals)
     # Sibling skills the scenario relies on (e.g. ideate's lit-search fallback).
     for sibling in scenario.get("siblings", ()):
-        shutil.copytree(SKILLS / sibling, ws / ".claude" / "skills" / sibling,
-                        ignore=no_evals)
+        shutil.copytree(SKILLS / sibling, skills / sibling, ignore=no_evals)
 
 
 def host_command(request: str, model: str, budget: float | None = None) -> list[str]:
@@ -779,14 +810,27 @@ def served_model(events: list[dict]) -> tuple[str | None, str | None]:
     return None, None
 
 
-def identity(args: argparse.Namespace, events: list[dict]) -> dict:
-    """What ran: the requested alias beside the served full ID and CLI version."""
+def claude_read(events: list[dict], args: argparse.Namespace) -> RunView:
+    """The Claude host's readers: the result event's text, the served full ID
+    (checked against the per-model usage), the CLI version, the telemetry."""
     model, note = served_model(events)
-    record = {"scenario": args.scenario, "model_requested": args.model, "model": model,
-              "cli_version": claude_cli.init_event(events).get("claude_code_version")}
-    if note:
-        record["model_check"] = note
+    return RunView(final_text(events), args.model, model,
+                   claude_cli.init_event(events).get("claude_code_version"), telemetry(events),
+                   note)
+
+
+def _identity(args: argparse.Namespace, view: RunView) -> dict:
+    record = {"scenario": args.scenario, "model_requested": args.model, "model": view.model,
+              "cli_version": view.cli_version}
+    if view.model_check:
+        record["model_check"] = view.model_check
     return record
+
+
+def identity(args: argparse.Namespace, events: list[dict]) -> dict:
+    """What ran: the requested name beside the served model and CLI version,
+    read by the run's host."""
+    return _identity(args, host_for(args).read(events, args))
 
 
 def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict],
@@ -794,18 +838,22 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
     """The run's L1 verdict plus the probe: telemetry and the advisory
     single-context verdict against the scenario's helper allowance, which never
     changes the exit status. `extra` carries scenario-specific information —
-    a supervise run's feedback length — that is reported, never judged."""
+    a supervise run's feedback length — that is reported, never judged. Every
+    summary names its host and carries the host's not-comparable label."""
+    host = host_for(args)
+    view = host.read(events, args)
     names = [name for name, _ in tool_calls(events)]
     single, single_why = verdict_single_context(names, allowed)
     return {
-        **identity(args, events),
+        **_identity(args, view),
+        "host": host.name, "label": host.run_label,
         "arm": "baseline" if args.no_skill else "with-skill",
         "l1": "PASS" if passed else "FAIL", "why": why,
         "billing": None,
         "config": "isolated" if config else "ambient",
         "config_dir": str(config) if config else None,
-        **login_label(config, isolated=config is not None),
-        **telemetry(events),
+        **host.label(config, config is not None),
+        **view.telemetry,
         "helper_calls": [name for name in names if name in HELPER_TOOLS],
         "single_context": f"{'PASS' if single else 'FAIL'}: {single_why}",
         **(extra or {}),
@@ -816,17 +864,22 @@ def failure_summary(args: argparse.Namespace, failure: RunnerFailure,
                     config: Path | None) -> dict:
     """A run that ended without a verdict, in the same shape: no `l1` key, the
     outcome and the host's own message instead. The label follows the request:
-    a run whose isolated config could not be prepared was still not ambient."""
+    a run whose isolated config could not be prepared was still not ambient,
+    and a host without an ambient mode is always isolated."""
+    host = host_for(args)
+    view = host.read(failure.events, args)
+    isolated = bool(getattr(args, "isolated", False)) or host.always_isolated
     return {
-        **identity(args, failure.events),
+        **_identity(args, view),
+        "host": host.name, "label": host.run_label,
         "arm": "baseline" if args.no_skill else "with-skill",
         "outcome": OUTCOMES[failure.status], "exit_status": failure.status,
         "why": failure.message,
         "billing": failure.billing,
-        "config": "isolated" if args.isolated else "ambient",
+        "config": "isolated" if isolated else "ambient",
         "config_dir": str(config) if config else None,
-        **login_label(config, isolated=args.isolated),
-        **telemetry(failure.events),
+        **host.label(config, isolated),
+        **view.telemetry,
     }
 
 
@@ -1069,7 +1122,7 @@ def resolve_judge(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         return None
     if args.judge and args.rejudge:
         parser.error("--judge grades a fresh run and --rejudge kept workspaces: pass one")
-    if args.judge and not args.isolated:
+    if args.judge and not args.isolated and not host_for(args).always_isolated:
         parser.error("--judge requires --isolated: the judge reuses the run's isolated "
                      "configuration and never reads the ambient one")
     if args.scenario not in DEV_RUBRICS:
@@ -1191,19 +1244,161 @@ def served_request(scenario: dict, stack: ExitStack) -> str:
     return request.format(url=f"{base}/group.html", dblp=f"{base}/dblp.json")
 
 
+# ---------- the hosts (harness/hosts.py; testing-harness spec: Dev-runner host adapters) --
+
+
+def codex_rates(model: str | None, registry_text: str | None = None) -> codex_cli.Rates | None:
+    """The roster row pricing `model` under OpenAI's provider
+    (`openrouter/openai/<model>`), for a Codex run's notional figure; None —
+    an unpriced run — otherwise. No Codex model is named anywhere in code."""
+    if not model:
+        return None
+    registry = support.parse_registry(
+        REGISTRY.read_text(encoding="utf-8") if registry_text is None else registry_text)
+    row = next((m for m in registry.models if m.id == f"openrouter/openai/{model}"), None)
+    return codex_cli.Rates(row.input_price, row.cache_read_price, row.output_price) if row else None
+
+
+def codex_isolation(stack: ExitStack, args: argparse.Namespace) -> Path:
+    """The Codex harness home after its preflight; a refusal is untested."""
+    try:
+        return codex_cli.isolated_home(stack, args)
+    except codex_cli.CodexRefused as refused:
+        raise RunnerFailure(refused.message, untested=True) from None
+
+
+def run_codex(ws: Path, request: str, args: argparse.Namespace, home: Path) -> list[dict]:
+    """A Codex run (`codex_cli.run_codex`) and its after-run checks, as the
+    runner's outcomes: a held run lock, a billing guard refusal, a feature
+    outside the allowlist, an effort not served, a login Codex rejected and a
+    broken isolation are untested (exit 3); a failed turn, a missing turn and
+    the time limit are runner failures."""
+    try:
+        events = codex_cli.run_codex(ws, request, model=args.model, effort=args.effort,
+                                     timeout=args.timeout, home=home,
+                                     scenario=SCENARIOS[args.scenario])
+    except host_login.RunLockBusy as busy:
+        raise RunnerFailure(refusal(busy.problem), untested=True) from None
+    except codex_cli.CodexRefused as refused:
+        raise RunnerFailure(refused.message, untested=True, events=refused.events,
+                            billing=refused.billing) from None
+    except codex_cli.CodexRunFailed as failed:
+        raise RunnerFailure(failed.message, events=failed.events) from None
+    problem = codex_cli.run_problem(events, skill_root=ws.joinpath(*HOSTS["codex"].skill_dir),
+                                    effort=args.effort)
+    if problem:
+        raise RunnerFailure(problem.message, untested=problem.untested, events=events,
+                            billing=problem.billing)
+    return events
+
+
+def codex_label(home: Path | None) -> dict:
+    """Every Codex run is isolated in the Codex harness home, on the harness login."""
+    return {"login": LoginSource.HARNESS.value,
+            "login_dir": str(home or host_login.home(host_login.CODEX))}
+
+
+# Built here, where the Claude callables live, as lambdas over the module
+# attributes, so every monkeypatch of run_claude, isolated_config and
+# follow_stream keeps working (design Decision 2).
+HOSTS: dict[str, Host] = {
+    "claude": Host(
+        name="claude", binary="claude", skill_dir=(".claude", "skills"),
+        run=lambda ws, request, args, config: run_claude(
+            ws, request, args.model, args.timeout, budget=args.max_budget_usd, config=config),
+        read=lambda events, args: claude_read(events, args),
+        isolation=lambda stack, args: (enter_isolation(stack, "devrun-config-")
+                                       if args.isolated else None),
+        login=host_login.CLAUDE,
+        label=lambda config, isolated: login_label(config, isolated=isolated)),
+    "codex": Host(
+        name="codex", binary="codex", skill_dir=(".agents", "skills"),
+        run=lambda ws, request, args, home: run_codex(ws, request, args, home),
+        read=lambda events, args: codex_cli.codex_read(
+            events, args, codex_rates(getattr(args, "model", None))),
+        isolation=lambda stack, args: codex_isolation(stack, args),
+        login=host_login.CODEX,
+        label=lambda home, _isolated: codex_label(home),
+        always_isolated=True),
+}
+# D3(a): the Claude dev judge grades every host's runs, in its own isolation
+JUDGE = JudgeBackend(
+    host="claude",
+    call=lambda *a, **k: claude_cli.judge_all(*a, **k),
+    preflight=lambda *a, **k: claude_cli.preflight(*a, **k),
+    isolation=lambda stack: enter_isolation(stack, "devjudge-config-"))
+# where the support report reads its logs (report.py): no dev run writes there
+SUPPORT_LOGS = REPO / "logs" / "evals"
+
+
+def host_for(args: argparse.Namespace) -> Host:
+    """The run's host; a namespace without one (the tests' ARGS) is Claude."""
+    return HOSTS[getattr(args, "host", None) or "claude"]
+
+
+def _inside_support_logs(path: Path) -> bool:
+    return path.resolve().is_relative_to(SUPPORT_LOGS.resolve())
+
+
+def usage_problem(args: argparse.Namespace) -> str | None:
+    """The first reason the invocation is a usage error (design Decision 3),
+    checked before anything is staged or started."""
+    codex = host_for(args).name == "codex"
+    scenario = SCENARIOS.get(args.scenario or "", {})
+    model = args.model or ""
+    rules = (
+        (args.summary_log is not None and _inside_support_logs(args.summary_log),
+         f"--summary-log {args.summary_log} lies inside logs/evals, where the support report "
+         "reads its logs; a dev-runner summary is never written there"),
+        (not codex and args.effort is not None, "--effort applies to --host codex only"),
+        (codex and host_login.fcntl is None,
+         "--host codex needs POSIX file locks (fcntl), which this platform lacks"),
+        (codex and bool(scenario.get("install")),
+         f"{args.scenario} is an install-prompt scenario, which runs on the Claude host only"),
+        (codex and not args.rejudge and not model,
+         "--host codex requires --model: Codex has no default model here"),
+        (codex and "/" in model, f"--model {model!r} is provider-qualified; --host codex takes "
+         "the name Codex serves and passes it on unchanged"),
+        (codex and args.max_budget_usd is not None,
+         "--max-budget-usd is refused on --host codex: Codex offers no hard budget cap, and "
+         "the runner never ignores one"),
+    )
+    return next((message for refused, message in rules if refused), None)
+
+
+def judged(args: argparse.Namespace, judge: Judge, criteria: list[Criterion],
+           config: Path | None) -> JudgeRun:
+    """Grade in the judge's own isolation (design Decision 13): a Claude run's
+    isolated configuration is reused; any other host's run is graded in a fresh
+    isolated Claude configuration, prepared after the model run has ended —
+    never in another host's login home. One that cannot be prepared leaves
+    every criterion untested, as for a re-grade."""
+    if not criteria:
+        return JudgeRun((), 0.0)
+    if host_for(args).name == JUDGE.host and config is not None:
+        return run_judge(judge, criteria, config)
+    with ExitStack() as stack:
+        try:
+            judge_config = JUDGE.isolation(stack)
+        except RunnerFailure as failure:
+            return JudgeRun(tuple(Grade(c.name, None, failure.message) for c in criteria), 0.0)
+        return run_judge(judge, criteria, judge_config)
+
+
 def completed_run(args: argparse.Namespace, judge: Judge | None, scenario: dict, ws: Path,
                   request: str, events: list[dict], config: Path | None) -> tuple[dict, int]:
-    """The verdicts of a run the host finished: L1, then — inside the same
-    isolation — the judge, with the precedence of `exit_status`."""
-    passed, why = verdict(args.scenario, scenario, ws, final_text(events), request, events)
+    """The verdicts of a run the host finished: L1, then the judge in its own
+    isolation, with the precedence of `exit_status`."""
+    chat = host_for(args).read(events, args).final_text
+    passed, why = verdict(args.scenario, scenario, ws, chat, request, events)
     out = summary(args, passed, why, events, config, allowed=scenario.get("helpers", 0),
                   extra=supervise_extra(scenario, ws))
     status = EXIT_PASS if passed else EXIT_FAIL
     if judge:
         criteria, not_judged = judge_criteria(args.scenario, scenario, ws, request)
-        judged = run_judge(judge, criteria, config)
-        l2, l2_status = l2_report(judge, judged.grades, not_judged, out["model"])
-        out.update(l2, billing=judged.billing)
+        judged_run = judged(args, judge, criteria, config)
+        l2, l2_status = l2_report(judge, judged_run.grades, not_judged, out["model"])
+        out.update(l2, billing=judged_run.billing)
         status = aggregate_status([status, l2_status])
     out["outcome"], out["exit_status"] = OUTCOMES[status], status
     return out, status
@@ -1219,22 +1414,24 @@ def emit(out: dict, log: Path | None) -> None:
 
 
 def dev_run(args: argparse.Namespace, judge: Judge | None) -> int:
+    host = host_for(args)
     scenario = SCENARIOS[args.scenario]
     ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
     # the isolated config's linked credentials are as reachable for the child as
     # ~/.claude is in ambient mode, and a refresh the child performs is written
-    # back to them; the judge reuses the same config, after L1
+    # back to them; a Claude judge reuses the same config, after L1. A Codex run
+    # executes in the Codex harness home, and its judge gets a Claude config of
+    # its own once the Codex child has exited (`judged`)
     stack = ExitStack()
     config, chat = None, ""
     try:
         try:
-            config = enter_isolation(stack, "devrun-config-") if args.isolated else None
-            stage(scenario, ws, install_skill=not args.no_skill)
+            config = host.isolation(stack, args)
+            stage(scenario, ws, install_skill=not args.no_skill, skill_dir=host.skill_dir)
             request = served_request(scenario, stack)
-            events = run_claude(ws, request, args.model, args.timeout,
-                                budget=args.max_budget_usd, config=config)
+            events = host.run(ws, request, args, config)
             save_events(events, ws)
-            chat = final_text(events)
+            chat = host.read(events, args).final_text
             out, status = completed_run(args, judge, scenario, ws, request, events, config)
         except RunnerFailure as failure:
             if failure.events:
@@ -1268,24 +1465,26 @@ def rejudge_lines(args: argparse.Namespace, judge: Judge,
                   workspaces: list[Path]) -> list[dict]:
     """One summary per kept workspace. One invocation: one isolated config,
     one warm-up, and the batch projection before the fan-out; a config that
-    cannot be prepared leaves every criterion untested."""
+    cannot be prepared leaves every criterion untested. The served model is
+    read by the host that produced the workspace (`--host`); no model under
+    test runs, on any host."""
     scenario = SCENARIOS[args.scenario]
+    host = host_for(args)
     plans = [(ws, *judge_criteria(args.scenario, scenario, ws, scenario["request"]))
              for ws in workspaces]
     flat = [c for _, criteria, _ in plans for c in criteria]
     with ExitStack() as stack:
         try:
-            run = run_judge(judge, flat, enter_isolation(stack, "devjudge-config-"),
-                            projection=True)
+            run = run_judge(judge, flat, JUDGE.isolation(stack), projection=True)
         except RunnerFailure as failure:
             run = JudgeRun(tuple(Grade(c.name, None, failure.message) for c in flat), 0.0)
     grades = iter(run.grades)
     lines = []
     for ws, criteria, not_judged in plans:
-        served, _ = served_model(load_events(ws))
+        served = host.read(load_events(ws), args).model
         l2, status = l2_report(judge, [next(grades) for _ in criteria], not_judged, served)
         lines.append({"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
-                      "model": served, **l2, "outcome": OUTCOMES[status],
+                      "host": host.name, "model": served, **l2, "outcome": OUTCOMES[status],
                       "exit_status": status})
     return lines
 
@@ -1393,7 +1592,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("scenario", nargs="?", choices=sorted(SCENARIOS))
-    parser.add_argument("--model", default="haiku")
+    parser.add_argument("--host", choices=sorted(HOSTS), default="claude",
+                        help="the host CLI that runs the model under test (default claude); "
+                             "codex runs in the Codex harness home on the ChatGPT plan quota")
+    parser.add_argument("--model", default=None,
+                        help="the model under test: an alias or full ID on Claude (default "
+                             "haiku); required on Codex, passed on unchanged")
+    parser.add_argument("--effort", choices=codex_cli.EFFORTS, default=None,
+                        help="codex only: the reasoning effort to request; the served one is "
+                             "checked after the run")
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep", action="store_true", help="keep the temp workspace")
     parser.add_argument("--no-skill", action="store_true",
@@ -1433,6 +1640,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--expect lists the scenarios a --summarize PATH should hold")
     if not (args.summarize or args.scenario):
         parser.error("a scenario is required (or --summarize PATH)")
+    problem = None if args.summarize else usage_problem(args)
+    if problem:
+        parser.error(problem)
+    if args.model is None and not host_for(args).always_isolated:
+        args.model = "haiku"  # Claude's default; an explicit model stays distinguishable
     try:
         if args.summarize:
             return summarize(args.summarize, args.expect or ())

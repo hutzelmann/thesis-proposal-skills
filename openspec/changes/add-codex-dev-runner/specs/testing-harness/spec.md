@@ -224,6 +224,7 @@ The harness SHALL keep its own login for each host client it drives, in a login 
 - It SHALL never equal, contain, or lie inside the operator's own configuration directory of any client.
 - The Codex home SHALL also lie outside the system temporary directory, because Codex refuses to place its helper binaries there.
 - A test override of the state directory SHALL be refused in any of these cases:
+  - it is not an absolute path;
   - it equals or contains the user's home directory;
   - it equals, contains or lies inside a client's own configuration directory;
   - it lies inside the repository.
@@ -232,6 +233,7 @@ The harness SHALL keep its own login for each host client it drives, in a login 
 
 - When the harness creates a home, it SHALL write a marker into it.
 - It SHALL delete a home only when the home carries that marker and is not a symbolic link.
+- It SHALL seed only a home that does not exist yet. A login SHALL never adopt a directory at the home's path that lacks the marker, or a symbolic link there: it refuses, naming the directory, and writes, logs out and deletes nothing in it.
 - Before the first login, the Claude home SHALL be seeded with two things: the account-surface opt-out settings that every isolated configuration carries (requirement: Isolated measurement environment), and an empty profile directory. The seeding comes first because account content synced once stays on disk.
 - Before the first login, the Codex home SHALL be seeded with a pinned configuration. That configuration selects OpenAI's own provider, requires the ChatGPT login, and keeps the credentials in a file in the home. It also turns off web search, the update check, history, analytics, feedback and the bundled skills.
 
@@ -241,8 +243,9 @@ The harness SHALL keep its own login for each host client it drives, in a login 
   - It SHALL run the client's own subscription login inside the home, never a console or API-billing login: for Codex, never an API-key login or an access-token login. For Codex, it MAY use the client's device-code login.
   - Only the operator runs it, never an agent. It SHALL refuse when its standard input is not a terminal. It SHALL also refuse when its environment carries a marker of an agent session: a variable that a Claude Code session or a Codex shell exports to the commands it runs. The refusal names the marker variables, never their values. Both refusals are speed bumps, not guards: an agent with a terminal tool has a terminal, and a marker can be unset. The rule that agents never log in is the guard.
   - Its environment, the login environment, is the operator's own, so that a browser can open. Every billing variable and every host-session variable of that client is removed, and the configuration directory is set to the home. For Claude, the profile directory is also set to the home's empty one.
-  - On a home that already holds a login, it SHALL first log out of that login in the home.
-- **Reset.** A reset option SHALL log out, wipe the marked home, seed it again and log in.
+  - On a home that already holds a login, it SHALL first log out of that login in the home. Where the login is no file in the home, the host's own status decides whether the home holds one.
+  - If that logout fails, the login SHALL stop, naming the logout's exit status, and neither log in nor wipe: replacing a login whose logout did not go through could orphan a live grant.
+- **Reset.** A reset option SHALL log out, wipe the marked home, seed it again and log in. A failed logout stops a reset as it stops a login.
 - **Logout.**
   - A logout command SHALL run the client's own logout in the home and nowhere else.
   - Every logout SHALL run in the login environment: the logout command's own, the one before a login, and the one in a reset. No inherited token, profile directory or configuration directory can then steer it at another login.
@@ -261,8 +264,10 @@ The harness SHALL keep its own login for each host client it drives, in a login 
     - for Codex, the last quota snapshot the home keeps and, only on request, a fresh plan quota from the client's rate-limit read;
     - which login runs would use.
   - It SHALL never print a credential value, any part of an API key, an email address or an organization.
+  - The Claude status check SHALL run without the long-lived token, so that it reports the home's own login even when a token is exported.
   - Agents MAY run it.
-- **Locking.** Logout, reset, and a login over an existing login SHALL hold, while they log out and wipe, the lock the client's runs take: for Claude, the refresh claim that isolated runs take; for Codex, the run lock. None of them may then interleave with a run that is writing a refreshed login back or running in the home.
+- **Default profile directory.** Whether the Claude host ignores the default Anthropic profile directory when the profile directory is set to the home's empty one is unverified. No Claude login, logout or status check SHALL therefore start a client while the default profile directory holds an entry or cannot be listed, whether or not a long-lived token is exported: none of them carries the token. The refusal names that directory, never its contents, and its remedy is to move the profiles aside. A Codex client reads no Anthropic profile, so its commands are not held to this rule.
+- **Locking.** Logout, reset, and a login over an existing login SHALL hold, while they log out and wipe, the lock the client's runs take: for Claude, the same refresh claim that isolated runs take; for Codex, the run lock. None of them may then interleave with a run that is writing a refreshed login back or running in the home.
 - **Run lock (Codex).**
   - Codex runs SHALL execute one at a time per home.
   - Each of these SHALL hold an exclusive lock on a file in the home:
@@ -277,7 +282,9 @@ The harness SHALL keep its own login for each host client it drives, in a login 
 
 For Claude:
 
-- **The home is missing, has wider permissions than owner-only, or lacks its marker.** Remedy: `uv run poe host-login claude`.
+- **The home is missing, or has wider permissions than owner-only.** Remedy: `uv run poe host-login claude`.
+- **A directory at the home's path lacks the marker.** The harness did not create it and does not adopt it. Remedy: move it aside, then run `uv run poe host-login claude`.
+- **The default Anthropic profile directory holds an entry or cannot be listed.** Remedy: move the profiles aside.
 - **The host reports no login, or the status check yields no login state.** Remedy: `uv run poe host-login claude`.
 - **The home is not clean.** Its settings differ from the pinned opt-outs, or it holds any of these: skills, agents, commands, output styles, a user memory file, or an installed plugin. Marketplace caches are allowed. Remedy: remove the named entry, or run `uv run poe host-login claude --reset`.
 - **The auth method is not the subscription login, or the API provider is not Anthropic's own API.** Remedy: `uv run poe host-login claude --reset`.
@@ -287,7 +294,8 @@ For Claude:
 For Codex:
 
 - **The installed CLI is older than the pinned minimum version.** Remedy: update the Codex CLI through the package manager.
-- **The home is missing, has wider permissions than owner-only, or lacks its marker.** Remedy: `uv run poe host-login codex`.
+- **The home is missing, or has wider permissions than owner-only.** Remedy: `uv run poe host-login codex`.
+- **A directory at the home's path lacks the marker.** The harness did not create it and does not adopt it. Remedy: move it aside, then run `uv run poe host-login codex`.
 - **The client reports no login, or a login other than the ChatGPT login.** Because the home's configuration requires the ChatGPT login, an API-key login reads as no login. Remedy: `uv run poe host-login codex`.
 - **The home is not clean.** Its configuration differs from the pinned one in any key, or it holds any of these: an agents instruction file or its override, an environment file the client loads at start-up, a hooks file, skills other than the client's bundled system skills, or memories. Remedy: remove the named entry, or run `uv run poe host-login codex --reset`.
 - **A feature outside the allowlist reads enabled.** Remedy: report it, because the pinned feature list does not match this CLI.
@@ -318,6 +326,8 @@ A long-lived Claude token in the environment SHALL bypass the Claude harness log
 - a dev run at its time limit;
 - a judge call at its time limit;
 - a routing case after its route, or at its limit;
+- the harness login's status check and logout at their limit;
+- the advisory audit pre-flight's call at its limit, which runs on the operator's own login;
 - a Codex run at its time limit, and a Codex quota read at its limit.
 
 The harness SHALL first send the client's own stop request: a termination request to Claude, and an interrupt to Codex, which ends the turn. It SHALL kill the child only if the child has not exited after a bounded grace, so that a host part-way through writing a refreshed login can finish. On a platform whose termination request is itself a kill, the kill is the request.
@@ -350,9 +360,25 @@ The harness SHALL first send the client's own stop request: a termination reques
 - **WHEN** the status command runs against a logged-in home whose host status reports an email address and an organization
 - **THEN** its output carries neither, and no model call is made
 
+#### Scenario: Relative override refused
+- **WHEN** the state-directory override is a relative path
+- **THEN** every host-login command and every isolated or Codex run refuses, naming the override, and nothing is created
+
 #### Scenario: Reset deletes only a marked home
 - **WHEN** a reset finds the home without its marker, or finds the home path to be a symbolic link
 - **THEN** it deletes nothing and refuses, naming the directory
+
+#### Scenario: Unmarked directory never adopted
+- **WHEN** the login command, without the reset option, finds a directory at the home's path that carries no marker, whether or not it holds a login
+- **THEN** it refuses, naming the directory and the remedy of moving it aside, starts no client, and writes no marker or settings into it
+
+#### Scenario: Failed logout stops a re-login
+- **WHEN** the logout that a login over an existing login, or a reset, runs first exits with a failure
+- **THEN** no login starts, nothing in the home is wiped, and the refusal names the logout's exit status
+
+#### Scenario: Profile directory bars the login commands
+- **WHEN** the Claude login, logout or status command runs while the default Anthropic profile directory holds an entry, with or without a long-lived token exported
+- **THEN** it refuses, naming that directory and not its entries, and starts no client
 
 #### Scenario: Logout stays in the home
 - **WHEN** the Claude logout command runs, or a Claude reset or a login over an existing Claude login logs out, from an environment carrying a long-lived token, an API key, a profile-directory variable and another configuration directory
@@ -574,7 +600,7 @@ The runner SHALL accept a hard budget cap and pass it through to the host, where
 
 The runner SHALL label each run with its host, and as measuring either the ambient host configuration or an isolated one prepared for the run.
 
-- For an isolated Claude run, the label SHALL name the isolated directory and the login it links: the harness login, the operator's login under the explicit opt-in, or a long-lived token. For a linked login, the label SHALL also name that login's directory, which is the one place a refresh is written back.
+- For an isolated Claude run, the label SHALL name the isolated directory and the login it links: the harness login, the operator's login under the explicit opt-in, or a long-lived token. For a linked login, the label SHALL also name that login's directory, which is the one place a refresh is written back. The label SHALL follow how the configuration was prepared, never the link's state after the run: while the host refreshes, its own file stands where the link was until the harness restores it. A run that always isolates, such as the install probe, SHALL be labelled with the login it would have linked when its configuration could not be prepared.
 - Every run on a non-Claude host, Codex among them, is isolated. Its label SHALL name that host's harness home and the harness login.
 
 The runner SHALL remove from the Claude model-under-test child's environment every inherited variable that can route the host's billing away from the subscription login, in ambient and isolated mode alike. That means every inherited `ANTHROPIC_`-prefixed variable, which covers the API key, the gateway base URL and its auth token, and every `CLAUDE_CODE_USE_` cloud-provider switch. The child environment of every non-Claude host follows that host's billing-guard requirement: for Codex, the requirement "Codex plan billing guard".
@@ -658,7 +684,7 @@ The telemetry and final-text readers SHALL be pinned against a recorded result e
 
 #### Scenario: Connector in an ambient run
 - **WHEN** an ambient run's stream lists an MCP server sourced from claude.ai
-- **THEN** the host is stopped at the event that lists it, the run exits with the untested status and names the server, and an MCP server the operator configured outside claude.ai is not reported and does not stop the run
+- **THEN** the host is stopped at the event that lists it, the run exits with the untested status and names the server and the connector switch as the opt-out that did not hold, and an MCP server the operator configured outside claude.ai is not reported and does not stop the run
 
 #### Scenario: A surface does not hide overage
 - **WHEN** an isolated run's stream shows an account surface and a rate-limit report with overage in use
@@ -726,7 +752,7 @@ The telemetry and final-text readers SHALL be pinned against a recorded result e
 
 #### Scenario: Write-back target labelled
 - **WHEN** an isolated run on the harness login refreshes its login
-- **THEN** the summary names the harness home as the linked login's directory, and the refreshed credentials are written there and nowhere else
+- **THEN** the summary names the harness home as the linked login's directory, and the refreshed credentials are written there and nowhere else. The label is the same when the run ends while the host's refreshed file still stands in place of the link
 
 #### Scenario: Codex run reports no cost
 - **WHEN** a Codex run completes on a model name the roster does not price under OpenAI's provider
@@ -801,7 +827,7 @@ The dev runner's text-only role, its rubric judge, SHALL run through the unmodif
 - the call exceeds its time limit. The child process SHALL then first be sent a termination request, and SHALL be killed if it has not exited after a bounded grace (requirement: Harness-owned host logins);
 - the response carries no grade line.
 
-An unavailable call SHALL stop further judge calls in the same invocation.
+An unavailable call SHALL stop further judge calls in the same invocation. A call whose result is marked as an error, and whose stream also shows an API-key source, a provider other than Anthropic's own API, overage in use or a refused rate-limit status, SHALL name that billing reason beside the error and count as untested for billing (Smoke, below).
 
 **Bounding and records:**
 

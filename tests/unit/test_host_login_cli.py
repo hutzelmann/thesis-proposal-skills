@@ -517,3 +517,371 @@ def test_an_unknown_client_is_a_usage_error(state, capsys):
     assert usage.value.code == 2
     assert not state.exists()
     assert "gemini" in capsys.readouterr().err
+
+
+# ---------- Codex: login, logout, status (add-codex-dev-runner) ----------------------
+#
+# The Codex binary is never started: `host_login.run_client` stands in for the
+# login and the logouts, `codex_cli.probe` for `--version`, `login status` and
+# `features list`, and `codex_cli.read_quota` for the app-server's quota read.
+# The state root lives in `tmp_path`, which lies inside the system temporary
+# directory, so `host_login.system_tempdir` names a directory of its own.
+
+CODEX_STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
+CODEX_STATUS_KEYS = ["home", "marker", "logged_in", "auth_method", "config_pinned", "clean",
+                     "last_written", "cli_version", "min_version", "features_ok", "last_quota",
+                     "runs_use"]
+X8_NOTE = "whether this logs out your other ChatGPT sessions is unverified (X8)"
+POSIX_LOCKS = pytest.mark.skipif(os.name != "posix", reason="the run lock is a POSIX file lock")
+MASKED_KEY = "sk-proj-***SYNTH"
+CODEX_STEERING = {
+    "CODEX_API_KEY": "placeholder-codex-key",
+    "CODEX_ACCESS_TOKEN": "placeholder-codex-token",
+    "CODEX_FOO": "placeholder-unknown",
+    "OPENAI_API_KEY": "placeholder-openai-key",
+    "OPENAI_BASE_URL": "https://gateway.invalid/v1",
+    "OPENROUTER_API_KEY": "placeholder-openrouter-key",
+    "SOME_SERVICE_API_KEY": "placeholder-other-key",
+}
+
+
+class FakeCodexClient:
+    """`host_login.run_client` for Codex: records the login and the logouts."""
+
+    def __init__(self):
+        self.calls: list[dict] = []
+        self.on_login = None
+        self.on_logout = None
+        self.home: Path | None = None
+
+    def __call__(self, argv, env, *, interactive, cwd):
+        verb = argv[1]
+        self.calls.append({"verb": verb, "argv": list(argv), "env": dict(env),
+                           "interactive": interactive, "cwd": cwd})
+        hook = {"login": self.on_login, "logout": self.on_logout}.get(verb)
+        if hook:
+            hook()
+        return 0, ""
+
+    def verbs(self) -> list[str]:
+        return [call["verb"] for call in self.calls]
+
+
+class FakeProbe:
+    """`codex_cli.probe`: answers like a logged-in 0.160 CLI unless told otherwise."""
+
+    def __init__(self, version="codex-cli 0.160.0\n", login="Logged in using ChatGPT\n",
+                 features=None):
+        self.version, self.login = version, login
+        self.features = features if features is not None else (
+            CODEX_STREAMS / "features-ok.txt").read_text(encoding="utf-8")
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, _home, _environ=None):
+        self.calls.append(list(args))
+        if list(args) == ["--version"]:
+            return 0, self.version, ""
+        if list(args) == ["login", "status"]:
+            return 0, "", self.login
+        if list(args[:2]) == ["features", "list"]:
+            return 0, self.features, ""
+        raise AssertionError(f"unexpected probe {args}")
+
+
+@pytest.fixture
+def codex_state(tmp_path, monkeypatch):
+    import codex_cli
+
+    monkeypatch.setenv(STATE_VAR, str(tmp_path / "state"))
+    monkeypatch.setattr(host_login, "system_tempdir", lambda: str(tmp_path / "system-tmp"))
+    for name in (*AGENT_MARKERS, LONG_LIVED_TOKEN, "CODEX_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: True)
+    monkeypatch.setattr(host_login, "LOCK_WAIT_S", 0.2)
+    probe = FakeProbe()
+    monkeypatch.setattr(codex_cli, "probe", probe)
+    return host_login.home(host_login.CODEX)
+
+
+@pytest.fixture
+def codex_client(codex_state, monkeypatch):
+    fake = FakeCodexClient()
+    fake.home = codex_state
+    monkeypatch.setattr(host_login, "run_client", fake)
+    return fake
+
+
+def codex_logged_in(home: Path) -> Path:
+    """The file a Codex login writes, as a placeholder: never a credential."""
+    auth = home / "auth.json"
+    auth.write_text('{"placeholder": true}\n', encoding="utf-8")
+    return auth
+
+
+def lock_held(home: Path) -> bool:
+    """Whether another open file description holds the run lock."""
+    import fcntl
+
+    with (home / host_login.LOCK_NAME).open("ab") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+    return False
+
+
+def test_the_codex_login_env_strips_every_billing_family(tmp_path):
+    """testing-harness spec: Codex login never by API key."""
+    home = tmp_path / "codex-home"
+    environ = {**CODEX_STEERING, "CODEX_HOME": "/fake/home/.codex", "DISPLAY": ":0",
+               "PATH": "/usr/bin"}
+    env = login_env(host_login.CODEX, home, environ)
+    assert env["DISPLAY"] == ":0"
+    assert env["CODEX_HOME"] == str(home)
+    for name in CODEX_STEERING:
+        assert name not in env, name
+    assert [name for name in env if name.startswith("CODEX_")] == ["CODEX_HOME"]
+    assert set(CODEX_STEERING.values()).isdisjoint(env.values())
+
+
+@POSIX_LOCKS
+@pytest.mark.parametrize("device", [False, True], ids=["browser", "device-code"])
+def test_the_codex_login_is_the_chatgpt_login(device, codex_state, codex_client, monkeypatch):
+    for name, value in CODEX_STEERING.items():
+        monkeypatch.setenv(name, value)
+    assert host_login.CODEX.login_argv == ("login",)
+    main(["login", "codex", *(["--device-auth"] if device else [])])
+    [login] = [call for call in codex_client.calls if call["verb"] == "login"]
+    assert login["argv"] == ["codex", "login", *(["--device-auth"] if device else [])]
+    assert login["interactive"]
+    assert not {"--with-api-key", "--with-access-token"} & set(login["argv"])
+    assert login["env"] == login_env(host_login.CODEX, codex_state, os.environ)
+    assert set(CODEX_STEERING.values()).isdisjoint(login["env"].values())
+
+
+def test_the_codex_configuration_is_seeded_before_the_login(codex_state, codex_client):
+    """testing-harness spec: Codex configuration seeded before the login."""
+    import tomllib
+
+    seen = {}
+    codex_client.on_login = lambda: seen.update(
+        config=tomllib.loads((codex_state / "config.toml").read_text(encoding="utf-8")),
+        marker=(codex_state / MARKER).is_file())
+    main(["login", "codex"])
+    assert seen == {"config": host_login.PINNED_CONFIG, "marker": True}
+
+
+@POSIX_LOCKS
+def test_an_existing_codex_login_is_logged_out_first_under_the_run_lock(codex_state,
+                                                                       codex_client):
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    held = []
+    codex_client.on_logout = lambda: held.append(lock_held(codex_state))
+    codex_client.on_login = lambda: held.append(lock_held(codex_state))
+    assert main(["login", "codex"]) == 0
+    verbs = codex_client.verbs()
+    assert verbs.index("logout") < verbs.index("login")
+    assert held == [True, True]
+    assert not lock_held(codex_state)
+
+
+@POSIX_LOCKS
+def test_a_codex_reset_wipes_the_marked_home_and_seeds_it_again(codex_state, codex_client):
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    (codex_state / "AGENTS.md").write_text("synthetic\n", encoding="utf-8")
+    assert main(["login", "codex", "--reset"]) == 0
+    assert not (codex_state / "AGENTS.md").exists()
+    assert not (codex_state / "auth.json").exists()
+    assert (codex_state / MARKER).is_file()
+    assert host_login.check_codex_home(codex_state) is None
+    assert codex_client.verbs().count("logout") == 1
+
+
+@POSIX_LOCKS
+@pytest.mark.parametrize("passed", [False, True], ids=["X8-open", "X8-passed"])
+@pytest.mark.parametrize("path", ["logout", "login-over-a-login", "reset"])
+def test_the_codex_logout_note_comes_first_until_x8(path, passed, codex_state, codex_client,
+                                                   monkeypatch, capsys):
+    """testing-harness spec: Codex login note until X8."""
+    monkeypatch.setattr(host_login, "X8_PASSED", passed)
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    printed = []
+    codex_client.on_logout = lambda: printed.append(capsys.readouterr().out)
+    argv = {"logout": ["logout", "codex"], "login-over-a-login": ["login", "codex"],
+            "reset": ["login", "codex", "--reset"]}[path]
+    main(argv)
+    assert len(printed) == 1
+    assert (X8_NOTE in printed[0]) is not passed
+    [logout] = [call for call in codex_client.calls if call["verb"] == "logout"]
+    assert logout["env"] == login_env(host_login.CODEX, codex_state, os.environ)
+
+
+def codex_status_lines(out: str, keys: list[str] = CODEX_STATUS_KEYS) -> dict[str, str]:
+    pairs = dict(line.split(": ", 1) for line in out.splitlines() if line)
+    assert list(pairs) == keys
+    return pairs
+
+
+@pytest.mark.usefixtures("codex_client")
+def test_codex_status_of_a_ready_home(codex_state, capsys):
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    assert main(["status", "codex"]) == 0
+    out, err = capsys.readouterr()
+    pairs = codex_status_lines(out)
+    assert pairs["home"] == str(codex_state)
+    assert (pairs["marker"], pairs["logged_in"], pairs["auth_method"]) == ("yes", "yes", "chatgpt")
+    assert (pairs["config_pinned"], pairs["clean"], pairs["features_ok"]) == ("yes", "yes", "yes")
+    assert (pairs["cli_version"], pairs["min_version"]) == ("0.160.0", "0.160.0")
+    assert pairs["last_quota"] == "none"
+    assert pairs["runs_use"] == "harness"
+    assert pairs["last_written"].endswith(" ago")
+    assert err == ""
+
+
+@pytest.mark.usefixtures("codex_client")
+def test_codex_status_reports_an_api_key_login_without_the_key(codex_state, monkeypatch,
+                                                               capsys):
+    """testing-harness spec: Codex status reveals no key."""
+    import codex_cli
+
+    monkeypatch.setattr(codex_cli, "probe",
+                        FakeProbe(login=f"Logged in using an API key - {MASKED_KEY}\n"))
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    assert main(["status", "codex"]) == 3
+    out, err = capsys.readouterr()
+    assert codex_status_lines(out)["auth_method"] == "api-key"
+    assert MASKED_KEY not in out + err
+    assert "uv run poe host-login codex" in err
+
+
+@pytest.mark.usefixtures("codex_client")
+@pytest.mark.parametrize(("probe", "named"), [
+    (FakeProbe(version="codex-cli 0.133.0\n"), "0.133.0"),
+    (FakeProbe(login="Not logged in\n"), "holds no ChatGPT login"),
+    (FakeProbe(features=(CODEX_STREAMS / "features-extra-on.txt").read_text(encoding="utf-8")),
+     "realtime_conversation"),
+])
+def test_codex_status_exits_not_ready_naming_the_cause(probe, named, codex_state, monkeypatch,
+                                                       capsys):
+    import codex_cli
+
+    monkeypatch.setattr(codex_cli, "probe", probe)
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    assert main(["status", "codex"]) == 3
+    out, err = capsys.readouterr()
+    codex_status_lines(out)
+    assert err.startswith("untested: ")
+    assert named in err
+
+
+def test_codex_status_of_a_missing_home_creates_nothing(codex_state, monkeypatch, capsys):
+    no_client(monkeypatch)
+    assert main(["status", "codex"]) == 3
+    out, err = capsys.readouterr()
+    pairs = codex_status_lines(out)
+    assert (pairs["marker"], pairs["logged_in"], pairs["last_written"]) == ("no", "no", "never")
+    assert "uv run poe host-login codex" in err
+    assert not codex_state.exists()
+
+
+@pytest.mark.usefixtures("codex_client")
+def test_codex_status_never_opens_the_stored_login(codex_state, monkeypatch, capsys):
+    """testing-harness spec: Codex stored login never opened."""
+    import builtins
+    import io
+
+    host_login.seed(host_login.CODEX, codex_state)
+    auth = codex_logged_in(codex_state)
+    written = time.time() - 3 * 3600 - 60
+    os.utime(auth, (written, written))
+    opened = []
+
+    def guard(original):
+        def wrapper(target, *args, **kwargs):
+            if Path(str(target)).name == "auth.json":
+                opened.append(str(target))
+                raise AssertionError("auth.json was opened")
+            return original(target, *args, **kwargs)
+        return wrapper
+
+    def guard_method(original):
+        def wrapper(self, *args, **kwargs):
+            if self.name == "auth.json":
+                opened.append(str(self))
+                raise AssertionError("auth.json was read")
+            return original(self, *args, **kwargs)
+        return wrapper
+
+    monkeypatch.setattr(builtins, "open", guard(builtins.open))
+    monkeypatch.setattr(io, "open", guard(io.open))
+    monkeypatch.setattr(Path, "read_text", guard_method(Path.read_text))
+    monkeypatch.setattr(Path, "read_bytes", guard_method(Path.read_bytes))
+    assert main(["status", "codex"]) == 0
+    pairs = codex_status_lines(capsys.readouterr().out)
+    assert pairs["last_written"] == "3h ago"
+    assert opened == []
+
+
+@POSIX_LOCKS
+@pytest.mark.usefixtures("codex_client")
+@pytest.mark.parametrize(("answer", "code"), [("quota-ok.json", 0), ("quota-free.json", 3)])
+def test_codex_status_quota_reads_under_the_run_lock(answer, code, codex_state, monkeypatch,
+                                                     capsys):
+    import codex_cli
+
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    snapshot = {"primary": {"used_percent": 10.0, "window_minutes": 300, "resets_at": 1791300000},
+                "secondary": None, "plan_type": "plus"}
+    (codex_state / "quota.json").write_text(json.dumps(snapshot), encoding="utf-8")
+    held = []
+
+    def fake_read(home, _environ=None):
+        held.append(lock_held(home))
+        return codex_cli.parse_quota(json.loads((CODEX_STREAMS / answer).read_text(
+            encoding="utf-8")))
+
+    monkeypatch.setattr(codex_cli, "read_quota", fake_read)
+    assert main(["status", "codex", "--quota"]) == code
+    out, err = capsys.readouterr()
+    pairs = codex_status_lines(out, [*CODEX_STATUS_KEYS, "quota"])
+    assert held == [True]
+    assert "10%" in pairs["last_quota"]
+    assert "12%" in pairs["quota"]
+    assert "5-hour" in pairs["quota"]
+    if code:
+        assert "free" in err
+    else:
+        assert "plus" in pairs["quota"]
+
+
+def test_the_codex_only_options_are_refused_for_claude(state, monkeypatch, capsys):
+    no_client(monkeypatch)
+    with pytest.raises(SystemExit) as usage:
+        main(["login", "claude", "--device-auth"])
+    assert usage.value.code == 2
+    with pytest.raises(SystemExit) as usage:
+        main(["status", "claude", "--quota"])
+    assert usage.value.code == 2
+    assert not state.exists()
+    assert "codex" in capsys.readouterr().err
+
+
+@POSIX_LOCKS
+def test_a_held_run_lock_makes_a_codex_logout_not_ready(codex_state, codex_client, capsys):
+    """testing-harness spec: Serial Codex runs — the commands wait the bounded
+    time, then refuse with the one template and exit 3."""
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    with host_login.run_lock(codex_state):
+        assert main(["logout", "codex"]) == 3
+    assert "logout" not in codex_client.verbs()
+    err = capsys.readouterr().err
+    assert err.startswith("untested: another Codex run holds the harness home")
+    assert host_login.LOCK_NAME in err

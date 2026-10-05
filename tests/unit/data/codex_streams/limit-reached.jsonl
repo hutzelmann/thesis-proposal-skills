@@ -1,0 +1,8 @@
+{"type":"thread.started","thread_id":"0199a0f0-0000-7000-8000-000000000012"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Synthetic answer."}}
+{"type":"turn.completed","usage":{"input_tokens":5000,"cached_input_tokens":1000,"output_tokens":300}}
+{"type":"codex.session","id":"0199a0f0-0000-7000-8000-000000000012","cli_version":"0.160.0","model_provider":"openai"}
+{"type":"codex.turn_context","model":"gpt-fixture-a","effort":"medium"}
+{"type":"codex.skills","files":["__WS__/.agents/skills/proposal-check/SKILL.md"]}
+{"type":"codex.token_count","usage":{"input_tokens":5000,"cached_input_tokens":1000,"output_tokens":300},"rate_limits":{"primary":{"used_percent":100.0,"window_minutes":300,"resets_at":1791300000},"secondary":{"used_percent":40.0,"window_minutes":10080,"resets_at":1791800000},"credits":{"has_credits":false,"unlimited":false,"balance":"0"},"plan_type":"plus","rate_limit_reached_type":"primary"}}

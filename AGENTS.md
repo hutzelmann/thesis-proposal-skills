@@ -78,7 +78,13 @@ uv run poe identify <bug-report/>  # resolve a submitted report's hashes.txt to 
 uv run poe host-login claude [--reset]  # the user only, interactive: the harness's own Claude login
 uv run poe host-status             # harness login state; no model call, no account details (agents may run it)
 uv run poe host-logout claude      # the user only: log the harness login out
+uv run poe dev <scenario> --host codex --model <slug>   # subscription: the real Codex CLI on the ChatGPT plan quota, in the harness's own Codex home; never a matrix input
+uv run poe host-login codex [--reset] [--device-auth]   # the user only, interactive: the harness's own Codex (ChatGPT) login
+uv run poe host-status codex [--quota]  # Codex login, CLI version, feature allowlist, quota; no model call (agents may run it)
+uv run poe host-logout codex       # the user only: log the harness's Codex login out
 ```
+
+The first Codex model call after any `host-login codex` needs the user's explicit go, like a metered run: it draws the plan quota the operator shares with their own ChatGPT use.
 
 Agents never run `host-login` or `host-logout` — not through Bash, not through a terminal tool, and not through a TTY wrapper such as `script` — and relay a refusal that names either one to the user as a USER ACTION. The commands' own terminal and agent-session refusals are speed bumps; this rule is the guard.
 

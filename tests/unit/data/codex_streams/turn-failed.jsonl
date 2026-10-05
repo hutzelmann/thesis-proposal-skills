@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"0199a0f0-0000-7000-8000-000000000017"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Synthetic partial narration."}}
+{"type":"turn.failed","error":{"message":"stream disconnected before completion: synthetic transport error"}}
+{"type":"codex.harness","duration_ms":15000,"exit_code":1,"stderr_tail":"","quota_before":null}

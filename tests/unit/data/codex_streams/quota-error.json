@@ -1,0 +1,7 @@
+{
+  "id": 1,
+  "error": {
+    "code": -32603,
+    "message": "failed to fetch codex rate limits: synthetic upstream error"
+  }
+}

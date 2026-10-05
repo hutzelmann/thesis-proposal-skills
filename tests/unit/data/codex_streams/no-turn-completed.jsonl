@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"0199a0f0-0000-7000-8000-000000000018"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Synthetic partial narration."}}
+{"type":"codex.harness","duration_ms":3000,"exit_code":0,"stderr_tail":"","quota_before":null}
