@@ -1,6 +1,7 @@
 """Cost-gated model-support matrix runner (thin shell over inspect_ai + support.py).
 
-Estimates spend from registry pricing before any metered call, requires explicit
+Estimates spend from registry pricing before any metered call, warns about stale
+pins from one free catalog request (never blocking), requires explicit
 confirmation (--yes to bypass), then drives Inspect over the selected models and
 tasks with per-cell epochs. Afterwards prints and persists actual spend and
 merges observed token usage into the estimate history.
@@ -8,7 +9,7 @@ merges observed token usage into the estimate history.
 Usage:
     uv run poe matrix                     # all enabled models, scorable set
     uv run poe matrix --tier cheap
-    uv run poe matrix --models claude-haiku-4.5 --tasks write_from_seed
+    uv run poe matrix --models <registry-id-suffix> --tasks write_from_seed
     uv run poe smoke                      # first enabled cheap model, core set, 1 epoch
 """
 
@@ -16,10 +17,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import model_currency
 import support
 
 HARNESS = Path(__file__).resolve().parent
@@ -202,6 +205,10 @@ def main(argv: list[str] | None = None) -> int:
 
     estimate = support.estimate_cost(models, tasks, registry, args.epochs, history)
     print_estimate(estimate, models, tasks, args.epochs, history)
+    # directly above the confirmation prompt; informs, never blocks or re-prices
+    print()
+    for line in model_currency.gate_warnings(registry, models, environ=os.environ):
+        print(line)
     if args.estimate_only:
         return 0
     if not confirm_spend(args.yes):

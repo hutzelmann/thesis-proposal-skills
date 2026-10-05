@@ -1,0 +1,13 @@
+{
+  "data": {
+    "id": "lab/fading-3",
+    "endpoints": [
+      {
+        "name": "Lab | lab/fading-3",
+        "provider_name": "Lab",
+        "tag": "lab",
+        "pricing": {"prompt": "0.000002", "completion": "0.000008"}
+      }
+    ]
+  }
+}

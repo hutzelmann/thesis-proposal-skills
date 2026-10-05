@@ -1,8 +1,34 @@
-# Model-support matrix registry — the single roster source for matrix runs.
+# Model-support matrix registry — the single source of every model ID the
+# harness uses: the matrix roster below and the roles table.
+#
 # IDs are pinned OpenRouter model IDs (version visible in the ID); upgrades are
-# deliberate one-line edits, never runtime "latest" resolution. Prices are
-# $/Mtok cached from the OpenRouter catalog at pin time (2026-08-06) and feed
-# both the pre-run estimate and the post-run actual-cost report.
+# deliberate edits — proposed weekly by harness/model_currency.py as a bump PR —
+# never runtime "latest" resolution. Floating aliases (`sonnet`, `~…`, `…-latest`)
+# fail parsing.
+#
+# Price basis: $/Mtok from the model vendor's own OpenRouter endpoint at its
+# standard tier (not /flex, not /fast); `price_endpoint` names the endpoint tag
+# where the vendor's provider slug differs from its namespace. Prices feed both
+# the pre-run estimate and the post-run actual-cost report; prices_as_of is the
+# date they were copied. `uv run poe models` compares everything here against the
+# public catalog (networked, read-only).
+
+prices_as_of = 2026-10-05
+# New version lines in a roster vendor namespace created after this date are
+# reported (never written) by the currency check. Moved by hand only.
+lines_reviewed_as_of = 2026-08-06
+
+# Every model ID used outside the roster. judge and persona are held: the
+# currency check reports a newer model in their line but never rewrites them,
+# because changing either invalidates every rubric-counted cell until a full
+# re-baseline. A held ID that leaves the roster keeps its price in a
+# [role_prices."<id>"] entry, which `model_currency.py --write` creates.
+[roles]
+judge = "openrouter/anthropic/claude-haiku-4.5"   # matrix L2 judge (held)
+# persona defaults to judge
+smoke = "openrouter/anthropic/claude-haiku-4.5"   # metered smoke model; an enabled roster entry
+dev_judge = "claude-sonnet-5-5"                   # subscription CLI full ID, never an alias
+dev_judge_effort = "medium"
 
 [[models]]
 id = "openrouter/anthropic/claude-haiku-4.5"
@@ -14,7 +40,7 @@ cache_read_price = 0.1
 enabled = true
 
 [[models]]
-id = "openrouter/anthropic/claude-sonnet-5"
+id = "openrouter/anthropic/claude-sonnet-5.5"
 family = "anthropic"
 tier = "mid"
 input_price = 2.0
@@ -23,59 +49,61 @@ cache_read_price = 0.2
 enabled = true
 
 [[models]]
-id = "openrouter/anthropic/claude-opus-5"
+id = "openrouter/anthropic/claude-opus-5.5"
 family = "anthropic"
 tier = "frontier"
-input_price = 5.0
-output_price = 25.0
-cache_read_price = 0.5
+input_price = 4.0
+output_price = 20.0
+cache_read_price = 0.2
 enabled = true
 
 [[models]]
-id = "openrouter/openai/gpt-5.6-luna"
+id = "openrouter/openai/gpt-6-luna"
 family = "openai"
 tier = "cheap"
 input_price = 0.1
-output_price = 0.6
+output_price = 0.5
 cache_read_price = 0.01
 enabled = true
-# The account's data policy pins luna to Azure, whose strict tool-schema
-# validation rejects Inspect's text_editor tool before the model runs; direct
-# probes show the model itself handles tools fine. Measurements are invalid,
-# so its logs are quarantined and the note keeps the reason visible.
-note = "the eval harness cannot drive this model (Azure strict tool schemas reject Inspect's tools) — untested is a harness limitation, not a quality signal"
+# The account's data policy pinned the previous luna to Azure, whose strict
+# tool-schema validation rejected Inspect's text_editor tool before the model
+# ran; direct probes showed the model itself handled tools fine. Its logs stay
+# quarantined. Whether the policy and the rejection apply to this pin is
+# unverified until an optional, cost-gated re-probe; the note keeps that visible.
+note = "the eval harness could not drive the previous luna pin (Azure strict tool schemas reject Inspect's tools); this pin is not yet re-probed — untested is a harness limitation, not a quality signal"
 
 [[models]]
 id = "openrouter/openai/gpt-5.6-terra"
 family = "openai"
 tier = "mid"
-input_price = 1.0
-output_price = 6.0
+input_price = 2.0
+output_price = 12.0
+cache_read_price = 0.2
+enabled = true
+
+[[models]]
+id = "openrouter/openai/gpt-6.1-sol"
+family = "openai"
+tier = "frontier"
+input_price = 2.0
+output_price = 10.0
 cache_read_price = 0.1
 enabled = true
 
 [[models]]
-id = "openrouter/openai/gpt-5.6-sol"
-family = "openai"
-tier = "frontier"
-input_price = 5.0
-output_price = 30.0
-cache_read_price = 0.5
-enabled = true
-
-[[models]]
-id = "openrouter/deepseek/deepseek-v4-pro"
+id = "openrouter/deepseek/deepseek-v4-pro-0813"
 family = "open-weight"
 tier = "cheap"
-input_price = 0.435
-output_price = 0.87
-cache_read_price = 0.003625
+input_price = 0.66
+output_price = 1.98
+cache_read_price = 0.022
 enabled = true
 
 [[models]]
-id = "openrouter/qwen/qwen3.8-max"
+id = "openrouter/qwen/qwen3.8-max-0902"
 family = "open-weight"
 tier = "mid"
+price_endpoint = "alibaba"   # Qwen is served by Alibaba's provider slug
 input_price = 2.0
 output_price = 6.0
 cache_read_price = 0.25
@@ -189,8 +217,8 @@ ideate_outofscope = { input = 200000, output = 8000 }
 import_messy = { input = 150000, output = 6000 }
 reverse_from_harvest = { input = 160000, output = 6000 }
 
-# Judge overhead per cell-epoch (fixed haiku judge), added to every estimate.
+# Judge token budget per cell-epoch, added to every estimate. The judge's model
+# ID lives in [roles].judge only.
 [tasks.judge]
-model = "openrouter/anthropic/claude-haiku-4.5"
 input = 40000
 output = 3000

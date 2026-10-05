@@ -135,13 +135,13 @@ Model support, measured by the metered eval matrix on **2026-08-10** (3 epochs p
 | Model (pinned version) | Verdict | Notes |
 |---|---|---|
 | `anthropic/claude-haiku-4.5` | ❌ not recommended | fails: proposal-customize, proposal-review, proposal-write |
-| `anthropic/claude-sonnet-5` | ❔ untested |  |
-| `anthropic/claude-opus-5` | ❔ untested |  |
-| `openai/gpt-5.6-luna` | ❔ untested | the eval harness cannot drive this model (Azure strict tool schemas reject Inspect's tools) — untested is a harness limitation, not a quality signal |
+| `anthropic/claude-sonnet-5.5` | ❔ untested |  |
+| `anthropic/claude-opus-5.5` | ❔ untested |  |
+| `openai/gpt-6-luna` | ❔ untested | the eval harness could not drive the previous luna pin (Azure strict tool schemas reject Inspect's tools); this pin is not yet re-probed — untested is a harness limitation, not a quality signal |
 | `openai/gpt-5.6-terra` | ❔ untested |  |
-| `openai/gpt-5.6-sol` | ❔ untested |  |
-| `deepseek/deepseek-v4-pro` | 🟡 partial | untested on 9 task(s); tested cells solid |
-| `qwen/qwen3.8-max` | ❔ untested |  |
+| `openai/gpt-6.1-sol` | ❔ untested |  |
+| `deepseek/deepseek-v4-pro-0813` | ❔ untested |  |
+| `qwen/qwen3.8-max-0902` | ❔ untested |  |
 | `moonshotai/kimi-k3` | 🟡 partial | untested on 9 task(s); tested cells solid |
 <!-- model-support:end -->
 

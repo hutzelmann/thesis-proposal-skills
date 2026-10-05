@@ -13,6 +13,7 @@ that name an argument rather than a function name, which is exactly the kind of
 indirection this pins down.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -99,6 +100,15 @@ def test_l1_scorers_keep_the_marker_the_classifier_reads():
 REGISTRY = support.parse_registry(
     (Path(__file__).resolve().parents[2] / "harness" / "models.toml").read_text(encoding="utf-8")
 )
+
+
+def test_judge_and_persona_come_from_the_registry_roles():
+    """The module holds no model ID of its own: both defaults resolve through
+    `support.role_model` over the registry, each override on its own role."""
+    judge = support.role_model(REGISTRY.roles, "judge", os.environ)
+    persona = support.role_model(REGISTRY.roles, "persona", os.environ)
+    resolved = (skill_evals.JUDGE_MODEL, skill_evals.PERSONA_MODEL)
+    assert resolved == (judge, persona)
 
 
 def test_dialogue_tasks_reject_the_baseline_parameter():

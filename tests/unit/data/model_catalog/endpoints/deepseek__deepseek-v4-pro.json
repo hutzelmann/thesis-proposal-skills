@@ -1,0 +1,167 @@
+{
+  "data": {
+    "id": "deepseek/deepseek-v4-pro",
+    "endpoints": [
+      {
+        "name": "Relace | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Relace",
+        "tag": "relace/fp4",
+        "pricing": {
+          "prompt": "0.0000002067",
+          "completion": "0.0000042",
+          "input_cache_read": "0.00000021"
+        }
+      },
+      {
+        "name": "StreamLake | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "StreamLake",
+        "tag": "streamlake/fp8",
+        "pricing": {
+          "prompt": "0.0000002088",
+          "completion": "0.0000004176",
+          "input_cache_read": "0.0000000174"
+        }
+      },
+      {
+        "name": "Parasail | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Parasail",
+        "tag": "parasail/fp8",
+        "pricing": {
+          "prompt": "0.00000045",
+          "completion": "0.00000348",
+          "input_cache_read": "0.0000001"
+        }
+      },
+      {
+        "name": "Reka | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Reka",
+        "tag": "reka",
+        "pricing": {
+          "prompt": "0.0000008125",
+          "completion": "0.000001625",
+          "input_cache_read": "0.00000013"
+        }
+      },
+      {
+        "name": "GMICloud | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "GMICloud",
+        "tag": "gmicloud/fp8",
+        "pricing": {
+          "prompt": "0.000000957",
+          "completion": "0.000001914",
+          "input_cache_read": "0.00000007975"
+        }
+      },
+      {
+        "name": "DigitalOcean | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "DigitalOcean",
+        "tag": "digitalocean",
+        "pricing": {
+          "prompt": "0.000001044",
+          "completion": "0.000002088",
+          "input_cache_read": "0.0000002088"
+        }
+      },
+      {
+        "name": "Cloudflare | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Cloudflare",
+        "tag": "cloudflare",
+        "pricing": {
+          "prompt": "0.00000115",
+          "completion": "0.00000255",
+          "input_cache_read": "0.0000002"
+        }
+      },
+      {
+        "name": "DeepInfra | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "DeepInfra",
+        "tag": "deepinfra/fp8",
+        "pricing": {
+          "prompt": "0.0000013",
+          "completion": "0.0000026",
+          "input_cache_read": "0.0000001"
+        }
+      },
+      {
+        "name": "Alibaba | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Alibaba",
+        "tag": "alibaba/fp8",
+        "pricing": {
+          "prompt": "0.000001416",
+          "completion": "0.000002832",
+          "input_cache_read": "0.000000118"
+        }
+      },
+      {
+        "name": "SiliconFlow | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "SiliconFlow",
+        "tag": "siliconflow/fp8",
+        "pricing": {
+          "prompt": "0.00000150162",
+          "completion": "0.000003135",
+          "input_cache_read": "0.000000135"
+        }
+      },
+      {
+        "name": "Novita | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Novita",
+        "tag": "novita/fp8",
+        "pricing": {
+          "prompt": "0.0000016",
+          "completion": "0.0000032",
+          "input_cache_read": "0.000000135"
+        }
+      },
+      {
+        "name": "Venice | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Venice",
+        "tag": "venice",
+        "pricing": {
+          "prompt": "0.00000165",
+          "completion": "0.000003301",
+          "input_cache_read": "0.00000033"
+        }
+      },
+      {
+        "name": "AtlasCloud | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "AtlasCloud",
+        "tag": "atlas-cloud/fp4",
+        "pricing": {
+          "prompt": "0.00000168",
+          "completion": "0.00000338",
+          "input_cache_read": "0.00000013"
+        }
+      },
+      {
+        "name": "Baidu | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Baidu",
+        "tag": "baidu/fp8",
+        "pricing": {
+          "prompt": "0.00000169",
+          "completion": "0.00000338",
+          "input_cache_read": "0.00000014"
+        }
+      },
+      {
+        "name": "NextBit | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "NextBit",
+        "tag": "nextbit/fp8",
+        "pricing": {
+          "prompt": "0.00000174",
+          "completion": "0.00000348",
+          "input_cache_read": "0.000000145"
+        }
+      },
+      {
+        "name": "Azure | deepseek/deepseek-v4-pro-20260423",
+        "provider_name": "Azure",
+        "tag": "azure/us",
+        "pricing": {
+          "prompt": "0.00000191",
+          "completion": "0.00000383",
+          "input_cache_read": "0.00000016"
+        }
+      }
+    ]
+  }
+}

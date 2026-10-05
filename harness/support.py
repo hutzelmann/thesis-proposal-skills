@@ -8,8 +8,9 @@ The thin shells matrix.py and report.py do the IO and the Inspect calls.
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 
 START_MARKER = "<!-- model-support:start -->"
 END_MARKER = "<!-- model-support:end -->"
@@ -18,6 +19,15 @@ DEFAULT_EPOCHS = 3
 _PASS_VALUES = ("C", 1, 1.0)
 
 TIERS = ("cheap", "mid", "frontier")
+
+# Floating aliases a pinned registry must never carry: a bare family name (the
+# subscription CLI's alias), an OpenRouter `~`-prefixed alias, or `…-latest`.
+FAMILY_ALIASES = frozenset({"haiku", "sonnet", "opus", "fable"})
+# `claude --help` effort levels (Claude Code 2.1.284)
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+# roles that name a model; each may be replaced for one invocation by <ROLE>_MODEL
+MODEL_ROLES = ("judge", "persona", "smoke", "dev_judge")
+_ROLE_KEYS = frozenset({*MODEL_ROLES, "dev_judge_effort"})
 
 
 @dataclass(frozen=True)
@@ -30,6 +40,38 @@ class Model:
     enabled: bool
     cache_read_price: float = 0.0  # $/Mtok; parse defaults it to input_price
     note: str = ""  # free-text caveat rendered into the summary Notes column
+    # currency tracking (harness/model_currency.py): True derives the version
+    # line from the ID, a string is an explicit line glob, False opts out
+    track: str | bool = True
+    price_endpoint: str = ""  # endpoint tag the price is read from, when not the vendor's
+
+
+@dataclass(frozen=True)
+class Price:
+    """$/Mtok for one model ID, from its roster row or its role-price entry."""
+
+    input_price: float
+    output_price: float
+    cache_read_price: float
+
+
+@dataclass(frozen=True)
+class RolePrice:
+    """A price-only entry for a held role whose ID has left the roster."""
+
+    input_price: float
+    output_price: float
+    cache_read_price: float
+    price_endpoint: str = ""
+
+
+@dataclass(frozen=True)
+class Roles:
+    judge: str
+    persona: str
+    smoke: str
+    dev_judge: str
+    dev_judge_effort: str
 
 
 @dataclass(frozen=True)
@@ -52,6 +94,10 @@ class TaskConfig:
 class Registry:
     models: tuple[Model, ...]
     tasks: TaskConfig
+    roles: Roles
+    role_prices: dict[str, RolePrice] = field(default_factory=dict)
+    prices_as_of: date | None = None
+    lines_reviewed_as_of: date | None = None
 
 
 @dataclass(frozen=True)
@@ -78,25 +124,53 @@ class CostReport:
         return sum(line.usd for line in self.lines)
 
 
-def parse_registry(text: str) -> Registry:
-    data = tomllib.loads(text)
-    models = tuple(
-        Model(
-            id=m["id"],
-            family=m["family"],
-            tier=m["tier"],
-            input_price=float(m["input_price"]),
-            output_price=float(m["output_price"]),
-            enabled=bool(m["enabled"]),
-            cache_read_price=float(m.get("cache_read_price", m["input_price"])),
-            note=str(m.get("note", "")),
+def check_pinned(model_id: object, where: str) -> str:
+    """A registry model ID must be a pinned full ID, never a floating alias."""
+    if not isinstance(model_id, str) or not model_id:
+        raise ValueError(f"{where}: model ID must be a non-empty string, got {model_id!r}")
+    segments = model_id.split("/")
+    if (
+        segments[-1] in FAMILY_ALIASES
+        or any(s.startswith("~") for s in segments)
+        or model_id.endswith("-latest")
+    ):
+        raise ValueError(
+            f"{where}: {model_id!r} is a floating alias — pin the full model ID "
+            "(the version visible in the ID)"
         )
-        for m in data["models"]
+    return model_id
+
+
+def _parse_track(raw: object, model_id: str) -> str | bool:
+    if raw is False or raw is True:
+        return raw
+    if isinstance(raw, str) and raw.count("*") == 1:
+        return raw
+    raise ValueError(
+        f"track on {model_id}: expected false or a line glob with exactly one '*', got {raw!r}"
     )
-    for m in models:
-        if m.tier not in TIERS:
-            raise ValueError(f"unknown tier {m.tier!r} on {m.id}")
-    t = data["tasks"]
+
+
+def _parse_model(m: dict) -> Model:
+    model_id = check_pinned(m.get("id"), "[[models]] id")
+    model = Model(
+        id=model_id,
+        family=m["family"],
+        tier=m["tier"],
+        input_price=float(m["input_price"]),
+        output_price=float(m["output_price"]),
+        enabled=bool(m["enabled"]),
+        cache_read_price=float(m.get("cache_read_price", m["input_price"])),
+        note=str(m.get("note", "")),
+        track=_parse_track(m.get("track", True), model_id),
+        price_endpoint=str(m.get("price_endpoint", "")),
+    )
+    if model.tier not in TIERS:
+        raise ValueError(f"unknown tier {model.tier!r} on {model.id}")
+    return model
+
+
+def _parse_tasks(t: dict, judge_model: str) -> TaskConfig:
     priors = {name: (int(p["input"]), int(p["output"])) for name, p in t["priors"].items()}
     if "default" not in priors:
         raise ValueError("tasks.priors must carry a 'default' entry")
@@ -104,6 +178,11 @@ def parse_registry(text: str) -> Registry:
     if overlap:
         raise ValueError(f"tasks both in matrix and excluded: {sorted(overlap)}")
     judge = t["judge"]
+    if "model" in judge:
+        raise ValueError(
+            "[tasks.judge] carries only the judge's token budget; its model ID lives in "
+            "[roles].judge — remove [tasks.judge].model"
+        )
     tasks = TaskConfig(
         matrix=tuple(t["matrix"]),
         core=tuple(t["core"]),
@@ -112,7 +191,7 @@ def parse_registry(text: str) -> Registry:
         excluded_l1=tuple(t["excluded_l1"]),
         excluded=tuple(t["excluded"]),
         priors=priors,
-        judge_model=judge["model"],
+        judge_model=judge_model,
         judge_tokens=(int(judge["input"]), int(judge["output"])),
         skills=dict(t.get("skills", {})),
         tier_epochs={tier: int(n) for tier, n in t.get("epochs", {}).items()},
@@ -124,7 +203,105 @@ def parse_registry(text: str) -> Registry:
     unmapped = [task for task in tasks.matrix if task not in tasks.skills]
     if unmapped:
         raise ValueError(f"matrix tasks without a skills mapping: {unmapped}")
-    return Registry(models=models, tasks=tasks)
+    return tasks
+
+
+def _parse_roles(raw: dict) -> Roles:
+    unknown = sorted(set(raw) - _ROLE_KEYS)
+    if unknown:
+        raise ValueError(f"[roles]: unknown key(s) {unknown}")
+    missing = sorted({"judge", "smoke", "dev_judge", "dev_judge_effort"} - set(raw))
+    if missing:
+        raise ValueError(f"[roles]: missing {missing}")
+    names = {name: check_pinned(raw.get(name, raw["judge"]), f"[roles].{name}")
+             for name in MODEL_ROLES}
+    effort = raw["dev_judge_effort"]
+    if effort not in EFFORT_LEVELS:
+        raise ValueError(
+            f"[roles].dev_judge_effort: {effort!r} is not one of {', '.join(EFFORT_LEVELS)}"
+        )
+    return Roles(**names, dev_judge_effort=effort)
+
+
+def _parse_role_prices(raw: dict) -> dict[str, RolePrice]:
+    return {
+        check_pinned(model_id, "[role_prices]"): RolePrice(
+            input_price=float(p["input_price"]),
+            output_price=float(p["output_price"]),
+            cache_read_price=float(p.get("cache_read_price", p["input_price"])),
+            price_endpoint=str(p.get("price_endpoint", "")),
+        )
+        for model_id, p in raw.items()
+    }
+
+
+def _parse_date(data: dict, key: str) -> date:
+    value = data.get(key)
+    if not isinstance(value, date) or isinstance(value, datetime):
+        raise ValueError(f"top-level {key} must be a TOML date (YYYY-MM-DD), got {value!r}")
+    return value
+
+
+def _check_roles(registry: Registry) -> None:
+    """Cross-checks between roles, roster rows and role-price entries."""
+    roles = registry.roles
+    enabled = {m.id for m in registry.models if m.enabled}
+    if roles.smoke not in enabled:
+        raise ValueError(f"[roles].smoke: {roles.smoke!r} is not an enabled roster entry")
+    roster = {m.id for m in registry.models}
+    for model_id in registry.role_prices:
+        if model_id in roster:
+            raise ValueError(
+                f"[role_prices.{model_id!r}] duplicates a roster entry — the roster row prices it"
+            )
+        if model_id not in (roles.judge, roles.persona):
+            raise ValueError(
+                f"[role_prices.{model_id!r}] is named by no role — delete the entry"
+            )
+    for name in ("judge", "persona"):
+        model_id = getattr(roles, name)
+        if model_price(registry, model_id) is None:
+            raise ValueError(
+                f"[roles].{name}: {model_id!r} is priced by neither a roster entry nor a "
+                "[role_prices] entry — a metered role must be priced"
+            )
+
+
+def parse_registry(text: str) -> Registry:
+    data = tomllib.loads(text)
+    models = tuple(_parse_model(m) for m in data["models"])
+    roles = _parse_roles(data.get("roles", {}))
+    registry = Registry(
+        models=models,
+        tasks=_parse_tasks(data["tasks"], roles.judge),
+        roles=roles,
+        role_prices=_parse_role_prices(data.get("role_prices", {})),
+        prices_as_of=_parse_date(data, "prices_as_of"),
+        lines_reviewed_as_of=_parse_date(data, "lines_reviewed_as_of"),
+    )
+    _check_roles(registry)
+    return registry
+
+
+def model_price(registry: Registry, model_id: str) -> Price | None:
+    """The one price lookup: the roster row with that ID (enabled or not), else
+    the [role_prices] entry, else None."""
+    for m in registry.models:
+        if m.id == model_id:
+            return Price(m.input_price, m.output_price, m.cache_read_price)
+    entry = registry.role_prices.get(model_id)
+    if entry is not None:
+        return Price(entry.input_price, entry.output_price, entry.cache_read_price)
+    return None
+
+
+def role_model(roles: Roles, name: str, environ: Mapping[str, str]) -> str:
+    """The model a role resolves to for this invocation: `<NAME>_MODEL` from the
+    environment when set and non-empty, else the registry's role. An override
+    replaces its own role only — a judge override never moves the persona."""
+    if name not in MODEL_ROLES:
+        raise ValueError(f"unknown model role {name!r}; expected one of {MODEL_ROLES}")
+    return environ.get(f"{name.upper()}_MODEL") or getattr(roles, name)
 
 
 def select_models(
@@ -240,7 +417,7 @@ def estimate_cost(
     history: dict[str, tuple[int, int]] | None = None,
 ) -> CostReport:
     cfg = registry.tasks
-    judge = next((m for m in registry.models if m.id == cfg.judge_model), None)
+    judge = model_price(registry, cfg.judge_model)
     j_in, j_out = cfg.judge_tokens
     judge_usd_per_epoch = (
         (j_in * judge.input_price + j_out * judge.output_price) / 1e6 if judge else 0.0
@@ -264,13 +441,12 @@ def price_usage(usage: dict[str, tuple[int, ...]], registry: Registry) -> CostRe
     input excludes cache reads (Inspect reports them separately); cache reads
     are billed at the model's cache_read_price.
     """
-    by_id = {m.id: m for m in registry.models}
     lines = []
     unknown = []
     for model_id, tokens in sorted(usage.items()):
         tin, tout = tokens[0], tokens[1]
         cread = tokens[2] if len(tokens) > 2 else 0
-        m = by_id.get(model_id)
+        m = model_price(registry, model_id)
         if m is None:
             unknown.append(model_id)
             continue

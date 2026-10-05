@@ -7,10 +7,13 @@ tools, then scores:
   matches tolerance, the proposal was (not) modified as the skill demands.
 - L2 (rubric): a judge model grades semantic quality via harness/rubrics/.
 
-Run (model under test is Inspect's --model):
+Run (model under test is Inspect's --model, a roster ID from harness/models.toml;
+prefer `uv run poe matrix --models … --tasks …`, which shows the cost gate first):
   uv run inspect eval harness/skill_evals.py@review_fixture \
-      --model openrouter/deepseek/deepseek-v4-flash --log-dir logs/evals
-Judge override: JUDGE_MODEL env (default openrouter/anthropic/claude-haiku-4.5).
+      --model openrouter/<vendor>/<model> --log-dir logs/evals
+Judge and dialogue persona come from [roles] in harness/models.toml. JUDGE_MODEL
+and PERSONA_MODEL override one role each for one invocation; overriding the judge
+does not move the persona.
 """
 
 from __future__ import annotations
@@ -66,13 +69,18 @@ from l1_checks import (
     verdict_troubleshoot_model_rung,
 )
 from sources import MESSY_REQUEST
+from support import parse_registry, role_model
 
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
 FIXTURES = REPO / "tests" / "fixtures"
 RUBRICS = Path(__file__).resolve().parent / "rubrics"
 
-JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "openrouter/anthropic/claude-haiku-4.5")
+# every model ID this module uses comes from the registry's [roles] table
+ROLES = parse_registry(
+    (Path(__file__).resolve().parent / "models.toml").read_text(encoding="utf-8")
+).roles
+JUDGE_MODEL = role_model(ROLES, "judge", os.environ)
 JUDGE_INSTRUCTIONS = (
     'Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).'
 )
@@ -586,7 +594,9 @@ def title_alarm(baseline: bool = False) -> Task:
 # their coverage lives in the long run's hesitant phase.
 
 PERSONAS = Path(__file__).resolve().parent / "personas"
-PERSONA_MODEL = os.environ.get("PERSONA_MODEL", JUDGE_MODEL)
+# its own role: a JUDGE_MODEL override for a re-grade no longer swaps the student
+# simulator, because a persona change changes what a dialogue task measures
+PERSONA_MODEL = role_model(ROLES, "persona", os.environ)
 
 IDEATE_REQUEST = "Hi, I need to find a thesis topic and don't know where to start."
 

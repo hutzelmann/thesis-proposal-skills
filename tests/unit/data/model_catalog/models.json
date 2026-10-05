@@ -1,0 +1,1209 @@
+{
+  "data": [
+    {
+      "id": "openai/gpt-6.1-sol-pro",
+      "canonical_slug": "openai/gpt-6.1-sol-pro-20260929",
+      "created": 1790702886,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "openai/gpt-6.1-sol",
+      "canonical_slug": "openai/gpt-6.1-sol-20260929",
+      "created": 1790702882,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-5.5",
+      "canonical_slug": "anthropic/claude-sonnet-5.5-20260928",
+      "created": 1790618686,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-5.5:batch",
+      "canonical_slug": "anthropic/claude-sonnet-5.5-20260928",
+      "created": 1790618686,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "qwen/qwen3.8-max-prime",
+      "canonical_slug": "qwen/qwen3.8-max-prime-20260923",
+      "created": 1790191228,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000004",
+        "completion": "0.000012",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "openai/gpt-6-luna-pro",
+      "canonical_slug": "openai/gpt-6-luna-pro-20260922",
+      "created": 1790100791,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "input_cache_read": "0.00000001"
+      }
+    },
+    {
+      "id": "openai/gpt-6-luna-pro:batch",
+      "canonical_slug": "openai/gpt-6-luna-pro-20260922",
+      "created": 1790100791,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000005",
+        "completion": "0.00000025",
+        "input_cache_read": "0.000000005"
+      }
+    },
+    {
+      "id": "openai/gpt-6-luna",
+      "canonical_slug": "openai/gpt-6-luna-20260922",
+      "created": 1790100786,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "input_cache_read": "0.00000001"
+      }
+    },
+    {
+      "id": "openai/gpt-6-luna:batch",
+      "canonical_slug": "openai/gpt-6-luna-20260922",
+      "created": 1790100786,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000005",
+        "completion": "0.00000025",
+        "input_cache_read": "0.000000005"
+      }
+    },
+    {
+      "id": "openai/gpt-6-sol-pro",
+      "canonical_slug": "openai/gpt-6-sol-pro-20260922",
+      "created": 1790100781,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "openai/gpt-6-sol-pro:batch",
+      "canonical_slug": "openai/gpt-6-sol-pro-20260922",
+      "created": 1790100781,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "openai/gpt-6-sol",
+      "canonical_slug": "openai/gpt-6-sol-20260922",
+      "created": 1790100775,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "openai/gpt-6-sol:batch",
+      "canonical_slug": "openai/gpt-6-sol-20260922",
+      "created": 1790100775,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-5.5",
+      "canonical_slug": "anthropic/claude-opus-5.5-20260921",
+      "created": 1790094732,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000004",
+        "completion": "0.00002",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-5.5:batch",
+      "canonical_slug": "anthropic/claude-opus-5.5-20260921",
+      "created": 1790094732,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "qwen/qwen3.8-omni-flash",
+      "canonical_slug": "qwen/qwen3.8-omni-flash-20260918",
+      "created": 1789959954,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000015",
+        "completion": "0.00000047",
+        "input_cache_read": "0.000000016"
+      }
+    },
+    {
+      "id": "~deepseek/deepseek-pro-latest",
+      "canonical_slug": "~deepseek/deepseek-pro-latest",
+      "created": 1789399174,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000001901",
+        "completion": "0.0000042",
+        "input_cache_read": "0.00000019"
+      }
+    },
+    {
+      "id": "~deepseek/deepseek-flash-latest",
+      "canonical_slug": "~deepseek/deepseek-flash-latest",
+      "created": 1789399150,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000000003",
+        "completion": "0.0000024",
+        "input_cache_read": "0.000000003"
+      }
+    },
+    {
+      "id": "~openai/gpt-astra-latest",
+      "canonical_slug": "~openai/gpt-astra-latest",
+      "created": 1789130932,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00001",
+        "completion": "0.00005",
+        "input_cache_read": "0.000001"
+      }
+    },
+    {
+      "id": "~openai/gpt-sol-latest",
+      "canonical_slug": "~openai/gpt-sol-latest",
+      "created": 1789130928,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "~openai/gpt-terra-latest",
+      "canonical_slug": "~openai/gpt-terra-latest",
+      "created": 1789130925,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.000012",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "~openai/gpt-luna-latest",
+      "canonical_slug": "~openai/gpt-luna-latest",
+      "created": 1789130922,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "input_cache_read": "0.00000001"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v4.1-flash",
+      "canonical_slug": "deepseek/deepseek-v4.1-flash-20260910",
+      "created": 1789021285,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000000003",
+        "completion": "0.0000024",
+        "input_cache_read": "0.000000003"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v4.1-flash:batch",
+      "canonical_slug": "deepseek/deepseek-v4.1-flash-20260910",
+      "created": 1789021285,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000000112",
+        "completion": "0.000000336",
+        "input_cache_read": "0.00000000336"
+      }
+    },
+    {
+      "id": "openai/gpt-6-astra",
+      "canonical_slug": "openai/gpt-6-astra-20260903",
+      "created": 1788552838,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00001",
+        "completion": "0.00005",
+        "input_cache_read": "0.000001"
+      }
+    },
+    {
+      "id": "openai/gpt-6-astra:batch",
+      "canonical_slug": "openai/gpt-6-astra-20260903",
+      "created": 1788552838,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "openai/gpt-6-astra-pro",
+      "canonical_slug": "openai/gpt-6-astra-pro-20260903",
+      "created": 1788552835,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00001",
+        "completion": "0.00005",
+        "input_cache_read": "0.000001"
+      }
+    },
+    {
+      "id": "openai/gpt-6-astra-pro:batch",
+      "canonical_slug": "openai/gpt-6-astra-pro-20260903",
+      "created": 1788552835,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "qwen/qwen3.8-max-0902",
+      "canonical_slug": "qwen/qwen3.8-max-20260902",
+      "created": 1788469704,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.000006",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "anthropic/claude-fable-5.1",
+      "canonical_slug": "anthropic/claude-fable-5.1-20260831",
+      "created": 1788285838,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00001",
+        "completion": "0.00005",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "anthropic/claude-fable-5.1:batch",
+      "canonical_slug": "anthropic/claude-fable-5.1-20260831",
+      "created": 1788285838,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.000000125"
+      }
+    },
+    {
+      "id": "qwen/qwen3.8-flash",
+      "canonical_slug": "qwen/qwen3.8-flash-20260826",
+      "created": 1787773060,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000015",
+        "completion": "0.00000047",
+        "input_cache_read": "0.000000016"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash-vision-exp",
+      "canonical_slug": "deepseek/deepseek-v4-flash-vision-exp-20260821",
+      "created": 1787311563,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000002156",
+        "completion": "0.0000006468",
+        "input_cache_read": "0.00000000686"
+      }
+    },
+    {
+      "id": "qwen/qwen3.8-27b",
+      "canonical_slug": "qwen/qwen3.8-27b-20260814",
+      "created": 1786722910,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000000425",
+        "completion": "0.00000255",
+        "input_cache_read": "0.000000085"
+      }
+    },
+    {
+      "id": "qwen/qwen3.8-27b:free",
+      "canonical_slug": "qwen/qwen3.8-27b-20260814",
+      "created": 1786722910,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "qwen/qwen3.8-2.4t-a95b",
+      "canonical_slug": "qwen/qwen3.8-2.4t-a95b-20260812",
+      "created": 1786551702,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.000006",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro-0813",
+      "canonical_slug": "deepseek/deepseek-v4-pro-20260813",
+      "created": 1786549364,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000055",
+        "completion": "0.0000042",
+        "input_cache_read": "0.00000045"
+      }
+    },
+    {
+      "id": "~deepseek/deepseek-v4-flash-latest",
+      "canonical_slug": "~deepseek/deepseek-v4-flash-latest",
+      "created": 1785606009,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000000152",
+        "completion": "0.00000128",
+        "input_cache_read": "0.0000000152"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash-0731",
+      "canonical_slug": "deepseek/deepseek-v4-flash-20260731",
+      "created": 1785478908,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000000152",
+        "completion": "0.00000128",
+        "input_cache_read": "0.0000000152"
+      }
+    },
+    {
+      "id": "qwen/qwen3.7-flash",
+      "canonical_slug": "qwen/qwen3.7-flash-20260727",
+      "created": 1785190561,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000003",
+        "completion": "0.00000013",
+        "input_cache_read": "0.000000006"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-5",
+      "canonical_slug": "anthropic/claude-opus-5-20260723",
+      "created": 1784912544,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-5:batch",
+      "canonical_slug": "anthropic/claude-opus-5-20260723",
+      "created": 1784912544,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.0000125",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k3",
+      "canonical_slug": "moonshotai/kimi-k3-20260715",
+      "created": 1784215858,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000072",
+        "completion": "0.000014",
+        "input_cache_read": "0.0000007"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k3:batch",
+      "canonical_slug": "moonshotai/kimi-k3-20260715",
+      "created": 1784215858,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000228",
+        "completion": "0.0000114",
+        "input_cache_read": "0.000000228"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-luna-pro",
+      "canonical_slug": "openai/gpt-5.6-luna-pro-20260709",
+      "created": 1783590867,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000002",
+        "completion": "0.0000012",
+        "input_cache_read": "0.00000002"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-luna-pro:batch",
+      "canonical_slug": "openai/gpt-5.6-luna-pro-20260709",
+      "created": 1783590867,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000006",
+        "input_cache_read": "0.00000001"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-luna",
+      "canonical_slug": "openai/gpt-5.6-luna-20260709",
+      "created": 1783590864,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000002",
+        "completion": "0.0000012",
+        "input_cache_read": "0.00000002"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-luna:batch",
+      "canonical_slug": "openai/gpt-5.6-luna-20260709",
+      "created": 1783590864,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000006",
+        "input_cache_read": "0.00000001"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-terra-pro",
+      "canonical_slug": "openai/gpt-5.6-terra-pro-20260709",
+      "created": 1783590861,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.000012",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-terra-pro:batch",
+      "canonical_slug": "openai/gpt-5.6-terra-pro-20260709",
+      "created": 1783590861,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000006",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-terra",
+      "canonical_slug": "openai/gpt-5.6-terra-20260709",
+      "created": 1783590857,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.000012",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-terra:batch",
+      "canonical_slug": "openai/gpt-5.6-terra-20260709",
+      "created": 1783590857,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000006",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-sol-pro",
+      "canonical_slug": "openai/gpt-5.6-sol-pro-20260709",
+      "created": 1783590854,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000004",
+        "completion": "0.00002",
+        "input_cache_read": "0.0000004"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-sol-pro:batch",
+      "canonical_slug": "openai/gpt-5.6-sol-pro-20260709",
+      "created": 1783590854,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-sol",
+      "canonical_slug": "openai/gpt-5.6-sol-20260709",
+      "created": 1783590850,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-sol:batch",
+      "canonical_slug": "openai/gpt-5.6-sol-20260709",
+      "created": 1783590850,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-5",
+      "canonical_slug": "anthropic/claude-sonnet-5-20260630",
+      "created": 1782843083,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-5:batch",
+      "canonical_slug": "anthropic/claude-sonnet-5-20260630",
+      "created": 1782843083,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2.7-code",
+      "canonical_slug": "moonshotai/kimi-k2.7-code-20260612",
+      "created": 1781266361,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000006712",
+        "completion": "0.00000335",
+        "input_cache_read": "0.00000018"
+      }
+    },
+    {
+      "id": "~anthropic/claude-fable-latest",
+      "canonical_slug": "~anthropic/claude-fable-latest",
+      "created": 1781029944,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00001",
+        "completion": "0.00005",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "anthropic/claude-fable-5",
+      "canonical_slug": "anthropic/claude-5-fable-20260609",
+      "created": 1781007515,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00001",
+        "completion": "0.00005",
+        "input_cache_read": "0.000001"
+      }
+    },
+    {
+      "id": "anthropic/claude-fable-5:batch",
+      "canonical_slug": "anthropic/claude-5-fable-20260609",
+      "created": 1781007515,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.8",
+      "canonical_slug": "anthropic/claude-4.8-opus-20260528",
+      "created": 1779905091,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.8:batch",
+      "canonical_slug": "anthropic/claude-4.8-opus-20260528",
+      "created": 1779905091,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.0000125",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "qwen/qwen3.7-max",
+      "canonical_slug": "qwen/qwen3.7-max-20260520",
+      "created": 1779376861,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001475",
+        "completion": "0.000004425",
+        "input_cache_read": "0.000000295"
+      }
+    },
+    {
+      "id": "openai/gpt-chat-latest",
+      "canonical_slug": "openai/gpt-chat-latest-20260505",
+      "created": 1778000212,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.00003",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "~anthropic/claude-haiku-latest",
+      "canonical_slug": "~anthropic/claude-haiku-latest",
+      "created": 1777318492,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "~moonshotai/kimi-latest",
+      "canonical_slug": "~moonshotai/kimi-latest",
+      "created": 1777318428,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000006483",
+        "completion": "0.000013",
+        "input_cache_read": "0.00000045"
+      }
+    },
+    {
+      "id": "~anthropic/claude-sonnet-latest",
+      "canonical_slug": "~anthropic/claude-sonnet-latest",
+      "created": 1777318368,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "qwen/qwen3.6-flash",
+      "canonical_slug": "qwen/qwen3.6-flash",
+      "created": 1777261362,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000001875",
+        "completion": "0.000001125"
+      }
+    },
+    {
+      "id": "qwen/qwen3.6-max-preview",
+      "canonical_slug": "qwen/qwen3.6-max-preview-20260420",
+      "created": 1777260242,
+      "expiration_date": "2026-10-09",
+      "pricing": {
+        "prompt": "0.000001027",
+        "completion": "0.000006162"
+      }
+    },
+    {
+      "id": "openai/gpt-5.5",
+      "canonical_slug": "openai/gpt-5.5-20260423",
+      "created": 1777051893,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.00003",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro",
+      "canonical_slug": "deepseek/deepseek-v4-pro-20260423",
+      "created": 1777000679,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000002088",
+        "completion": "0.0000004176",
+        "input_cache_read": "0.0000000174"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "canonical_slug": "deepseek/deepseek-v4-flash-20260423",
+      "created": 1777000666,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000000224",
+        "completion": "0.00000128",
+        "input_cache_read": "0.0000000224"
+      }
+    },
+    {
+      "id": "~anthropic/claude-opus-latest",
+      "canonical_slug": "~anthropic/claude-opus-latest",
+      "created": 1776795361,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000004",
+        "completion": "0.00002",
+        "input_cache_read": "0.0000002"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2.6",
+      "canonical_slug": "moonshotai/kimi-k2.6-20260420",
+      "created": 1776699402,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000095",
+        "completion": "0.000004",
+        "input_cache_read": "0.00000016"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.7",
+      "canonical_slug": "anthropic/claude-4.7-opus-20260416",
+      "created": 1776351100,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.7:batch",
+      "canonical_slug": "anthropic/claude-4.7-opus-20260416",
+      "created": 1776351100,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.0000125",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.6",
+      "canonical_slug": "anthropic/claude-4.6-sonnet-20260217",
+      "created": 1771342990,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000003",
+        "completion": "0.000015",
+        "input_cache_read": "0.0000003"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.6:batch",
+      "canonical_slug": "anthropic/claude-4.6-sonnet-20260217",
+      "created": 1771342990,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000015",
+        "completion": "0.0000075",
+        "input_cache_read": "0.00000015"
+      }
+    },
+    {
+      "id": "qwen/qwen3-max-thinking",
+      "canonical_slug": "qwen/qwen3-max-thinking-20260123",
+      "created": 1770671901,
+      "expiration_date": "2026-10-09",
+      "pricing": {
+        "prompt": "0.00000078",
+        "completion": "0.0000039"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.6",
+      "canonical_slug": "anthropic/claude-4.6-opus-20260205",
+      "created": 1770219050,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.6:batch",
+      "canonical_slug": "anthropic/claude-4.6-opus-20260205",
+      "created": 1770219050,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.0000125",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2.5",
+      "canonical_slug": "moonshotai/kimi-k2.5-0127",
+      "created": 1769487076,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000045",
+        "completion": "0.00000225",
+        "input_cache_read": "0.00000007"
+      }
+    },
+    {
+      "id": "openai/gpt-audio",
+      "canonical_slug": "openai/gpt-audio",
+      "created": 1768862569,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.00001"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3.2",
+      "canonical_slug": "deepseek/deepseek-v3.2-20251201",
+      "created": 1764594642,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000028",
+        "completion": "0.00000042",
+        "input_cache_read": "0.000000028"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.5",
+      "canonical_slug": "anthropic/claude-4.5-opus-20251124",
+      "created": 1764010580,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.5:batch",
+      "canonical_slug": "anthropic/claude-4.5-opus-20251124",
+      "created": 1764010580,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.0000125",
+        "input_cache_read": "0.00000025"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking",
+      "canonical_slug": "moonshotai/kimi-k2-thinking-20251106",
+      "created": 1762440622,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000006",
+        "completion": "0.0000025"
+      }
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "canonical_slug": "anthropic/claude-4.5-haiku-20251001",
+      "created": 1760547638,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5:batch",
+      "canonical_slug": "anthropic/claude-4.5-haiku-20251001",
+      "created": 1760547638,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000005",
+        "completion": "0.0000025",
+        "input_cache_read": "0.00000005"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.5",
+      "canonical_slug": "anthropic/claude-4.5-sonnet-20250929",
+      "created": 1759161676,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000003",
+        "completion": "0.000015",
+        "input_cache_read": "0.0000003"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.5:batch",
+      "canonical_slug": "anthropic/claude-4.5-sonnet-20250929",
+      "created": 1759161676,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000015",
+        "completion": "0.0000075",
+        "input_cache_read": "0.00000015"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3.2-exp",
+      "canonical_slug": "deepseek/deepseek-v3.2-exp",
+      "created": 1759150481,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000027",
+        "completion": "0.00000041"
+      }
+    },
+    {
+      "id": "qwen/qwen3-max",
+      "canonical_slug": "qwen/qwen3-max",
+      "created": 1758662808,
+      "expiration_date": "2026-10-09",
+      "pricing": {
+        "prompt": "0.00000078",
+        "completion": "0.0000039",
+        "input_cache_read": "0.000000156"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3.1-terminus",
+      "canonical_slug": "deepseek/deepseek-v3.1-terminus",
+      "created": 1758548275,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000027",
+        "completion": "0.000001"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2-0905",
+      "canonical_slug": "moonshotai/kimi-k2-0905",
+      "created": 1757021147,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000006",
+        "completion": "0.0000025"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-chat-v3.1",
+      "canonical_slug": "deepseek/deepseek-chat-v3.1",
+      "created": 1755779628,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000025",
+        "completion": "0.00000095",
+        "input_cache_read": "0.00000013"
+      }
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "canonical_slug": "openai/gpt-oss-120b",
+      "created": 1754414231,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000000037",
+        "completion": "0.00000017"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.1",
+      "canonical_slug": "anthropic/claude-4.1-opus-20250805",
+      "created": 1754411591,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000015",
+        "completion": "0.000075",
+        "input_cache_read": "0.0000015"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.1:batch",
+      "canonical_slug": "anthropic/claude-4.1-opus-20250805",
+      "created": 1754411591,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000075",
+        "completion": "0.0000375",
+        "input_cache_read": "0.00000075"
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2",
+      "canonical_slug": "moonshotai/kimi-k2",
+      "created": 1752263252,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000057",
+        "completion": "0.0000023"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-r1-0528",
+      "canonical_slug": "deepseek/deepseek-r1-0528",
+      "created": 1748455170,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000005",
+        "completion": "0.00000215",
+        "input_cache_read": "0.00000035"
+      }
+    },
+    {
+      "id": "anthropic/claude-sonnet-4",
+      "canonical_slug": "anthropic/claude-4-sonnet-20250522",
+      "created": 1747930371,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000003",
+        "completion": "0.000015",
+        "input_cache_read": "0.0000003"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-chat-v3-0324",
+      "canonical_slug": "deepseek/deepseek-chat-v3-0324",
+      "created": 1742824755,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.00000025",
+        "completion": "0.000001"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-r1",
+      "canonical_slug": "deepseek/deepseek-r1",
+      "created": 1737381095,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000007",
+        "completion": "0.0000025"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-chat",
+      "canonical_slug": "deepseek/deepseek-chat-v3",
+      "created": 1735241320,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000002574",
+        "completion": "0.0000010287"
+      }
+    },
+    {
+      "id": "lab/judge-1",
+      "canonical_slug": "lab/judge-1-20260101",
+      "created": 1767225600,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "lab/judge-2",
+      "canonical_slug": "lab/judge-2-20260901",
+      "created": 1788220800,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000005",
+        "input_cache_read": "0.0000001"
+      }
+    },
+    {
+      "id": "lab/fading-3",
+      "canonical_slug": "lab/fading-3-20260101",
+      "created": 1767225600,
+      "expiration_date": "2026-10-31",
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.000008"
+      }
+    },
+    {
+      "id": "lab/thirdparty-1",
+      "canonical_slug": "lab/thirdparty-1-20260101",
+      "created": 1767225600,
+      "expiration_date": null,
+      "pricing": {
+        "prompt": "0.0000005",
+        "completion": "0.000002"
+      }
+    }
+  ]
+}
