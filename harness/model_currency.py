@@ -53,6 +53,17 @@ KINDS = (
 )
 INFORMATIONAL = frozenset({"held", "untracked", "new_line"})
 HELD_ROLES = ("judge", "persona")
+# The one price-field list: registry key, endpoint pricing key, and whether the
+# endpoint must list it. An optional price the endpoint omits is left out of the
+# registry, where the parser defaults it to the input price. Every comparison,
+# report and write below iterates this list.
+PRICE_FIELDS = (
+    ("input_price", "prompt", True),
+    ("output_price", "completion", True),
+    ("cache_read_price", "input_cache_read", False),
+    ("cache_write_price", "input_cache_write", False),
+)
+PRICE_LABEL = "in/out/cache-read/cache-write"
 
 _SNAPSHOT_RE = re.compile(r"-(\d{8}|\d{6}|\d{4}|\d{2}-\d{2})$")
 _VERSION_RE = re.compile(r"\d+(?:\.\d+)*")
@@ -86,12 +97,16 @@ class CatalogEntry:
 
 @dataclass(frozen=True)
 class Quote:
-    """$/Mtok at one endpoint; cache_read_price None when the endpoint has none."""
+    """$/Mtok at one endpoint; an optional price is None when the endpoint has none."""
 
     input_price: float
     output_price: float
     cache_read_price: float | None
     endpoint: str
+    cache_write_price: float | None = None
+
+    def prices(self) -> dict[str, float | None]:
+        return {key: getattr(self, key) for key, _, _ in PRICE_FIELDS}
 
 
 @dataclass(frozen=True)
@@ -328,28 +343,27 @@ def vendor_quote(raw: object, vendor: str, price_endpoint: str = "") -> Quote | 
         return None
     endpoint = candidates[0]
     pricing = endpoint.get("pricing")
-    if not isinstance(pricing, dict) or "prompt" not in pricing or "completion" not in pricing:
+    required = [api for _, api, needed in PRICE_FIELDS if needed]
+    if not isinstance(pricing, dict) or any(api not in pricing for api in required):
         raise CurrencyUnknown(f"malformed pricing on endpoint {endpoint.get('tag')!r}")
-    cache = pricing.get("input_cache_read")
-    return Quote(
-        input_price=_per_mtok(pricing["prompt"]),
-        output_price=_per_mtok(pricing["completion"]),
-        cache_read_price=_per_mtok(cache) if cache is not None else None,
-        endpoint=str(endpoint.get("tag")),
-    )
+    prices = {
+        key: _per_mtok(pricing[api]) if needed or pricing.get(api) is not None else None
+        for key, api, needed in PRICE_FIELDS
+    }
+    return Quote(endpoint=str(endpoint.get("tag")), **prices)
 
 
-def _effective(quote: Quote) -> tuple[float, float, float]:
-    cache = quote.input_price if quote.cache_read_price is None else quote.cache_read_price
-    return quote.input_price, quote.output_price, cache
+def _effective(quote: Quote) -> tuple[float, ...]:
+    """The quote as the registry would read it: an omitted price is the input price."""
+    return tuple(quote.input_price if p is None else p for p in quote.prices().values())
+
+
+def _current(current: support.Price | support.Model | support.RolePrice) -> tuple[float, ...]:
+    return tuple(getattr(current, key) for key, _, _ in PRICE_FIELDS)
 
 
 def drifted(current: support.Price | support.Model | support.RolePrice, quote: Quote) -> bool:
-    pairs = zip(
-        (current.input_price, current.output_price, current.cache_read_price),
-        _effective(quote),
-        strict=True,
-    )
+    pairs = zip(_current(current), _effective(quote), strict=True)
     return any(abs(have - want) > PRICE_TOLERANCE * max(abs(want), 1e-12) for have, want in pairs)
 
 
@@ -362,11 +376,11 @@ def _price_text(prices: Iterable[float | None]) -> str:
 
 
 def _price_change(current, quote: Quote | None) -> str:
-    before = _price_text((current.input_price, current.output_price, current.cache_read_price))
+    before = _price_text(_current(current))
     if quote is None:
-        return f"in/out/cache {before} $/Mtok kept (no vendor endpoint)"
+        return f"{PRICE_LABEL} {before} $/Mtok kept (no vendor endpoint)"
     after = _price_text(_effective(quote))
-    return f"in/out/cache {before} → {after} $/Mtok ({quote.endpoint} endpoint)"
+    return f"{PRICE_LABEL} {before} → {after} $/Mtok ({quote.endpoint} endpoint)"
 
 
 # ---------- the check -----------------------------------------------------------
@@ -458,7 +472,7 @@ def _follow_roster_move(run: _Run, model: support.Model, cid: str, new_id: str) 
         held = run.quote(cid, model.price_endpoint) if cid in run.catalog else None
         if held is None:  # no vendor endpoint: carry the row's own price over
             held = Quote(model.input_price, model.output_price, model.cache_read_price,
-                         model.price_endpoint)
+                         model.price_endpoint, model.cache_write_price)
         run.edits.append(Edit("role_price", model.id, model.id, held))
 
 
@@ -655,10 +669,13 @@ def _set_key(lines: list[str], start: int, end: int, key: str, value: str | None
 
 
 def _set_prices(lines: list[str], start: int, end: int, quote: Quote) -> None:
-    cache = None if quote.cache_read_price is None else repr(quote.cache_read_price)
-    end += _set_key(lines, start, end, "cache_read_price", cache, "output_price")
-    end += _set_key(lines, start, end, "output_price", repr(quote.output_price), "input_price")
-    _set_key(lines, start, end, "input_price", repr(quote.input_price), "id")
+    """Every PRICE_FIELDS key in field order; an omitted optional price is deleted,
+    and a new key goes after the last price key the block keeps."""
+    anchor = "id"
+    for key, value in quote.prices().items():
+        end += _set_key(lines, start, end, key, None if value is None else repr(value), anchor)
+        if value is not None:
+            anchor = key
 
 
 def _model_block(lines: list[str], model_id: str) -> tuple[int, int]:
@@ -705,11 +722,8 @@ def _apply_role_price(lines: list[str], edit: Edit) -> None:
     block = [
         "",
         f"[{header}]   # held role, off the roster; refreshed weekly",
-        f"input_price = {q.input_price!r}",
-        f"output_price = {q.output_price!r}",
+        *(f"{key} = {value!r}" for key, value in q.prices().items() if value is not None),
     ]
-    if q.cache_read_price is not None:
-        block.append(f"cache_read_price = {q.cache_read_price!r}")
     if q.endpoint and q.endpoint != edit.target.removeprefix("openrouter/").split("/", 1)[0]:
         block.append(f"price_endpoint = {json.dumps(q.endpoint)}")
     lines[at:at] = block

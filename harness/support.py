@@ -8,7 +8,7 @@ The thin shells matrix.py and report.py do the IO and the Inspect calls.
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -39,6 +39,7 @@ class Model:
     output_price: float
     enabled: bool
     cache_read_price: float = 0.0  # $/Mtok; parse defaults it to input_price
+    cache_write_price: float = 0.0  # $/Mtok; parse defaults it to input_price
     note: str = ""  # free-text caveat rendered into the summary Notes column
     # currency tracking (harness/model_currency.py): True derives the version
     # line from the ID, a string is an explicit line glob, False opts out
@@ -53,6 +54,7 @@ class Price:
     input_price: float
     output_price: float
     cache_read_price: float
+    cache_write_price: float
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,7 @@ class RolePrice:
     input_price: float
     output_price: float
     cache_read_price: float
+    cache_write_price: float
     price_endpoint: str = ""
 
 
@@ -84,10 +87,11 @@ class TaskConfig:
     excluded: tuple[str, ...]
     priors: dict[str, tuple[int, int]]
     judge_model: str
-    judge_tokens: tuple[int, int]
+    judge_tokens: tuple[int, int]  # per cell-epoch, every task
     skills: dict[str, str] = field(default_factory=dict)
     tier_epochs: dict[str, int] = field(default_factory=dict)
     dialogue: tuple[str, ...] = ()  # persona-driven tasks; no baseline arm exists
+    persona_tokens: tuple[int, int] = (0, 0)  # per dialogue cell-epoch
 
 
 @dataclass(frozen=True)
@@ -115,13 +119,31 @@ class CostLine:
 
 
 @dataclass(frozen=True)
+class RoleCost:
+    """One role model's share of an estimate: its budget over the cell-epochs
+    it runs on. `usd` is None when the registry prices its ID nowhere."""
+
+    role: str  # "judge" | "persona"
+    model_id: str
+    cell_epochs: int
+    tokens: tuple[int, int]  # (input, output) budget per cell-epoch
+    usd: float | None
+
+
+@dataclass(frozen=True)
 class CostReport:
     lines: tuple[CostLine, ...] = ()
     unknown_models: tuple[str, ...] = ()
+    roles: tuple[RoleCost, ...] = ()  # estimates only; already inside `lines`
 
     @property
     def total(self) -> float:
         return sum(line.usd for line in self.lines)
+
+    @property
+    def unpriced_roles(self) -> tuple[str, ...]:
+        """Role model IDs the run would call that no registry entry prices."""
+        return tuple(dict.fromkeys(r.model_id for r in self.roles if r.usd is None))
 
 
 def check_pinned(model_id: object, where: str) -> str:
@@ -161,6 +183,7 @@ def _parse_model(m: dict) -> Model:
         output_price=float(m["output_price"]),
         enabled=bool(m["enabled"]),
         cache_read_price=float(m.get("cache_read_price", m["input_price"])),
+        cache_write_price=float(m.get("cache_write_price", m["input_price"])),
         note=str(m.get("note", "")),
         track=_parse_track(m.get("track", True), model_id),
         price_endpoint=str(m.get("price_endpoint", "")),
@@ -170,8 +193,31 @@ def _parse_model(m: dict) -> Model:
     return model
 
 
+def _budget(table: dict) -> tuple[int, int]:
+    return int(table["input"]), int(table["output"])
+
+
+def _persona_tokens(t: dict) -> tuple[int, int]:
+    """[tasks.persona] is read explicitly — unknown [tasks] keys are ignored, and a
+    budget that silently stayed unread would price every persona call at $0."""
+    persona = t.get("persona")
+    if persona is None:
+        if t.get("dialogue"):
+            raise ValueError(
+                "[tasks.persona] is missing: dialogue tasks call the persona, so the estimate "
+                "needs its token budget per dialogue cell-epoch"
+            )
+        return (0, 0)
+    if "model" in persona:
+        raise ValueError(
+            "[tasks.persona] carries only the persona's token budget; its model ID lives in "
+            "[roles].persona — remove [tasks.persona].model"
+        )
+    return _budget(persona)
+
+
 def _parse_tasks(t: dict, judge_model: str) -> TaskConfig:
-    priors = {name: (int(p["input"]), int(p["output"])) for name, p in t["priors"].items()}
+    priors = {name: _budget(p) for name, p in t["priors"].items()}
     if "default" not in priors:
         raise ValueError("tasks.priors must carry a 'default' entry")
     overlap = set(t["matrix"]) & set(t["excluded"])
@@ -192,10 +238,11 @@ def _parse_tasks(t: dict, judge_model: str) -> TaskConfig:
         excluded=tuple(t["excluded"]),
         priors=priors,
         judge_model=judge_model,
-        judge_tokens=(int(judge["input"]), int(judge["output"])),
+        judge_tokens=_budget(judge),
         skills=dict(t.get("skills", {})),
         tier_epochs={tier: int(n) for tier, n in t.get("epochs", {}).items()},
         dialogue=tuple(t.get("dialogue", ())),
+        persona_tokens=_persona_tokens(t),
     )
     for tier in tasks.tier_epochs:
         if tier not in TIERS:
@@ -229,6 +276,7 @@ def _parse_role_prices(raw: dict) -> dict[str, RolePrice]:
             input_price=float(p["input_price"]),
             output_price=float(p["output_price"]),
             cache_read_price=float(p.get("cache_read_price", p["input_price"])),
+            cache_write_price=float(p.get("cache_write_price", p["input_price"])),
             price_endpoint=str(p.get("price_endpoint", "")),
         )
         for model_id, p in raw.items()
@@ -288,10 +336,11 @@ def model_price(registry: Registry, model_id: str) -> Price | None:
     the [role_prices] entry, else None."""
     for m in registry.models:
         if m.id == model_id:
-            return Price(m.input_price, m.output_price, m.cache_read_price)
+            return Price(m.input_price, m.output_price, m.cache_read_price, m.cache_write_price)
     entry = registry.role_prices.get(model_id)
     if entry is not None:
-        return Price(entry.input_price, entry.output_price, entry.cache_read_price)
+        return Price(entry.input_price, entry.output_price, entry.cache_read_price,
+                     entry.cache_write_price)
     return None
 
 
@@ -419,19 +468,61 @@ def _prior(
     return cfg.priors.get(task, cfg.priors["default"])
 
 
+def _budget_usd(price: Price | None, tokens: tuple[int, int]) -> float:
+    """A per-cell-epoch budget at full input price: the uncached ceiling."""
+    if price is None:
+        return 0.0
+    return (tokens[0] * price.input_price + tokens[1] * price.output_price) / 1e6
+
+
+def _role_cells(models: list[Model], tasks: list[str], cfg: TaskConfig,
+                epochs_default: int) -> tuple[int, int]:
+    """(every cell-epoch, dialogue cell-epochs) the selection runs."""
+    cells = dialogue = 0
+    for m in models:
+        for task in tasks:
+            n = epochs_for(task, m.tier, cfg, epochs_default)
+            cells += n
+            dialogue += n if task in cfg.dialogue else 0
+    return cells, dialogue
+
+
+def _role_costs(models: list[Model], tasks: list[str], registry: Registry,
+                epochs_default: int, judge: str, persona: str) -> tuple[RoleCost, ...]:
+    """The judge on every cell-epoch, the persona on dialogue cell-epochs only; a
+    role with no cell-epoch in the selection is not called and not listed."""
+    cfg = registry.tasks
+    cells, dialogue = _role_cells(models, tasks, cfg, epochs_default)
+    costs = []
+    for role, model_id, n, tokens in (("judge", judge, cells, cfg.judge_tokens),
+                                      ("persona", persona, dialogue, cfg.persona_tokens)):
+        if n == 0:
+            continue
+        price = model_price(registry, model_id)
+        usd = None if price is None else round(n * _budget_usd(price, tokens), 2)
+        costs.append(RoleCost(role, model_id, n, tokens, usd))
+    return tuple(costs)
+
+
 def estimate_cost(
     models: list[Model],
     tasks: list[str],
     registry: Registry,
     epochs_default: int = DEFAULT_EPOCHS,
     history: dict[str, tuple[int, int]] | None = None,
+    judge: str | None = None,
+    persona: str | None = None,
 ) -> CostReport:
+    """Each model's line carries its own cell-epochs plus the role budgets those
+    cell-epochs call. `judge`/`persona` are the IDs the run resolves (environment
+    overrides included — `role_model`); left out, the registry's roles. Every price
+    comes from `model_price`; an unpriced role is charged nothing here and is
+    reported in `unpriced_roles`, which the caller must treat as a stop."""
     cfg = registry.tasks
-    judge = model_price(registry, cfg.judge_model)
-    j_in, j_out = cfg.judge_tokens
-    judge_usd_per_epoch = (
-        (j_in * judge.input_price + j_out * judge.output_price) / 1e6 if judge else 0.0
-    )
+    judge = judge or registry.roles.judge
+    persona = persona or registry.roles.persona
+    judge_usd = _budget_usd(model_price(registry, judge), cfg.judge_tokens)
+    persona_usd = _budget_usd(model_price(registry, persona), cfg.persona_tokens)
     lines = []
     for m in models:
         usd = 0.0
@@ -439,28 +530,52 @@ def estimate_cost(
             n = epochs_for(task, m.tier, cfg, epochs_default)
             p_in, p_out = _prior(task, cfg, history)
             usd += n * (p_in * m.input_price + p_out * m.output_price) / 1e6
-            usd += n * judge_usd_per_epoch
+            usd += n * judge_usd
+            usd += n * persona_usd if task in cfg.dialogue else 0.0
         lines.append(CostLine(m.id, round(usd, 2)))
-    unknown = () if judge else (cfg.judge_model,)
-    return CostReport(tuple(lines), unknown)
+    roles = _role_costs(models, tasks, registry, epochs_default, judge, persona)
+    return CostReport(tuple(lines), roles=roles)
+
+
+Usage = tuple[int, int, int, int]  # (input, output, cache_read, cache_write), price_usage's order
+
+
+def billed_usage(model_usages: Iterable[Mapping[str, object]]) -> dict[str, Usage]:
+    """Sum Inspect ModelUsage maps (model ID -> usage) into price_usage's tuples.
+    The one accumulation behind both cost reports — matrix.collect_usage and
+    report.py — so neither can drop a token kind the other prices: Inspect
+    reports cache reads and cache writes apart from input."""
+    totals: dict[str, Usage] = {}
+    for usage in model_usages:
+        for model_id, mu in usage.items():
+            tin, tout, cread, cwrite = totals.get(model_id, (0, 0, 0, 0))
+            totals[model_id] = (
+                tin + mu.input_tokens,
+                tout + mu.output_tokens,
+                cread + (mu.input_tokens_cache_read or 0),
+                cwrite + (mu.input_tokens_cache_write or 0),
+            )
+    return totals
 
 
 def price_usage(usage: dict[str, tuple[int, ...]], registry: Registry) -> CostReport:
-    """Price actual token usage: model_id -> (input, output[, cache_read]) tokens.
+    """Price actual token usage: model_id -> (input, output[, cache_read[,
+    cache_write]]) tokens.
 
-    input excludes cache reads (Inspect reports them separately); cache reads
-    are billed at the model's cache_read_price.
+    input excludes cache reads and cache writes (Inspect reports both separately);
+    each is billed at its own price, a cache write at the entry's
+    cache_write_price (its input price unless the registry says otherwise).
     """
     lines = []
     unknown = []
     for model_id, tokens in sorted(usage.items()):
-        tin, tout = tokens[0], tokens[1]
-        cread = tokens[2] if len(tokens) > 2 else 0
+        tin, tout, cread, cwrite = (*tokens, 0, 0)[:4]
         m = model_price(registry, model_id)
         if m is None:
             unknown.append(model_id)
             continue
-        usd = (tin * m.input_price + tout * m.output_price + cread * m.cache_read_price) / 1e6
+        usd = (tin * m.input_price + tout * m.output_price + cread * m.cache_read_price
+               + cwrite * m.cache_write_price) / 1e6
         lines.append(CostLine(model_id, round(usd, 4)))
     return CostReport(tuple(lines), tuple(unknown))
 
@@ -474,6 +589,246 @@ def merge_history(
         old_in, old_out = merged.get(task, (0, 0))
         merged[task] = (max(old_in, tin), max(old_out, tout))
     return merged
+
+
+# ---------- prompt caching on Anthropic rows: routing and telemetry ------------
+
+# How Anthropic rows are cached (testing-harness spec: Prompt caching on Anthropic
+# matrix rows): `marker`, the upstream pin plus one conversation breakpoint added
+# to Inspect's own markers (harness/openrouter_cache.py).
+MECHANISMS = ("marker",)
+# The one mechanism the matrix routes Anthropic rows with; the spec admits only a
+# mechanism the cache reuse probe has passed. Probe 2 (2026-10-05) passed `marker`
+# on haiku-4.5 (88.8% reads) and sonnet-5.5 (86.4%), served by Bedrock; the
+# unprobed `auto` was deleted (fix-openrouter-caching, task 8.1). None rolls
+# back: every row, Anthropic included, is then sent exactly as before.
+CACHE_MECHANISM: str | None = "marker"
+PINNED_FAMILY = "anthropic"
+# OpenRouter provider slugs of the pin, tried in this order with no fallback
+# beyond them. The account's zero-data-retention guardrail removes first-party
+# `anthropic` (probe 1, 2026-10-05: a routing 404); these global endpoints are
+# the ones it and the regional-surcharge filter keep. A bare slug never pins a
+# surcharged regional endpoint, and an explicit order turns off OpenRouter's
+# sticky routing, so Bedrock serves every turn it can and Vertex only on failover.
+PINNED_PROVIDERS = ("amazon-bedrock", "google-vertex")
+# The name OpenRouter records in a response's `provider` field for each slug:
+# the endpoints' `provider_name` (tests/unit/data/model_catalog/endpoints/).
+PROVIDER_NAMES = {"amazon-bedrock": "Amazon Bedrock", "google-vertex": "Google"}
+CACHE_HIT_WARN = 0.5  # below the probe's 80%: real cells carry one-shot judge calls
+UNRECORDED = "unrecorded"  # model events whose raw call the log did not keep
+
+
+def provider_pin() -> dict:
+    """The OpenRouter `provider` routing object of a routed row, built fresh."""
+    return {"order": list(PINNED_PROVIDERS), "allow_fallbacks": False}
+
+
+@dataclass(frozen=True)
+class Routing:
+    """Per-model OpenRouter settings: model arguments for `get_model` and
+    whether its conversation gets a cache breakpoint (`marker`). Empty for every
+    non-Anthropic row, whose requests stay exactly as before."""
+
+    model_args: dict = field(default_factory=dict)
+    conversation_breakpoint: bool = False
+
+    def __bool__(self) -> bool:
+        return bool(self.model_args or self.conversation_breakpoint)
+
+    @property
+    def pins(self) -> tuple[str, ...]:
+        """The upstream provider slugs the routing pins, in order; () if none."""
+        return tuple(self.model_args.get("provider", {}).get("order") or ())
+
+    def serves(self, provider_name: str) -> bool:
+        """Whether a provider name recorded in a response is one of the pins."""
+        names = {PROVIDER_NAMES.get(slug, slug).casefold() for slug in self.pins}
+        return provider_name.casefold() in names | {slug.casefold() for slug in self.pins}
+
+
+def routing_for(model: Model | None, mechanism: str | None) -> Routing:
+    """Anthropic rows: the pinned providers only, in order, no fallback beyond
+    them — so successive turns reach the cache they wrote — plus the
+    conversation breakpoint (`marker`). No mechanism (None: rolled back) routes
+    nothing. Built fresh on every call, so no caller can mutate another's
+    routing."""
+    if mechanism is not None and mechanism not in MECHANISMS:
+        raise ValueError(f"unknown caching mechanism {mechanism!r}; expected one of {MECHANISMS}")
+    if mechanism is None or model is None or model.family != PINNED_FAMILY:
+        return Routing()
+    return Routing({"provider": provider_pin()}, conversation_breakpoint=True)
+
+
+@dataclass(frozen=True)
+class CacheStats:
+    """One model's prompt-token split in a run. `input` is uncached input (Inspect
+    reports cache reads and cache writes apart from it)."""
+
+    model_id: str
+    input: int
+    cache_write: int
+    cache_read: int
+    providers: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def prompt(self) -> int:
+        return self.input + self.cache_write + self.cache_read
+
+    @property
+    def hit_rate(self) -> float:
+        return self.cache_read / self.prompt if self.prompt else 0.0
+
+    def merged(self, other: CacheStats) -> CacheStats:
+        providers = dict(self.providers)
+        for name, n in other.providers.items():
+            providers[name] = providers.get(name, 0) + n
+        return CacheStats(self.model_id, self.input + other.input,
+                          self.cache_write + other.cache_write,
+                          self.cache_read + other.cache_read, dict(sorted(providers.items())))
+
+
+def prompt_costs(stats: CacheStats, price: Price) -> tuple[float, float]:
+    """(actual, uncached-equivalent) $ for the prompt side of `stats`: what was
+    billed, and what the same tokens cost with no caching at all."""
+    actual = (stats.input * price.input_price + stats.cache_write * price.cache_write_price
+              + stats.cache_read * price.cache_read_price) / 1e6
+    return actual, stats.prompt * price.input_price / 1e6
+
+
+def format_providers(counts: Mapping[str, int]) -> str:
+    """`Anthropic ×3, unrecorded ×9`, in the order given; `none` when empty."""
+    return ", ".join(f"{name} ×{n}" for name, n in counts.items()) or "none"
+
+
+CACHE_WARNING_KINDS = ("no_prompt", "low_hit", "off_pin")
+
+
+@dataclass(frozen=True)
+class CacheWarning:
+    """One cache-telemetry finding on a routed row. `kind` is one of
+    CACHE_WARNING_KINDS; `detail` is the human sentence after the model ID."""
+
+    model_id: str
+    kind: str
+    detail: str
+
+    def __str__(self) -> str:
+        return f"warning: {self.model_id} {self.detail}"
+
+
+def cache_warnings(stats: Iterable[CacheStats], registry: Registry,
+                   mechanism: str | None) -> list[CacheWarning]:
+    """Findings for rows `mechanism` routes (Anthropic roster rows) only: a
+    cache-hit rate below CACHE_HIT_WARN, no prompt tokens at all, or a recorded
+    call served by a provider outside the pin (every pinned provider, Vertex on
+    failover included, is on it). A non-Anthropic row, an ID priced only by
+    [role_prices], and every row while the mechanism is rolled back (None) have
+    no pin and are never warned."""
+    rows = {m.id: m for m in registry.models}
+    found = []
+    for s in stats:
+        routing = routing_for(rows.get(s.model_id), mechanism)
+        if not routing.pins:
+            continue
+        if not s.prompt:
+            found.append(CacheWarning(
+                s.model_id, "no_prompt", "recorded no prompt tokens — its cache-hit rate is "
+                "unknown; if every call failed (a routing 404?), see the sample errors"))
+        elif s.hit_rate < CACHE_HIT_WARN:
+            found.append(CacheWarning(
+                s.model_id, "low_hit", f"cache-hit rate {s.hit_rate:.1%} is below "
+                f"{CACHE_HIT_WARN:.0%} — prompt caching may have regressed"))
+        off = {name: n for name, n in sorted(s.providers.items())
+               if name != UNRECORDED and not routing.serves(name)}
+        if off:
+            found.append(CacheWarning(s.model_id, "off_pin", f"had calls served off its pin "
+                                      f"({', '.join(routing.pins)}): {format_providers(off)}"))
+    return found
+
+
+def _call_pinned(event: object) -> bool | None:
+    """Whether a model event's recorded request named a provider pin; None when
+    the log kept no raw call for it."""
+    call = getattr(event, "call", None)
+    if call is None:
+        return None
+    body = (getattr(call, "request", None) or {}).get("extra_body")
+    return isinstance(body, dict) and "provider" in body
+
+
+def routed_events(events: Iterable[object], model_id: str, routed: bool) -> list:
+    """The model events of `model_id`. For a routed row, a recorded call whose
+    request names no pin came from another Model of the same ID — the judge or
+    the persona, whose serving this change leaves alone — and is dropped; an
+    unrecorded call is kept for the `unrecorded` bucket."""
+    return [
+        e for e in events
+        if getattr(e, "event", None) == "model" and getattr(e, "model", None) == model_id
+        and not (routed and _call_pinned(e) is False)
+    ]
+
+
+def serving_providers(events: Iterable[object]) -> dict[str, int]:
+    """Count the upstream provider OpenRouter recorded in each event's raw
+    response; events with no recorded call land in `unrecorded`."""
+    counts: dict[str, int] = {}
+    for e in events:
+        call = getattr(e, "call", None)
+        response = getattr(call, "response", None) if call is not None else None
+        provider = response.get("provider") if isinstance(response, dict) else None
+        name = provider if isinstance(provider, str) and provider else UNRECORDED
+        counts[name] = counts.get(name, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+@dataclass(frozen=True)
+class RoleObservation:
+    """A role model's heaviest cell-epoch beside its budget. Roles sharing one ID
+    (the persona defaults to the judge) cannot be told apart and share a line."""
+
+    role: str  # "judge", "persona" or "judge/persona"
+    model_id: str
+    input: int  # uncached input + cache writes + cache reads: full demand
+    output: int
+    budget: tuple[int, int]
+
+    @property
+    def exceeded(self) -> bool:
+        return self.input > self.budget[0] or self.output > self.budget[1]
+
+
+def context_demand(usage: object) -> tuple[int, int]:
+    """(full prompt demand, output) of one ModelUsage: uncached input plus cache
+    writes plus cache reads, since Inspect reports both cache counts apart from
+    input and a later run may get no cache hit at all."""
+    return (usage.input_tokens + (usage.input_tokens_cache_write or 0)
+            + (usage.input_tokens_cache_read or 0), usage.output_tokens)
+
+
+def role_observations(
+    samples: Iterable[object],
+    role_ids: Mapping[str, str],
+    under_test: str,
+    budgets: Mapping[str, tuple[int, int]],
+) -> list[RoleObservation]:
+    """Per-cell-epoch usage (the maximum over `samples`) of each role model the
+    task calls, from per-sample model usage. A role whose ID is the model under
+    test is mixed into that model's own usage and yields no observation."""
+    by_id: dict[str, list[str]] = {}
+    for role, model_id in role_ids.items():
+        if model_id != under_test:
+            by_id.setdefault(model_id, []).append(role)
+    samples = list(samples)
+    found = []
+    for model_id, roles in by_id.items():
+        seen = [context_demand(u) for s in samples
+                if (u := (getattr(s, "model_usage", None) or {}).get(model_id)) is not None]
+        if not seen:
+            continue
+        budget = (sum(budgets[r][0] for r in roles), sum(budgets[r][1] for r in roles))
+        found.append(RoleObservation("/".join(roles), model_id, max(i for i, _ in seen),
+                                     max(o for _, o in seen), budget))
+    return found
 
 
 def splice_readme(text: str, replacement: str) -> str:
@@ -613,7 +968,7 @@ class ArmStats:
 
     passes: tuple[bool, ...]  # task-level verdict per epoch
     scorer_passes: dict[str, tuple[bool, ...]]  # raw per-scorer results, unfiltered
-    tokens: int  # total input+output across the run, judge included
+    tokens: int  # full prompt demand + output across the run, judge included (context_demand)
     duration_s: float | None = None
 
     @property

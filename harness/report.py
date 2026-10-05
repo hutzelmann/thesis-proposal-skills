@@ -81,9 +81,9 @@ def arm_stats(log, task: str, registry: support.Registry) -> support.ArmStats:
     tokens = 0
     duration = None
     if log.stats is not None:
-        tokens = sum(
-            mu.input_tokens + mu.output_tokens for mu in log.stats.model_usage.values()
-        )
+        # full demand: Inspect reports cache reads and writes apart from input,
+        # so a cached arm would otherwise look cheaper than an uncached one
+        tokens = sum(sum(support.context_demand(mu)) for mu in log.stats.model_usage.values())
         duration = support.duration_seconds(log.stats.started_at, log.stats.completed_at)
     return support.ArmStats(
         passes=tuple(passes),
@@ -91,6 +91,21 @@ def arm_stats(log, task: str, registry: support.Registry) -> support.ArmStats:
         tokens=tokens,
         duration_s=duration,
     )
+
+
+def model_costs(logs: dict[tuple[str, str], object],
+                registry: support.Registry) -> dict[str, float]:
+    """Run cost per model under test over its matrix-task logs: every model those
+    logs called (the judge included), each token kind at its own price, through
+    the same accumulation as the matrix's actual spend (support.billed_usage)."""
+    by_model: dict[str, list] = {}
+    for (model_id, task), log in logs.items():
+        if task in registry.tasks.matrix and log.stats is not None:
+            by_model.setdefault(model_id, []).append(log.stats.model_usage)
+    return {
+        model_id: support.price_usage(support.billed_usage(usages), registry).total
+        for model_id, usages in by_model.items()
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -104,7 +119,6 @@ def main(argv: list[str] | None = None) -> int:
     logs, baseline_logs = newest_logs(Path(args.log_dir), registry)
 
     cells: dict[tuple[str, str], support.Cell] = {}
-    usage_by_model: dict[str, dict[str, tuple[int, int, int]]] = {}
     durations: dict[str, float] = {}
     newest_stamp = ""
     for (model_id, task), log in logs.items():
@@ -126,14 +140,6 @@ def main(argv: list[str] | None = None) -> int:
             reduced=0 < len(passes) < support.DEFAULT_EPOCHS,
         )
         if log.stats is not None:
-            acc = usage_by_model.setdefault(model_id, {})
-            for used_id, mu in log.stats.model_usage.items():
-                tin, tout, cread = acc.get(used_id, (0, 0, 0))
-                acc[used_id] = (
-                    tin + mu.input_tokens,
-                    tout + mu.output_tokens,
-                    cread + (mu.input_tokens_cache_read or 0),
-                )
             newest_stamp = max(newest_stamp, log.stats.started_at or "")
             span = support.duration_seconds(log.stats.started_at, log.stats.completed_at)
             if span is not None:
@@ -153,10 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         for m in models
     }
-    costs = {
-        model_id: support.price_usage(acc, registry).total
-        for model_id, acc in usage_by_model.items()
-    }
+    costs = model_costs(logs, registry)
     timestamp = newest_stamp[:10] if newest_stamp else "never"
 
     summary = support.render_summary(models, verdicts, timestamp, registry.tasks.skills)

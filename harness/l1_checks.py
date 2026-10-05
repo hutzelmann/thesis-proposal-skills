@@ -1497,3 +1497,26 @@ def verdict_single_context(tool_names: list[str], allowed: int = 0) -> tuple[boo
     if spawned:
         return True, f"{len(spawned)} helper-agent call(s) within the allowance of {allowed}"
     return True, "no helper agents spawned"
+
+
+def verdict_cache_reuse(
+    calls: list[tuple[int, int, int]], minimum: float = 0.8
+) -> tuple[bool, str]:
+    """The cache reuse probe's pass rule (testing-harness spec: Cache reuse
+    probe), advisory telemetry like verdict_single_context. `calls` are the
+    replay's per-call (uncached input, cache write, cache read) tokens, in order.
+    Passes when cache reads make up at least `minimum` of all prompt tokens,
+    summed over the calls after the first call that writes the cache; the calls
+    before it cannot read anything back."""
+    first = next((i for i, (_, write, _) in enumerate(calls) if write > 0), None)
+    if first is None:
+        return False, f"no call wrote the cache ({len(calls)} call(s) made)"
+    after = calls[first + 1:]
+    prompt = sum(tin + write + read for tin, write, read in after)
+    if not prompt:
+        return False, (f"the first cache write came on call {first + 1} of {len(calls)}, "
+                       "and no later call recorded a prompt token to read it back")
+    share = sum(read for _, _, read in after) / prompt
+    detail = (f"cache reads {share:.1%} of the prompt tokens on the {len(after)} call(s) after "
+              f"the first cache write (call {first + 1}); threshold {minimum:.0%}")
+    return share >= minimum, detail

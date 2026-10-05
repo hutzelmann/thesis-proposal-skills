@@ -6,7 +6,7 @@
         "name": "Lab | lab/judge-1",
         "provider_name": "Lab",
         "tag": "lab",
-        "pricing": {"prompt": "0.000001", "completion": "0.000005", "input_cache_read": "0.0000001"}
+        "pricing": {"prompt": "0.000001", "completion": "0.000005", "input_cache_read": "0.0000001", "input_cache_write": "0.00000125"}
       },
       {
         "name": "Othercloud | lab/judge-1",

@@ -334,6 +334,67 @@ def test_omitted_cache_read_price_is_dropped_on_write(tmp_path):
     assert fading.cache_read_price == fading.input_price == 2.0
 
 
+def _block(text: str, header_line: str) -> str:
+    """The lines of one table, from the line naming it to the next header."""
+    return text.split(header_line, 1)[1].split("\n[", 1)[0]
+
+
+def test_cache_write_drift_is_reported_and_written_on_a_roster_row(tmp_path, replay, catalog):
+    _, bumped = run_main(tmp_path, LAB_TOML, "--write")
+    assert "cache_write_price = 1.5" in _block(bumped, 'id = "openrouter/lab/judge-2"'), (
+        "the successor row carries its endpoint's input_cache_write")
+    stale = substituted(bumped, ("cache_write_price = 1.5", "cache_write_price = 1.2"))
+    drift = findings(check(stale, replay, catalog), "roster:openrouter/lab/judge-2")["price_drift"]
+    assert drift.writable
+    assert "1.2/6/0.12/1.2 → 1.2/6/0.12/1.5" in drift.detail
+    _, refreshed = run_main(tmp_path, stale, "--write")
+    assert refreshed == bumped
+
+
+def test_cache_write_drift_is_reported_and_written_on_a_role_price_entry(
+        tmp_path, replay, catalog):
+    _, bumped = run_main(tmp_path, LAB_TOML, "--write")
+    stale = substituted(bumped, ("cache_write_price = 1.25", "cache_write_price = 1.0"))
+    result = check(stale, replay, catalog)
+    assert findings(result, "role_price:openrouter/lab/judge-1")["price_drift"].writable
+    _, refreshed = run_main(tmp_path, stale, "--write")
+    assert refreshed == bumped
+
+
+def test_held_role_entry_carries_its_endpoints_cache_write_price(tmp_path):
+    _, written = run_main(tmp_path, LAB_TOML, "--write")
+    entry = _block(written, '[role_prices."openrouter/lab/judge-1"]')
+    assert "cache_write_price = 1.25" in entry
+    reg = support.parse_registry(written)
+    assert reg.role_prices["openrouter/lab/judge-1"].cache_write_price == 1.25
+    assert support.model_price(reg, "openrouter/lab/judge-1").cache_write_price == 1.25
+
+
+def test_an_endpoint_without_a_cache_write_price_leaves_the_field_out(tmp_path):
+    text = substituted(LAB_TOML, (
+        "cache_read_price = 0.5\n", "cache_read_price = 0.5\ncache_write_price = 2.5\n"))
+    code, written = run_main(tmp_path, text, "--write")
+    assert code == 1
+    assert "cache_write_price" not in _block(written, 'id = "openrouter/lab/fading-3"')
+    fading = next(m for m in support.parse_registry(written).models
+                  if m.id == "openrouter/lab/fading-3")
+    assert fading.cache_write_price == fading.input_price == 2.0
+
+
+def test_a_second_write_with_cache_write_prices_changes_no_byte(tmp_path):
+    _, once = run_main(tmp_path, LAB_TOML, "--write")
+    _, twice = run_main(tmp_path, once, "--write")
+    assert twice == once
+    support.parse_registry(twice)
+
+
+def test_vendor_quote_reads_the_cache_write_price():
+    raw = {"data": {"endpoints": [{"tag": "lab", "pricing": {
+        "prompt": "0.000002", "completion": "0.00001", "input_cache_write": "0.0000025"}}]}}
+    q = mc.vendor_quote(raw, "lab")
+    assert (q.cache_read_price, q.cache_write_price) == (None, 2.5)
+
+
 # ---------- alerts and held roles ---------------------------------------------
 
 
@@ -517,7 +578,8 @@ def test_held_judge_leaving_the_roster_gets_a_role_price(tmp_path):
     row = next(m for m in reg.models if m.id == "openrouter/lab/judge-2")
     assert (row.input_price, row.output_price) == (1.2, 6.0), "the new row: judge-2's endpoint"
     est = support.estimate_cost([row], ["alpha"], reg)
-    assert est.unknown_models == ()
+    assert est.unpriced_roles == ()
+    assert [r.model_id for r in est.roles] == ["openrouter/lab/judge-1"], "the held judge"
     # 3 * (0.1M * $1.2 + 0.01M * $6) + judge 3 * (0.04M * $1 + 0.003M * $5)
     assert est.lines[0].usd == pytest.approx(3 * 0.18 + 3 * 0.055, abs=0.01)
     _, again = run_main(tmp_path, written, "--write")
@@ -680,7 +742,7 @@ def _estimate_block(out: str) -> str:
     return "\n".join(line for line in out.splitlines() if not line.startswith("model currency"))
 
 
-@pytest.mark.usefixtures("catalog_snapshot")
+@pytest.mark.usefixtures("catalog_snapshot", "no_role_overrides")
 def test_gate_prints_stale_pins_after_the_estimate(monkeypatch, capsys):
     import matrix
 
@@ -699,7 +761,7 @@ def test_gate_prints_stale_pins_after_the_estimate(monkeypatch, capsys):
     assert _estimate_block(warned) == _estimate_block(offline), "the estimate is unchanged"
 
 
-@pytest.mark.usefixtures("catalog_snapshot")
+@pytest.mark.usefixtures("catalog_snapshot", "no_role_overrides")
 def test_gate_declined_with_warnings_still_makes_no_metered_call(monkeypatch, capsys):
     import matrix
 

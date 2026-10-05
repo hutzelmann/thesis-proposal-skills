@@ -113,6 +113,38 @@ def test_judge_and_persona_come_from_the_registry_roles():
     assert resolved == (judge, persona)
 
 
+@pytest.mark.usefixtures("routable_openrouter")
+def test_role_models_stay_unrouted_beside_a_routed_model_under_test():
+    """Judge and persona prompts are one-shot and keep their serving (testing-
+    harness spec: Prompt caching on Anthropic matrix rows), so neither a provider
+    pin nor a cache breakpoint may reach them. The eval builds each from its
+    bare role ID, and Inspect memoizes on config and model arguments, so even
+    when the model under test shares the judge's ID and is routed, the role gets
+    a distinct, unrouted Model. Without the pin, the `marker` wrapper leaves its
+    requests alone (test_openrouter_cache.py pins the request body)."""
+    import re
+
+    import matrix
+    from inspect_ai.model import get_model
+
+    src = Path(skill_evals.__file__).read_text(encoding="utf-8")
+    assert re.findall(r"get_model\(([^)]*)\)", src) == ["JUDGE_MODEL", "PERSONA_MODEL"]
+    assert not re.search(r"routing_for|extra_body|cache_control", src)
+    rows = {m.id: m for m in REGISTRY.models}
+    for role_id in {REGISTRY.roles.judge, REGISTRY.roles.persona}:
+        # a held role (priced by `[role_prices]`, no roster row) shares no model
+        # under test's ID, so only its own Model is checked
+        row = rows.get(role_id)
+        routed = None if row is None else matrix.build_model(
+            row, support.routing_for(row, support.CACHE_MECHANISM))
+        role = get_model(role_id)
+        if routed is not None and row.family == support.PINNED_FAMILY:
+            assert routed.model_args["provider"], "an Anthropic row under test is routed"
+            assert role is not routed
+        assert role.config.extra_body is None
+        assert "provider" not in role.model_args
+
+
 def test_dialogue_tasks_reject_the_baseline_parameter():
     """The registry's dialogue list and the builders' signatures are the same
     fact twice; this test keeps them from drifting apart."""
