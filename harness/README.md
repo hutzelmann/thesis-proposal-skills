@@ -227,7 +227,7 @@ It runs in its own CI workflow on push and weekly. On the schedule, `--verbatim`
 - **`install_prompt`** (unanswered): passes when the agent asks the scope question and installs nothing.
 - **`install_prompt_answered`**: appends the answer "all my projects" up front, and passes when both user-level skill directories hold the full set byte-identical, each with an install record, with no `proposal-*` copy anywhere else.
 
-Subscription-billed, so it is not part of `poe test` or CI. The verdicts are covered offline in `tests/unit/test_install_probe.py`.
+Exit statuses and the `--summary-log` line are the dev runner's. A prompt or installer that no longer names the URL the probe redirects is a runner failure (4), as is a crash. Subscription-billed, so it is not part of `poe test` or CI. The verdicts, the staging and the run's plumbing (the child's HOME and config, its stripped billing variables, one summary line per outcome) are covered offline in `tests/unit/test_install_probe.py`.
 
 ## Audit pre-flight (publish pipeline)
 

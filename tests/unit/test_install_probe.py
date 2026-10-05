@@ -1,16 +1,34 @@
-"""L0: the install-prompt probe's verdicts and staging (testing-harness spec:
-Install prompt probed on the dev runner). No model call: the verdicts run on
-synthetic outcomes, and the staging is checked against the real prompt and
+"""L0: the install-prompt probe's verdicts, staging and plumbing (testing-harness
+spec: Install prompt probed on the dev runner). No model call: the verdicts run
+on synthetic outcomes, the staging is checked against the real prompt and
 installer, so a reworded prompt or a moved URL fails here rather than in a
-subscription run.
+subscription run, and `main` runs with the host and the isolation faked, so the
+child's environment and the summary line are pinned without a model.
 """
 
 from __future__ import annotations
 
+import json
+import re
+import subprocess
+import tempfile
 import zipfile
+from contextlib import contextmanager
+from http.client import HTTPConnection
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import claude_runner
 import pytest
+from claude_runner import (
+    EXIT_FAIL,
+    EXIT_PASS,
+    EXIT_RUNNER,
+    EXIT_UNTESTED,
+    OUTCOMES,
+    RunnerFailure,
+    main,
+)
 from helpers import REPO
 from l1_checks import verdict_install_prompt_asks_scope, verdict_install_prompt_installed
 
@@ -121,6 +139,22 @@ def test_targets_are_the_installers_all_projects_directories():
     assert claude_runner.INSTALL_TARGETS == install.SHARED_DIRS
 
 
+def test_a_prompt_that_no_longer_names_the_installer_is_a_runner_failure(monkeypatch):
+    monkeypatch.setattr(claude_runner, "RAW_INSTALLER_URL", "https://moved.invalid/install.py")
+    with pytest.raises(RunnerFailure, match="install prompt no longer names") as failure:
+        claude_runner.install_request("http://x", answered=False)
+    assert failure.value.status == EXIT_RUNNER
+
+
+def test_an_installer_that_no_longer_names_the_archive_is_a_runner_failure(monkeypatch,
+                                                                           tmp_path):
+    monkeypatch.setattr(claude_runner, "DEFAULT_ARCHIVE_URL", "https://moved.invalid/main.zip")
+    with pytest.raises(RunnerFailure, match=r"install\.py no longer names") as failure:
+        claude_runner.stage_install_source(tmp_path, "http://x")
+    assert failure.value.status == EXIT_RUNNER
+    assert not list(tmp_path.iterdir())  # refused before anything was staged
+
+
 # ---------- recorded outcomes and the glue that reads a real home -----------
 
 
@@ -178,3 +212,176 @@ def test_an_unanswered_run_that_installed_fails(installed_home):
         False, home, ws, (RECORDINGS / "sonnet-unanswered.txt").read_text(encoding="utf-8"))
     assert not passed
     assert "installed before the answer" in why
+
+
+# ---------- main(argv): the run's plumbing, host and isolation faked ------------
+#
+# The assertions read the environment the host was handed, never how it was
+# built: whatever model_env starts from, the probe's HOME, USERPROFILE and
+# isolated config must be what the child finally sees.
+
+BILLING = {"ANTHROPIC_API_KEY": "placeholder-not-a-key",
+           "ANTHROPIC_BASE_URL": "https://gateway.invalid",
+           "CLAUDE_CODE_USE_BEDROCK": "1", "CLAUDE_CODE_USE_VERTEX": "1"}
+LOCAL_INSTALLER = re.compile(r"http://127\.0\.0\.1:\d+/install\.py")
+
+
+def fetch(url: str) -> str:
+    """GET from the probe's local server directly, past any proxy the
+    environment configures."""
+    parts = urlsplit(url)
+    connection = HTTPConnection(parts.hostname, parts.port, timeout=5)
+    try:
+        connection.request("GET", parts.path)
+        return connection.getresponse().read().decode("utf-8")
+    finally:
+        connection.close()
+
+
+def host_stdout(text: str, overage: bool = False) -> str:
+    """A finished host run in the stream-json shape the dev runner reads."""
+    model = "claude-fixture-1-0"
+    events = [
+        {"type": "system", "subtype": "init", "model": model, "apiKeySource": "none",
+         "claude_code_version": "2.1.284"},
+        {"type": "rate_limit_event", "rate_limit_info": {
+            "status": "allowed", "rateLimitType": "five_hour", "utilization": 0.2,
+            "isUsingOverage": overage}},
+        {"type": "result", "subtype": "success", "is_error": False, "result": text,
+         "total_cost_usd": 0.1, "num_turns": 4, "duration_ms": 9000,
+         "usage": {"input_tokens": 10, "output_tokens": 80},
+         "modelUsage": {model: {"outputTokens": 80, "provider": "firstParty"}}},
+    ]
+    return "".join(json.dumps(e) + "\n" for e in events)
+
+
+@pytest.fixture
+def probe(monkeypatch, tmp_path):
+    """`main` up to the host: a launching environment that carries the
+    operator's HOME and billing variables, a plain directory for the isolated
+    config, temp directories under `tmp_path`, and a host that records what it
+    was handed — including the installer the local server serves at the URL
+    the request names. Set `stdout` or `raises` to choose how the host ends."""
+    config, temp = tmp_path / "isolated-config", tmp_path / "tmp"
+    config.mkdir()
+    temp.mkdir()
+    operator = tmp_path / "operator"
+    for name, value in {**BILLING, "HOME": str(operator), "USERPROFILE": str(operator),
+                        "CLAUDE_CONFIG_DIR": str(operator / ".claude")}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
+    # a tiny archive: these tests pin plumbing, and skills/ is rewritten by test_sync
+    monkeypatch.setattr(claude_runner, "working_tree_skills", lambda: SKILLS)
+
+    @contextmanager
+    def fake_isolated_config(_prefix):
+        yield config
+
+    monkeypatch.setattr(claude_runner, "isolated_config", fake_isolated_config)
+    host = {"config": config, "temp": temp, "calls": [], "stdout": host_stdout(ASKED),
+            "raises": None}
+
+    def run(command, **kwargs):
+        request = command[2]
+        url = LOCAL_INSTALLER.search(request).group(0)
+        host["calls"].append({"request": request, "url": url,
+                              "served": fetch(url), "cwd": kwargs["cwd"], "env": kwargs["env"],
+                              "home_empty": not any(Path(kwargs["env"]["HOME"]).iterdir())})
+        if host["raises"] is not None:
+            raise host["raises"]
+        return subprocess.CompletedProcess(command, 0, host["stdout"], "")
+
+    monkeypatch.setattr(claude_runner.subprocess, "run", run)
+    return host
+
+
+def logged(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_the_host_runs_in_the_probe_home_under_the_isolated_config(probe, tmp_path):
+    log = tmp_path / "log.jsonl"
+    assert main(["install_prompt", "--summary-log", str(log)]) == EXIT_PASS
+    [call] = probe["calls"]
+    env, ws = call["env"], Path(call["cwd"])
+    home = ws.parent / "home"
+    assert ws.parent.parent == probe["temp"]
+    assert env["HOME"] == env["USERPROFILE"] == str(home)
+    assert call["home_empty"]
+    assert env["CLAUDE_CONFIG_DIR"] == str(probe["config"])
+    assert not [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
+    # the request names the local installer, which points at the local archive
+    assert claude_runner.RAW_INSTALLER_URL not in call["request"]
+    assert claude_runner.ANSWER not in call["request"]
+    assert call["url"].replace("/install.py", "/main.zip") in call["served"]
+    assert claude_runner.DEFAULT_ARCHIVE_URL not in call["served"]
+    [line] = logged(log)
+    assert (line["outcome"], line["exit_status"]) == ("PASS", EXIT_PASS)
+    assert (line["config"], line["config_dir"]) == ("isolated", str(probe["config"]))
+    assert not list(probe["temp"].iterdir())  # the probe directory is removed
+
+
+def test_the_answered_variant_appends_the_answer(probe, tmp_path):
+    probe["stdout"] = host_stdout("Installed.")
+    main(["install_prompt_answered", "--summary-log", str(tmp_path / "log.jsonl")])
+    [call] = probe["calls"]
+    assert call["request"].endswith(claude_runner.ANSWER)
+
+
+@pytest.mark.parametrize(("scenario", "stdout", "raises", "status"), [
+    ("install_prompt", host_stdout(ASKED), None, EXIT_PASS),
+    ("install_prompt", host_stdout("Installed everything for you."), None, EXIT_FAIL),
+    # nothing landed in the probe home, so the answered verdict fails
+    ("install_prompt_answered", host_stdout("Installed."), None, EXIT_FAIL),
+    ("install_prompt", host_stdout(ASKED, overage=True), None, EXIT_UNTESTED),
+    ("install_prompt", "", subprocess.TimeoutExpired(["claude"], 5), EXIT_RUNNER),
+])
+def test_each_outcome_exits_with_its_status_and_logs_one_line(
+        scenario, stdout, raises, status, probe, tmp_path):
+    probe["stdout"], probe["raises"] = stdout, raises
+    log = tmp_path / "log.jsonl"
+    assert main([scenario, "--summary-log", str(log)]) == status
+    [line] = logged(log)
+    assert (line["outcome"], line["exit_status"]) == (OUTCOMES[status], status)
+    assert line["config"] == "isolated"
+
+
+def test_a_refused_isolation_is_untested_and_never_runs_the_host(probe, monkeypatch, tmp_path):
+    @contextmanager
+    def refusing_isolated_config(_prefix):
+        raise SystemExit("no stored login to link")
+        yield  # a generator, as the real context manager is
+
+    monkeypatch.setattr(claude_runner, "isolated_config", refusing_isolated_config)
+    log = tmp_path / "log.jsonl"
+    assert main(["install_prompt", "--summary-log", str(log)]) == EXIT_UNTESTED
+    assert probe["calls"] == []
+    [line] = logged(log)
+    assert (line["outcome"], line["why"]) == ("UNTESTED", "no stored login to link")
+    assert (line["config"], line["config_dir"]) == ("isolated", None)
+
+
+def test_a_drifted_prompt_is_a_runner_failure_with_its_line(probe, monkeypatch, tmp_path):
+    monkeypatch.setattr(claude_runner, "RAW_INSTALLER_URL", "https://moved.invalid/install.py")
+    log = tmp_path / "log.jsonl"
+    assert main(["install_prompt", "--summary-log", str(log)]) == EXIT_RUNNER
+    assert probe["calls"] == []
+    [line] = logged(log)
+    assert line["outcome"] == "RUNNER FAILURE"
+    assert "install prompt no longer names" in line["why"]
+    assert line["config"] == "isolated"
+
+
+def test_a_crash_is_a_runner_failure_with_its_line(probe, monkeypatch, tmp_path, capsys):
+    def crash(*_args):
+        raise RuntimeError("verdict crashed")
+
+    monkeypatch.setattr(claude_runner, "install_probe_verdict", crash)
+    log = tmp_path / "log.jsonl"
+    assert main(["install_prompt", "--summary-log", str(log)]) == EXIT_RUNNER
+    assert len(probe["calls"]) == 1
+    [line] = logged(log)
+    assert (line["outcome"], line["exit_status"]) == ("RUNNER FAILURE", EXIT_RUNNER)
+    assert line["why"] == "runner crashed: RuntimeError('verdict crashed')"
+    assert line["config"] == "isolated"
+    assert "Traceback" in capsys.readouterr().err

@@ -399,23 +399,28 @@ def working_tree_skills() -> dict[str, dict[str, bytes]]:
 
 
 def stage_install_source(root: Path, base_url: str) -> None:
-    """install.py, its default archive pointed at a zip of the working tree."""
+    """install.py, its default archive pointed at a zip of the working tree.
+    A drifted installer is a runner failure: the probe cannot redirect it."""
+    text = INSTALLER.read_text(encoding="utf-8")
+    if text.count(DEFAULT_ARCHIVE_URL) != 1:
+        raise RunnerFailure("install.py no longer names the default archive the probe "
+                            "redirects")
     with zipfile.ZipFile(root / "main.zip", "w") as archive:
         for name, files in working_tree_skills().items():
             for rel, payload in files.items():
                 archive.writestr(f"thesis-proposal-skills-main/skills/{name}/{rel}", payload)
         archive.comment = PROBE_REVISION.encode()
-    text = INSTALLER.read_text(encoding="utf-8")
-    if text.count(DEFAULT_ARCHIVE_URL) != 1:
-        sys.exit("install.py no longer names the default archive the probe redirects")
     (root / "install.py").write_text(text.replace(DEFAULT_ARCHIVE_URL, f"{base_url}/main.zip"),
                                      encoding="utf-8")
 
 
 def install_request(base_url: str, answered: bool) -> str:
+    """The shared prompt pointed at the local installer; a drifted prompt is a
+    runner failure, as a drifted installer is."""
     prompt = INSTALL_PROMPT.read_text(encoding="utf-8")
     if prompt.count(RAW_INSTALLER_URL) != 1:
-        sys.exit("the install prompt no longer names the installer the probe redirects")
+        raise RunnerFailure("the install prompt no longer names the installer the probe "
+                            "redirects")
     request = prompt.replace(RAW_INSTALLER_URL, f"{base_url}/install.py")
     return f"{request.rstrip()}\n\n{ANSWER}" if answered else request
 
@@ -462,6 +467,7 @@ def run_install_probe(args: argparse.Namespace, scenario: dict) -> int:
         try:
             config = enter_isolation(stack, "devrun-config-")
             server = HTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(served)))
+            stack.callback(server.server_close)  # after the shutdown below (last in, first out)
             threading.Thread(target=server.serve_forever, daemon=True).start()
             stack.callback(server.shutdown)
             url = f"http://127.0.0.1:{server.server_port}"
@@ -478,7 +484,11 @@ def run_install_probe(args: argparse.Namespace, scenario: dict) -> int:
             if failure.events:
                 save_events(failure.events, base)
             out, status = failure_summary(args, failure, config), failure.status
-            out["config"] = "isolated"  # the probe never runs ambient
+        except Exception as exc:  # a crash still leaves its line in the summary log
+            traceback.print_exc()
+            failure = RunnerFailure(f"runner crashed: {exc!r}")
+            out, status = failure_summary(args, failure, config), failure.status
+        out["config"] = "isolated"  # the probe never runs ambient
         emit(out, args.summary_log)
         if chat:
             print("\n--- chat tail ---\n" + chat[-1200:])
@@ -1078,6 +1088,7 @@ def served_request(scenario: dict, stack: ExitStack) -> str:
         return request
     handler = partial(QuietHandler, directory=str(FIXTURES / scenario["serve"]))
     server = HTTPServer(("127.0.0.1", 0), handler)
+    stack.callback(server.server_close)  # after the shutdown below (last in, first out)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     stack.callback(server.shutdown)
     base = f"http://127.0.0.1:{server.server_port}"
