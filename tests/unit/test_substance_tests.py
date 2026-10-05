@@ -17,6 +17,10 @@ would make the first run green and prove nothing.
 its Substance Tests section rather than restated here, because a literal here
 would be a second place the set is decided.
 
+`README.md` is a site too: it names the set to every reader before any skill
+does, and it called the swap test "anti-generic" while it sat outside this
+guard (`2026-10-05-name-swap-test-in-readme`).
+
 Generated `references/guidelines.md` copies are out of scope — they are
 materialized by `scripts/sync_shared.py`, and its `--check` is what guards them.
 So is `openspec/changes/`: a change folder describes a set that is being
@@ -117,6 +121,7 @@ def _change_in_flight() -> bool:
 def _sites() -> list[Path]:
     sites = [
         GUIDELINES,
+        REPO / "README.md",
         *(REPO / "skills").glob("proposal-*/SKILL.md"),
         *(REPO / "tests" / "unit" / "data" / "pinned_sentences").glob("*.txt"),
     ]
