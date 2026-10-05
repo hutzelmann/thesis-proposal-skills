@@ -63,6 +63,15 @@ expected = "proposal-review"
 kind = "collision"
 lang = "en"
 
+# guards the boundary write-polish-collision pushes on: asked as a question
+# about the proposal's state, "ready for my supervisor" stays a review.
+[[cases]]
+id = "review-ready-collision"
+utterance = "Is my proposal ready for my supervisor?"
+expected = "proposal-review"
+kind = "collision"
+lang = "en"
+
 # ---------- proposal-write ---------------------------------------------------
 
 [[cases]]
@@ -82,6 +91,16 @@ lang = "en"
 [[cases]]
 id = "write-collision"
 utterance = "I got feedback that my methodology section is too vague — rewrite that section properly."
+expected = "proposal-write"
+kind = "collision"
+lang = "en"
+
+# the write_repair_citations dev scenario's request, verbatim. It carries
+# review's "ready for my supervisor", but it asks for the text to be changed.
+# On 2026-10-04 haiku never loaded a skill for it in three dev runs.
+[[cases]]
+id = "write-polish-collision"
+utterance = "Please do a writing pass over dependency-update-breakage.md so it is ready for my supervisor. I cannot answer any questions — decide and tell me what you did."
 expected = "proposal-write"
 kind = "collision"
 lang = "en"

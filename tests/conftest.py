@@ -41,6 +41,43 @@ def catalog_snapshot(monkeypatch):
     return replay
 
 
+@pytest.fixture
+def no_role_overrides(monkeypatch):
+    """Clear the role overrides a developer's shell may carry: `matrix.main`
+    resolves the judge, persona and smoke model from the environment, and an
+    override left over from a re-grade would change what a gate test prices."""
+    for name in ("JUDGE_MODEL", "PERSONA_MODEL", "SMOKE_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture
+def inspect_markers(monkeypatch):
+    """Inspect's own OpenRouter cache-marker function, put back after the test.
+    The `marker` mechanism's `openrouter_cache.install()` replaces it for the
+    whole process, and `matrix.build_model` installs it for a marker routing, so
+    any test that may install it takes this fixture."""
+    import importlib
+
+    import openrouter_cache
+
+    module = importlib.import_module(openrouter_cache.INSPECT_MODULE)
+    original = getattr(module, openrouter_cache.INSPECT_FUNCTION)
+    original = getattr(original, "__wrapped__", original)  # never restore a wrapper
+    monkeypatch.setattr(module, openrouter_cache.INSPECT_FUNCTION, original)
+    return original
+
+
+@pytest.fixture
+def routable_openrouter(monkeypatch, inspect_markers):
+    """What a test needs to build an OpenRouter Model offline: a placeholder key
+    (Inspect's provider refuses to construct without one; nothing is sent) and
+    Inspect's marker function put back afterwards. Any test that builds a routed
+    model needs the key, so taking both together keeps a `marker` build from
+    leaving the wrapper installed for the rest of the process."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "placeholder-not-a-credential")
+    return inspect_markers
+
+
 @pytest.fixture(scope="session")
 def repo() -> Path:
     return REPO

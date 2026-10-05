@@ -81,6 +81,13 @@ envfile = ".env"
 cmd = "python harness/matrix.py"
 envfile = ".env"
 
+# metered prompt-caching check on the Anthropic rows, behind the same cost gate:
+# its worst-case estimate prints first and waits for approval (--estimate-only
+# makes no model call). Re-run it after an Inspect upgrade.
+[tool.poe.tasks.cache-probe]
+cmd = "python harness/cache_probe.py"
+envfile = ".env"
+
 [tool.poe.tasks.report]
 cmd = "python harness/report.py"
 

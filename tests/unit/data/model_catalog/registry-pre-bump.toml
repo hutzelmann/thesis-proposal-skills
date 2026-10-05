@@ -221,3 +221,9 @@ reverse_from_harvest = { input = 160000, output = 6000 }
 [tasks.judge]
 input = 40000
 output = 3000
+
+# Added by fix-openrouter-caching: a registry with dialogue tasks must carry the
+# persona budget to parse. Not part of the 2026-10-04 state.
+[tasks.persona]
+input = 50000
+output = 4000

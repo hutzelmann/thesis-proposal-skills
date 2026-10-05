@@ -8,10 +8,13 @@ every skill. Stream fixtures live in `tests/unit/data/routing_streams/`.
 
 from __future__ import annotations
 
+import io
 import json
 from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
+import claude_runner
 import pytest
 import routing
 from helpers import REPO
@@ -149,6 +152,79 @@ def test_a_stream_error_stands_when_the_host_gave_no_reason():
     assert case_result(CHECK_CASE, [], "no events").error == "no events"
     timed_out = case_result(CHECK_CASE, events("unrouted-explore"), "timed out after 90s")
     assert timed_out.error == "timed out after 90s"
+
+
+class StalledHost:
+    """A `claude -p` stand-in that keeps writing events and never picks a skill."""
+
+    def __init__(self, lines: list[str]):
+        self.stdout = iter(lines)
+        self.stderr = io.StringIO("")
+
+    def terminate(self) -> None:
+        pass
+
+    def wait(self, **_kwargs) -> int:
+        return 0
+
+    def kill(self) -> None:
+        pass
+
+
+def read_until_the_limit(monkeypatch, tmp_path, stream: list[dict],
+                         lines_in_time: int) -> tuple[list[dict], str | None]:
+    """Drive the real reader over `stream` from a stand-in host, with a clock
+    that passes the deadline on the line after the first `lines_in_time`."""
+    lines = [json.dumps(e) for e in stream]
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: StalledHost(lines))
+    ticks = iter([0.0] * (1 + lines_in_time))  # the deadline is set, then one reading per line
+    monkeypatch.setattr(routing, "time", SimpleNamespace(monotonic=lambda: next(ticks, 1000.0)))
+    return routing.stream_events(tmp_path, tmp_path, NEGATIVE_CASE.utterance, "haiku",
+                                 timeout=90)
+
+
+@pytest.mark.parametrize("lines_in_time", [0, 5], ids=["within-the-bound", "past-the-bound"])
+def test_a_case_that_reaches_its_time_limit_is_an_error_not_unrouted(
+        monkeypatch, tmp_path, lines_in_time):
+    """The reader itself turns a passed deadline into an error. The tests above
+    hand `case_result` that string ready-made, so they would stay green if the
+    reader returned no error at the limit — and a negative case would then pass
+    on a stalled host (testing-harness spec: Case reaches its time limit). The
+    limit wins over the preparatory bound: five reads in time plus the one that
+    finds the deadline passed is six non-skill calls, past the bound of three."""
+    seen, error = read_until_the_limit(monkeypatch, tmp_path, events("unrouted-explore"),
+                                       lines_in_time)
+
+    assert error == "timed out after 90s"
+    assert len(seen) == lines_in_time + 1
+    outcome = case_result(NEGATIVE_CASE, seen, error)
+    assert outcome.route is None
+    assert outcome.error == "timed out after 90s"
+    assert not outcome.passed
+    assert classify([outcome]).totals == (0, 0)
+
+
+def test_a_skill_invoked_past_the_bound_does_not_save_a_case_from_its_time_limit(
+        monkeypatch, tmp_path):
+    """What makes a case at its limit an error is that no route was recorded,
+    not that no `proposal-*` skill was invoked: past the bound a skill call is
+    no route, so the reader keeps reading and the limit still decides
+    (testing-harness spec: Case reaches its time limit). Here `proposal-check`
+    is the fifth call, past the bound of three, and the deadline passes on the
+    line after it — so even the case that expected that skill does not pass."""
+    peek = events("preparatory-then-route")[0]
+    late_pick = [peek] * 4 + events("routed-check")
+
+    seen, error = read_until_the_limit(monkeypatch, tmp_path, late_pick, lines_in_time=5)
+
+    assert [p["skill"] for name, p in tool_calls(seen) if name == "Skill"] == ["proposal-check"]
+    assert error == "timed out after 90s"
+    for case in (CHECK_CASE, NEGATIVE_CASE):
+        outcome = case_result(case, seen, error)
+        assert outcome.route is None
+        assert outcome.error == "timed out after 90s"
+        assert not outcome.passed
+        assert classify([outcome]).totals == (0, 0)
 
 
 def test_a_malformed_skill_call_is_an_error():
@@ -410,6 +486,13 @@ def test_dataset_carries_negatives_and_german_cases():
 
 def test_dataset_kinds_are_known():
     assert {c.kind for c in load_cases()} <= set(KINDS)
+
+
+def test_polish_case_is_the_dev_scenarios_request():
+    """The case exists to reproduce a dev-run routing miss in the cheaper rig;
+    a reworded copy would measure a different sentence from the one that failed."""
+    case = next(c for c in load_cases() if c.id == "write-polish-collision")
+    assert case.utterance == claude_runner.SCENARIOS["write_repair_citations"]["request"]
 
 
 def test_missing_case_kind_is_reported():

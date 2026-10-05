@@ -4,7 +4,7 @@ Recorded on **2026-10-04, 22:02 UTC** from OpenRouter's public, unauthenticated 
 
 - `models.json`: `GET https://openrouter.ai/api/v1/models`, trimmed to the entries the currency tests need and to the fields `id`, `canonical_slug`, `created`, `expiration_date` and `pricing` (`prompt`, `completion`, `input_cache_read`).
 - `endpoints/<vendor>__<slug>.json`: `GET https://openrouter.ai/api/v1/models/<vendor>/<slug>/endpoints`, one file per model the tests price, trimmed to `name`, `provider_name`, `tag` and `pricing`.
-- `registry-pre-bump.toml`: `harness/models.toml` as it stood before the bump this snapshot drove (track-model-currency, task 1.3), so the tests do not depend on the live registry.
+- `registry-pre-bump.toml`: `harness/models.toml` as it stood before the bump this snapshot drove (track-model-currency, task 1.3), so the tests do not depend on the live registry. One later addition keeps it parseable: the `[tasks.persona]` budget that fix-openrouter-caching made required for a registry with dialogue tasks.
 
 `harness/model_currency.py --catalog models.json --endpoints endpoints/` replays this snapshot. A reviewer can reproduce a bump the same way.
 
@@ -16,8 +16,8 @@ Kept on purpose for the tests:
 
 Synthetic entries, clearly not real models, are appended under the `lab/` namespace:
 
-- `lab/judge-1` and the newer `lab/judge-2`: a held judge whose roster row moves on;
-- `lab/fading-3`: an expiration date with no successor, and an endpoint without a cache-read price;
+- `lab/judge-1` and the newer `lab/judge-2`: a held judge whose roster row moves on; their `lab` endpoints also list a cache-write price (`input_cache_write`, added by fix-openrouter-caching), which the recorded real endpoints were trimmed of;
+- `lab/fading-3`: an expiration date with no successor, and an endpoint without a cache-read or cache-write price;
 - `lab/thirdparty-1`: no endpoint of the vendor's own at the standard tier (only `lab/fast` and a third party).
 
 Every model identifier in this directory is snapshot data, not an example: `tests/unit/test_model_ids.py` exempts the directory.

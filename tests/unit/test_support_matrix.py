@@ -1,11 +1,13 @@
 """L0 coverage for harness/support.py — every matrix rule without a model call."""
 
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import support
-from helpers import failing_fetch, shipped_registry
+from helpers import MODEL_CATALOG, failing_fetch, shipped_registry
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -58,6 +60,10 @@ dialog = { input = 500000, output = 20000 }
 [tasks.judge]
 input = 40000
 output = 4000
+
+[tasks.persona]
+input = 50000
+output = 2000
 
 [tasks.skills]
 alpha = "proposal-alpha"
@@ -237,7 +243,8 @@ def test_estimate_cost_arithmetic(registry):
     # 3 epochs * (0.1M * $1 + 0.01M * $5) = 3 * $0.15 = $0.45
     # judge: 3 * (0.04M * $1 + 0.004M * $5) = 3 * $0.06 = $0.18
     assert est.lines[0].usd == pytest.approx(0.63)
-    assert est.unknown_models == ()
+    assert est.unpriced_roles == ()
+    assert [r.model_id for r in est.roles] == ["openrouter/lab/cheapo-1"]
 
 
 def test_estimate_cost_prefers_history(registry):
@@ -542,7 +549,8 @@ def test_estimate_cost_prices_a_held_judge_from_role_prices():
     est = support.estimate_cost(models, ["alpha"], reg)
     # model 3 * $0.15 = $0.45; judge 3 * (0.04M * $2 + 0.004M * $8) = 3 * $0.112
     assert est.lines[0].usd == pytest.approx(0.45 + 0.336, abs=0.01)
-    assert est.unknown_models == ()
+    assert est.unpriced_roles == ()
+    assert [r.model_id for r in est.roles] == ["openrouter/lab/cheapo-0"]
 
 
 def test_price_usage_prices_a_held_judge_from_role_prices():
@@ -573,6 +581,574 @@ def test_role_price_duplicating_a_roster_row_rejected():
     dup = '\n[role_prices."openrouter/lab/cheapo-1"]\ninput_price = 1.0\noutput_price = 5.0\n'
     with pytest.raises(ValueError, match="cheapo-1"):
         support.parse_registry(REGISTRY_TOML + dup)
+
+
+# --- cache-aware accounting (fix-openrouter-caching, group 2) -----------------
+
+_BIG_WRITE_PRICE = (
+    'id = "openrouter/lab/big-9"', 'id = "openrouter/lab/big-9"\ncache_write_price = 6.25')
+_HELD_PRICE_WITH_WRITE = _HELD_PRICE + "cache_write_price = 2.5\n"
+
+
+def _usage(tin: int, tout: int, cread: int = 0, cwrite: int = 0) -> SimpleNamespace:
+    """A stand-in for Inspect's ModelUsage."""
+    return SimpleNamespace(input_tokens=tin, output_tokens=tout,
+                           input_tokens_cache_read=cread, input_tokens_cache_write=cwrite)
+
+
+def _log(model: str, task: str, samples: list, usage: dict, status: str = "success"):
+    """A stand-in for Inspect's EvalLog: what collect_usage and record_spend read."""
+    return SimpleNamespace(eval=SimpleNamespace(model=model, task=task),
+                           stats=SimpleNamespace(model_usage=usage),
+                           samples=samples, status=status)
+
+
+def test_cache_write_price_defaults_to_input_price_on_rows_and_entries():
+    reg = support.parse_registry(_registry_with(*_HELD_JUDGE, _BIG_WRITE_PRICE, extra=_HELD_PRICE))
+    rows = {m.id: m for m in reg.models}
+    assert rows["openrouter/lab/big-9"].cache_write_price == 6.25
+    assert rows["openrouter/lab/cheapo-1"].cache_write_price == 1.0  # its input price
+    assert reg.role_prices["openrouter/lab/cheapo-0"].cache_write_price == 2.0
+    assert support.model_price(reg, "openrouter/lab/big-9").cache_write_price == 6.25
+    assert support.model_price(reg, "openrouter/lab/cheapo-0").cache_write_price == 2.0
+    written = support.parse_registry(_registry_with(*_HELD_JUDGE, extra=_HELD_PRICE_WITH_WRITE))
+    assert written.role_prices["openrouter/lab/cheapo-0"].cache_write_price == 2.5
+    assert support.model_price(written, "openrouter/lab/cheapo-0").cache_write_price == 2.5
+
+
+def test_price_usage_charges_cache_writes_at_their_own_price():
+    reg = support.parse_registry(_registry_with(_BIG_WRITE_PRICE))
+    report = support.price_usage({
+        "openrouter/lab/big-9": (100_000, 10_000, 1_000_000, 200_000),
+        "openrouter/lab/cheapo-1": (0, 0, 0, 1_000_000),
+    }, reg)
+    by_id = {line.model_id: line.usd for line in report.lines}
+    # 0.1M*$5 + 0.01M*$25 + 1M*$5 (cache read defaults to input) + 0.2M*$6.25
+    assert by_id["openrouter/lab/big-9"] == pytest.approx(0.5 + 0.25 + 5.0 + 1.25)
+    # a row priced without the field: writes at its input price
+    assert by_id["openrouter/lab/cheapo-1"] == pytest.approx(1.0)
+
+
+def test_price_usage_prices_a_held_judges_cache_writes_from_role_prices():
+    reg = support.parse_registry(_registry_with(*_HELD_JUDGE, extra=_HELD_PRICE_WITH_WRITE))
+    report = support.price_usage(
+        {"openrouter/lab/cheapo-0": (1_000_000, 0, 1_000_000, 1_000_000)}, reg)
+    assert report.unknown_models == ()
+    assert report.lines[0].usd == pytest.approx(2.0 + 0.2 + 2.5)
+
+
+def test_collect_usage_counts_cache_writes_in_billing_and_in_demand():
+    import matrix
+
+    sample = SimpleNamespace(model_usage={"openrouter/lab/m-1": _usage(100, 10, 1000, 500)})
+    log = _log("openrouter/lab/m-1", "alpha", [sample],
+               {"openrouter/lab/m-1": _usage(100, 10, 1000, 500)})
+    no_samples = _log("openrouter/lab/m-1", "beta", [],
+                      {"openrouter/lab/m-1": _usage(100, 10, 1000, 500)})
+    usage, observed = matrix.collect_usage([log, no_samples])
+    assert usage["openrouter/lab/m-1"] == (200, 20, 2000, 1000)
+    assert observed["alpha"] == (1600, 10), "demand = input + cache writes + cache reads"
+    assert observed["beta"] == (1600, 10), "the aggregate fallback counts writes too"
+
+
+def test_report_prices_cache_writes_exactly_as_the_matrix_does():
+    """report.py's per-model run cost and the matrix's actual spend share one
+    accumulation, so a log with cache writes costs the same in both."""
+    import matrix
+    import report
+
+    reg = support.parse_registry(_registry_with(_BIG_WRITE_PRICE))
+    judge = "openrouter/lab/cheapo-1"
+    usage = {BIG: _usage(100_000, 10_000, 1_000_000, 200_000), judge: _usage(0, 0, 0, 1_000_000)}
+    log = _log(BIG, "alpha", [], usage)
+    costs = report.model_costs({(BIG, "alpha"): log}, reg)
+    actual = support.price_usage(matrix.collect_usage([log])[0], reg)
+    assert costs[BIG] == pytest.approx(actual.total)
+    # big-9 0.5 + 0.25 + 5.0 + 0.2M writes * $6.25; the judge's 1M writes at its input $1
+    assert costs[BIG] == pytest.approx(0.5 + 0.25 + 5.0 + 1.25 + 1.0)
+    extended = _log(BIG, "not-a-matrix-task", [], usage)
+    assert report.model_costs({(BIG, "x"): extended}, reg) == {}, "matrix tasks only"
+
+
+def test_report_baseline_tokens_count_full_demand(registry):
+    import report
+
+    log = _log(BIG, "alpha", [], {BIG: _usage(100, 10, 1000, 500)})
+    log.stats.started_at = log.stats.completed_at = None
+    assert report.arm_stats(log, "alpha", registry).tokens == 100 + 1000 + 500 + 10
+
+
+# --- role pricing in the estimate (group 3) ------------------------------------
+
+
+def test_persona_budget_is_read_explicitly(registry):
+    assert registry.tasks.persona_tokens == (50000, 2000)
+    assert registry.tasks.judge_tokens == (40000, 4000)
+
+
+def test_persona_budget_required_with_dialogue_tasks():
+    bad = _registry_with(("[tasks.persona]\ninput = 50000\noutput = 2000\n", ""))
+    with pytest.raises(ValueError, match=r"\[tasks\.persona\]"):
+        support.parse_registry(bad)
+    without_dialogue = support.parse_registry(_registry_with(
+        ("[tasks.persona]\ninput = 50000\noutput = 2000\n", ""), ('dialogue = ["dialog"]\n', "")))
+    assert without_dialogue.tasks.persona_tokens == (0, 0)
+
+
+def test_persona_budget_carries_no_model():
+    bad = _registry_with(("[tasks.persona]\n", '[tasks.persona]\nmodel = "openrouter/lab/big-9"\n'))
+    with pytest.raises(ValueError, match=r"\[roles\]\.persona"):
+        support.parse_registry(bad)
+
+
+def test_estimate_prices_a_judge_override(registry):
+    models = support.select_models(registry, ids=["cheapo-1"])
+    default = support.estimate_cost(models, ["alpha"], registry)
+    override = support.estimate_cost(models, ["alpha"], registry, judge="openrouter/lab/big-9")
+    # model 3 * $0.15; judge 3 * (0.04M * $1 + 0.004M * $5) by default ...
+    assert default.lines[0].usd == pytest.approx(0.45 + 0.18)
+    # ... and 3 * (0.04M * $5 + 0.004M * $25) at the override's price
+    assert override.lines[0].usd == pytest.approx(0.45 + 0.9)
+    [judge] = override.roles
+    assert (judge.role, judge.model_id, judge.cell_epochs, judge.usd) == (
+        "judge", "openrouter/lab/big-9", 3, pytest.approx(0.9))
+    assert override.unpriced_roles == ()
+
+
+def test_estimate_prices_the_persona_on_dialogue_tasks_only(registry):
+    models = support.select_models(registry, ids=["cheapo-1"])
+    single = support.estimate_cost(models, ["alpha"], registry)
+    assert [r.role for r in single.roles] == ["judge"], "no dialogue task, no persona call"
+    mixed = support.estimate_cost(models, ["alpha", "dialog"], registry)
+    roles = {r.role: r for r in mixed.roles}
+    assert (roles["judge"].cell_epochs, roles["persona"].cell_epochs) == (6, 3)
+    # persona 3 * (0.05M * $1 + 0.002M * $5) = 3 * $0.06, on the dialogue cell-epochs only
+    assert roles["persona"].usd == pytest.approx(0.18)
+    # alpha 3 * $0.15 + dialog 3 * (0.5M * $1 + 0.02M * $5) + judge 6 * $0.06 + persona $0.18
+    assert mixed.lines[0].usd == pytest.approx(0.45 + 1.8 + 0.36 + 0.18)
+
+
+def test_estimate_prices_a_held_judge_from_its_role_price_entry():
+    reg = support.parse_registry(_registry_with(*_HELD_JUDGE, extra=_HELD_PRICE))
+    est = support.estimate_cost(support.select_models(reg, ids=["cheapo-1"]), ["alpha"], reg)
+    [judge] = est.roles
+    assert judge.model_id == "openrouter/lab/cheapo-0"
+    assert judge.usd == pytest.approx(3 * (0.04 * 2.0 + 0.004 * 8.0), abs=0.005)  # cents
+    assert est.unpriced_roles == ()
+
+
+def test_estimate_reports_an_unpriced_role(registry):
+    models = support.select_models(registry, ids=["cheapo-1"])
+    est = support.estimate_cost(models, ["alpha"], registry, judge="openrouter/lab/ghost-1",
+                                persona="openrouter/lab/ghost-2")
+    assert est.unpriced_roles == ("openrouter/lab/ghost-1",), "the persona is not called here"
+    assert est.lines[0].usd == pytest.approx(0.45), "an unpriced role adds nothing"
+    with_dialogue = support.estimate_cost(models, ["dialog"], registry,
+                                          persona="openrouter/lab/ghost-2")
+    assert with_dialogue.unpriced_roles == ("openrouter/lab/ghost-2",)
+
+
+@pytest.fixture
+def gated_matrix(request, monkeypatch, tmp_path):
+    """matrix.py over a temporary registry, with no usage history and no Inspect."""
+    import matrix
+
+    request.getfixturevalue("no_role_overrides")
+    monkeypatch.setitem(sys.modules, "inspect_ai", object())
+    monkeypatch.setattr(matrix, "USAGE_HISTORY", tmp_path / "usage.json")
+
+    def over(text: str):
+        path = tmp_path / "models.toml"
+        path.write_text(text, encoding="utf-8")
+        monkeypatch.setattr(matrix, "REGISTRY", path)
+        return matrix
+
+    return over
+
+
+def test_unpriced_role_override_stops_before_the_prompt_even_with_yes(
+        gated_matrix, monkeypatch, capsys):
+    matrix = gated_matrix(REGISTRY_TOML)
+    monkeypatch.setenv("JUDGE_MODEL", "openrouter/lab/ghost-1")
+    monkeypatch.setattr(matrix, "confirm_spend",
+                        lambda _yes: pytest.fail("the confirmation was reached"))
+    monkeypatch.setattr(matrix, "run_matrix", lambda *_args: pytest.fail("run_matrix ran"))
+    assert matrix.main(["--yes", "--models", "cheapo-1", "--tasks", "alpha"]) == 2
+    err = capsys.readouterr().err
+    assert "openrouter/lab/ghost-1" in err
+    assert "roster ID" in err
+    assert "role's own ID" in err
+    assert "role_prices" not in err, "an entry no role names is no remedy for an override"
+
+
+def test_held_judge_priced_by_its_entry_reaches_the_run(gated_matrix, monkeypatch):
+    matrix = gated_matrix(_registry_with(*_HELD_JUDGE, extra=_HELD_PRICE))
+    ran = []
+    monkeypatch.setattr(matrix, "run_matrix", lambda *args: ran.append(args) or [])
+    monkeypatch.setattr(matrix, "record_spend", lambda *_args: None)
+    assert matrix.main(["--yes", "--models", "cheapo-1", "--tasks", "alpha"]) == 0
+    assert ran, "no unpriced-role stop for a judge priced by its [role_prices] entry"
+
+
+def test_estimate_prints_the_role_lines(gated_matrix, monkeypatch, capsys):
+    matrix = gated_matrix(REGISTRY_TOML)
+    monkeypatch.setenv("JUDGE_MODEL", "openrouter/lab/big-9")
+    assert matrix.main(["--estimate-only", "--models", "cheapo-1",
+                        "--tasks", "alpha", "dialog"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    judge = next(line for line in lines if line.strip().startswith("judge "))
+    persona = next(line for line in lines if line.strip().startswith("persona "))
+    assert "openrouter/lab/big-9" in judge
+    assert "40,000 in / 4,000 out per cell-epoch × 6" in judge
+    assert "openrouter/lab/cheapo-1" in persona, "a judge override leaves the persona alone"
+    assert "50,000 in / 2,000 out per dialogue cell-epoch × 3" in persona
+
+
+# --- cache telemetry (group 4) ---------------------------------------------------
+
+# big-9 as an Anthropic-family row: routed, pinned, warned
+ANTHROPIC_TOML = _registry_with(
+    ('family = "lab"\ntier = "frontier"', 'family = "anthropic"\ntier = "frontier"'))
+BIG = "openrouter/lab/big-9"
+PIN = {"provider": {"order": ["amazon-bedrock", "google-vertex"], "allow_fallbacks": False}}
+PIN_REQUEST = {"extra_body": PIN}
+
+
+def _event(model: str, request: dict | None = None, provider: str | None = None):
+    """A stand-in for a ModelEvent; `request` None means the log kept no raw call."""
+    call = None if request is None else SimpleNamespace(
+        request=request, response={"provider": provider} if provider else {})
+    return SimpleNamespace(event="model", model=model, call=call)
+
+
+@pytest.fixture
+def anthropic_registry():
+    return support.parse_registry(ANTHROPIC_TOML)
+
+
+def test_cache_hit_rate_and_zero_tokens():
+    assert support.CacheStats(BIG, 600, 100, 300).hit_rate == pytest.approx(0.3)
+    assert support.CacheStats(BIG, 0, 0, 0).hit_rate == 0.0
+
+
+@pytest.mark.parametrize(("cache_read", "warned"), [(499, True), (500, False)])
+def test_cache_warning_threshold(anthropic_registry, cache_read, warned):
+    stats = support.CacheStats(BIG, 1000 - cache_read, 0, cache_read)
+    found = support.cache_warnings([stats], anthropic_registry, "marker")
+    assert [w.kind for w in found] == (["low_hit"] if warned else [])
+    if warned:
+        assert found[0].model_id == BIG
+        assert f"warning: {BIG} cache-hit rate 49.9% is below 50%" in str(found[0])
+
+
+def test_cache_warning_for_zero_prompt_tokens(anthropic_registry):
+    [found] = support.cache_warnings([support.CacheStats(BIG, 0, 0, 0)], anthropic_registry,
+                                     "marker")
+    assert found.kind == "no_prompt"
+    assert "recorded no prompt tokens" in str(found)
+
+
+def test_cache_warning_for_a_call_served_off_the_pin(anthropic_registry):
+    """Bedrock, and Vertex (recorded as `Google`) on failover, are both on the
+    pin; first-party Anthropic, which the ZDR guardrail excludes, is not."""
+    stats = support.CacheStats(BIG, 100, 100, 800, {"Amazon Bedrock": 5, "Google": 2,
+                                                    "Anthropic": 1, support.UNRECORDED: 9})
+    [found] = support.cache_warnings([stats], anthropic_registry, "marker")
+    assert found.kind == "off_pin"
+    assert found.detail == ("had calls served off its pin (amazon-bedrock, google-vertex): "
+                            "Anthropic ×1")
+
+
+def test_calls_served_by_any_pinned_provider_are_never_warned(anthropic_registry):
+    stats = support.CacheStats(BIG, 100, 100, 800, {"Amazon Bedrock": 7, "Google": 2,
+                                                    support.UNRECORDED: 9})
+    assert support.cache_warnings([stats], anthropic_registry, "marker") == []
+
+
+def test_routing_serves_names_each_pinned_provider_by_its_recorded_name(anthropic_registry):
+    big = next(m for m in anthropic_registry.models if m.id == BIG)
+    routing = support.routing_for(big, "marker")
+    assert [routing.serves(n) for n in ("Amazon Bedrock", "google", "amazon-bedrock",
+                                        "Anthropic", "Azure")] == [True, True, True, False, False]
+    assert set(support.PROVIDER_NAMES) == set(support.PINNED_PROVIDERS)
+
+
+def test_provider_names_match_the_recorded_endpoint_catalog():
+    """The names `serves` accepts are the endpoints' `provider_name` for every
+    endpoint of a pinned slug, regional ones included, in the recorded catalog."""
+    seen: dict[str, set[str]] = {}
+    for path in sorted((MODEL_CATALOG / "endpoints").glob("anthropic__*.json")):
+        for e in json.loads(path.read_text(encoding="utf-8"))["data"]["endpoints"]:
+            seen.setdefault(e["tag"].split("/")[0], set()).add(e["provider_name"])
+    assert {slug: seen[slug] for slug in support.PINNED_PROVIDERS} == {
+        slug: {name} for slug, name in support.PROVIDER_NAMES.items()}
+
+
+def test_cache_warning_kinds_are_the_declared_ones(anthropic_registry):
+    stats = [support.CacheStats(BIG, 0, 0, 0, {"Anthropic": 1})]
+    kinds = {w.kind for w in support.cache_warnings(stats, anthropic_registry, "marker")}
+    assert kinds == {"no_prompt", "off_pin"}
+    assert kinds <= set(support.CACHE_WARNING_KINDS)
+
+
+def test_non_anthropic_and_role_price_ids_are_never_warned(anthropic_registry):
+    cheap = support.CacheStats("openrouter/lab/cheapo-1", 1000, 0, 0, {"Amazon Bedrock": 4})
+    assert support.cache_warnings([cheap], anthropic_registry, "marker") == []
+    held = support.parse_registry(_registry_with(*_HELD_JUDGE, extra=_HELD_PRICE))
+    entry = support.CacheStats("openrouter/lab/cheapo-0", 1000, 0, 0, {"Amazon Bedrock": 4})
+    assert support.cache_warnings([entry], held, "marker") == []
+
+
+def test_marker_is_the_adopted_mechanism():
+    """Probe 2 (2026-10-05) passed `marker` on haiku-4.5 and sonnet-5.5; the
+    unprobed `auto` was deleted (fix-openrouter-caching, task 8.1)."""
+    assert (support.CACHE_MECHANISM, support.MECHANISMS) == ("marker", ("marker",))
+
+
+def test_no_adopted_mechanism_routes_and_warns_nothing(anthropic_registry):
+    """The rollback: CACHE_MECHANISM None sends every row as before."""
+    big = next(m for m in anthropic_registry.models if m.id == BIG)
+    assert not support.routing_for(big, None), "no probed mechanism, no routing"
+    stats = support.CacheStats(BIG, 1000, 0, 0, {"Amazon Bedrock": 4})
+    assert support.cache_warnings([stats], anthropic_registry, None) == []
+
+
+def test_format_providers():
+    assert support.format_providers({"Anthropic": 3, support.UNRECORDED: 9}) == (
+        "Anthropic ×3, unrecorded ×9")
+    assert support.format_providers({}) == "none"
+
+
+def test_serving_providers_counts_recorded_providers_and_unrecorded_calls():
+    events = [
+        _event(BIG, PIN_REQUEST, "Anthropic"), _event(BIG, PIN_REQUEST, "Anthropic"),
+        _event(BIG, PIN_REQUEST, "Amazon Bedrock"), _event(BIG), _event(BIG, PIN_REQUEST),
+    ]
+    assert support.serving_providers(events) == {
+        "Amazon Bedrock": 1, "Anthropic": 2, support.UNRECORDED: 2}
+
+
+def test_routed_events_drop_same_id_calls_the_routing_did_not_issue():
+    pinned, unrecorded = _event(BIG, PIN_REQUEST, "Anthropic"), _event(BIG)
+    judge_call = _event(BIG, {"messages": []}, "Amazon Bedrock")  # the judge on the same ID
+    other = _event("openrouter/lab/cheapo-1", PIN_REQUEST, "Anthropic")
+    tool = SimpleNamespace(event="tool", model=BIG, call=None)
+    events = [pinned, unrecorded, judge_call, other, tool]
+    assert support.routed_events(events, BIG, routed=True) == [pinned, unrecorded]
+    assert support.routed_events(events, BIG, routed=False) == [pinned, unrecorded, judge_call]
+
+
+BUDGETS = {"judge": (40000, 4000), "persona": (50000, 2000)}
+
+
+def test_role_observations_skip_a_role_that_is_the_model_under_test():
+    sample = SimpleNamespace(model_usage={BIG: _usage(90000, 9000)})
+    assert support.role_observations([sample], {"judge": BIG}, BIG, BUDGETS) == []
+
+
+def test_role_observations_take_the_heaviest_cell_epoch_and_flag_the_budget():
+    judge = "openrouter/lab/cheapo-1"
+    samples = [SimpleNamespace(model_usage={judge: _usage(20000, 3000, 5000, 1000)}),
+               SimpleNamespace(model_usage={judge: _usage(30000, 3500, 9000, 2000)}),
+               SimpleNamespace(model_usage=None)]
+    [seen] = support.role_observations(samples, {"judge": judge}, BIG, BUDGETS)
+    assert (seen.role, seen.input, seen.output) == ("judge", 41000, 3500)
+    assert seen.exceeded, "41k demand is over the 40k input budget"
+    [shared] = support.role_observations(samples, {"judge": judge, "persona": judge}, BIG,
+                                         BUDGETS)
+    assert (shared.role, shared.budget) == ("judge/persona", (90000, 6000))
+    assert not shared.exceeded
+
+
+def test_record_spend_persists_cache_telemetry_and_warns(
+        anthropic_registry, tmp_path, monkeypatch, capsys):
+    import matrix
+
+    monkeypatch.setattr(matrix, "USAGE_HISTORY", tmp_path / "usage.json")
+    judge = "openrouter/lab/cheapo-1"
+    events = [_event(BIG, PIN_REQUEST, "Anthropic"), _event(BIG, PIN_REQUEST, "Amazon Bedrock"),
+              _event(BIG), _event(judge, {"messages": []}, "Amazon Bedrock")]
+    usage = {BIG: _usage(600, 50, 300, 100), judge: _usage(60000, 12000)}
+    log = _log(BIG, "alpha", [SimpleNamespace(model_usage=usage, events=events)], usage)
+    models = support.select_models(anthropic_registry, ids=["big-9"])
+    roles = {"judge": judge, "persona": judge}
+    matrix.record_spend([log], models, ["alpha"], anthropic_registry, {}, str(tmp_path), roles)
+
+    [path] = tmp_path.glob("matrix-cost-*.json")
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    assert set(summary) == {"timestamp", "models", "tasks", "per_model", "total",
+                            "per_model_cache", "cache_warnings", "cache_mechanism", "roles"}, (
+        "the original keys stay as they were")
+    assert summary["roles"] == roles
+    assert summary["cache_mechanism"] == "marker", "model_args alone cannot show the mechanism"
+    cache = summary["per_model_cache"][BIG]
+    assert (cache["hit_rate"], cache["cache_write"], cache["cache_read"]) == (0.3, 100, 300)
+    assert cache["providers"] == {"Amazon Bedrock": 1, "Anthropic": 1, support.UNRECORDED: 1}
+    assert judge not in summary["per_model_cache"], "role usage is no model under test"
+    assert [(w["model_id"], w["kind"]) for w in summary["cache_warnings"]] == [
+        (BIG, "low_hit"), (BIG, "off_pin")]
+    out = capsys.readouterr().out
+    assert f"{BIG} cache-hit rate 30.0% is below 50%" in out
+    assert "served off its pin (amazon-bedrock, google-vertex): Anthropic ×1" in out
+    assert "uncached-equivalent" in out
+    judge_line = next(line for line in out.splitlines() if line.strip().startswith("judge "))
+    assert "in 60,000 / 40,000" in judge_line
+    assert "EXCEEDS BUDGET" in judge_line
+
+
+def test_record_spend_merges_a_routed_row_across_its_logs(
+        anthropic_registry, tmp_path, monkeypatch, capsys):
+    """A routed row under test in two task logs, one a dialogue task: its cache
+    stats are summed, its providers counted together, and each role keeps one
+    line at its heaviest cell-epoch across both logs."""
+    import matrix
+
+    monkeypatch.setattr(matrix, "USAGE_HISTORY", tmp_path / "usage.json")
+    judge, persona = "openrouter/lab/cheapo-1", "openrouter/lab/off-2"
+    alpha_usage = {BIG: _usage(600, 50, 300, 100), judge: _usage(20000, 3000)}
+    alpha = _log(BIG, "alpha", [SimpleNamespace(
+        model_usage=alpha_usage, events=[_event(BIG, PIN_REQUEST, "Amazon Bedrock")] * 2)],
+        alpha_usage)
+    dialog_usage = {BIG: _usage(100, 20, 900, 50), judge: _usage(30000, 3500, 9000, 2000),
+                    persona: _usage(10000, 1000)}
+    dialog = _log(BIG, "dialog", [SimpleNamespace(model_usage=dialog_usage, events=[
+        _event(BIG, PIN_REQUEST, "Amazon Bedrock"), _event(BIG, PIN_REQUEST, "Google"),
+        _event(BIG)])], dialog_usage)
+    models = support.select_models(anthropic_registry, ids=["big-9"])
+    roles = {"judge": judge, "persona": persona}
+    matrix.record_spend([alpha, dialog], models, ["alpha", "dialog"], anthropic_registry, {},
+                        str(tmp_path), roles)
+
+    [path] = tmp_path.glob("matrix-cost-*.json")
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    cache = summary["per_model_cache"][BIG]
+    assert (cache["input"], cache["cache_write"], cache["cache_read"]) == (700, 150, 1200)
+    assert cache["hit_rate"] == round(1200 / 2050, 4)
+    assert cache["providers"] == {"Amazon Bedrock": 3, "Google": 1, support.UNRECORDED: 1}
+    assert summary["cache_warnings"] == [], "Vertex (`Google`) is on the pin; 58.5% is above 50%"
+    out = capsys.readouterr().out
+    [judge_line] = [line for line in out.splitlines() if line.strip().startswith("judge ")]
+    assert "in 41,000 / 40,000   out 3,500 / 4,000" in judge_line, "the dialog log's heavier epoch"
+    [persona_line] = [line for line in out.splitlines() if line.strip().startswith("persona ")]
+    assert "in 10,000 / 50,000" in persona_line, "the persona is observed on the dialogue task"
+
+
+def test_record_spend_names_a_routed_row_whose_every_call_failed(
+        anthropic_registry, tmp_path, monkeypatch, capsys):
+    """Probe 1's log shape: status `success` (fail_on_error=False), no model
+    usage, a sample error (the routing 404). The routed row must still appear,
+    with a `no_prompt` warning, and the run must count the errored samples."""
+    import matrix
+
+    monkeypatch.setattr(matrix, "USAGE_HISTORY", tmp_path / "usage.json")
+    cheap = "openrouter/lab/cheapo-1"
+    failed = _log(BIG, "alpha", [SimpleNamespace(
+        model_usage={}, events=[_event(BIG, PIN_REQUEST)],
+        error=SimpleNamespace(message="Error code: 404 - No endpoints found"))], {})
+    healthy_usage = {cheap: _usage(1000, 100)}
+    healthy = _log(cheap, "alpha", [SimpleNamespace(model_usage=healthy_usage, events=[],
+                                                    error=None)], healthy_usage)
+    silent = _log("openrouter/lab/off-2", "alpha", [], {})  # unrouted, no usage: no line
+    models = support.select_models(anthropic_registry, ids=["big-9", "cheapo-1"])
+    matrix.record_spend([failed, healthy, silent], models, ["alpha"], anthropic_registry, {},
+                        str(tmp_path), {"judge": cheap, "persona": cheap})
+
+    [path] = tmp_path.glob("matrix-cost-*.json")
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    assert summary["per_model_cache"][BIG]["providers"] == {support.UNRECORDED: 1}
+    assert (summary["per_model_cache"][BIG]["hit_rate"],
+            summary["per_model_cache"][BIG]["cache_read"]) == (0.0, 0)
+    assert "openrouter/lab/off-2" not in summary["per_model_cache"]
+    assert [(w["model_id"], w["kind"]) for w in summary["cache_warnings"]] == [(BIG, "no_prompt")]
+    out = capsys.readouterr().out
+    assert f"warning: {BIG} recorded no prompt tokens" in out
+    assert "warning: 1 eval run(s) did not finish cleanly or had errored samples" in out
+
+
+def test_cost_summary_without_telemetry_keeps_the_original_shape(registry):
+    actual = support.CostReport((support.CostLine("openrouter/lab/cheapo-1", 1.5),))
+    import matrix
+
+    summary = matrix.cost_summary(list(registry.models[:1]), ["alpha"], actual, "stamp")
+    assert set(summary) == {"timestamp", "models", "tasks", "per_model", "total"}
+
+
+# --- routing (group 5) -------------------------------------------------------------
+
+
+def test_routing_for_a_non_anthropic_row_is_empty(registry):
+    for mechanism in support.MECHANISMS:
+        routing = support.routing_for(registry.models[0], mechanism)
+        assert not routing
+        assert (routing.model_args, routing.pins,
+                routing.conversation_breakpoint) == ({}, (), False)
+    assert not support.routing_for(None, "marker"), "an ID without a roster row is not routed"
+
+
+def test_routing_for_an_anthropic_row(anthropic_registry):
+    """`marker` pins the ZDR-compliant global endpoints in order, with no
+    fallback beyond them (probe 1: first-party `anthropic` cannot route), and
+    asks for the conversation breakpoint."""
+    big = next(m for m in anthropic_registry.models if m.id == BIG)
+    marker = support.routing_for(big, "marker")
+    assert (marker.model_args, marker.conversation_breakpoint) == (PIN, True)
+    assert marker.pins == ("amazon-bedrock", "google-vertex")
+    assert "anthropic" not in marker.pins
+    marker.model_args["provider"]["order"].append("other")
+    assert support.routing_for(big, "marker").model_args == PIN, "built fresh on every call"
+    for deleted in ("auto", "magic"):
+        with pytest.raises(ValueError, match="mechanism"):
+            support.routing_for(big, deleted)
+
+
+@pytest.mark.usefixtures("routable_openrouter")
+def test_build_model_keeps_the_registry_id_and_carries_the_routing(anthropic_registry):
+    import matrix
+
+    big = next(m for m in anthropic_registry.models if m.id == BIG)
+    marker = matrix.build_model(big, support.routing_for(big, "marker"))
+    assert str(marker) == BIG, "report.py counts a log only under its registry ID"
+    assert (marker.model_args, marker.config.extra_body) == (PIN, None)
+    cheap = anthropic_registry.models[0]
+    assert matrix.build_model(cheap, support.routing_for(cheap, "marker")) == cheap.id
+
+
+@pytest.mark.usefixtures("routable_openrouter")
+@pytest.mark.parametrize("rolled_back", [False, True], ids=["adopted", "rolled-back"])
+def test_run_matrix_routes_anthropic_rows_only_under_an_adopted_mechanism(
+        anthropic_registry, monkeypatch, tmp_path, rolled_back):
+    """Under the adopted mechanism (`marker`, the shipped default) the Anthropic
+    row becomes a routed Model under its registry ID; rolled back
+    (support.CACHE_MECHANISM None), every row goes to Inspect as a bare ID,
+    exactly as before. The log's metadata names the mechanism, since a `marker`
+    routing's model_args show the pin only."""
+    import inspect_ai
+    import matrix
+
+    if rolled_back:
+        monkeypatch.setattr(support, "CACHE_MECHANISM", None)
+    mechanism = support.CACHE_MECHANISM
+    sent, metadata = [], []
+
+    def fake_eval(_task, model, **kwargs):
+        sent.append(model)
+        metadata.append(kwargs["metadata"])
+        return []
+
+    monkeypatch.setattr(inspect_ai, "eval", fake_eval)
+    models = support.select_models(anthropic_registry, ids=["big-9", "cheapo-1"])
+    args = SimpleNamespace(epochs=1, log_dir=str(tmp_path), baseline=False)
+    matrix.run_matrix(models, ["alpha"], anthropic_registry, args)
+    [batch] = sent
+    assert metadata == [{"cache_mechanism": mechanism}]
+    by_id = {str(m): m for m in batch}
+    assert set(by_id) == {BIG, "openrouter/lab/cheapo-1"}
+    assert by_id["openrouter/lab/cheapo-1"] == "openrouter/lab/cheapo-1", "never routed"
+    if mechanism is None:
+        assert by_id[BIG] == BIG, "no adopted mechanism: the Anthropic row stays a bare ID"
+    else:
+        assert by_id[BIG].model_args == PIN
+        assert by_id[BIG].config.extra_body is None, "`marker` lives in the wrapper"
 
 
 # --- shipped registry stays coherent with the real task set -------------------
@@ -668,6 +1244,7 @@ def test_select_tasks_allows_extended_by_name_only():
 OFFLINE_GATE = "model currency unknown (catalog unreachable: network disabled in L0 tests)"
 
 
+@pytest.mark.usefixtures("no_role_overrides")
 def test_matrix_gate_declined_makes_no_metered_call(monkeypatch, capsys):
     import matrix
 
@@ -680,6 +1257,7 @@ def test_matrix_gate_declined_makes_no_metered_call(monkeypatch, capsys):
     assert OFFLINE_GATE in out, "the conftest fixture reaches the gate: no live request"
 
 
+@pytest.mark.usefixtures("no_role_overrides")
 def test_matrix_estimate_only_exits_clean(monkeypatch, capsys):
     import matrix
 
@@ -694,6 +1272,7 @@ def test_matrix_estimate_only_exits_clean(monkeypatch, capsys):
 # test_model_currency.py, the one test file whose model IDs are snapshot facts.
 
 
+@pytest.mark.usefixtures("no_role_overrides")
 def test_gate_offline_warns_and_keeps_the_exit_status(monkeypatch, capsys):
     import matrix
 
@@ -809,11 +1388,11 @@ def test_the_subscription_rule_adds_no_roster_row():
 
 
 @pytest.fixture
-def smoke_matrix(monkeypatch):
+def smoke_matrix(request, monkeypatch):
     import matrix
 
+    request.getfixturevalue("no_role_overrides")
     monkeypatch.setitem(sys.modules, "inspect_ai", object())
-    monkeypatch.delenv("SMOKE_MODEL", raising=False)
     return matrix
 
 

@@ -21,6 +21,7 @@ import claude_runner
 import pytest
 from claude_cli import JudgeCall, RateLimit
 from claude_runner import (
+    DRAFT_SCENARIOS,
     EVENTS_FILE,
     EXIT_FAIL,
     EXIT_PASS,
@@ -50,7 +51,7 @@ from claude_runner import (
 )
 from helpers import FIXTURES, REPO, shipped_registry
 from l1_checks import HELPER_TOOLS, load_closing_note, verdict_l2_grades, verdict_single_context
-from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, tool_calls
+from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, isolated_env, tool_calls
 
 STREAMS = Path(__file__).resolve().parent / "data" / "routing_streams"
 ARGS = argparse.Namespace(scenario="check_report", model="haiku", no_skill=False)
@@ -406,6 +407,17 @@ def test_supervise_scenarios_allow_exactly_one_verifier():
     assert "helpers" not in SCENARIOS["check_report"]
 
 
+NO_QUESTIONS = "I cannot answer any questions — decide and tell me what you did."
+
+
+def test_every_draft_scenario_says_nobody_will_answer():
+    """A dev run is one unattended turn, so a draft scenario that does not say
+    so can end in a clarifying question and no draft — a haiku `write_from_seed`
+    run stopped to ask for the degree level on 2026-10-04."""
+    for name in DRAFT_SCENARIOS:
+        assert NO_QUESTIONS in SCENARIOS[name]["request"], name
+
+
 def test_supervise_extra_reports_the_body_length(tmp_path):
     words = supervise_extra(SCENARIOS["supervise_scope"], supervise_ws(tmp_path))
     assert 60 < words["feedback_words"] < 200
@@ -496,17 +508,31 @@ LAUNCH_ENV = {
 }
 
 
-def test_model_env_strips_billing_variables_and_keeps_the_rest(tmp_path):
+def test_model_env_strips_billing_variables_in_both_modes(tmp_path):
     before = dict(LAUNCH_ENV)
     for config in (None, tmp_path):
         env = model_env(LAUNCH_ENV, config)
         assert not [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
-        for kept in ("PATH", "CLAUDE_EFFORT", "CLAUDECODE", "CLAUDE_CODE_OAUTH_TOKEN",
-                     "OPENROUTER_API_KEY"):
+        for kept in ("PATH", "CLAUDE_CODE_OAUTH_TOKEN"):
             assert env[kept] == LAUNCH_ENV[kept]
-    assert "CLAUDE_CONFIG_DIR" not in model_env(LAUNCH_ENV, None)
-    assert model_env(LAUNCH_ENV, tmp_path)["CLAUDE_CONFIG_DIR"] == str(tmp_path)
     assert before == LAUNCH_ENV
+
+
+def test_ambient_model_env_keeps_the_operator_settings():
+    env = model_env(LAUNCH_ENV, None)
+    for kept in ("CLAUDE_EFFORT", "CLAUDECODE", "OPENROUTER_API_KEY"):
+        assert env[kept] == LAUNCH_ENV[kept]
+    assert "CLAUDE_CONFIG_DIR" not in env
+
+
+def test_isolated_model_env_is_the_allowlist(tmp_path):
+    # testing-harness spec: Isolated child environment — nothing of the
+    # launching session, effort included, reaches an isolated run
+    env = model_env(LAUNCH_ENV, tmp_path)
+    assert env == isolated_env(tmp_path, LAUNCH_ENV)
+    for dropped in ("CLAUDE_EFFORT", "CLAUDECODE", "OPENROUTER_API_KEY"):
+        assert dropped not in env
+    assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path)
 
 
 # ---------- main(argv): fakes for the host, the isolation and the judge -------
@@ -746,11 +772,13 @@ def test_host_receives_the_stripped_environment(isolated_run, monkeypatch, reque
     main(argv)
     env = seen["env"]
     assert not [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
-    assert env["CLAUDE_EFFORT"] == "xhigh"
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "placeholder-token"
     if isolated_run:
+        # the allowlist: the operator's effort setting is not the default host's
+        assert "CLAUDE_EFFORT" not in env
         assert env["CLAUDE_CONFIG_DIR"] == str(config)
     else:
+        assert env["CLAUDE_EFFORT"] == "xhigh"
         assert "CLAUDE_CONFIG_DIR" not in env
 
 

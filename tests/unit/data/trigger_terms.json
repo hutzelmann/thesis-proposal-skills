@@ -12,7 +12,11 @@
     "",
     "Seeded 2026-08-10 from the collisions measured in docs/skill-routing.md and the",
     "haiku probe that routed a review request to proposal-check. Moving a boundary",
-    "means editing this file in the same commit as the description."
+    "means editing this file in the same commit as the description.",
+    "",
+    "The supervisor-readiness moment is split by intent (2026-10-05): a request to",
+    "change the text so it is ready ('get it ready for a supervisor') is write's; the",
+    "question whether it is ready ('ready for their supervisor') stays review's."
   ],
   "owned": {
     "before handing it to a supervisor": "proposal-review",
@@ -31,6 +35,8 @@
     "install the build tools": "proposal-publish",
     "wants something different": "proposal-customize",
     "bullet points turned into prose": "proposal-write",
+    "polishing pass": "proposal-write",
+    "get it ready for a supervisor": "proposal-write",
     "a skill misbehaved": "proposal-troubleshoot"
   },
   "shared": [

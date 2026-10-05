@@ -111,7 +111,7 @@ The methodology section must reference every research question explicitly with `
 ## Substance Tests
 
 A proposal that satisfies every structural rule can still be empty.
-Five tests define the substance bar; agents judging a proposal cite them by these names, and a proposal that fails them is not ready no matter how cleanly it checks:
+Six tests define the substance bar; agents judging a proposal cite them by these names, and a proposal that fails them is not ready no matter how cleanly it checks:
 
 - **Delta test** — the proposal states precisely what the thesis adds beyond the work it cites: what it confirms, refutes, or extends. A contribution section that reads as a feature list or restates the field fails; confirming or refuting a published finding under new conditions passes, because extending is not the only admissible delta.
 - **Falsifiability test** — the research questions can come out negative. A question whose every conceivable outcome counts as success fails.

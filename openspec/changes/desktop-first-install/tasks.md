@@ -200,3 +200,7 @@ After the review fixes: `uv run poe test` passed 1980 with 2 skipped, and `poe c
   - Gemini CLI named as an example host.
 
 **Merge of main, 2026-10-05 (5437e66).** Main had rewritten the dev runner (subscription judge, `model_env`, `RunnerFailure`, `isolated_config`) and no longer imports `prepare_config`. The probe now enters `isolated_config` like every isolated dev run, so the stored-login write-back covers it, and reports with the dev runner's exit statuses and `--summary-log`. Its `HOME` override is layered on `model_env`'s environment. Not re-run live: the merge changed the probe's plumbing, not its request or verdicts. After the merge, `uv run poe test` passed 2484 with 2 skipped, `poe specs` is valid, and `poe install-check` passed both arms on the merge commit.
+
+**Merge of main, 2026-10-05 (fefeced).** This merge brings in isolate-child-environment. An isolated `model_env` now returns the allowlisted `routing.isolated_env`, and the probe's `HOME`/`USERPROFILE` override is still applied after it. The admitted `XDG_*` variables keep pointing at the operator's home, but `install.py` derives every target from `Path.home()` and reads only `APPDATA` (Windows), so the probe's scratch home stays the only place it writes. Two conflicts, both resolved by keeping both sides:
+- `harness/l1_checks.py`: main's `verdict_cache_reuse` and the install verdicts were both appended at the end of the file.
+- `AGENTS.md` line 7: the branch's sentence naming the install routes was kept.

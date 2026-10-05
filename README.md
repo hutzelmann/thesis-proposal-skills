@@ -149,7 +149,7 @@ Model support, measured by the metered eval matrix on **2026-08-10** (3 epochs p
 
 | Model (pinned version) | Verdict | Notes |
 |---|---|---|
-| `anthropic/claude-haiku-4.5` | ❌ not recommended | fails: proposal-customize, proposal-review, proposal-write |
+| `anthropic/claude-haiku-4.5` | ❌ not recommended | fails: proposal-customize, proposal-review, proposal-write; with all skills installed, polishing and editing requests are not reliably routed to proposal-write (0/3 on the routing rig, 2026-10-05) — use sonnet or opus for such passes |
 | `anthropic/claude-sonnet-5.5` | ❔ untested |  |
 | `anthropic/claude-opus-5.5` | ❔ untested |  |
 | `openai/gpt-6-luna` | ❔ untested | the eval harness could not drive the previous luna pin (Azure strict tool schemas reject Inspect's tools); this pin is not yet re-probed — untested is a harness limitation, not a quality signal |
@@ -168,7 +168,7 @@ The skills encode conservative academic guidance: analytical research questions 
 
 Bachelor's and Master's proposals are held to different bars, not different documents. Structure, section list and check are identical at both levels; the level — read from the subtitle, never guessed — changes only what the skills ask for. A Bachelor's proposal may close its contribution with a competent application or evaluation in a named setting, a novelty claim welcome but not required; a Master's proposal has to name what will be new and for whom; demanding a novelty claim from the one is the same error as accepting its absence from the other. Where the research questions come from, the weight established literature may carry and the scope the available months allow grade the same way. A subtitle that leaves the level open gets a level-neutral review with one line saying so. Anything stricter per level — a Master-only reference floor, a different page limit — is a rule you write into the `guidelines.md` described below, because programs weight the difference differently and the defaults stay portable. [docs/degree-level-sources.md](docs/degree-level-sources.md) records the qualification frameworks, curricula and assessment literature behind the grading.
 
-Substance is judged, not assumed. The review skill applies six named tests (delta, falsifiability, anti-generic, necessity, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. The student decides what to do about it; the tools advise and never block.
+Substance is judged, not assumed. The review skill applies six named tests (delta, falsifiability, swap, necessity, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. The student decides what to do about it; the tools advise and never block.
 
 Feedback on incoming submissions has a skill of its own. `proposal-supervise` takes whatever a student sent — PDF, Word export, pasted email — and normalizes it with personal data stripped. It judges the submission against the same check and review rules your students' tools use, and checks whether the plan fits the months it has.
 

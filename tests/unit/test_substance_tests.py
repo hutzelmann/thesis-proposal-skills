@@ -17,6 +17,10 @@ would make the first run green and prove nothing.
 its Substance Tests section rather than restated here, because a literal here
 would be a second place the set is decided.
 
+`README.md` is a site too: it names the set to every reader before any skill
+does, and it called the swap test "anti-generic" while it sat outside this
+guard (`2026-10-05-name-swap-test-in-readme`).
+
 Generated `references/guidelines.md` copies are out of scope — they are
 materialized by `scripts/sync_shared.py`, and its `--check` is what guards them.
 So is `openspec/changes/`: a change folder describes a set that is being
@@ -89,8 +93,18 @@ MIN_NAMES_IN_RUN = 2
 # set, so it is excluded the same way a partial enumeration is. In "at least
 # three of the five substance tests" the match starts at `five`, which is the
 # set claim; `three` is the bar and is left alone.
+#
+# The second branch reads `Five tests define the substance bar` — the source's
+# own count sentence, which puts the qualifier after the verb and was invisible
+# to the first branch while it said "Five" over a list of six. It is keyed on
+# the clause going on to name the substance bar, not on the verb, so a reworded
+# verb is still caught; and it is not a bare `<N> tests`, which would flag
+# "Naming those three tests is a statement about this fixture" in the
+# testing-harness spec — a sentence written to say it is *not* a count.
 _COUNT = re.compile(
-    r"(?<!at least )(?<!only )\b(\w+)\s+(?:substance|named)\s+tests\b", re.IGNORECASE
+    r"(?<!at least )(?<!only )\b(\w+)\s+"
+    r"(?:(?:substance|named)\s+tests\b|tests\b(?=[^.;:]{0,40}\bsubstance\b))",
+    re.IGNORECASE,
 )
 # A run introduced by `at least` is a deliberate subset — a verdict citing the
 # three tests that actually failed, not a claim about the whole set.
@@ -107,6 +121,7 @@ def _change_in_flight() -> bool:
 def _sites() -> list[Path]:
     sites = [
         GUIDELINES,
+        REPO / "README.md",
         *(REPO / "skills").glob("proposal-*/SKILL.md"),
         *(REPO / "tests" / "unit" / "data" / "pinned_sentences").glob("*.txt"),
     ]
@@ -150,6 +165,30 @@ def test_enumerations_name_the_whole_set(site):
             "`at least`.\n"
             f"  {run}"
         )
+
+
+@pytest.mark.parametrize(
+    ("phrase", "count"),
+    [
+        ("judge the six substance tests and every dimension", "six"),
+        ("Substance, by the six named tests", "six"),
+        ("Five tests define the substance bar; agents judging", "five"),
+        ("Six tests set the substance bar", "six"),
+        ("at least three of the six substance tests fail decisively", "six"),
+        ("at least three substance tests fail decisively", None),
+        ("only two substance tests fail decisively", None),
+        ("Naming those three tests is a statement about this fixture, "
+         "not about how many tests exist.", None),
+        ("Three tests ran. The substance bar is unchanged.", None),
+    ],
+)
+def test_count_pattern_reads_set_claims_only(phrase, count):
+    """The pattern's reach, pinned on literal phrasings: a set claim is read
+    whichever side of `tests` the qualifier sits, an evidence bar or a plain
+    mention of some tests is not."""
+    found = [m.group(1).lower() for m in _COUNT.finditer(phrase)
+             if m.group(1).lower() in NUMBER_WORDS]
+    assert found == ([count] if count else [])
 
 
 @pytest.mark.parametrize("site", SITES, ids=ids(SITES))

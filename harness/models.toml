@@ -10,8 +10,10 @@
 # standard tier (not /flex, not /fast); `price_endpoint` names the endpoint tag
 # where the vendor's provider slug differs from its namespace. Prices feed both
 # the pre-run estimate and the post-run actual-cost report; prices_as_of is the
-# date they were copied. `uv run poe models` compares everything here against the
-# public catalog (networked, read-only).
+# date they were copied. cache_read_price and cache_write_price are optional and
+# default to input_price; actual spend charges each token kind at its own price.
+# `uv run poe models` compares everything here against the public catalog
+# (networked, read-only).
 
 prices_as_of = 2026-10-05
 # New version lines in a roster vendor namespace created after this date are
@@ -37,7 +39,13 @@ tier = "cheap"
 input_price = 1.0
 output_price = 5.0
 cache_read_price = 0.1
+cache_write_price = 1.25
 enabled = true
+# Routing, not a matrix cell: with only proposal-write installed (dev runner)
+# haiku loads it for a polishing request 3/3, but with all skills installed
+# (routing rig) the polish case reaches no skill, 0/3 before and after the
+# description edit (2026-10-05-route-polish-to-write/measurement.md).
+note = "with all skills installed, polishing and editing requests are not reliably routed to proposal-write (0/3 on the routing rig, 2026-10-05) — use sonnet or opus for such passes"
 
 [[models]]
 id = "openrouter/anthropic/claude-sonnet-5.5"
@@ -46,6 +54,7 @@ tier = "mid"
 input_price = 2.0
 output_price = 10.0
 cache_read_price = 0.2
+cache_write_price = 2.5
 enabled = true
 
 [[models]]
@@ -55,6 +64,7 @@ tier = "frontier"
 input_price = 4.0
 output_price = 20.0
 cache_read_price = 0.2
+cache_write_price = 5.0
 enabled = true
 
 [[models]]
@@ -217,8 +227,22 @@ ideate_outofscope = { input = 200000, output = 8000 }
 import_messy = { input = 150000, output = 6000 }
 reverse_from_harvest = { input = 160000, output = 6000 }
 
-# Judge token budget per cell-epoch, added to every estimate. The judge's model
-# ID lives in [roles].judge only.
+# Judge token budget per cell-epoch, added to every estimate and priced at the
+# judge the run resolves ([roles].judge, or a JUDGE_MODEL override). A ceiling,
+# not a typical value: the default haiku judge measured ~7k input and 1.1–1.7k
+# output per call (2026-10-04 write_rich_seed logs, two L2 calls per cell-epoch),
+# while a sonnet-class re-grade wrote ~4.7k output per call (2026-10-04
+# rejudge, 224,472 / 48). The judge's model ID lives in [roles].judge only.
 [tasks.judge]
 input = 40000
-output = 3000
+output = 10000
+
+# Persona token budget per dialogue cell-epoch (the [tasks] dialogue list),
+# priced at the persona the run resolves ([roles].persona, which defaults to the
+# judge, or a PERSONA_MODEL override). Provisional ceiling over the combined
+# persona + judge usage seen on 2026-08-04 ideate_longrun logs (45.4k in / 3.2k
+# out and 35.4k in / 2.3k out per cell-epoch); revisit with the observed-vs-budget
+# lines a matrix run prints.
+[tasks.persona]
+input = 50000
+output = 4000

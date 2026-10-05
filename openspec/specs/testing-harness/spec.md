@@ -342,7 +342,7 @@ Harness code SHALL take these IDs from the registry. An environment override MAY
 - **THEN** registry parsing fails and names the entry
 
 ### Requirement: Cost-gated matrix execution
-Before issuing any metered call, a matrix run SHALL print a cost estimate derived from registry pricing and SHALL wait for explicit operator confirmation; an explicit non-interactive flag MAY bypass the prompt. After the run it SHALL report actual spend per model and in total, computed from recorded token usage and registry pricing, and persist it alongside the run logs.
+Before issuing any metered call, a matrix run SHALL print a cost estimate derived from registry pricing and SHALL wait for explicit operator confirmation; an explicit non-interactive flag MAY bypass the prompt. Besides each model under test, the estimate SHALL cover the role models the run will call: the rubric judge on every cell-epoch and the student persona on every dialogue-task cell-epoch, each at a per-cell-epoch token budget taken from the registry. Role model IDs SHALL be resolved exactly as the evaluation resolves them, environment overrides included, so the model that is priced is the model that runs. Every model SHALL be priced through the registry's one price resolution: by its roster entry when the roster carries its ID, and otherwise by its role-price entry. The estimate and the post-run actual spend SHALL use this same resolution. When a role model resolves to an ID that neither a roster entry nor a role-price entry prices, the run SHALL stop before the confirmation prompt, name the unpriced ID, and make no metered call; the non-interactive flag SHALL NOT bypass this stop. After the run it SHALL report actual spend per model and in total, computed from recorded token usage and registry pricing, and persist it alongside the run logs. Uncached input, output, cache reads and cache writes SHALL each be charged at their own registry price. A roster entry or role-price entry MAY carry a cache-write price; one without it SHALL be charged its input price for cache writes. The report and the persisted summary SHALL also carry, per model under test, the cache-hit rate (cache-read tokens divided by all prompt tokens, that is uncached input plus cache writes plus cache reads), the cache-read and cache-write token counts, and the serving providers recorded in the run's logs. The run SHALL warn when the cache-hit rate of an Anthropic-family model under test whose requests are routed for caching falls below 50%, or when any of its recorded calls was served by a provider outside those its routing pins; a call served by any provider in the pin's list SHALL NOT be warned. A log MAY record the serving provider for only some of its calls; a call without one SHALL be counted as unrecorded and SHALL NOT be warned. After the run it SHALL also print each role model's observed token usage per cell-epoch beside the registry budget, and flag any budget that the observation exceeds.
 
 #### Scenario: Estimate shown and declined
 - **WHEN** the operator declines the pre-run confirmation
@@ -351,6 +351,38 @@ Before issuing any metered call, a matrix run SHALL print a cost estimate derive
 #### Scenario: Actual cost reported
 - **WHEN** a matrix run completes
 - **THEN** per-model and total actual cost are printed and persisted with the run's logs
+
+#### Scenario: Judge override priced
+- **WHEN** the operator overrides the judge with a registry model priced above the default judge
+- **THEN** the estimate charges every cell-epoch's judge budget at the override's registry pricing, not the default judge's
+
+#### Scenario: Persona priced on dialogue tasks only
+- **WHEN** a selection contains one dialogue task and one single-turn task
+- **THEN** the persona budget is added to the dialogue task's cell-epochs and to no others
+
+#### Scenario: Unpriced role model stops the run
+- **WHEN** a role model resolves to an ID that has no registry pricing, with or without the non-interactive flag
+- **THEN** the run exits non-zero before the confirmation prompt, names the unpriced ID, and has made no metered call
+
+#### Scenario: Held judge priced from its role-price entry
+- **WHEN** no roster entry carries the judge's ID, a role-price entry does, and no override is set
+- **THEN** the estimate charges the judge budget at the role-price entry's pricing, the run reaches the confirmation prompt without an unpriced-role stop, and the actual spend prices the judge's usage, cache writes included, from the same entry
+
+#### Scenario: Cache writes priced
+- **WHEN** a run's recorded usage includes cache-write tokens
+- **THEN** the actual cost charges them at the model's cache-write price, or at its input price where its roster entry or role-price entry carries none
+
+#### Scenario: Cache telemetry persisted
+- **WHEN** a matrix run that included an Anthropic-family model under test completes
+- **THEN** the printed report and the persisted summary carry that model's cache-hit rate, its cache-read and cache-write token counts, and the serving providers recorded for it
+
+#### Scenario: Caching regression warned
+- **WHEN** an Anthropic-family model under test, routed for caching, has a cache-hit rate below 50% in a completed run
+- **THEN** the run prints a warning naming the model and its measured rate
+
+#### Scenario: Serving outside the pin warned
+- **WHEN** a routed Anthropic-family model under test pins an ordered list of providers, and its recorded calls were served by the second provider in that list and by one provider outside it
+- **THEN** the run warns about the provider outside the list, naming it, and does not warn about the second provider in the list
 
 ### Requirement: Epoch-based support classification
 Each scorable model×task cell SHALL run a fixed number of epochs (default three) and classify by pass rate: all passes solid, mixed flaky, none fail. Per model, the verdict SHALL be: supported when all scorable cells are solid; flaky with the affected skills named when any cell is flaky; a warning naming the failing skills when any cell fails. Tasks red-by-design on the metered path (environment-fidelity probes) and network-dependent tasks SHALL be excluded from classification; a task MAY contribute only its rubric score where its structural score is excluded. Heavy dialogue tasks MAY run reduced epochs on frontier-tier models for budget reasons, and the report SHALL disclose reduced-epoch cells.
@@ -529,7 +561,7 @@ A login the host rejects only once a case is running cannot be detected before t
 - **THEN** the isolated configuration holds no credentials, and the stored login is neither linked nor written
 
 ### Requirement: Route determined by the first skill invocation
-A case's route SHALL be the first invocation of a `proposal-*` skill observed in the run, and the run SHALL be terminated as soon as that route is recorded. Preparatory non-skill tool calls SHALL be tolerated up to a bounded number, and a case that exceeds that bound or its time limit SHALL be recorded as unrouted rather than retried. Skill invocations after the first SHALL NOT change the recorded route.
+A case's route SHALL be the first invocation of a `proposal-*` skill observed in the run, and the run SHALL be terminated as soon as that route is recorded. Preparatory non-skill tool calls SHALL be tolerated up to a bounded number, and a case that exceeds that bound SHALL be recorded as unrouted rather than retried. A case still running when its time limit is reached, with no route recorded, SHALL instead be recorded as an error naming the limit — whether or not it had exceeded the bound — and SHALL NOT be retried: a host that has not finished within the limit says nothing about the descriptions, and a negative case would pass on it. Skill invocations after the first SHALL NOT change the recorded route.
 
 A case the host ends with an error result before any `proposal-*` invocation SHALL be recorded as an error carrying the host's reason — its subtype, its errors or result text, and the cost and turns so far — and SHALL NOT be recorded as unrouted. Unrouted is a finding about the descriptions; a host failure says nothing about them, and a negative case would pass on it.
 
@@ -542,7 +574,7 @@ A case the host ends with an error result before any `proposal-*` invocation SHA
 - **THEN** the invoked skill is still recorded as the route
 
 #### Scenario: No skill chosen
-- **WHEN** the bound on preparatory tool calls or the time limit is reached with no `proposal-*` skill invoked
+- **WHEN** the bound on preparatory tool calls is exceeded with no `proposal-*` skill invoked, and the host ends the case before its time limit with a result that is not an error
 - **THEN** the case is recorded as unrouted
 
 #### Scenario: Skill chains into a sibling
@@ -556,6 +588,10 @@ A case the host ends with an error result before any `proposal-*` invocation SHA
 #### Scenario: Unrouted answer is not an error
 - **WHEN** the host ends a case with a result that is not an error and no `proposal-*` skill was invoked
 - **THEN** the case is recorded as unrouted
+
+#### Scenario: Case reaches its time limit
+- **WHEN** a case is still running at its time limit and no route was recorded
+- **THEN** the case is recorded as an error naming the limit, it counts neither as unrouted nor toward any kind's total, it is not retried, and a negative case does not pass on it
 
 ### Requirement: Routing dataset covers canonical, oblique, and contested phrasings
 The routing dataset SHALL be a tracked data file in which each case carries its utterance, its expected skill, and its kind. Every `proposal-*` skill SHALL have at least one case in each of three kinds: the phrasing its description literally promises, an oblique phrasing a user would plausibly type, and a phrasing that lands in a zone contested by another skill. The dataset SHALL further include negative cases whose expected outcome is that no `proposal-*` skill is selected, and cases in German, the language of the intended user population.
@@ -749,7 +785,7 @@ Because the runner starts the host without permission prompts, it SHALL deny the
 
 The runner SHALL accept a hard budget cap passed through to the host, and SHALL label each run as measuring the ambient host configuration or an isolated one prepared for the run, naming the isolated directory.
 
-The runner SHALL remove from the model-under-test child's environment every variable that can route the host's billing away from the subscription login, in ambient and isolated mode alike: every `ANTHROPIC_`-prefixed variable, which covers the API key, the gateway base URL and its auth token, and every `CLAUDE_CODE_USE_` cloud-provider switch. It SHALL leave every other inherited variable in place, so that the operator's effort and session settings remain part of what a dev run measures.
+The runner SHALL remove from the model-under-test child's environment every variable that can route the host's billing away from the subscription login, in ambient and isolated mode alike: every `ANTHROPIC_`-prefixed variable, which covers the API key, the gateway base URL and its auth token, and every `CLAUDE_CODE_USE_` cloud-provider switch. In ambient mode it SHALL leave every other inherited variable in place, so that the operator's effort and session settings remain part of what an ambient run measures. In isolated mode the child SHALL receive the isolated child environment instead (requirement: Isolated child environment), whose allowlist admits none of those billing variables and no effort or session setting of the launching process, so that an isolated run measures the default host.
 
 Failures SHALL be reported as follows:
 
@@ -834,8 +870,16 @@ The telemetry and final-text readers SHALL be pinned against a recorded result e
 - **THEN** the run exits with the untested status, names the cause, and no judge call is made
 
 #### Scenario: Billing variables never reach the model run
-- **WHEN** the runner is launched, in ambient or isolated mode, from an environment carrying an API key, a gateway base URL with an auth token, a cloud-provider switch and an effort setting
-- **THEN** the model-under-test child's environment carries none of the first three and still carries the effort setting
+- **WHEN** the runner is launched, in ambient or isolated mode, from an environment carrying an API key, a gateway base URL with an auth token and a cloud-provider switch
+- **THEN** the model-under-test child's environment carries none of them
+
+#### Scenario: Ambient run keeps the operator's settings
+- **WHEN** the runner is launched in ambient mode from an environment carrying an effort setting and host-session variables
+- **THEN** the model-under-test child's environment still carries them
+
+#### Scenario: Isolated run drops the operator's settings
+- **WHEN** the runner is launched in isolated mode from an environment carrying an effort setting and host-session variables
+- **THEN** the model-under-test child's environment carries neither, because it is the isolated child environment
 
 #### Scenario: No result event
 - **WHEN** the host exits without emitting a result event
@@ -1264,3 +1308,92 @@ An unavailable call SHALL stop further judge calls in the same invocation.
 #### Scenario: Metered smoke behind the gate
 - **WHEN** the metered smoke task is started
 - **THEN** it prints a cost estimate for the registry's smoke model and waits for explicit confirmation before any metered call
+
+### Requirement: Prompt caching on Anthropic matrix rows
+Matrix requests for an Anthropic-family model under test SHALL be issued so that prompt caching covers the growing conversation, not only the static system and tool prefix. They SHALL be served by a fixed, ordered list of pinned upstream providers with fallbacks beyond that list disabled, the first listed provider serving whenever it is available, so that successive turns reach the cache they wrote. The pinned providers SHALL be ones the operator account's routing guardrails, such as zero data retention, admit; the harness SHALL NOT require relaxing those guardrails. These routing and caching settings SHALL apply to Anthropic rows only, and requests for every other family SHALL be unchanged. The model ID recorded in a run's log SHALL equal the registry ID, so the logs of a cached run count toward the generated report exactly as before. The rubric judge and the student persona SHALL keep their serving configuration: this requirement neither moves nor re-routes them. No one-shot request, that is a rubric-judge or student-persona prompt that no later call extends, SHALL be given a conversation cache breakpoint, because it would pay the cache-write premium without ever reading the cache back; a request of the model under test heads a conversation whose later turns read it back, even when it consists of a single message. The caching mechanism in use SHALL be one that the cache reuse probe has passed on the Anthropic rows it covers. Until a mechanism has passed, Anthropic-family requests SHALL be issued without the provider pin and the caching settings, exactly as for every other family.
+
+#### Scenario: Other families unchanged
+- **WHEN** a matrix run includes an OpenAI-family model and an Anthropic-family model
+- **THEN** only the Anthropic model's requests carry the provider pin and the caching settings, and the OpenAI model's requests are built exactly as before
+
+#### Scenario: Logged model ID equals registry ID
+- **WHEN** an Anthropic row runs with its routing and caching settings
+- **THEN** the run's log records the registry ID as its model, and the report generator counts that log for the row
+
+#### Scenario: One-shot prompt gets no breakpoint
+- **WHEN** a judge request consists of a single user message
+- **THEN** no conversation cache breakpoint is added to it
+
+#### Scenario: No mechanism passed yet
+- **WHEN** a matrix run includes an Anthropic-family model and no caching mechanism has passed the cache reuse probe
+- **THEN** that model's requests carry neither the provider pin nor the caching settings
+
+### Requirement: Cache reuse probe
+The harness SHALL provide a metered probe that replays a fixed, synthetic multi-turn tool conversation for each selected Anthropic registry model and caching mechanism. The conversation's content SHALL be independent of the model's replies, the probe SHALL build the model the same way the matrix does, and it SHALL record the cache usage of every call. Before its first metered call the probe SHALL print a worst-case cost estimate derived from registry pricing, with every prompt token charged at the cache-write price, and SHALL wait for explicit operator confirmation, as a matrix run does. A mechanism SHALL pass on a model only when cache-read tokens make up at least 80% of all prompt tokens, summed over the calls after the first call that writes the cache. The result SHALL state the measured share, the serving providers recorded, and the actual cost. The pass/fail decision and the worst-case estimate SHALL be pure functions covered by L0 tests that invoke no model.
+
+#### Scenario: Probe declined
+- **WHEN** the operator declines the probe's confirmation
+- **THEN** no metered call has been made and the probe exits cleanly
+
+#### Scenario: Below threshold fails
+- **WHEN** cache reads make up 60% of the prompt tokens on the calls after the first cache write
+- **THEN** the mechanism fails on that model and the explanation names the measured 60% and the 80% threshold
+
+#### Scenario: No cache write fails
+- **WHEN** no call of the replay writes the cache
+- **THEN** the mechanism fails and the explanation says that no call wrote the cache
+
+#### Scenario: Reuse at threshold passes
+- **WHEN** cache reads make up at least 80% of the prompt tokens on the calls after the first cache write
+- **THEN** the mechanism passes on that model
+
+### Requirement: Isolated child environment
+An isolated host child SHALL receive an environment built from an allowlist. This covers every routing-rig run and the model-under-test child of every dev-runner run in isolated mode. It SHALL NOT receive the launching process's environment with only the configuration directory overridden. One function, shared by both runners, SHALL build that environment. The dev judge's child also runs in an isolated configuration, but its environment is governed by the requirement "Subscription text roles (dev runner)", not by this one.
+
+The allowlist SHALL admit only:
+- `PATH` and `HOME`;
+- `CLAUDE_CODE_OAUTH_TOKEN`, the long-lived OAuth token variable;
+- variables that describe the machine rather than configure the host: user identity and login shell, locale, temporary directories, XDG base directories, proxy and certificate-trust settings, and the process basics Windows requires.
+
+The configuration-directory variable SHALL be set to the isolated directory, replacing any inherited value.
+
+Every other variable SHALL be dropped. That includes:
+- the variables a launching desktop-app or SDK session sets to bind a child to itself: entrypoint, session identifiers, messaging socket and token, host auth refresh, and OAuth scopes;
+- the variables that tune the host: effort, tool enablement, compaction, timeouts, API endpoint, and MCP connection settings;
+- variables that no list names yet. A host that adds one would otherwise leak it into measurement without any sign.
+
+A runner in ambient mode SHALL keep passing the operator's environment to the child, less only the billing variables the dev runner removes from every model-under-test run (requirement: Dev-runner cost and helper-agent telemetry).
+
+Building the isolated environment SHALL print nothing, and no runner output SHALL carry the value of any variable, admitted or dropped. L0 tests with synthetic values SHALL cover how the environment is built and both places that use it.
+
+#### Scenario: Desktop session variables dropped
+- **WHEN** a runner is launched from a desktop-app session that exports its entrypoint, session identifiers, messaging socket and token, auth-refresh flag, and OAuth scopes
+- **THEN** the isolated child's environment carries none of them, and its configuration directory is the isolated one
+
+#### Scenario: Host tuning outside the host's own prefix dropped
+- **WHEN** the launching environment sets the API base URL, an API timeout, a compaction or auto-updater switch, or MCP connection settings
+- **THEN** the isolated child receives none of them
+
+#### Scenario: Unknown variable dropped
+- **WHEN** the launching environment holds a variable that no list names
+- **THEN** the isolated child does not receive it
+
+#### Scenario: Long-lived token kept
+- **WHEN** `CLAUDE_CODE_OAUTH_TOKEN` is set in the launching environment
+- **THEN** the isolated child receives it unchanged, together with `PATH` and `HOME`
+
+#### Scenario: Machine plumbing kept
+- **WHEN** the launching environment sets locale, temporary-directory, proxy, or certificate-trust variables
+- **THEN** the isolated child receives them unchanged
+
+#### Scenario: Ambient run keeps the operator's environment
+- **WHEN** the dev runner runs without isolated mode
+- **THEN** the child inherits the operator's environment, its effort and session variables included, except the billing variables
+
+#### Scenario: Judge child outside this requirement
+- **WHEN** an isolated dev run is graded by the dev judge
+- **THEN** the judge's child gets the environment that "Subscription text roles (dev runner)" prescribes, and only the model-under-test child is held to this allowlist
+
+#### Scenario: No values printed
+- **WHEN** the isolated environment is built from an environment holding a messaging token
+- **THEN** nothing is printed, and the token's value appears in no output
