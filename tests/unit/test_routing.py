@@ -170,6 +170,18 @@ class StalledHost:
         pass
 
 
+def read_until_the_limit(monkeypatch, tmp_path, stream: list[dict],
+                         lines_in_time: int) -> tuple[list[dict], str | None]:
+    """Drive the real reader over `stream` from a stand-in host, with a clock
+    that passes the deadline on the line after the first `lines_in_time`."""
+    lines = [json.dumps(e) for e in stream]
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: StalledHost(lines))
+    ticks = iter([0.0] * (1 + lines_in_time))  # the deadline is set, then one reading per line
+    monkeypatch.setattr(routing, "time", SimpleNamespace(monotonic=lambda: next(ticks, 1000.0)))
+    return routing.stream_events(tmp_path, tmp_path, NEGATIVE_CASE.utterance, "haiku",
+                                 timeout=90)
+
+
 @pytest.mark.parametrize("lines_in_time", [0, 5], ids=["within-the-bound", "past-the-bound"])
 def test_a_case_that_reaches_its_time_limit_is_an_error_not_unrouted(
         monkeypatch, tmp_path, lines_in_time):
@@ -179,13 +191,8 @@ def test_a_case_that_reaches_its_time_limit_is_an_error_not_unrouted(
     on a stalled host (testing-harness spec: Case reaches its time limit). The
     limit wins over the preparatory bound: five reads in time plus the one that
     finds the deadline passed is six non-skill calls, past the bound of three."""
-    stream = [json.dumps(e) for e in events("unrouted-explore")]
-    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: StalledHost(stream))
-    ticks = iter([0.0] * (1 + lines_in_time))  # the deadline is set, then one reading per line
-    monkeypatch.setattr(routing, "time", SimpleNamespace(monotonic=lambda: next(ticks, 1000.0)))
-
-    seen, error = routing.stream_events(tmp_path, tmp_path, NEGATIVE_CASE.utterance, "haiku",
-                                        timeout=90)
+    seen, error = read_until_the_limit(monkeypatch, tmp_path, events("unrouted-explore"),
+                                       lines_in_time)
 
     assert error == "timed out after 90s"
     assert len(seen) == lines_in_time + 1
@@ -194,6 +201,29 @@ def test_a_case_that_reaches_its_time_limit_is_an_error_not_unrouted(
     assert outcome.error == "timed out after 90s"
     assert not outcome.passed
     assert classify([outcome]).totals == (0, 0)
+
+
+def test_a_skill_invoked_past_the_bound_does_not_save_a_case_from_its_time_limit(
+        monkeypatch, tmp_path):
+    """What makes a case at its limit an error is that no route was recorded,
+    not that no `proposal-*` skill was invoked: past the bound a skill call is
+    no route, so the reader keeps reading and the limit still decides
+    (testing-harness spec: Case reaches its time limit). Here `proposal-check`
+    is the fifth call, past the bound of three, and the deadline passes on the
+    line after it — so even the case that expected that skill does not pass."""
+    peek = events("preparatory-then-route")[0]
+    late_pick = [peek] * 4 + events("routed-check")
+
+    seen, error = read_until_the_limit(monkeypatch, tmp_path, late_pick, lines_in_time=5)
+
+    assert [p["skill"] for name, p in tool_calls(seen) if name == "Skill"] == ["proposal-check"]
+    assert error == "timed out after 90s"
+    for case in (CHECK_CASE, NEGATIVE_CASE):
+        outcome = case_result(case, seen, error)
+        assert outcome.route is None
+        assert outcome.error == "timed out after 90s"
+        assert not outcome.passed
+        assert classify([outcome]).totals == (0, 0)
 
 
 def test_a_malformed_skill_call_is_an_error():

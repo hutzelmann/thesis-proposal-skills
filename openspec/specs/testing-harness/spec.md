@@ -561,7 +561,7 @@ A login the host rejects only once a case is running cannot be detected before t
 - **THEN** the isolated configuration holds no credentials, and the stored login is neither linked nor written
 
 ### Requirement: Route determined by the first skill invocation
-A case's route SHALL be the first invocation of a `proposal-*` skill observed in the run, and the run SHALL be terminated as soon as that route is recorded. Preparatory non-skill tool calls SHALL be tolerated up to a bounded number, and a case that exceeds that bound SHALL be recorded as unrouted rather than retried. A case still running when its time limit is reached, with no `proposal-*` skill invoked, SHALL instead be recorded as an error naming the limit — whether or not it had exceeded the bound — and SHALL NOT be retried: a host that has not finished within the limit says nothing about the descriptions, and a negative case would pass on it. Skill invocations after the first SHALL NOT change the recorded route.
+A case's route SHALL be the first invocation of a `proposal-*` skill observed in the run, and the run SHALL be terminated as soon as that route is recorded. Preparatory non-skill tool calls SHALL be tolerated up to a bounded number, and a case that exceeds that bound SHALL be recorded as unrouted rather than retried. A case still running when its time limit is reached, with no route recorded, SHALL instead be recorded as an error naming the limit — whether or not it had exceeded the bound — and SHALL NOT be retried: a host that has not finished within the limit says nothing about the descriptions, and a negative case would pass on it. Skill invocations after the first SHALL NOT change the recorded route.
 
 A case the host ends with an error result before any `proposal-*` invocation SHALL be recorded as an error carrying the host's reason — its subtype, its errors or result text, and the cost and turns so far — and SHALL NOT be recorded as unrouted. Unrouted is a finding about the descriptions; a host failure says nothing about them, and a negative case would pass on it.
 
@@ -590,7 +590,7 @@ A case the host ends with an error result before any `proposal-*` invocation SHA
 - **THEN** the case is recorded as unrouted
 
 #### Scenario: Case reaches its time limit
-- **WHEN** a case is still running at its time limit and no `proposal-*` skill was invoked
+- **WHEN** a case is still running at its time limit and no route was recorded
 - **THEN** the case is recorded as an error naming the limit, it counts neither as unrouted nor toward any kind's total, it is not retried, and a negative case does not pass on it
 
 ### Requirement: Routing dataset covers canonical, oblique, and contested phrasings
