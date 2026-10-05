@@ -7,6 +7,7 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "anyio>=4.14.2",
     "inspect-ai>=0.3",
     "openai>=2.50.0",
     "poethepoet>=0.48.0",
@@ -53,8 +54,25 @@ _hooks = "git config core.hooksPath .githooks"
 _merge_driver = "git config merge.ours.driver true"
 setup = ["_sync_dev", "_hooks", "_merge_driver"]
 
+# the everyday smoke: the core scenarios on the subscription dev runner, $0 in
+# money. Each step is isolated with a hard budget cap; no envfile, so no key
+# file is loaded, and the runner strips billing variables from every model run
+# (testing-harness spec: Subscription text roles). Steps are commands, not task
+# references (default_item_type), and a failing step does not stop the others.
 [tool.poe.tasks.smoke]
-cmd = "python harness/matrix.py --models claude-haiku-4.5 --core --epochs 1"
+sequence = [
+    "python harness/claude_runner.py write_from_seed --isolated --max-budget-usd 2 --judge --summary-log logs/devrun/smoke.jsonl",
+    "python harness/claude_runner.py import_messy --isolated --max-budget-usd 2 --summary-log logs/devrun/smoke.jsonl",
+    "python harness/claude_runner.py customize_override --isolated --max-budget-usd 2 --summary-log logs/devrun/smoke.jsonl",
+    "python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl",
+]
+default_item_type = "cmd"
+ignore_fail = "return_non_zero"
+
+# the former metered smoke, behind the matrix cost gate; run it only when the
+# Inspect wiring itself changed. Its model is the registry's [roles].smoke.
+[tool.poe.tasks.smoke-inspect]
+cmd = "python harness/matrix.py --smoke"
 envfile = ".env"
 
 [tool.poe.tasks.matrix]
@@ -95,14 +113,11 @@ pythonpath = [
 [tool.coverage.run]
 source = ["harness", "scripts", "skills"]
 omit = [
-    # skill_evals.py: L0 builds and stages every task (test_eval_wiring.py),
-    # but its scorer and solver bodies run only inside an eval against a
-    # model, so the floor leaves the file out.
-    # claude_runner.py drives the real host on the subscription, but L0 tests
-    # run its staging, parsing and verdict code; the entry stays until
-    # add-dev-runner-judge removes it or records why it stays
+    # skill_evals.py runs only under `inspect eval`, never at L0: the L0 suite
+    # builds and stages every task and pins the judge prompt
+    # (test_eval_wiring.py), but its scorer and solver bodies execute only
+    # inside an eval against a model, so the floor leaves the file out.
     "harness/skill_evals.py",
-    "harness/claude_runner.py",
 ]
 
 [tool.coverage.report]

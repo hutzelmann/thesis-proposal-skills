@@ -13,8 +13,11 @@ that name an argument rather than a function name, which is exactly the kind of
 indirection this pins down.
 """
 
+import asyncio
+import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import skill_evals
@@ -117,6 +120,42 @@ def test_dialogue_tasks_reject_the_baseline_parameter():
     for task_name in REGISTRY.tasks.dialogue:
         with pytest.raises(TypeError):
             getattr(skill_evals, task_name)(baseline=True)
+
+
+# ---------- matrix judge prompt parity (add-dev-runner-judge, design D6) -------
+
+GOLDEN = Path(__file__).resolve().parent / "data" / "l2_prompts"
+GOLDEN_INPUTS = json.loads((GOLDEN / "inputs.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("golden", sorted(GOLDEN.glob("*.txt")), ids=lambda p: p.stem)
+def test_matrix_judge_sends_exactly_the_golden_prompt(golden, monkeypatch):
+    """The rubric material is shared with the dev runner; the matrix judge must
+    keep sending the bytes it sent before the sharing existed, or shipped
+    verdicts move with no rubric edit under review."""
+    sent: list[tuple[str, str]] = []
+
+    class FakeJudge:
+        def __init__(self, model_id: str):
+            self.model_id = model_id
+
+        async def generate(self, prompt: str):
+            sent.append((self.model_id, prompt))
+            return SimpleNamespace(completion="Reasoning.\nGRADE: C")
+
+    monkeypatch.setattr(skill_evals, "get_model", FakeJudge)
+    passed, _ = asyncio.run(skill_evals.judge(
+        golden.name, GOLDEN_INPUTS["question"], GOLDEN_INPUTS["answer"],
+        GOLDEN_INPUTS["criterion"]))
+    assert passed
+    [(model_id, prompt)] = sent
+    assert model_id == skill_evals.JUDGE_MODEL
+    assert prompt.encode("utf-8") == golden.read_bytes()
+
+
+def test_golden_prompts_cover_every_rubric_file():
+    rubrics = {p.name for p in (skill_evals.REPO / "harness" / "rubrics").glob("*.txt")}
+    assert {p.name for p in GOLDEN.glob("*.txt")} == rubrics
 
 
 def test_single_turn_tasks_build_a_skill_free_baseline():

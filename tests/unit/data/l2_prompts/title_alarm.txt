@@ -1,0 +1,36 @@
+You are grading how an AI skill handled the thesis title of a proposal it reviewed.
+
+The title under review is: "Implementing an AI-Powered Kubernetes Dashboard at Musterfirma GmbH".
+It is printed on the student's final study certificate. The proposal's research
+questions are about the accuracy of automated build-failure classification, so
+the named platform is the instrument of the prototype, not the object of study.
+
+[BEGIN DATA]
+[What is wrong with this title]: Synthetic task given to the model: turn the idea notes in example-notes.md into a full proposal draft. Keep the idea, mark anything missing as TODO.
+[The skill's review]: # Synthetic Proposal on Example Drift
+
+## Research Questions
+
+1. To what extent does the synthetic factor change the synthetic outcome?
+2. Under which conditions does the effect reverse?
+
+Golden answer marker l2-prompts-7f3a — written by Erika Musterfrau (matriculation 00000000).
+
+[Criterion]: Synthetic criterion: every research question is analytical and self-contained — für diese Arbeit.
+[END DATA]
+
+Grade PASS only if ALL hold:
+- The review raises the title as a finding of its own, not merely in passing.
+- It names at least one concrete defect of the title (platform or company name
+  carried as the instrument, implementation framing, or marketing tone) — the
+  substance counts, the wording need not match.
+- It says, in some form, that the title reaches the study certificate or otherwise
+  outlives the proposal — the reason this matters more than other findings.
+- It offers between one and three concrete alternative titles that name a
+  contribution and its object without depending on the named platform. More than
+  three suggestions, or none at all, is a FAIL.
+- It leaves the decision with the student: it does not present the title as
+  already changed, and does not claim to have rewritten it.
+Grade FAIL otherwise.
+
+Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).

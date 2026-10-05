@@ -2333,6 +2333,7 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "anyio" },
     { name = "inspect-ai" },
     { name = "openai" },
     { name = "poethepoet" },
@@ -2346,6 +2347,7 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "anyio", specifier = ">=4.14.2" },
     { name = "inspect-ai", specifier = ">=0.3" },
     { name = "openai", specifier = ">=2.50.0" },
     { name = "poethepoet", specifier = ">=0.48.0" },

@@ -5,26 +5,47 @@ Stages a fixture into a temp workspace, installs the skill under test into
 Inspect agent loop), runs headless `claude -p` with the user request, then
 applies the same L1 verdicts as the authoritative evals (harness/l1_checks.py).
 
-Dev loop only — not the source of record. No judge/L2 (use Inspect for that).
+Dev loop only — not the source of record. `--judge` adds dev-runner L2: the
+scenarios with a rubric twin are graded by the subscription judge
+(`[roles].dev_judge` in harness/models.toml, at its pinned effort) against the
+same rubric templates and criteria as the matrix (harness/l2_rubrics.py). Its
+grades are labelled "dev-runner L2, not comparable to matrix", are never written
+where the support report reads, and never stand in for a matrix cell.
 
 Usage:
   uv run python harness/claude_runner.py check_report [--model haiku]
   uv run python harness/claude_runner.py review_fixture --model sonnet
   uv run python harness/claude_runner.py write_from_seed
   uv run python harness/claude_runner.py import_messy
+  uv run python harness/claude_runner.py customize_override
   uv run python harness/claude_runner.py ideate_scoped --model sonnet
   uv run python harness/claude_runner.py ideate_scoped_adjacent --model sonnet
   uv run python harness/claude_runner.py write_offtopic_reference --model sonnet
   uv run python harness/claude_runner.py review_fixture --isolated --max-budget-usd 2
+  uv run python harness/claude_runner.py write_from_seed --isolated --judge --keep
+  uv run python harness/claude_runner.py write_from_seed --rejudge /tmp/devrun-write_from_seed-x
+  uv run python harness/claude_runner.py write_rich_seed --isolated --judge --max-notional 1
+  uv run python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl
 
 Every run reads the host's stream-json events and prints, beside the L1
 verdict, the run's cost, turns, duration, token counts, any helper-agent
 tool calls (Agent/Task/Workflow) and an advisory single-context verdict —
 the probe for the fan-out class of failure, which no other harness path can
-see. `--isolated` runs against a fresh host configuration (the routing rig's
-`isolated_config`, which keeps the linked stored login current), so a run
-measures the default host rather than the operator's session mode; the
-summary says which (`config`).
+see — plus the model the host served and its CLI version. `--isolated` runs
+against a fresh host configuration (the routing rig's `isolated_config`, which
+keeps the linked stored login current), so a run measures the default host
+rather than the operator's session mode; the summary says which (`config`).
+
+Billing stays on the subscription: every `ANTHROPIC_*` variable and every
+`CLAUDE_CODE_USE_*` switch is stripped from the model run's environment, and a
+run whose stream shows an API-key source, overage, a refused rate-limit status
+or no rate-limit report at all is untested, never passed. `--rejudge` re-grades
+kept workspaces without running the model again; `--max-notional` caps the
+judge calls' cumulative notional cost (plan quota, not money).
+
+Exit status: 0 every computed verdict passed, 1 a verdict failed (L1 or a
+graded L2 criterion), 2 usage error, 3 untested (the subscription could not
+serve the run or the judge), 4 other runner failure.
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
 workspace so file edits and script calls work headlessly.
@@ -40,12 +61,19 @@ import subprocess
 import sys
 import tempfile
 import threading
+import traceback
+from collections.abc import Mapping
 from contextlib import ExitStack
+from dataclasses import asdict, dataclass
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
-from host_login import login_remedy
+import anyio
+import claude_cli
+import support
+from claude_cli import Criterion, Grade, JudgeRun, parse_events
+from host_login import LOGIN_FAILURE, login_remedy
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
@@ -54,10 +82,12 @@ from l1_checks import (
     select_draft,
     verdict_check_report,
     verdict_cited_draft,
+    verdict_customize_override,
     verdict_draft,
     verdict_hollow_review,
     verdict_ideate_scoped,
     verdict_import,
+    verdict_l2_grades,
     verdict_offtopic_reference,
     verdict_repaired_draft,
     verdict_review,
@@ -70,6 +100,7 @@ from l1_checks import (
     verdict_supervise_verification_declared,
     verdict_supervise_verifier,
 )
+from l2_rubrics import CRITERIA, DEV_RUBRICS, JUDGE_SYSTEM, judge_prompt, question_for
 from routing import (
     OUTWARD_TOOLS,
     error_result_reason,
@@ -84,6 +115,17 @@ REPO = HARNESS.parent
 SKILLS = REPO / "skills"
 FIXTURES = REPO / "tests" / "fixtures"
 CHECK = SKILLS / "proposal-check" / "scripts" / "check.py"
+REGISTRY = HARNESS / "models.toml"
+
+# exit statuses (design D7): only a failed verdict reads as a failure of the skill
+EXIT_PASS, EXIT_FAIL, EXIT_USAGE, EXIT_UNTESTED, EXIT_RUNNER = 0, 1, 2, 3, 4
+OUTCOMES = {EXIT_PASS: "PASS", EXIT_FAIL: "FAIL", EXIT_UNTESTED: "UNTESTED",
+            EXIT_RUNNER: "RUNNER FAILURE"}
+JUDGE_LABEL = "dev-runner L2, not comparable to matrix"
+DEFAULT_MAX_NOTIONAL = 5.00
+# every model run drops these: they can route the host's billing away from the
+# subscription login (API key, gateway base URL and token, cloud providers)
+BILLING_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_USE_")
 
 SCENARIOS = {
     "check_report": {
@@ -121,6 +163,16 @@ SCENARIOS = {
         "skill": "proposal-import",
         "request": MESSY_REQUEST,
         "produces": True,
+    },
+    # the core set's third task: the Inspect request verbatim; the verdict reads
+    # the untouched proposal and the guidelines.md the skill writes beside it
+    "customize_override": {
+        "fixture": "f00-clean-en",
+        "skill": "proposal-customize",
+        "proposal": "ml-code-review.md",
+        "request": "My supervisor requires a detailed work plan with milestones in the "
+                   "proposal, not just a one-line timeline, and at least 8 references. "
+                   "Please adjust the rules for this workspace.",
     },
     # supervisor-side: raw email fixture (.txt) to paste-ready feedback; import
     # is installed as a sibling, matching a professor's whole-set install
@@ -376,6 +428,35 @@ def host_failure_reason(events: list[dict], returncode: int, stderr: str) -> str
     return None
 
 
+class RunnerFailure(Exception):
+    """The run ended without a verdict. `untested` when the subscription could
+    not serve it (exit status 3), else another runner failure (4); `events`
+    is whatever stream the host produced, saved into a kept workspace."""
+
+    def __init__(self, message: str, untested: bool = False,
+                 events: list[dict] | None = None):
+        super().__init__(message)
+        self.message = message
+        self.untested = untested
+        self.events = events or []
+
+    @property
+    def status(self) -> int:
+        return EXIT_UNTESTED if self.untested else EXIT_RUNNER
+
+
+def model_env(environ: Mapping[str, str], config: Path | None) -> dict[str, str]:
+    """The model-under-test child's environment: the inherited one minus every
+    variable that can move its billing off the subscription login, in ambient
+    and isolated mode alike. Effort and session settings stay — they are part
+    of what a dev run measures. `environ` is not modified."""
+    env = {name: value for name, value in environ.items()
+           if not name.startswith(BILLING_PREFIXES)}
+    if config is not None:
+        env["CLAUDE_CONFIG_DIR"] = str(config)
+    return env
+
+
 def run_claude(ws: Path, request: str, model: str, timeout: int,
                budget: float | None = None, config: Path | None = None) -> list[dict]:
     """Run the host headless and return its stream-json events.
@@ -383,35 +464,29 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
     The stream, not the plain text, is what a run is judged on: the final
     `result` event carries the chat text plus cost, turns and token usage, and
     the assistant events carry every tool call — including a helper-agent
-    spawn, which plain text output never shows.
+    spawn, which plain text output never shows. A run the host failed raises
+    `RunnerFailure` (untested when the login was refused); so does a finished
+    run whose stream shows billing other than the subscription.
     """
-    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config)) if config else None
-    result = subprocess.run(
-        host_command(request, model, budget),
-        # stdin must be closed: with an inherited non-tty stdin (backgrounded or
-        # redirected runs) claude blocks waiting for piped input, warns, and can
-        # exit non-zero — a runner failure that looks like a skill failure
-        cwd=ws, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            host_command(request, model, budget),
+            # stdin must be closed: with an inherited non-tty stdin (backgrounded or
+            # redirected runs) claude blocks waiting for piped input, warns, and can
+            # exit non-zero — a runner failure that looks like a skill failure
+            cwd=ws, env=model_env(os.environ, config), stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise RunnerFailure(f"claude did not finish within {timeout}s") from None
     events = parse_events(result.stdout)
     failure = host_failure(events, result.returncode, result.stderr)
     if failure:
-        sys.exit(failure)
-    return events
-
-
-def parse_events(stdout: str) -> list[dict]:
-    """One JSON object per non-empty line; lines that are not JSON are skipped."""
-    events = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
+        raise RunnerFailure(failure, untested=bool(LOGIN_FAILURE.search(failure)), events=events)
+    billing = claude_cli.billing_problem(events)
+    if billing:
+        raise RunnerFailure(f"not a subscription result: {billing}", untested=True,
+                            events=events)
     return events
 
 
@@ -456,6 +531,33 @@ def telemetry(events: list[dict]) -> dict:
     }
 
 
+def served_model(events: list[dict]) -> tuple[str | None, str | None]:
+    """The model the host served, by its full ID — from the `init` event,
+    checked against the result's per-model usage — and a note when the two
+    disagree. A full session may list an auxiliary model beside the main one,
+    so only the init model's absence from the usage is a discrepancy."""
+    reported = claude_cli.init_event(events).get("model")
+    usage = claude_cli.model_usage(events)
+    if reported and (not usage or reported in usage):
+        return reported, None
+    if reported:
+        return reported, f"init reports {reported}, modelUsage lists {', '.join(sorted(usage))}"
+    producing = sorted(usage, key=lambda m: -int((usage[m] or {}).get("outputTokens") or 0))
+    if producing:
+        return producing[0], "no init event; taken from modelUsage"
+    return None, None
+
+
+def identity(args: argparse.Namespace, events: list[dict]) -> dict:
+    """What ran: the requested alias beside the served full ID and CLI version."""
+    model, note = served_model(events)
+    record = {"scenario": args.scenario, "model_requested": args.model, "model": model,
+              "cli_version": claude_cli.init_event(events).get("claude_code_version")}
+    if note:
+        record["model_check"] = note
+    return record
+
+
 def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict],
             config: Path | None, allowed: int = 0, extra: dict | None = None) -> dict:
     """The run's L1 verdict plus the probe: telemetry and the advisory
@@ -465,7 +567,7 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
     names = [name for name, _ in tool_calls(events)]
     single, single_why = verdict_single_context(names, allowed)
     return {
-        "scenario": args.scenario, "model": args.model,
+        **identity(args, events),
         "arm": "baseline" if args.no_skill else "with-skill",
         "l1": "PASS" if passed else "FAIL", "why": why,
         "config": "isolated" if config else "ambient",
@@ -475,6 +577,42 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
         "single_context": f"{'PASS' if single else 'FAIL'}: {single_why}",
         **(extra or {}),
     }
+
+
+def failure_summary(args: argparse.Namespace, failure: RunnerFailure,
+                    config: Path | None) -> dict:
+    """A run that ended without a verdict, in the same shape: no `l1` key, the
+    outcome and the host's own message instead."""
+    return {
+        **identity(args, failure.events),
+        "arm": "baseline" if args.no_skill else "with-skill",
+        "outcome": OUTCOMES[failure.status], "exit_status": failure.status,
+        "why": failure.message,
+        "config": "isolated" if config else "ambient",
+        "config_dir": str(config) if config else None,
+        **telemetry(failure.events),
+    }
+
+
+def exit_status(*, runner_failure: bool, failed: bool, untested: bool) -> int:
+    """Precedence: a runner failure, then a failed verdict — a real FAIL
+    outranks an ungraded criterion — then untested, then pass."""
+    if runner_failure:
+        return EXIT_RUNNER
+    if failed:
+        return EXIT_FAIL
+    if untested:
+        return EXIT_UNTESTED
+    return EXIT_PASS
+
+
+def aggregate_status(statuses: list[int]) -> int:
+    """Several outcomes as one exit status, by the same precedence; nothing
+    recorded at all is a runner failure, never a pass."""
+    if not statuses:
+        return EXIT_RUNNER
+    return exit_status(runner_failure=EXIT_RUNNER in statuses, failed=EXIT_FAIL in statuses,
+                       untested=EXIT_UNTESTED in statuses)
 
 
 def run_check(ws: Path, proposal: str) -> str:
@@ -611,6 +749,24 @@ def draft_verdict(scenario: dict, ws: Path, original: str) -> tuple[bool, str]:
     return passed, f"{why} ({where})"
 
 
+def ideate_verdict(ws: Path, chat: str) -> tuple[bool, str]:
+    files = workspace_markdown(ws)
+    produced, where = select_draft(files)
+    if not produced:
+        return False, where
+    # the request explicitly declines the scoping note, so a guidelines.md
+    # existing at all fails the run
+    passed, why = verdict_ideate_scoped(files, produced, chat, note_declined=True)
+    return passed, f"{why} ({where})"
+
+
+def import_verdict(ws: Path) -> tuple[bool, str]:
+    produced, _ = select_draft(workspace_markdown(ws))
+    if not produced:
+        return verdict_import(None)
+    return verdict_import(read(ws / produced), run_check(ws, produced), produced)
+
+
 def verdict(name: str, scenario: dict, ws: Path, chat: str,
             request: str = "", events: list[dict] | None = None) -> tuple[bool, str]:
     if name in CONTAINMENT_SCENARIOS:
@@ -618,24 +774,16 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
     if scenario.get("feedback"):
         return supervise_verdict(scenario, ws, events)
     if name == "ideate_scoped":
-        files = workspace_markdown(ws)
-        produced, where = select_draft(files)
-        if not produced:
-            return False, where
-        # the request explicitly declines the scoping note, so a guidelines.md
-        # existing at all fails the run
-        passed, why = verdict_ideate_scoped(files, produced, chat, note_declined=True)
-        return passed, f"{why} ({where})"
+        return ideate_verdict(ws, chat)
     if scenario.get("produces"):
-        produced, _ = select_draft(workspace_markdown(ws))
-        if not produced:
-            return verdict_import(None)
-        return verdict_import(read(ws / produced), run_check(ws, produced), produced)
+        return import_verdict(ws)
     fixture = FIXTURES / scenario["fixture"]
     original = (fixture / scenario["proposal"]).read_text(encoding="utf-8")
     current = read(ws / scenario["proposal"])
     if name == "check_report":
         return verdict_check_report(fixture / "expected.json", original, current, chat)
+    if name == "customize_override":
+        return verdict_customize_override(original, current, read(ws / "guidelines.md"))
     if name == "write_offtopic_reference":
         # the reason may land in the notes file or in chat; the verdict accepts
         # either, so both are handed over as one blob
@@ -650,9 +798,286 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
     raise ValueError(name)
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=sorted(SCENARIOS))
+# ---------- dev-runner L2: the subscription judge -------------------------------
+
+
+@dataclass(frozen=True)
+class Judge:
+    """The dev judge of one invocation, validated before anything is staged."""
+
+    model: str
+    effort: str
+    cap: float
+
+
+def resolve_judge(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Judge | None:
+    """None without judging. Otherwise the registry's dev-judge role at its
+    pinned effort — refused with a usage error, before any staging or call,
+    when it could not judge: no isolation, no rubric twin, or an ID the
+    subscription does not serve (an alias, or a metered provider's ID)."""
+    if not (args.judge or args.rejudge):
+        return None
+    if args.judge and args.rejudge:
+        parser.error("--judge grades a fresh run and --rejudge kept workspaces: pass one")
+    if args.judge and not args.isolated:
+        parser.error("--judge requires --isolated: the judge reuses the run's isolated "
+                     "configuration and never reads the ambient one")
+    if args.scenario not in DEV_RUBRICS:
+        parser.error(f"{args.scenario} has no rubric twin; dev-runner L2 grades only "
+                     f"{', '.join(DEV_RUBRICS)}")
+    roles = support.parse_registry(REGISTRY.read_text(encoding="utf-8")).roles
+    model = support.role_model(roles, "dev_judge", os.environ)
+    if not support.is_subscription_model(model):
+        source = " (set by DEV_JUDGE_MODEL)" if os.environ.get("DEV_JUDGE_MODEL") else ""
+        parser.error(f"[roles].dev_judge resolves to {model!r}{source}, which is not a full "
+                     "model ID the subscription serves (claude-…, no provider prefix, not an "
+                     "alias); a metered ID never grades dev runs")
+    return Judge(model, roles.dev_judge_effort, args.max_notional)
+
+
+def l2_artifact(name: str, scenario: dict, ws: Path) -> str | None:
+    """What the judge grades, selected as the scenario's L1 verdict selects it:
+    the review file, or the produced draft (which may be a fresh `<slug>.md`)."""
+    if name in REVIEW_VERDICTS:
+        return read(ws / scenario["proposal"].replace(".md", "-review.md")) or None
+    original = (FIXTURES / scenario["fixture"] / scenario["proposal"]).read_text(encoding="utf-8")
+    chosen, _ = select_draft(workspace_markdown(ws), scenario["proposal"], original)
+    return (read(ws / chosen) or None) if chosen else None
+
+
+def fixture_oracle(scenario: dict) -> dict:
+    path = FIXTURES / scenario["fixture"] / "expected.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def judge_criteria(name: str, scenario: dict, ws: Path,
+                   request: str) -> tuple[list[Criterion], dict[str, str]]:
+    """One prompt per rubric criterion of the scenario, from the same templates
+    and criteria the matrix judge reads; the question is the visible request
+    (the oracle list for the review scenarios). Nothing to grade costs no call:
+    those criteria are reported "not judged"."""
+    artifact = l2_artifact(name, scenario, ws)
+    if artifact is None:
+        return [], {entry.name: "not judged: no artifact" for entry in DEV_RUBRICS[name]}
+    facts = fixture_oracle(scenario)
+    return [
+        Criterion(entry.name, judge_prompt(entry.rubric, question_for(entry, request, facts),
+                                           artifact, CRITERIA[entry.key]))
+        for entry in DEV_RUBRICS[name]
+    ], {}
+
+
+def run_judge(judge: Judge, criteria: list[Criterion], config: Path | None,
+              projection: bool = False) -> JudgeRun:
+    """Every judge call of the invocation under one event loop: the login
+    preflight, the warm-up alone, then the bounded fan-out."""
+    if not criteria:
+        return JudgeRun((), 0.0)
+    return anyio.run(partial(
+        claude_cli.judge_all, criteria, model=judge.model, effort=judge.effort,
+        system_prompt=JUDGE_SYSTEM, config=config, cap=judge.cap, projection=projection))
+
+
+GRADE_NAMES = {True: "PASS", False: "FAIL", None: "UNTESTED"}
+
+
+def l2_report(judge: Judge, grades: tuple[Grade, ...] | list[Grade],
+              not_judged: dict[str, str], served: str | None) -> tuple[dict, int]:
+    """The summary's L2 part under its label, and the L2 status: a graded
+    failure fails, an ungraded criterion is untested, never a failing grade."""
+    calls = [g.call for g in grades if g.call is not None]
+    criteria = {name: {"grade": "UNTESTED", "why": why} for name, why in not_judged.items()}
+    criteria.update({g.name: {"grade": GRADE_NAMES[g.passed], "why": g.reason} for g in grades})
+    graded = {g.name: bool(g.passed) for g in grades if g.passed is not None}
+    passed, why = verdict_l2_grades(graded) if graded else (True, "nothing graded")
+    untested = bool(not_judged) or len(graded) < len(grades)
+    status = exit_status(runner_failure=False, failed=not passed, untested=untested)
+    block = {
+        "criteria": criteria,
+        "judge_model": judge.model,
+        "judge_served": calls[0].model if calls else None,
+        "effort": judge.effort,
+        "cli_version": calls[0].cli_version if calls else None,
+        "thinking_tokens": sum(c.thinking_tokens for c in calls),
+        "notional_usd": round(sum(c.notional_usd for c in calls), 6),
+        "rate_limit": asdict(calls[-1].rate_limit) if calls else None,
+    }
+    return {"l2": block, "l2_label": JUDGE_LABEL, "l2_verdict": why,
+            "self_graded": served is not None and served == judge.model}, status
+
+
+# ---------- one dev run ---------------------------------------------------------
+
+
+def enter_isolation(stack: ExitStack, prefix: str) -> Path:
+    """The isolated configuration, a sibling temp directory outside the
+    workspace (staging and the verdicts' `*.md` glob never see it). Preparing
+    it exits with a message when no stored login exists or another run's
+    refresh never arrives: the subscription cannot serve the run — untested."""
+    try:
+        return stack.enter_context(isolated_config(prefix))
+    except SystemExit as exc:
+        if isinstance(exc.code, str):
+            raise RunnerFailure(exc.code, untested=True) from None
+        raise
+
+
+def served_request(scenario: dict, stack: ExitStack) -> str:
+    """The scenario's request; a `serve` scenario's fixture is served over
+    localhost for the run's duration and its URLs are filled in."""
+    request = scenario["request"]
+    if not scenario.get("serve"):
+        return request
+    handler = partial(QuietHandler, directory=str(FIXTURES / scenario["serve"]))
+    server = HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    stack.callback(server.shutdown)
+    base = f"http://127.0.0.1:{server.server_port}"
+    return request.format(url=f"{base}/group.html", dblp=f"{base}/dblp.json")
+
+
+def completed_run(args: argparse.Namespace, judge: Judge | None, scenario: dict, ws: Path,
+                  request: str, events: list[dict], config: Path | None) -> tuple[dict, int]:
+    """The verdicts of a run the host finished: L1, then — inside the same
+    isolation — the judge, with the precedence of `exit_status`."""
+    passed, why = verdict(args.scenario, scenario, ws, final_text(events), request, events)
+    out = summary(args, passed, why, events, config, allowed=scenario.get("helpers", 0),
+                  extra=supervise_extra(scenario, ws))
+    status = EXIT_PASS if passed else EXIT_FAIL
+    if judge:
+        criteria, not_judged = judge_criteria(args.scenario, scenario, ws, request)
+        l2, l2_status = l2_report(judge, run_judge(judge, criteria, config).grades,
+                                  not_judged, out["model"])
+        out.update(l2)
+        status = aggregate_status([status, l2_status])
+    out["outcome"], out["exit_status"] = OUTCOMES[status], status
+    return out, status
+
+
+def emit(out: dict, log: Path | None) -> None:
+    """Print the summary; with a summary log, also append it as one JSON line."""
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    if log is not None:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(out, ensure_ascii=False) + "\n")
+
+
+def dev_run(args: argparse.Namespace, judge: Judge | None) -> int:
+    scenario = SCENARIOS[args.scenario]
+    ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
+    # the isolated config's linked credentials are as reachable for the child as
+    # ~/.claude is in ambient mode, and a refresh the child performs is written
+    # back to them; the judge reuses the same config, after L1
+    stack = ExitStack()
+    config, chat = None, ""
+    try:
+        try:
+            config = enter_isolation(stack, "devrun-config-") if args.isolated else None
+            stage(scenario, ws, install_skill=not args.no_skill)
+            request = served_request(scenario, stack)
+            events = run_claude(ws, request, args.model, args.timeout,
+                                budget=args.max_budget_usd, config=config)
+            save_events(events, ws)
+            chat = final_text(events)
+            out, status = completed_run(args, judge, scenario, ws, request, events, config)
+        except RunnerFailure as failure:
+            if failure.events:
+                save_events(failure.events, ws)
+            out, status = failure_summary(args, failure, config), failure.status
+        except Exception as exc:  # a crash still leaves its line in the summary log
+            traceback.print_exc()
+            failure = RunnerFailure(f"runner crashed: {exc!r}")
+            out, status = failure_summary(args, failure, config), failure.status
+        emit(out, args.summary_log)
+        if chat:
+            print("\n--- chat tail ---\n" + chat[-1200:])
+        return status
+    finally:
+        stack.close()
+        if args.keep:
+            print(f"\nworkspace kept: {ws}")
+        else:
+            shutil.rmtree(ws, ignore_errors=True)
+
+
+# ---------- re-grade kept workspaces ----------------------------------------------
+
+
+def load_events(ws: Path) -> list[dict]:
+    path = ws / EVENTS_FILE
+    return parse_events(path.read_text(encoding="utf-8")) if path.exists() else []
+
+
+def rejudge(args: argparse.Namespace, judge: Judge) -> int:
+    """Re-grade kept workspaces of the scenario with the current rubric and
+    request text, never running the model under test. One invocation: one
+    isolated config, one warm-up, and the batch projection before the fan-out."""
+    scenario = SCENARIOS[args.scenario]
+    workspaces = list(args.rejudge)
+    missing = [str(ws) for ws in workspaces if not ws.is_dir()]
+    if missing:
+        print(f"--rejudge: not a kept workspace: {', '.join(missing)}", file=sys.stderr)
+        return EXIT_USAGE
+    plans = [(ws, *judge_criteria(args.scenario, scenario, ws, scenario["request"]))
+             for ws in workspaces]
+    flat = [c for _, criteria, _ in plans for c in criteria]
+    with ExitStack() as stack:
+        try:
+            run = run_judge(judge, flat, enter_isolation(stack, "devjudge-config-"),
+                            projection=True)
+        except RunnerFailure as failure:
+            run = JudgeRun(tuple(Grade(c.name, None, failure.message) for c in flat), 0.0)
+    grades = iter(run.grades)
+    statuses = []
+    for ws, criteria, not_judged in plans:
+        served, _ = served_model(load_events(ws))
+        l2, status = l2_report(judge, [next(grades) for _ in criteria], not_judged, served)
+        emit({"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
+              "model": served, **l2, "outcome": OUTCOMES[status], "exit_status": status},
+             args.summary_log)
+        statuses.append(status)
+    return aggregate_status(statuses)
+
+
+# ---------- the closing summary of a sequence of runs -------------------------------
+
+
+def summary_rows(lines: list[dict]) -> list[dict]:
+    """One row per scenario — per workspace for a re-grade — from its latest
+    line, in the order the scenarios first appeared."""
+    latest: dict[tuple, dict] = {}
+    for line in lines:
+        why = "; ".join(part for part in (line.get("why"), line.get("l2_verdict")) if part)
+        latest[(line.get("scenario"), line.get("workspace"))] = {
+            "scenario": line.get("scenario"), "workspace": line.get("workspace"),
+            "outcome": line.get("outcome", OUTCOMES[EXIT_RUNNER]),
+            "exit_status": int(line.get("exit_status", EXIT_RUNNER)), "why": why,
+        }
+    return list(latest.values())
+
+
+def summarize(path: Path) -> int:
+    """Print the rows of a summary log, remove it, and exit with the combined
+    status: zero only when every row passed; an absent log means nothing ran."""
+    if not path.exists():
+        print(f"no runs recorded in {path}: nothing ran")
+        return EXIT_RUNNER
+    rows = summary_rows(parse_events(path.read_text(encoding="utf-8")))
+    print(f"\n=== {len(rows)} run(s) ===")
+    for row in rows:
+        where = f" [{row['workspace']}]" if row["workspace"] else ""
+        print(f"  {row['outcome']:<15} {row['scenario']}{where}: {row['why'][:160]}")
+    path.unlink()
+    status = aggregate_status([row["exit_status"] for row in rows])
+    print(f"=== {OUTCOMES[status]} ===")
+    return status
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("scenario", nargs="?", choices=sorted(SCENARIOS))
     parser.add_argument("--model", default="haiku")
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep", action="store_true", help="keep the temp workspace")
@@ -663,46 +1088,37 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--isolated", action="store_true",
                         help="run against a fresh host configuration (settings emptied, "
                              "credentials linked) instead of the operator's ambient one")
-    args = parser.parse_args(argv)
-    scenario = SCENARIOS[args.scenario]
+    parser.add_argument("--judge", action="store_true",
+                        help="grade the scenario's rubric criteria with the subscription dev "
+                             "judge ([roles].dev_judge); needs --isolated. Dev-runner L2, not "
+                             "comparable to matrix")
+    parser.add_argument("--rejudge", nargs="+", type=Path, metavar="DIR",
+                        help="re-grade kept workspaces of the scenario with the dev judge, "
+                             "without running the model under test")
+    parser.add_argument("--max-notional", type=float, default=DEFAULT_MAX_NOTIONAL,
+                        metavar="USD",
+                        help="cap on the judge calls' cumulative notional cost — plan quota, "
+                             "not money (default %(default).2f)")
+    parser.add_argument("--summary-log", type=Path, metavar="PATH",
+                        help="append the run's summary to PATH as one JSON line, failures "
+                             "included")
+    parser.add_argument("--summarize", type=Path, metavar="PATH",
+                        help="print one row per scenario from a summary log, exit non-zero "
+                             "unless every row passed, and remove the log")
+    return parser
 
-    ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
-    # the isolated config is a sibling temp directory, not inside the workspace,
-    # so staging and the verdicts' `*.md` glob never see it; the credentials it
-    # links are as reachable for the child as ~/.claude is in ambient mode, and
-    # a refresh the child performs is written back to them
-    isolation = ExitStack()
-    server = None
-    try:
-        # exits when no stored login exists, or when another run's refresh never arrives
-        config = (isolation.enter_context(isolated_config("devrun-config-"))
-                  if args.isolated else None)
-        stage(scenario, ws, install_skill=not args.no_skill)
-        request = scenario["request"]
-        if scenario.get("serve"):
-            handler = partial(QuietHandler, directory=str(FIXTURES / scenario["serve"]))
-            server = HTTPServer(("127.0.0.1", 0), handler)
-            threading.Thread(target=server.serve_forever, daemon=True).start()
-            base = f"http://127.0.0.1:{server.server_port}"
-            request = request.format(url=f"{base}/group.html", dblp=f"{base}/dblp.json")
-        events = run_claude(ws, request, args.model, args.timeout,
-                            budget=args.max_budget_usd, config=config)
-        save_events(events, ws)
-        chat = final_text(events)
-        passed, why = verdict(args.scenario, scenario, ws, chat, request, events)
-        print(json.dumps(summary(args, passed, why, events, config,
-                                 allowed=scenario.get("helpers", 0),
-                                 extra=supervise_extra(scenario, ws)), indent=2))
-        print("\n--- chat tail ---\n" + chat[-1200:])
-        return 0 if passed else 1
-    finally:
-        if server:
-            server.shutdown()
-        isolation.close()
-        if args.keep:
-            print(f"\nworkspace kept: {ws}")
-        else:
-            shutil.rmtree(ws, ignore_errors=True)
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.summarize:
+        return summarize(args.summarize)
+    if not args.scenario:
+        parser.error("a scenario is required (or --summarize PATH)")
+    judge = resolve_judge(args, parser)
+    if args.rejudge:
+        return rejudge(args, judge)
+    return dev_run(args, judge)
 
 
 if __name__ == "__main__":

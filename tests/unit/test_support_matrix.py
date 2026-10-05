@@ -780,3 +780,79 @@ def test_render_grid_runtime_column_only_when_durations_given(registry):
     assert "runtime" not in without
     assert "runtime" in with_timing
     assert "92s" in with_timing
+
+
+# ---------- subscription model IDs (add-dev-runner-judge, design D7) ----------
+
+SHIPPED = support.parse_registry((REPO / "harness" / "models.toml").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("model_id", [
+    "claude-fixture-1-0", "claude-fixture-1-0-20260101", SHIPPED.roles.dev_judge,
+])
+def test_full_subscription_ids_are_recognized(model_id):
+    assert support.is_subscription_model(model_id)
+
+
+@pytest.mark.parametrize("model_id", [
+    "fixture", "claude-fixture", "openrouter/lab/claude-fixture-1-0",
+    "anthropic/claude-fixture-1-0", SHIPPED.roles.judge,
+])
+def test_aliases_and_metered_ids_are_not_subscription_ids(model_id):
+    assert not support.is_subscription_model(model_id)
+
+
+def test_the_subscription_rule_adds_no_roster_row():
+    assert not any(support.is_subscription_model(m.id) for m in SHIPPED.models)
+
+
+# ---------- matrix.py --smoke: selection only, gate unchanged -----------------
+
+
+@pytest.fixture
+def smoke_matrix(monkeypatch):
+    import matrix
+
+    monkeypatch.setitem(sys.modules, "inspect_ai", object())
+    monkeypatch.delenv("SMOKE_MODEL", raising=False)
+    return matrix
+
+
+def test_matrix_smoke_selects_the_role_model_core_tasks_and_one_epoch(smoke_matrix, monkeypatch):
+    seen = {}
+
+    def run_matrix(models, tasks, _registry, args):
+        seen.update(models=[m.id for m in models], tasks=tasks, epochs=args.epochs)
+        return []
+
+    monkeypatch.setattr(smoke_matrix, "run_matrix", run_matrix)
+    monkeypatch.setattr(smoke_matrix, "record_spend", lambda *_args: None)
+    assert smoke_matrix.main(["--smoke", "--yes"]) == 0
+    assert seen == {"models": [SHIPPED.roles.smoke], "tasks": list(SHIPPED.tasks.core),
+                    "epochs": 1}
+
+
+def test_matrix_smoke_estimate_only_prints_the_selection(smoke_matrix, capsys):
+    assert smoke_matrix.main(["--smoke", "--estimate-only"]) == 0
+    out = capsys.readouterr().out
+    assert f"models: {SHIPPED.roles.smoke}" in out
+    assert "epochs: 1" in out
+    assert "TOTAL" in out
+
+
+@pytest.mark.parametrize("other", [
+    ["--models", "cheapo-1"], ["--tier", "cheap"], ["--tasks", "write_from_seed"], ["--core"],
+    ["--epochs", "1"],
+])
+def test_matrix_smoke_refuses_another_selection(smoke_matrix, other, capsys):
+    with pytest.raises(SystemExit) as exc:
+        smoke_matrix.main(["--smoke", *other])
+    assert exc.value.code == 2
+    assert "--smoke" in capsys.readouterr().err
+
+
+def test_matrix_smoke_declined_makes_no_metered_call(smoke_matrix, monkeypatch):
+    monkeypatch.setattr(smoke_matrix, "confirm_spend", lambda _yes: False)
+    monkeypatch.setattr(smoke_matrix, "run_matrix",
+                        lambda *_args: pytest.fail("run_matrix ran after a declined gate"))
+    assert smoke_matrix.main(["--smoke"]) == 1

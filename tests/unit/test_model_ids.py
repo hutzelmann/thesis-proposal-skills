@@ -91,8 +91,6 @@ ALLOWLIST = (
           "a comment illustrating that a dotted cloud-prefix segment holding a digit belongs to "
           "the model name; it names no model",
           token="qwen3"),
-    Allow("pyproject.toml", "the smoke task's `--models` argument",
-          token="claude-haiku-4.5", owner="add-dev-runner-judge"),
 )
 
 

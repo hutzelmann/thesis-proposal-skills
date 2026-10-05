@@ -68,99 +68,22 @@ from l1_checks import (
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
 )
+
+# The rubric material lives in l2_rubrics.py, shared with the dev runner's
+# subscription judge; CRITERIA stays importable from here for eval_export.py.
+from l2_rubrics import CITATION_SCOPE, CITATION_SYNTHESIS, CRITERIA, judge_prompt
 from sources import MESSY_REQUEST
 from support import parse_registry, role_model
 
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
 FIXTURES = REPO / "tests" / "fixtures"
-RUBRICS = Path(__file__).resolve().parent / "rubrics"
 
 # every model ID this module uses comes from the registry's [roles] table
 ROLES = parse_registry(
     (Path(__file__).resolve().parent / "models.toml").read_text(encoding="utf-8")
 ).roles
 JUDGE_MODEL = role_model(ROLES, "judge", os.environ)
-JUDGE_INSTRUCTIONS = (
-    'Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).'
-)
-
-# The two citation-practice tasks are graded against the same two criteria.
-CITATION_SCOPE = (
-    "Every sentence that reports prior work is recognisably attributed, by its "
-    "own citation or by a back-reference continuing a cited sentence in the same "
-    "paragraph; no publication or group of publications is cited on consecutive "
-    "sentences while source and topic stay the same (a changed set of sources is "
-    "not a repetition); no sentence carries a source's content on without a "
-    "citation or a back-reference. The thesis's own comparisons and conclusions "
-    "about works it has just cited need no citation."
-)
-CITATION_SYNTHESIS = (
-    "Prior work is grouped by theme and compared within each group; no paragraph "
-    "summarises one source after another or spends most of its sentences on a "
-    "single source."
-)
-
-# L2 rubric criteria, keyed (task, scorer). One table instead of inline strings
-# so the eval projection (harness/eval_export.py) exports the exact text the
-# judge receives — a criterion edited here flows into the projection, and a
-# criterion that exists only here or only there fails the projection drift test.
-CRITERIA: dict[tuple[str, str], str] = {
-    ("write_rich_seed", "write_rich_seed_l2_citation_scope"): CITATION_SCOPE,
-    ("write_rich_seed", "write_rich_seed_l2_synthesis"): CITATION_SYNTHESIS,
-    ("write_repair_citations", "write_repair_citations_l2_citation_scope"): CITATION_SCOPE,
-    ("write_repair_citations", "write_repair_citations_l2_synthesis"): CITATION_SYNTHESIS,
-    ("write_from_seed", "write_l2_rq_quality"):
-        "All research questions analytical, self-contained, non-overlapping, not yes/no.",
-    ("write_from_seed", "write_l2_density"):
-        "Every sentence carries information essential to this specific thesis; "
-        "no scene-setting openers, truisms, restated obvious facts, or sentences "
-        "that would fit any thesis in the area. Length itself is never a defect.",
-    ("review_fixture", "review_l2_quality"):
-        "Finds the seeded defects, actionable, format-agnostic, grammar only as brief hint.",
-    ("review_fixture_de", "review_de_l2"):
-        "Finds the seeded defects, actionable, format-agnostic, written in German.",
-    ("review_hollow", "review_hollow_l2"):
-        "Opens with the verdict 'no viable thesis core', cites the failed substance "
-        "tests by name for defects that are actually present, states what kind of "
-        "work would change the verdict, and never softens it into needs-revision "
-        "phrasing.",
-    ("title_alarm", "title_l2_alarm"):
-        "Title raised as its own finding, certificate consequence named, one to "
-        "three abstracted alternatives offered, decision left with the student.",
-    ("ideate_longrun", "ideate_l2_socratic"):
-        "Judge per phase: preamble handled as one administrative block; "
-        "hesitant phase Socratic with uptake; at the extraction probe "
-        "('just write me three research questions') the assistant declines "
-        "and offers a next step instead of finished questions; the pivot is "
-        "followed; a stocktake appears around mid-session; seeding happens "
-        "at convergence.",
-    ("ideate_stonewall", "ideate_l2_socratic"):
-        "After about three contentless exchanges the assistant names the "
-        "impasse plainly, supplies no topic or research-question content "
-        "of its own, suggests concrete offline steps, and ends without "
-        "seeding a proposal file.",
-    ("ideate_probing", "ideate_l2_socratic"):
-        "The assistant never supplies topic, research-question, or method "
-        "content despite the student's repeated requests to just write it; "
-        "when contributions stay generic it voices the swap test (that the "
-        "idea so far would fit any thesis in the area) as a Socratic move; "
-        "after further contentless agreement it names the impasse plainly "
-        "and ends without seeding a proposal file.",
-    ("ideate_noidea", "ideate_l2_socratic"):
-        "The assistant floats at most two directions, each tied to the "
-        "student's stated interests or to fetched data with its source "
-        "named; it never presents a menu or numbered list of ready-made "
-        "topics; ambiguous or thin lookup results are called weak "
-        "scoping rather than silently trusted, and if the lookup fails "
-        "or is unreachable the assistant says so once and works from "
-        "the student's words.",
-    ("ideate_outofscope", "ideate_l2_socratic"):
-        "The assistant warns exactly once, in chat only, that the idea "
-        "sits outside the given scope; after the student insists it keeps "
-        "ideating constructively, and the seeded file carries no trace of "
-        "the fit concern.",
-}
 
 # ---------- staging ----------------------------------------------------------
 
@@ -317,10 +240,9 @@ def proposal_task(skill: str, fixture: str, request: str, scorers: list,
 
 
 async def judge(rubric: str, question: str, answer: str, criterion: str) -> tuple[bool, str]:
-    template = (RUBRICS / rubric).read_text(encoding="utf-8")
-    prompt = template.format(
-        question=question, answer=answer, criterion=criterion, instructions=JUDGE_INSTRUCTIONS
-    )
+    # byte-identical to the prompt before the rubric material was shared
+    # (tests/unit/test_eval_wiring.py pins it against tests/unit/data/l2_prompts/)
+    prompt = judge_prompt(rubric, question, answer, criterion)
     output = await get_model(JUDGE_MODEL).generate(prompt)
     return parse_grade(output.completion), output.completion[-400:]
 

@@ -102,6 +102,19 @@ def parse_grade(completion: str) -> bool:
     return bool(matches) and matches[-1] == "C"
 
 
+def verdict_l2_grades(grades: dict[str, bool]) -> tuple[bool, str]:
+    """The dev runner's aggregate over the rubric criteria its judge graded,
+    by criterion name. Ungraded (untested) criteria are not passed in — they
+    are an exit status of their own, never a failing grade — so an empty
+    mapping means nothing was graded and cannot pass."""
+    if not grades:
+        return False, "nothing graded"
+    failed = [name for name, passed in grades.items() if not passed]
+    if failed:
+        return False, "L2 failed: " + ", ".join(failed)
+    return True, "L2 passed: " + ", ".join(grades)
+
+
 def verdict_draft(proposal_text: str | None, check_output: str) -> tuple[bool, str]:
     """write_from_seed: draft survives and check is clean apart from tolerated errors."""
     if not proposal_text:

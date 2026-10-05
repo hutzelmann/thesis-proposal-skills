@@ -295,6 +295,16 @@ def model_price(registry: Registry, model_id: str) -> Price | None:
     return None
 
 
+def is_subscription_model(model_id: str) -> bool:
+    """A full model ID the subscription CLI serves: a `claude-` prefix, no
+    provider segment, and a version digit. Rejects the CLI's bare aliases and
+    every provider-qualified metered ID alike. A prefix rule rather than a
+    roster row on purpose: a subscription ID never becomes a matrix row, and it
+    is priced nowhere because no subscription ID reaches the matrix estimate."""
+    return (model_id.startswith("claude-") and "/" not in model_id
+            and any(ch.isdigit() for ch in model_id))
+
+
 def role_model(roles: Roles, name: str, environ: Mapping[str, str]) -> str:
     """The model a role resolves to for this invocation: `<NAME>_MODEL` from the
     environment when set and non-empty, else the registry's role. An override
