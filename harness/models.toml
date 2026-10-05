@@ -45,7 +45,12 @@ enabled = true
 # haiku loads it for a polishing request 3/3, but with all skills installed
 # (routing rig) the polish case reaches no skill, 0/3 before and after the
 # description edit (2026-10-05-route-polish-to-write/measurement.md).
-note = "with all skills installed, polishing and editing requests are not reliably routed to proposal-write (0/3 on the routing rig, 2026-10-05) — use sonnet or opus for such passes"
+# Second clause: on the routing rig haiku loaded proposal-troubleshoot in 0 of 33
+# measurements of "did a skill misbehave / is this a bug to report" requests,
+# under the shipped description and under a widened one alike; sonnet routed
+# the self-contained cases 7/7 (2026-10-05-route-bug-reports-to-troubleshoot/
+# measurement.md).
+note = "with all skills installed, polishing and editing requests are not reliably routed to proposal-write (0/3 on the routing rig, 2026-10-05) — use sonnet or opus for such passes; questions about a misbehaving skill or a bug to report are answered without loading proposal-troubleshoot (0/33 on the routing rig, 2026-10-05) — invoke it by name (/proposal-troubleshoot in Claude Code) or use sonnet or opus"
 
 [[models]]
 id = "openrouter/anthropic/claude-sonnet-5.5"

@@ -246,10 +246,10 @@ Fast, free on the subscription, highest execution fidelity, with dev-runner L2 o
 Every task above hands the agent a skill body and measures what it does with it. `uv run poe routing` measures the step before that: with all eleven skills installed and nothing else, which one does the host actually select for a user utterance? The decision is made from the frontmatter `description` alone — no body is loaded — so this is the only place the descriptions are under test.
 
 ```sh
-uv run poe routing                              # 58 cases, sonnet, 3 epochs each
-uv run poe routing -- --model haiku             # the stress run: the weakest reader
-uv run poe routing -- --kind collision --jobs 1
-uv run poe routing -- --case review-canonical
+uv run poe routing                              # 60 cases, sonnet, 3 epochs each
+uv run poe routing --model haiku                # the stress run: the weakest reader
+uv run poe routing --kind collision --jobs 1
+uv run poe routing --case review-canonical
 ```
 
 Cases live in `routing_cases.toml`, four kinds: `canonical` (the phrasing the description promises), `oblique` (how a student types it), `collision` (parked in a zone another skill also claims), `negative` (no `proposal-*` skill may answer). `expected` encodes the *intended* boundary, so a case that routes wrong is a finding about the descriptions, not a dataset bug. Results land in `logs/routing/` and the report is regenerated at `docs/skill-routing.md` — a confusion matrix, because an aggregate pass rate cannot tell you which skill stole which utterance.

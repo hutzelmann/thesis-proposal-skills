@@ -312,6 +312,30 @@ expected = "proposal-troubleshoot"
 kind = "collision"
 lang = "en"
 
+# the troubleshoot_model_rung request (harness/skill_evals.py), minus the
+# sentence naming the model: this file may carry no model ID
+# (tests/unit/test_model_ids.py, Rule A), and the selection does not depend on
+# it. It names write and a draft, but it asks whether a skill is broken. On
+# 2026-10-05 haiku answered it without loading a skill
+# (fix-troubleshoot-model-match, task 6.1).
+[[cases]]
+id = "troubleshoot-report-collision"
+utterance = "The write skill produced a draft that ignored half of what I told it. I have already updated the skills by pasting the install prompt again, and it still happens. Is this a bug I should report?"
+expected = "proposal-troubleshoot"
+kind = "collision"
+lang = "en"
+
+# self-contained on purpose: an earlier wording ("the second time the tool did
+# the opposite of what I asked") pointed at a past event that a fresh session
+# cannot see, and on 2026-10-05 both sonnet and haiku answered it by saying so
+# — correct behaviour, scored as a routing failure
+[[cases]]
+id = "troubleshoot-report-oblique"
+utterance = "I asked the proposal assistant to leave my research questions exactly as they are, and it rewrote them anyway — twice now. Is that a bug I should report?"
+expected = "proposal-troubleshoot"
+kind = "oblique"
+lang = "en"
+
 # ---------- negatives --------------------------------------------------------
 
 [[cases]]
