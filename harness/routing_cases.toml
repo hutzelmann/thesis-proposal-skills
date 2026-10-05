@@ -128,6 +128,19 @@ expected = "proposal-ideate"
 kind = "collision"
 lang = "en"
 
+# the paper-foundation entry path. It sits between lit-search (a paper is
+# literature) and negative-paper-summary (a paper the student only has to
+# present); what makes it ideate's is that the thesis does not exist yet. No link:
+# on 2026-10-05 a DOI with Crossref's test prefix made haiku object to the
+# placeholder and route nowhere (0/6), while sonnet routed it 3/3 — the link
+# measured the identifier, not the description.
+[[cases]]
+id = "ideate-paper-oblique"
+utterance = "I just read a paper I really like, and I'd like to write my thesis on something similar to it."
+expected = "proposal-ideate"
+kind = "oblique"
+lang = "en"
+
 # ---------- proposal-lit-search ----------------------------------------------
 
 [[cases]]

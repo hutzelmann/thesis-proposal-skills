@@ -115,9 +115,11 @@ from host_login import LOGIN_FAILURE, LoginSource, login_remedy
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
+    assistant_text,
     feedback_body_words,
     load_closing_note,
     select_draft,
+    tool_result_text,
     verdict_check_report,
     verdict_cited_draft,
     verdict_customize_override,
@@ -129,6 +131,7 @@ from l1_checks import (
     verdict_install_prompt_installed,
     verdict_l2_grades,
     verdict_offtopic_reference,
+    verdict_paper_foundation,
     verdict_repaired_draft,
     verdict_review,
     verdict_scoping_containment,
@@ -389,6 +392,24 @@ SCENARIOS = {
     # (run_install_probe; nothing is staged)
     "install_prompt": {"install": True},
     "install_prompt_answered": {"install": True, "answered": True},
+    # the paper-foundation path's first turn: preamble pre-answered with lookups
+    # declined, and no axis named, so the right turn reads the paper's framing
+    # slice, says which sections it read and asks what would change. Unlike
+    # `ideate_scoped` the request carries no "seed now" cue: the first turn is
+    # what is measured, and a seed there is itself a failure. Judged by
+    # verdict_paper_foundation over the chat, the tool results and the workspace.
+    "ideate_paper_foundation": {
+        "skill": "proposal-ideate",
+        "fixture": "p01-published-paper",
+        "paper": True,
+        "request": (
+            "I came across a paper I really like and I'd like to write my thesis on "
+            "something similar. It's saved here as quieter-pagers.txt. To answer your "
+            "usual questions up front: I'm in the M.Sc. Computer Science program, it's "
+            "a Master's thesis, the proposal should be in English, I have about five "
+            "months, and no, please don't look anything up online in this session."
+        ),
+    },
 }
 
 # Scenarios whose verdict is scoping containment rather than the default.
@@ -1021,6 +1042,9 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
             request: str = "", events: list[dict] | None = None) -> tuple[bool, str]:
     if name in CONTAINMENT_SCENARIOS:
         return containment_verdict(ws, request, chat, events or [])
+    if scenario.get("paper"):
+        return verdict_paper_foundation(assistant_text(events or []) or chat,
+                                        tool_result_text(events or []), workspace_markdown(ws))
     if scenario.get("feedback"):
         return supervise_verdict(scenario, ws, events)
     if name == "ideate_scoped":

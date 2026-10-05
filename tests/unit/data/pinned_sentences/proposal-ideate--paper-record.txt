@@ -1,0 +1,1 @@
+A published paper the session started from always becomes a starter entry, built from a metadata record fetched in this session

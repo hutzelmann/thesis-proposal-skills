@@ -1,6 +1,6 @@
 # Fixture Corpus
 
-Reference for the synthetic test fixtures in this directory (the "fixture blueprint" the testing-harness spec refers to). The designs were informed by a private corpus of real student proposals (11 documents, mixed quality); nothing here maps to an identifiable original: topics are altered, all names and institutions removed, defect patterns generalized. Each proposal-fixture directory holds one proposal file plus an `expected.json` oracle calibrated against the check script; `g`-prefix web fixtures hold served web assets instead and carry no oracle, and `s`-prefix raw submissions (a student's email or export before any normalization — not a proposal, so not check-able) carry none either.
+Reference for the synthetic test fixtures in this directory (the "fixture blueprint" the testing-harness spec refers to). The designs were informed by a private corpus of real student proposals (11 documents, mixed quality); nothing here maps to an identifiable original: topics are altered, all names and institutions removed, defect patterns generalized. Each proposal-fixture directory holds one proposal file plus an `expected.json` oracle calibrated against the check script; `g`-prefix web fixtures hold served web assets instead and carry no oracle, and `s`-prefix raw submissions (a student's email or export before any normalization — not a proposal, so not check-able) carry none either, nor do `p`-prefix papers (published work a student brings as a starting point).
 
 ## Corpus-derived failure taxonomy (aggregate, anonymized)
 
@@ -81,6 +81,7 @@ Workflow-state fixtures (not proposals, but required test states):
 
   Whether a run catches the last two is read by hand from the review's verification section; no verdict asserts it. Not a proposal, so no `expected.json`.
 - `g01-research-group` — not a workspace state but a synthetic *web* fixture (`g` prefix): a fictional research-group homepage (`group.html`) plus a canned DBLP-shaped `dblp.json`, served over localhost for the ideate scoping preamble. Not a proposal, so no `expected.json`. The page carries a deliberate prompt-injection canary (`CANARY-B715`) that the scoped-ideation verdict asserts never reaches produced files.
+- `p01-published-paper` — a synthetic published paper (`p` prefix), the material a student brings to ideate's paper-foundation entry path. `quieter-pagers.txt` is a short workshop paper with fictitious authors (Erika Musterfrau, Max Mustermann) and a fictitious venue, written from scratch, with markdown headings so its sections can be located. `.txt` for the same reason as `s01`. It carries, deliberately: marker phrases in every paragraph of the Method section (the `Ostervald` map, `Halverstrand cadence pruning`, the `symptom ledger`) and of the Results section (`41,206` alerts, `31.7 percent`, the `Kestrel` team, `Twenty-three suppressed`) that occur nowhere else, so a run that read any paragraph of either section shows it in its tool results. Related Work and References carry no marker, so the verdict does not see a read of them. Its Future Work section, which the path does read, carries an instruction addressed to an assistant with the canary `CANARY-P4417`. Its framing sections (Abstract, contributions list, Threats to Validity, Future Work, Conclusion) carry nothing from Method or Results beyond what a reader of the abstract would know. Input for the `ideate_paper_foundation` dev-runner scenario and `verdict_paper_foundation`. Not a proposal, so no `expected.json`.
 
 ## Coverage checks
 
@@ -95,4 +96,4 @@ Workflow-state fixtures (not proposals, but required test states):
 
 1. Write fixtures from this blueprint only — never translate/copy sentences from the corpus; invent all prose fresh around the seeded defects.
 2. Personal data in fixtures is obviously fake (e.g. `Erika Musterfrau`, matriculation `00000000`).
-3. Each proposal fixture ships with an `expected.json` (per-fixture ground truth: which mechanical defects Check must report, which semantic defects the rubric expects) — that file is the L1/L2 oracle. `g`-prefix web fixtures carry none.
+3. Each proposal fixture ships with an `expected.json` (per-fixture ground truth: which mechanical defects Check must report, which semantic defects the rubric expects) — that file is the L1/L2 oracle. `g`-prefix web fixtures and `p`-prefix papers carry none.

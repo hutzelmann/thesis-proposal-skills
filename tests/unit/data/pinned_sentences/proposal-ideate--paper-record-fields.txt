@@ -1,0 +1,1 @@
+check that the record's title and authors match the paper, and take every bibliographic field from it, never from memory and never one the record lacks

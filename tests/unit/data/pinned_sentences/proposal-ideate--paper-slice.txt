@@ -1,0 +1,1 @@
+For any slice section you cannot locate, say so and ask for it as text rather than reading the whole file or a neighbouring section
