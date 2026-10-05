@@ -8,10 +8,11 @@ Skill invocation observed, after which the run is killed — everything past the
 selection is paid noise.
 
 The measurement runs against an isolated CLAUDE_CONFIG_DIR holding exactly the
-skills under test, so the number describes a student's install rather than the
-developer's machine. It needs the `claude` binary and a logged-in subscription,
-which is why it is an on-demand instrument and not part of the L0 chain; the
-pure functions below and the dataset's integrity are.
+skills under test, in an allowlisted environment, so the number describes a
+student's install rather than the developer's machine or session. It needs the
+`claude` binary and a logged-in subscription, which is why it is an on-demand
+instrument and not part of the L0 chain; the pure functions below and the
+dataset's integrity are.
 
 Usage:
   uv run poe routing
@@ -31,7 +32,7 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -443,6 +444,42 @@ def isolated_config(prefix: str) -> Iterator[Path]:
             yield config
 
 
+# What an isolated child inherits: the machine, never the launching session.
+# An allowlist, because the host and the desktop app keep adding variables —
+# DISABLE_MICROCOMPACT, API_TIMEOUT_MS, ANTHROPIC_BASE_URL — that no `CLAUDE*`
+# filter catches; a desktop-launched child recorded `entrypoint: claude-desktop`
+# on 2026-10-04. A name missing here fails a run loudly; a name leaking past a
+# denylist changes the measurement silently. Add one only with its reason.
+ADMITTED_ENV = frozenset({
+    "PATH", "HOME",
+    "CLAUDE_CODE_OAUTH_TOKEN",  # long-lived login: nothing is linked when it is set
+    "USER", "LOGNAME", "SHELL",  # identity; the host's Bash tool picks SHELL
+    "LANG", "LANGUAGE",  # with every LC_*: script I/O as on the student's machine
+    "TMPDIR", "TMP", "TEMP",
+    "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
+    "XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+    "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "NIX_SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
+    "NODE_USE_SYSTEM_CA", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+    "SYSTEMROOT", "COMSPEC", "PATHEXT", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+})
+
+
+def isolated_env(config: Path, environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment of an isolated host child: the admitted names from
+    `environ` (default: this process's) plus CLAUDE_CONFIG_DIR set to `config`.
+
+    Prints nothing — the dropped set holds the desktop session's messaging
+    token (testing-harness spec: Isolated child environment).
+    """
+    source = os.environ if environ is None else environ
+    env = {name: value for name, value in source.items()
+           if name in ADMITTED_ENV or name.startswith("LC_")}
+    env["CLAUDE_CONFIG_DIR"] = str(config)
+    return env
+
+
 def files_named(utterance: str) -> list[str]:
     """Fixture filenames the sentence itself names, in order of appearance.
 
@@ -483,7 +520,7 @@ def stage_workspace(ws: Path, case: Case | None = None) -> None:
 def stream_events(ws: Path, config: Path, utterance: str, model: str,
                   timeout: int) -> tuple[list[dict], str | None]:
     """Run one utterance, reading events until a route is decided, then kill."""
-    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config))
+    env = isolated_env(config)
     command = [
         "claude", "-p", utterance, "--model", model,
         "--output-format", "stream-json", "--verbose",

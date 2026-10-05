@@ -34,11 +34,13 @@ tool calls (Agent/Task/Workflow) and an advisory single-context verdict —
 the probe for the fan-out class of failure, which no other harness path can
 see — plus the model the host served and its CLI version. `--isolated` runs
 against a fresh host configuration (the routing rig's `isolated_config`, which
-keeps the linked stored login current), so a run measures the default host
-rather than the operator's session mode; the summary says which (`config`).
+keeps the linked stored login current) and an allowlisted environment (the
+rig's `isolated_env`), so a run measures the default host rather than the
+operator's session mode; the summary says which (`config`).
 
 Billing stays on the subscription: every `ANTHROPIC_*` variable and every
-`CLAUDE_CODE_USE_*` switch is stripped from the model run's environment, and a
+`CLAUDE_CODE_USE_*` switch is stripped from the model run's environment (an
+isolated run's allowlist admits none of them in the first place), and a
 run whose stream shows an API-key source, overage, a refused rate-limit status
 or no rate-limit report at all is untested, never passed. `--rejudge` re-grades
 kept workspaces without running the model again; `--max-notional` caps the
@@ -106,6 +108,7 @@ from routing import (
     OUTWARD_TOOLS,
     error_result_reason,
     isolated_config,
+    isolated_env,
     result_event,
     tool_calls,
 )
@@ -447,15 +450,18 @@ class RunnerFailure(Exception):
 
 
 def model_env(environ: Mapping[str, str], config: Path | None) -> dict[str, str]:
-    """The model-under-test child's environment: the inherited one minus every
-    variable that can move its billing off the subscription login, in ambient
-    and isolated mode alike. Effort and session settings stay — they are part
-    of what a dev run measures. `environ` is not modified."""
-    env = {name: value for name, value in environ.items()
-           if not name.startswith(BILLING_PREFIXES)}
+    """The model-under-test child's environment; `environ` is not modified.
+
+    Ambient: the inherited one minus every variable that can move its billing
+    off the subscription login. Effort and session settings stay — they are
+    part of what an ambient run measures. Isolated: the routing rig's
+    allowlisted `isolated_env`, which admits no billing variable and nothing of
+    the launching session, effort included, so the run measures the default
+    host (testing-harness spec: Isolated child environment)."""
     if config is not None:
-        env["CLAUDE_CONFIG_DIR"] = str(config)
-    return env
+        return isolated_env(config, environ)
+    return {name: value for name, value in environ.items()
+            if not name.startswith(BILLING_PREFIXES)}
 
 
 def run_claude(ws: Path, request: str, model: str, timeout: int,

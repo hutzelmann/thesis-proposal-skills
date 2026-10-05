@@ -781,7 +781,7 @@ Because the runner starts the host without permission prompts, it SHALL deny the
 
 The runner SHALL accept a hard budget cap passed through to the host, and SHALL label each run as measuring the ambient host configuration or an isolated one prepared for the run, naming the isolated directory.
 
-The runner SHALL remove from the model-under-test child's environment every variable that can route the host's billing away from the subscription login, in ambient and isolated mode alike: every `ANTHROPIC_`-prefixed variable, which covers the API key, the gateway base URL and its auth token, and every `CLAUDE_CODE_USE_` cloud-provider switch. It SHALL leave every other inherited variable in place, so that the operator's effort and session settings remain part of what a dev run measures.
+The runner SHALL remove from the model-under-test child's environment every variable that can route the host's billing away from the subscription login, in ambient and isolated mode alike: every `ANTHROPIC_`-prefixed variable, which covers the API key, the gateway base URL and its auth token, and every `CLAUDE_CODE_USE_` cloud-provider switch. In ambient mode it SHALL leave every other inherited variable in place, so that the operator's effort and session settings remain part of what an ambient run measures. In isolated mode the child SHALL receive the isolated child environment instead (requirement: Isolated child environment), whose allowlist admits none of those billing variables and no effort or session setting of the launching process, so that an isolated run measures the default host.
 
 Failures SHALL be reported as follows:
 
@@ -866,8 +866,16 @@ The telemetry and final-text readers SHALL be pinned against a recorded result e
 - **THEN** the run exits with the untested status, names the cause, and no judge call is made
 
 #### Scenario: Billing variables never reach the model run
-- **WHEN** the runner is launched, in ambient or isolated mode, from an environment carrying an API key, a gateway base URL with an auth token, a cloud-provider switch and an effort setting
-- **THEN** the model-under-test child's environment carries none of the first three and still carries the effort setting
+- **WHEN** the runner is launched, in ambient or isolated mode, from an environment carrying an API key, a gateway base URL with an auth token and a cloud-provider switch
+- **THEN** the model-under-test child's environment carries none of them
+
+#### Scenario: Ambient run keeps the operator's settings
+- **WHEN** the runner is launched in ambient mode from an environment carrying an effort setting and host-session variables
+- **THEN** the model-under-test child's environment still carries them
+
+#### Scenario: Isolated run drops the operator's settings
+- **WHEN** the runner is launched in isolated mode from an environment carrying an effort setting and host-session variables
+- **THEN** the model-under-test child's environment carries neither, because it is the isolated child environment
 
 #### Scenario: No result event
 - **WHEN** the host exits without emitting a result event
@@ -1334,3 +1342,50 @@ The harness SHALL provide a metered probe that replays a fixed, synthetic multi-
 #### Scenario: Reuse at threshold passes
 - **WHEN** cache reads make up at least 80% of the prompt tokens on the calls after the first cache write
 - **THEN** the mechanism passes on that model
+
+### Requirement: Isolated child environment
+An isolated host child SHALL receive an environment built from an allowlist. This covers every routing-rig run and every dev-runner run in isolated mode. It SHALL NOT receive the launching process's environment with only the configuration directory overridden. One function, shared by both runners, SHALL build that environment.
+
+The allowlist SHALL admit only:
+- `PATH` and `HOME`;
+- `CLAUDE_CODE_OAUTH_TOKEN`, the long-lived OAuth token variable;
+- variables that describe the machine rather than configure the host: user identity and login shell, locale, temporary directories, XDG base directories, proxy and certificate-trust settings, and the process basics Windows requires.
+
+The configuration-directory variable SHALL be set to the isolated directory, replacing any inherited value.
+
+Every other variable SHALL be dropped. That includes:
+- the variables a launching desktop-app or SDK session sets to bind a child to itself: entrypoint, session identifiers, messaging socket and token, host auth refresh, and OAuth scopes;
+- the variables that tune the host: effort, tool enablement, compaction, timeouts, API endpoint, and MCP connection settings;
+- variables that no list names yet. A host that adds one would otherwise leak it into measurement without any sign.
+
+A runner in ambient mode SHALL keep passing the operator's environment to the child, less only the billing variables the dev runner removes from every model-under-test run (requirement: Dev-runner cost and helper-agent telemetry).
+
+Building the isolated environment SHALL print nothing, and no runner output SHALL carry the value of any variable, admitted or dropped. L0 tests with synthetic values SHALL cover how the environment is built and both places that use it.
+
+#### Scenario: Desktop session variables dropped
+- **WHEN** a runner is launched from a desktop-app session that exports its entrypoint, session identifiers, messaging socket and token, auth-refresh flag, and OAuth scopes
+- **THEN** the isolated child's environment carries none of them, and its configuration directory is the isolated one
+
+#### Scenario: Host tuning outside the host's own prefix dropped
+- **WHEN** the launching environment sets the API base URL, an API timeout, a compaction or auto-updater switch, or MCP connection settings
+- **THEN** the isolated child receives none of them
+
+#### Scenario: Unknown variable dropped
+- **WHEN** the launching environment holds a variable that no list names
+- **THEN** the isolated child does not receive it
+
+#### Scenario: Long-lived token kept
+- **WHEN** `CLAUDE_CODE_OAUTH_TOKEN` is set in the launching environment
+- **THEN** the isolated child receives it unchanged, together with `PATH` and `HOME`
+
+#### Scenario: Machine plumbing kept
+- **WHEN** the launching environment sets locale, temporary-directory, proxy, or certificate-trust variables
+- **THEN** the isolated child receives them unchanged
+
+#### Scenario: Ambient run keeps the operator's environment
+- **WHEN** the dev runner runs without isolated mode
+- **THEN** the child inherits the operator's environment, its effort and session variables included, except the billing variables
+
+#### Scenario: No values printed
+- **WHEN** the isolated environment is built from an environment holding a messaging token
+- **THEN** nothing is printed, and the token's value appears in no output
