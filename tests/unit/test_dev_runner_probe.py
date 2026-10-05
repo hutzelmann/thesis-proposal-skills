@@ -21,6 +21,7 @@ import claude_runner
 import pytest
 from claude_cli import JudgeCall, RateLimit
 from claude_runner import (
+    DRAFT_SCENARIOS,
     EVENTS_FILE,
     EXIT_FAIL,
     EXIT_PASS,
@@ -404,6 +405,17 @@ def test_supervise_scenarios_allow_exactly_one_verifier():
     for name in ("supervise_feedback", "supervise_literature", "supervise_scope"):
         assert SCENARIOS[name]["helpers"] == 1
     assert "helpers" not in SCENARIOS["check_report"]
+
+
+NO_QUESTIONS = "I cannot answer any questions — decide and tell me what you did."
+
+
+def test_every_draft_scenario_says_nobody_will_answer():
+    """A dev run is one unattended turn, so a draft scenario that does not say
+    so can end in a clarifying question and no draft — a haiku `write_from_seed`
+    run stopped to ask for the degree level on 2026-10-04."""
+    for name in DRAFT_SCENARIOS:
+        assert NO_QUESTIONS in SCENARIOS[name]["request"], name
 
 
 def test_supervise_extra_reports_the_body_length(tmp_path):

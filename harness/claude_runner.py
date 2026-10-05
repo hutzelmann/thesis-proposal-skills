@@ -159,7 +159,8 @@ SCENARIOS = {
         "skill": "proposal-write",
         "proposal": "data-drift-detection.md",
         "request": "Please turn my idea notes in data-drift-detection.md into a full "
-                   "proposal draft. Keep my idea, mark anything missing as TODO.",
+                   "proposal draft. Keep my idea, mark anything missing as TODO. "
+                   "I cannot answer any questions — decide and tell me what you did.",
     },
     # no fixture: the source arrives pasted in the request and the skill
     # creates the proposal, choosing its own content-derived filename
