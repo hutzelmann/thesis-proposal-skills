@@ -29,7 +29,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 
-from host_login import LONG_LIVED_TOKEN
+# The subscription's long-lived login token (`claude setup-token`). Defined
+# here, not in host_login, because host_login builds on this module; it
+# re-exports the name.
+LONG_LIVED_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
 
 # The connector switch, applied to every host child the harness starts.
 CONNECTORS_OFF: Mapping[str, str] = MappingProxyType({"ENABLE_CLAUDEAI_MCP_SERVERS": "false"})
@@ -218,8 +221,7 @@ def isolation_problem(config: Path) -> str | None:
     return (f"the isolated configuration {config} is not closed to claude.ai account "
             f"surfaces: {'; '.join(problems)}. It must hold {SETTINGS_FILE} with exactly "
             f"{_pinned_json()}, an empty {PROFILE_DIR}/ directory and no synced skills or "
-            "plugins; a directory passed through ROUTING_CONFIG_DIR is used as it is, so "
-            "prepare it that way. The ambient configuration is never used instead.")
+            "plugins. The ambient configuration is never used instead.")
 
 
 def default_profile_store(environ: Mapping[str, str]) -> Path:

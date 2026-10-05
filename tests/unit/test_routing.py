@@ -23,9 +23,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import claude_runner
+import host_login
 import pytest
 import routing
-from helpers import REPO
+from helpers import REPO, followed
+from host_login import LOGIN_COMMAND, LoginSource, login_note
 from routing import (
     DEFAULT_PROPOSAL,
     ISOLATION_CONDITIONS,
@@ -33,7 +35,7 @@ from routing import (
     NO_ROUTE,
     Case,
     Result,
-    case_result,
+    case_billing,
     classify,
     composition_problems,
     files_named,
@@ -57,6 +59,22 @@ STREAMS = Path(__file__).parent / "data" / "routing_streams"
 def events(name: str) -> list[dict]:
     path = STREAMS / f"{name}.jsonl"
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def case_result(case: Case, stream: list[dict], error: str | None,
+                source: LoginSource = LoginSource.OPERATOR) -> Result:
+    """The rig's own, on the operator's opt-in unless a test names the login."""
+    return routing.case_result(case, stream, error, source)
+
+
+# What a 2.1.207 stream carries before its first assistant event (the order of
+# `reported-route.jsonl`): `init` with its API-key source, then the rate-limit
+# report. The reduced fixtures below predate both, so a case built from them
+# gets this prefix, or the rig would rightly read their model turns as
+# unreported billing. 2.1.284 writes the report after the turn's assistant
+# events instead, and after a `Skill` call's tool result and the skill's
+# instructions (`route-before-report.jsonl`, recorded, tested below).
+REPORTED = events("reported-route")[:2]
 
 
 # ---------- route extraction -------------------------------------------------
@@ -133,6 +151,17 @@ def test_dead_login_is_an_error_not_an_unrouted_case():
     assert "`/login`" in outcome.error
 
 
+@pytest.mark.parametrize("passed", [False, True])
+def test_a_dead_harness_login_names_host_login(passed, monkeypatch):
+    """testing-harness spec: Login rejected during a case — the harness
+    login's one remedy, closing with the login note."""
+    monkeypatch.setattr(host_login, "L3_PASSED", passed)
+    outcome = case_result(CHECK_CASE, events("expired-login"), None, LoginSource.HARNESS)
+    assert LOGIN_COMMAND in outcome.error
+    assert "/login" not in outcome.error
+    assert outcome.error.endswith(f"{login_note(LOGIN_COMMAND)}.")
+
+
 def test_negative_case_does_not_pass_on_a_host_error():
     outcome = case_result(NEGATIVE_CASE, events("expired-login"), None)
     assert not outcome.passed
@@ -146,14 +175,14 @@ def test_other_host_errors_name_the_host_reason_without_the_login_remedy():
 
 
 def test_an_answer_without_a_skill_call_stays_unrouted():
-    outcome = case_result(NEGATIVE_CASE, events("unrouted-explore") + events("recorded-result"),
-                          None)
+    outcome = case_result(NEGATIVE_CASE, REPORTED + events("unrouted-explore")
+                          + events("recorded-result"), None)
     assert outcome.error is None
     assert outcome.passed
 
 
 def test_a_route_outranks_every_error():
-    stream = events("routed-check") + events("expired-login")
+    stream = REPORTED + events("routed-check") + events("expired-login")
     outcome = case_result(CHECK_CASE, stream, "timed out after 90s")
     assert outcome.route == "proposal-check"
     assert outcome.error is None
@@ -161,7 +190,8 @@ def test_a_route_outranks_every_error():
 
 def test_a_stream_error_stands_when_the_host_gave_no_reason():
     assert case_result(CHECK_CASE, [], "no events").error == "no events"
-    timed_out = case_result(CHECK_CASE, events("unrouted-explore"), "timed out after 90s")
+    timed_out = case_result(CHECK_CASE, REPORTED + events("unrouted-explore"),
+                            "timed out after 90s")
     assert timed_out.error == "timed out after 90s"
 
 
@@ -203,11 +233,12 @@ def test_a_case_that_reaches_its_time_limit_is_an_error_not_unrouted(
     on a stalled host (testing-harness spec: Case reaches its time limit). The
     limit wins over the preparatory bound: five reads in time plus the one that
     finds the deadline passed is six non-skill calls, past the bound of three."""
-    seen, error = read_until_the_limit(monkeypatch, tmp_path, events("unrouted-explore"),
-                                       lines_in_time)
+    seen, error = read_until_the_limit(monkeypatch, tmp_path,
+                                       REPORTED + events("unrouted-explore"),
+                                       len(REPORTED) + lines_in_time)
 
     assert error == "timed out after 90s"
-    assert len(seen) == lines_in_time + 1
+    assert len(seen) == len(REPORTED) + lines_in_time + 1
     outcome = case_result(NEGATIVE_CASE, seen, error)
     assert outcome.route is None
     assert outcome.error == "timed out after 90s"
@@ -224,9 +255,10 @@ def test_a_skill_invoked_past_the_bound_does_not_save_a_case_from_its_time_limit
     is the fifth call, past the bound of three, and the deadline passes on the
     line after it — so even the case that expected that skill does not pass."""
     peek = events("preparatory-then-route")[0]
-    late_pick = [peek] * 4 + events("routed-check")
+    late_pick = REPORTED + [peek] * 4 + events("routed-check")
 
-    seen, error = read_until_the_limit(monkeypatch, tmp_path, late_pick, lines_in_time=5)
+    seen, error = read_until_the_limit(monkeypatch, tmp_path, late_pick,
+                                       lines_in_time=len(REPORTED) + 5)
 
     assert [p["skill"] for name, p in tool_calls(seen) if name == "Skill"] == ["proposal-check"]
     assert error == "timed out after 90s"
@@ -240,7 +272,7 @@ def test_a_skill_invoked_past_the_bound_does_not_save_a_case_from_its_time_limit
 
 def test_a_malformed_skill_call_is_an_error():
     assert "carries no skill name" in case_result(
-        CHECK_CASE, events("malformed-skill-call"), None).error
+        CHECK_CASE, REPORTED + events("malformed-skill-call"), None).error
 
 
 # ---------- claude.ai account surfaces (testing-harness spec: Isolated
@@ -262,13 +294,121 @@ def test_a_negative_case_does_not_pass_on_a_surface():
     assert classify([outcome]).totals == (0, 0)
 
 
+# ---------- billing (testing-harness spec: Billing signal in a routing case;
+# Unreported rate limit in a routing case) -----------------------------------------
+
+ROUTE = events("reported-route")
+INIT_OK = ROUTE[0]
+# the 2.1.284 order of a `Skill` route, recorded to the run's end (2026-10-05):
+# init, the route, its tool result, the skill's instructions, then the run's
+# only report, then the next turn's first assistant event and the skill run
+LATE_REPORT = events("route-before-report")
+AT_REPORT = 5  # events read up to and including the report
+# the 2.1.284 order recorded after a `Glob` call: the report before the tool result
+REPORT_BEFORE_RESULT = [*LATE_REPORT[:2], LATE_REPORT[4], *LATE_REPORT[2:4], *LATE_REPORT[5:]]
+UNREPORTED_RUN = [e for e in LATE_REPORT if e["type"] != "rate_limit_event"]
+# task 5.7's routing case, reduced: init, the `Skill` call, its tool result, no report
+SKILL_RESULT_UNREPORTED = events("skill-result-unreported")
+
+
+def rate(**info) -> dict:
+    return {"type": "rate_limit_event", "rate_limit_info": {
+        "status": "allowed", "isUsingOverage": False, "rateLimitType": "five_hour", **info}}
+
+
+@pytest.mark.parametrize(("stream", "fragment"), [
+    ([{**INIT_OK, "apiKeySource": "ANTHROPIC_API_KEY"}, *ROUTE[1:]], "'ANTHROPIC_API_KEY'"),
+    ([INIT_OK, rate(isUsingOverage=True), *ROUTE[2:]], "overage in use"),
+    ([INIT_OK, rate(status="rejected"), *ROUTE[2:]], "'rejected'"),
+    ([*ROUTE, {"type": "result", "modelUsage": {"claude-fixture-1-0": {"provider": "vertex"}}}],
+     "'vertex'"),
+    ([INIT_OK, *ROUTE[2:]], "rate limit not reported, overage cannot be ruled out"),
+    ([INIT_OK, {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed"}},
+      *ROUTE[2:]], "rate limit reported without an overage flag"),
+    (LATE_REPORT[:2], "rate limit not reported, overage cannot be ruled out"),
+    (SKILL_RESULT_UNREPORTED, "rate limit not reported, overage cannot be ruled out"),
+    (LATE_REPORT[:AT_REPORT - 1], "rate limit not reported, overage cannot be ruled out"),
+    (UNREPORTED_RUN, "rate limit not reported, overage cannot be ruled out"),
+], ids=["api-key-source", "overage", "refused-status", "foreign-provider", "no-report",
+        "no-overage-flag", "stopped-at-the-route-before-the-report",
+        "stopped-at-the-tool-result-before-the-report",
+        "stopped-at-the-skill-instructions-before-the-report", "whole-run-without-a-report"])
+def test_case_billing_names_each_reason(stream, fragment):
+    """The dev runner's checks, the overage flag's presence included: a
+    renamed field must not pass in the rig where it refuses in the dev
+    runner (`routing.billing_problem`)."""
+    assert fragment in case_billing(stream)
+    if "not reported" not in fragment:
+        assert routing.billing_problem(stream) is not None
+
+
+def test_an_api_key_source_names_both_remedies_and_never_a_key():
+    """The checks are source-free: the source may be an exported key or helper,
+    or a login that is not the subscription's."""
+    reason = case_billing([{**INIT_OK, "apiKeySource": "/login managed key"}, *ROUTE[1:]])
+    assert "unset the key or key helper" in reason
+    assert "log in again with the subscription login" in reason
+    assert "never an API key" in reason
+
+
+def test_case_billing_finds_nothing_in_a_clean_or_early_stopped_case():
+    """A case stopped at `init` has no model turn, so no report is owed; a
+    routed case in either recorded order has read its report."""
+    assert case_billing(events("clean-init")) is None
+    assert case_billing(ROUTE) is None
+    assert case_result(CHECK_CASE, ROUTE, None).route == "proposal-lit-search"
+    assert case_billing(LATE_REPORT[:AT_REPORT]) is None
+    assert case_result(CHECK_CASE, LATE_REPORT[:AT_REPORT], None).route == "proposal-review"
+    assert case_billing(REPORT_BEFORE_RESULT[:3]) is None
+    assert case_billing(LATE_REPORT) is None
+
+
+@pytest.mark.parametrize("marked", [
+    {"message": {"model": "<synthetic>", "content": [{"type": "text", "text": "x"}]}},
+    {"message": {"content": [{"type": "text", "text": "x"}]}, "isApiErrorMessage": True},
+], ids=["synthetic-model", "api-error-flag"])
+def test_the_hosts_own_api_error_message_is_no_model_turn(marked):
+    """A dead login arrives as the host's own assistant event, which no model
+    served and which carries no rate-limit report: it must not void the sweep
+    as billing and take the login remedy with it."""
+    stream = [INIT_OK, {"type": "assistant", **marked}]
+    assert routing.model_turns(stream) == []
+    assert case_billing(stream) is None
+    assert routing.model_turns([INIT_OK, *ROUTE[3:]]) == ROUTE[3:]
+
+
+def test_a_surface_outranks_billing_which_outranks_a_route():
+    """Precedence: surface > billing > route > host error > stream error."""
+    overage = rate(isUsingOverage=True)
+    surfaced = case_result(CHECK_CASE, [*events("claudeai-surfaces"), overage,
+                                        *events("routed-check")], None)
+    assert "claude.ai" in surfaced.error
+    billed = case_result(CHECK_CASE, [INIT_OK, overage, *events("routed-check")], None)
+    assert billed.route is None
+    assert billed.error == "not a subscription result: overage in use (rate limit five_hour)"
+    routed = case_result(CHECK_CASE, [*REPORTED, *events("routed-check"), BUDGET_OVERRUN],
+                         "timed out after 90s")
+    assert (routed.route, routed.error) == ("proposal-check", None)
+    host_error = case_result(CHECK_CASE, [*REPORTED, BUDGET_OVERRUN], "no events")
+    assert host_error.error.startswith("claude failed: error_max_budget_usd")
+    assert case_result(CHECK_CASE, REPORTED, "no events").error == "no events"
+
+
+def test_an_unreported_rate_limit_is_a_billing_error_but_a_surface_stop_is_not():
+    unreported = case_result(CHECK_CASE, [INIT_OK, *events("routed-check")], None)
+    assert "overage cannot be ruled out" in unreported.error
+    stopped = case_result(CHECK_CASE, events("claudeai-surfaces")[:1], "surface")
+    assert "rate limit" not in stopped.error
+
+
 class RecordingHost:
     """A stand-in host that logs what the reader does to it: how many lines
-    were read, and the order of terminate, wait and kill. With `stubborn` it
-    outlives the grace, so the kill path runs."""
+    were read, the order of terminate, wait and kill, and each wait's grace.
+    With `stubborn` it outlives the grace, so the kill path runs."""
 
     def __init__(self, lines: list[str], stubborn: bool = False):
         self.read, self.calls, self.stubborn = 0, [], stubborn
+        self.graces: list[float | None] = []
         self.stdout = self._lines(lines)
 
     def _lines(self, lines):
@@ -281,6 +421,7 @@ class RecordingHost:
 
     def wait(self, timeout=None) -> int:
         self.calls.append("wait")
+        self.graces.append(timeout)
         if self.stubborn and timeout is not None:
             raise subprocess.TimeoutExpired("claude", timeout)
         return -15
@@ -301,6 +442,41 @@ def test_follow_stream_stops_at_the_first_accepted_event_and_reads_no_further(
     assert seen.events == [{"n": 0}, {"n": 1}, {"n": 2}]
     assert host.read == 3
     assert host.calls == ["terminate", "wait", "kill", "wait"]
+
+
+@pytest.mark.parametrize("stubborn", [False, True], ids=["exits-in-grace", "outlives-grace"])
+def test_a_stopped_host_gets_the_shared_grace_before_any_kill(stubborn, monkeypatch, tmp_path):
+    """testing-harness spec: Termination before kill — the stop condition hands
+    the host to `host_login.stop_child`: terminate, wait TERM_GRACE_S, and kill
+    only when that wait times out."""
+    monkeypatch.setattr(host_login, "TERM_GRACE_S", 7)
+    host = RecordingHost([json.dumps({"n": 0})], stubborn=stubborn)
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: host)
+    follow_stream(["claude"], cwd=tmp_path, env={}, timeout=60, stop=lambda _evs: True)
+    if stubborn:
+        assert host.calls == ["terminate", "wait", "kill", "wait"]
+        assert host.graces == [7, None]
+    else:
+        assert host.calls == ["terminate", "wait"]
+        assert host.graces == [7]
+
+
+def test_a_host_past_its_deadline_gets_the_shared_grace(monkeypatch, tmp_path):
+    host = RecordingHost([json.dumps({"n": n}) for n in range(3)])
+    monkeypatch.setattr(host_login, "TERM_GRACE_S", 7)
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: host)
+    ticks = iter([0.0, 0.0])  # the deadline is set, the first line is in time
+    monkeypatch.setattr(routing, "time", SimpleNamespace(monotonic=lambda: next(ticks, 1000.0)))
+    seen = follow_stream(["claude"], cwd=tmp_path, env={}, timeout=90, stop=lambda _evs: False)
+    assert seen.timed_out
+    assert host.calls[:2] == ["terminate", "wait"]
+    assert host.graces[0] == 7
+
+
+def test_no_literal_grace_is_left_in_the_harness():
+    source = (REPO / "harness" / "routing.py").read_text(encoding="utf-8")
+    assert "STOP_GRACE_S" not in source
+    assert "wait(timeout=5" not in source
 
 
 def test_follow_stream_skips_lines_that_are_not_json(monkeypatch, tmp_path):
@@ -338,7 +514,7 @@ def test_follow_stream_stops_a_silent_host_at_the_deadline(tmp_path):
     assert seen.timed_out
     assert not seen.stopped
     assert seen.events == []
-    assert time.monotonic() - started < 0.5 + routing.STOP_GRACE_S
+    assert time.monotonic() - started < 0.5 + host_login.TERM_GRACE_S
 
 
 @pytest.mark.skipif(os.name != "posix", reason="process groups are POSIX")
@@ -354,7 +530,7 @@ def test_follow_stream_deadline_holds_against_a_child_that_inherited_stdout(tmp_
     seen = follow_stream(host, cwd=tmp_path, env=dict(os.environ), timeout=1,
                          stop=lambda _evs: False)
     assert seen.timed_out
-    assert time.monotonic() - started < 1 + routing.STOP_GRACE_S
+    assert time.monotonic() - started < 1 + host_login.TERM_GRACE_S
 
 
 def test_follow_stream_reads_past_a_flood_on_stderr(tmp_path):
@@ -384,6 +560,127 @@ def test_a_case_is_stopped_at_the_first_surface_before_any_skill_call(monkeypatc
     assert "synced skill 'docs'" in error
     assert route_from_events(seen) is None
     assert case_result(CHECK_CASE, seen, error).error == error
+
+
+def read_case(monkeypatch, tmp_path, stream: list[dict]) -> tuple[list[dict], RecordingHost]:
+    host = RecordingHost([json.dumps(e) for e in stream])
+    monkeypatch.setattr(routing.subprocess, "Popen", lambda *_a, **_k: host)
+    seen, error = routing.stream_events(tmp_path, tmp_path, CHECK_CASE.utterance, "haiku", 90)
+    assert error is None
+    assert "terminate" in host.calls
+    return seen, host
+
+
+REVIEW_CASE = Case(id="r", utterance="Review my draft.", expected="proposal-review",
+                   kind="canonical", lang="en")
+
+
+@pytest.mark.parametrize(("stream", "at"), [(LATE_REPORT, AT_REPORT), (REPORT_BEFORE_RESULT, 3)],
+                         ids=["skill-order-report-after-the-instructions",
+                              "glob-order-report-before-the-tool-result"])
+def test_a_routed_case_reads_on_until_its_rate_limit_report(monkeypatch, tmp_path, stream, at):
+    """2.1.284 writes the report after the routing turn's assistant events,
+    and after a `Skill` call's tool result and the skill's instructions: a
+    case stopped at the route, or at either `user` event, would hold none and
+    void every sweep. The case reads on to the report and stops there, before
+    the next turn, and is counted (testing-harness spec: Rate-limit report
+    after the route; Rate-limit report after a skill's instructions)."""
+    seen, host = read_case(monkeypatch, tmp_path, stream)
+    assert seen == stream[:at]
+    assert seen[-1]["type"] == "rate_limit_event"
+    assert host.read == at
+    outcome = case_result(REVIEW_CASE, seen, None)
+    assert (outcome.route, outcome.error) == ("proposal-review", None)
+    assert outcome.passed
+    assert classify([outcome]).totals == (1, 1)
+
+
+def test_the_recorded_skill_order_holds_one_report_past_the_routing_turns_user_events():
+    """The recorded run (2026-10-05): one report across the whole run, after
+    the route's tool result and the skill's instructions, before the next
+    turn's first assistant event. A stop at the routing turn's first `user`
+    event, the rule before task 2.10, comes before it; reading to `result`
+    finds no second report."""
+    kinds = [e["type"] for e in LATE_REPORT]
+    assert kinds[:AT_REPORT + 1] == ["system", "assistant", "user", "user",
+                                     "rate_limit_event", "assistant"]
+    assert len(routing.rate_limit_infos(LATE_REPORT)) == 1
+    assert kinds[-1] == "result"
+    first_user = kinds.index("user")
+    assert first_user < AT_REPORT - 1
+    assert routing.rate_limit_infos(LATE_REPORT[:first_user + 1]) == []
+    decided = [end for end in range(1, len(LATE_REPORT) + 1)
+               if routing._case_decided(LATE_REPORT[:end])]
+    assert decided[0] == AT_REPORT
+    assert routing._message_id(LATE_REPORT[AT_REPORT]) != routing._message_id(LATE_REPORT[1])
+
+
+def test_the_recorded_skill_result_without_a_report_does_not_stop_the_case():
+    """Task 5.7's stream (2.1.284): the `Skill` call's tool result arrived with
+    no report yet. Stopping there voided the sweep; no prefix of it is decided."""
+    assert route_from_events(SKILL_RESULT_UNREPORTED) == "proposal-review"
+    assert SKILL_RESULT_UNREPORTED[-1]["type"] == "user"
+    for end in range(1, len(SKILL_RESULT_UNREPORTED) + 1):
+        assert not routing._case_decided(SKILL_RESULT_UNREPORTED[:end])
+
+
+def test_the_routing_turns_own_later_blocks_do_not_stop_the_case():
+    """A block of the routing response that follows its tool result, as
+    streamed tool execution allows, is the same message: not the next turn."""
+    same_turn = {"type": "assistant", "message": {**LATE_REPORT[1]["message"], "content": [
+        {"type": "text", "text": "Loading the review skill."}]}}
+    assert not routing._case_decided([*LATE_REPORT[:3], same_turn])
+    assert not routing._case_decided([*LATE_REPORT[:AT_REPORT - 1], same_turn])
+
+
+# the recorded run without its report, up to the routing turn's last event
+ROUTING_TURN_UNREPORTED = UNREPORTED_RUN[:AT_REPORT - 1]
+
+
+@pytest.mark.parametrize(("stream", "at"), [
+    (UNREPORTED_RUN, AT_REPORT),
+    ([*ROUTING_TURN_UNREPORTED, LATE_REPORT[-1], LATE_REPORT[AT_REPORT]], AT_REPORT),
+], ids=["next-turn", "result"])
+def test_a_routed_case_without_a_report_stops_at_the_next_turn_or_the_result(
+        monkeypatch, tmp_path, stream, at):
+    """A host that sends no report is read past the routing turn's tool result
+    and the skill's instructions to the next turn's first assistant event, or
+    the run's result, and no further, so it never runs on into the skill; the
+    missing report is then billing and the case is voided (testing-harness
+    spec: Unreported rate limit in a routing case)."""
+    seen, host = read_case(monkeypatch, tmp_path, stream)
+    assert seen == stream[:at]
+    assert host.read == at
+    assert seen[-1]["type"] in ("assistant", "result")
+    outcome = case_result(REVIEW_CASE, seen, None)
+    assert outcome.route is None
+    assert "not a subscription result: rate limit not reported" in outcome.error
+    assert classify([outcome]).totals == (0, 0)
+
+
+def test_a_routed_case_with_no_report_by_its_deadline_is_voided(monkeypatch, tmp_path):
+    """The deadline bounds a routed case that is still waiting for its
+    report: the reader returns the time-limit error, and the case, which
+    served a model turn without a report, is voided as unreported rather
+    than counted with its route (testing-harness spec: Unreported rate limit
+    in a routing case)."""
+    seen, error = read_until_the_limit(monkeypatch, tmp_path, UNREPORTED_RUN,
+                                       lines_in_time=len(ROUTING_TURN_UNREPORTED) - 1)
+    assert seen == ROUTING_TURN_UNREPORTED
+    assert error == "timed out after 90s"
+    assert route_from_events(seen) == "proposal-review"
+    outcome = case_result(REVIEW_CASE, seen, error)
+    assert outcome.route is None
+    assert "rate limit not reported" in outcome.error
+    assert classify([outcome]).totals == (0, 0)
+
+
+def test_a_report_read_before_the_route_stops_the_case_at_the_route(monkeypatch, tmp_path):
+    """The 2.1.207 order: the report precedes the first assistant event, so
+    the route is decisive at once."""
+    seen, host = read_case(monkeypatch, tmp_path, [*ROUTE, *LATE_REPORT[3:]])
+    assert seen == ROUTE
+    assert host.read == len(ROUTE)
 
 
 # ---------- classification ---------------------------------------------------
@@ -617,6 +914,115 @@ def test_the_raw_results_record_the_isolation_conditions(offline_rig, tmp_path):
     offline_rig(ROUTED)
     routing.main(["--case", "review-canonical", "--epochs", "1", "--no-report"])
     assert raw_payload(tmp_path)["isolation"] == ISOLATION_CONDITIONS
+
+
+def test_the_raw_results_record_the_login_and_its_directory(offline_rig, tmp_path):
+    """The label follows how the configuration was prepared, not the link's
+    current state: with no token and no opt-in that is the harness login, and
+    its directory is the harness home, even where the offline configuration
+    holds no link (as during the host's refresh, before the keeper relinks)."""
+    offline_rig(ROUTED)
+    routing.main(["--case", "review-canonical", "--epochs", "1", "--no-report"])
+    payload = raw_payload(tmp_path)
+    assert payload["login"] == "harness"
+    assert payload["login_dir"] == str(host_login.home(host_login.CLAUDE).resolve())
+
+
+@pytest.mark.parametrize("passed", [False, True])
+def test_a_login_rejected_mid_sweep_keeps_its_remedy_and_voids_nothing(
+        offline_rig, tmp_path, monkeypatch, passed):
+    """testing-harness spec: Login rejected during a case — the host's own
+    API-error assistant event is no model turn, so the case names the harness
+    login's remedy, the next case still starts, and no billing voids the sweep.
+    The real `measure`; only the host is faked."""
+    assert offline_rig
+    monkeypatch.setattr(host_login, "L3_PASSED", passed)
+    started = []
+
+    def follow(command, **kwargs):
+        started.append(command)
+        return followed(events("expired-login") if len(started) == 1 else LATE_REPORT,
+                        kwargs["stop"])
+
+    monkeypatch.setattr(routing, "follow_stream", follow)
+    status = routing.main(["--case", "review-canonical", "--epochs", "2", "--jobs", "1",
+                           "--no-report"])
+    assert status == 1
+    assert len(started) == 2
+    first, second = raw_payload(tmp_path)["results"]
+    assert "OAuth session expired" in first["error"]
+    assert LOGIN_COMMAND in first["error"]
+    assert first["error"].endswith(f"{login_note(LOGIN_COMMAND)}.")
+    assert "billing" not in first["error"]
+    assert (second["route"], second["error"]) == ("proposal-review", None)
+
+
+# a surface arriving after the routing turn's model event, before its report
+SURFACE_AFTER_ROUTE = [events("clean-init")[0], LATE_REPORT[1], events("claudeai-surfaces")[0]]
+
+
+def test_a_surface_after_a_model_turn_owes_no_report_but_keeps_explicit_billing():
+    """The surface cut the read short, so the missing report is no billing
+    reason; an explicit signal in the same stream still is."""
+    assert routing.model_turns(SURFACE_AFTER_ROUTE)
+    assert case_billing(SURFACE_AFTER_ROUTE) is None
+    overage = [*SURFACE_AFTER_ROUTE[:2], rate(isUsingOverage=True), SURFACE_AFTER_ROUTE[2]]
+    assert "overage in use" in case_billing(overage)
+
+
+def test_a_surface_after_the_route_errors_its_case_and_voids_nothing(offline_rig, tmp_path,
+                                                                    monkeypatch):
+    """testing-harness spec: Unreported rate limit in a routing case — a case
+    stopped for an account surface after a model turn is recorded with the
+    surface, not as unreported, and the next case still starts. The real
+    `measure`; only the host is faked."""
+    assert offline_rig
+    started = []
+
+    def follow(command, **kwargs):
+        started.append(command)
+        return followed(SURFACE_AFTER_ROUTE if len(started) == 1 else LATE_REPORT,
+                        kwargs["stop"])
+
+    monkeypatch.setattr(routing, "follow_stream", follow)
+    status = routing.main(["--case", "review-canonical", "--epochs", "2", "--jobs", "1",
+                           "--no-report"])
+    assert status == 1
+    assert len(started) == 2
+    first, second = raw_payload(tmp_path)["results"]
+    assert "opt-outs did not hold" in first["error"]
+    assert "rate limit" not in first["error"]
+    assert "billing" not in first["error"]
+    assert (second["route"], second["error"]) == ("proposal-review", None)
+
+
+def test_a_billing_signal_voids_the_sweep_and_starts_no_further_case(offline_rig, tmp_path,
+                                                                     monkeypatch):
+    """testing-harness spec: Billing signal in a routing case — the real
+    `measure` over three cases whose first reports overage. `offline_rig` is
+    not called, so `measure` stays real; only the host is faked."""
+    assert offline_rig
+    report = tmp_path / "skill-routing.md"
+    overage = [INIT_OK, rate(isUsingOverage=True), *ROUTE[2:]]
+    started = []
+
+    def follow(command, **kwargs):
+        started.append(command)
+        return followed(overage if len(started) == 1 else ROUTE, kwargs["stop"])
+
+    monkeypatch.setattr(routing, "follow_stream", follow)
+    status = routing.main(["--case", "litsearch-oblique", "--epochs", "3", "--jobs", "1"])
+    assert status == 1
+    assert len(started) == 1
+    assert report.read_text(encoding="utf-8") == EARLIER_REPORT
+    results = raw_payload(tmp_path)["results"]
+    assert len(results) == 3
+    for raw in results:
+        assert raw["error"].startswith("a billing signal voids every case of the sweep")
+        assert "overage in use" in raw["error"]
+        assert "no further case was started. The case's own error: " in raw["error"]
+    assert "not started" in results[2]["error"]
+    assert classify([Result(**raw) for raw in results]).totals == (0, 0)
 
 
 @pytest.mark.parametrize("outgoing", [

@@ -1,0 +1,519 @@
+"""L0: the harness login commands, `host_login.main(argv)` (testing-harness
+spec: Harness-owned host logins).
+
+The client binary is faked at the module's runner seam (`host_login.run_client`),
+never started: each fake records the argv and environment it was handed, and
+answers `auth status` with a synthetic status that carries a placeholder email
+and organization, so a test can show neither reaches the output. The state
+root lives in `tmp_path`.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import time
+from pathlib import Path
+
+import host_login
+import pytest
+from account_surfaces import CONNECTORS_OFF, PINNED_SETTINGS, PROFILE_DIR
+from host_login import (
+    AGENT_MARKERS,
+    CLAIM_NAME,
+    CLAUDE,
+    CREDENTIALS,
+    LONG_LIVED_TOKEN,
+    MARKER,
+    STATE_VAR,
+    login_env,
+    main,
+)
+
+PRIVATE = {"email": "erika.musterfrau@example.org", "orgName": "Example Org", "orgId": "org-0000"}
+STATUS_KEYS = ["home", "marker", "logged_in", "auth_method", "api_provider",
+               "config_dir_matches", "clean", "access_expires", "runs_use"]
+L3_NOTE = "whether this logs out your other Claude sessions is unverified (L3)"
+# what an operator's shell may carry; none of it may reach a login or logout
+STEERING = {
+    "ANTHROPIC_API_KEY": "placeholder-not-a-key",
+    LONG_LIVED_TOKEN: "placeholder-not-a-token",
+    "ANTHROPIC_CONFIG_DIR": "/fake/home/.config/anthropic",
+    "CLAUDE_CONFIG_DIR": "/fake/home/.claude-other",
+    "ANTHROPIC_BASE_URL": "https://gateway.invalid",
+    "ANTHROPIC_AUTH_TOKEN": "placeholder-auth-token",
+    "CLAUDE_CODE_USE_BEDROCK": "placeholder-provider-switch",
+}
+
+
+class FakeClient:
+    """`host_login.run_client`: records each call and answers `auth status`."""
+
+    def __init__(self, home: Path, *, logged_in: bool = True):
+        self.home, self.logged_in = home, logged_in
+        self.calls: list[dict] = []
+        self.on_logout = None
+
+    def __call__(self, argv, env, *, interactive, cwd):
+        verb = " ".join(argv[1:3])
+        self.calls.append({"verb": verb, "argv": list(argv), "env": dict(env),
+                           "interactive": interactive, "cwd": cwd})
+        if verb == "auth logout" and self.on_logout:
+            self.on_logout()
+        if verb == "auth status":
+            return 0, json.dumps({"loggedIn": self.logged_in, "authMethod": "claude.ai",
+                                  "apiProvider": "firstParty",
+                                  "configDirectory": str(self.home), **PRIVATE})
+        return 0, ""
+
+    def verbs(self) -> list[str]:
+        return [call["verb"] for call in self.calls]
+
+
+@pytest.fixture
+def state(tmp_path, monkeypatch):
+    """A state root of the test's own; no agent marker; a terminal on stdin;
+    an empty default Anthropic profile directory, never the operator's."""
+    monkeypatch.setenv(STATE_VAR, str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    for name in (*AGENT_MARKERS, LONG_LIVED_TOKEN, "CLAUDE_REAL_CONFIG_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: True)
+    return host_login.home(CLAUDE)
+
+
+@pytest.fixture
+def client(state, monkeypatch):
+    fake = FakeClient(state)
+    monkeypatch.setattr(host_login, "run_client", fake)
+    return fake
+
+
+def no_client(monkeypatch):
+    def refuse(*_args, **_kwargs):
+        pytest.fail("the client binary was started")
+
+    monkeypatch.setattr(host_login, "run_client", refuse)
+
+
+def logged_in(home: Path) -> None:
+    """A login the host would have written: a placeholder, never a credential."""
+    home.mkdir(parents=True, exist_ok=True)
+    (home / CREDENTIALS).write_text(json.dumps({"claudeAiOauth": {
+        "accessToken": "placeholder", "refreshToken": "placeholder",
+        "expiresAt": int(time.time() * 1000) + 5 * 3_600_000 + 60_000}}), encoding="utf-8")
+
+
+# ---------- the two speed bumps ---------------------------------------------------
+
+
+def test_login_refuses_without_a_terminal(state, monkeypatch, capsys):
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: False)
+    no_client(monkeypatch)
+    assert main(["login", "claude"]) != 0
+    assert "terminal" in capsys.readouterr().err
+    assert not state.exists()
+    assert not state.parent.exists()
+
+
+@pytest.mark.parametrize("marker", AGENT_MARKERS)
+def test_login_refuses_inside_an_agent_session(marker, state, monkeypatch, capsys):
+    """testing-harness spec: Login refused inside an agent session."""
+    value = f"synthetic-marker-value-{len(marker)}"
+    monkeypatch.setenv(marker, value)
+    no_client(monkeypatch)
+    assert main(["login", "claude"]) != 0
+    out, err = capsys.readouterr()
+    assert marker in err
+    assert value not in out + err
+    assert not state.exists()
+
+
+def test_the_agent_markers_are_the_known_session_variables():
+    assert set(AGENT_MARKERS) == {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+                                  "CLAUDE_CODE_SESSION_ID", "CODEX_SANDBOX",
+                                  "CODEX_SANDBOX_NETWORK_DISABLED"}
+
+
+@pytest.mark.usefixtures("state")
+def test_login_proceeds_without_a_marker(client):
+    assert main(["login", "claude"]) == 0
+    assert client.verbs() == ["auth login", "auth status"]
+    [login] = [call for call in client.calls if call["verb"] == "auth login"]
+    assert login["interactive"]
+
+
+# ---------- the login environment and argv ------------------------------------
+
+
+# what a desktop-app session exports to bind a child to itself
+SESSION_BINDING = {"CLAUDECODE": "1", "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+                   "CLAUDE_CODE_SESSION_ID": "synthetic-session",
+                   "CLAUDE_CODE_MESSAGING_TOKEN": "placeholder-messaging-token",
+                   "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH": "1", "CLAUDE_PID": "1"}
+
+
+def test_login_env_strips_steering_and_keeps_the_browser(tmp_path):
+    home = tmp_path / "home"
+    environ = {**STEERING, **SESSION_BINDING,
+               "DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-0", "PATH": "/usr/bin"}
+    env = login_env(CLAUDE, home, environ)
+    assert env["DISPLAY"] == ":0"
+    assert env["WAYLAND_DISPLAY"] == "wayland-0"
+    assert env["CLAUDE_CONFIG_DIR"] == str(home)
+    assert env["ANTHROPIC_CONFIG_DIR"] == str(home / PROFILE_DIR)
+    for name, value in CONNECTORS_OFF.items():
+        assert env[name] == value
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN",
+                 LONG_LIVED_TOKEN, "CLAUDE_CODE_USE_BEDROCK", *SESSION_BINDING):
+        assert name not in env, name
+    assert set(STEERING.values()).isdisjoint(env.values())
+
+
+def test_the_login_is_the_subscription_login():
+    assert "--claudeai" in CLAUDE.login_argv
+    assert "--console" not in CLAUDE.login_argv
+
+
+def test_the_login_runs_in_the_login_environment(state, client, monkeypatch):
+    """testing-harness spec: Login never bills per token — the call itself,
+    not only the builder: no steering value reaches it, and its argv is the
+    subscription login."""
+    for name, value in {**STEERING, **SESSION_BINDING}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(host_login, "_speed_bumps", lambda _environ: None)
+    assert main(["login", "claude"]) == 0
+    [login] = [call for call in client.calls if call["verb"] == "auth login"]
+    assert login["env"] == login_env(CLAUDE, state, os.environ)
+    assert login["argv"] == ["claude", *CLAUDE.login_argv]
+    assert login["env"]["CLAUDE_CONFIG_DIR"] == str(state)
+    assert set(STEERING.values()).isdisjoint(login["env"].values())
+
+
+def test_seeding_happens_before_the_login_starts(state, client, monkeypatch):
+    """testing-harness spec: Opt-outs seeded before the login."""
+    seen = {}
+
+    def recording(argv, env, *, interactive, cwd):
+        if " ".join(argv[1:3]) == "auth login":
+            settings = json.loads((state / "settings.json").read_text(encoding="utf-8"))
+            seen.update(settings=settings, profile=(state / PROFILE_DIR).is_dir(),
+                        marker=(state / MARKER).is_file())
+        return client(argv, env, interactive=interactive, cwd=cwd)
+
+    monkeypatch.setattr(host_login, "run_client", recording)
+    main(["login", "claude"])
+    assert seen == {"settings": dict(PINNED_SETTINGS), "profile": True, "marker": True}
+
+
+# ---------- logout before login, reset, and the claim ---------------------------
+
+
+def test_an_existing_login_is_logged_out_first_under_the_claim(state, client):
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    held = []
+    client.on_logout = lambda: held.append((state / CLAIM_NAME).exists())
+    assert main(["login", "claude"]) == 0
+    verbs = client.verbs()
+    assert verbs.index("auth logout") < verbs.index("auth login")
+    assert held == [True]
+    assert not (state / CLAIM_NAME).exists()
+
+
+def test_reset_wipes_the_marked_home_and_seeds_it_again(state, client):
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    stray = state / "skills" / "synced" / "x"
+    stray.parent.mkdir(parents=True)
+    stray.write_text("synthetic\n", encoding="utf-8")
+    assert main(["login", "claude", "--reset"]) == 0
+    assert not stray.exists()
+    assert not (state / CREDENTIALS).exists()
+    assert (state / MARKER).is_file()
+    settings = json.loads((state / "settings.json").read_text(encoding="utf-8"))
+    assert settings == dict(PINNED_SETTINGS)
+    assert client.verbs().count("auth logout") == 1
+
+
+def test_reset_refuses_an_unmarked_home(state, client, capsys):
+    state.mkdir(parents=True)
+    (state / "keep-me").write_text("synthetic\n", encoding="utf-8")
+    assert main(["login", "claude", "--reset"]) == 3
+    assert (state / "keep-me").is_file()
+    assert "auth logout" not in client.verbs()
+    assert str(state) in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("held", [False, True], ids=["foreign-files", "foreign-login"])
+def test_a_plain_login_never_adopts_an_unmarked_directory(held, state, monkeypatch, capsys):
+    """Only a home the harness created is logged into: a directory at the
+    home's path without the marker is refused, not marked, reseeded or logged
+    out — or a later reset would delete content the harness never made."""
+    state.mkdir(parents=True)
+    (state / "keep-me").write_text("synthetic\n", encoding="utf-8")
+    (state / "settings.json").write_text('{"model": "opus"}', encoding="utf-8")
+    if held:
+        logged_in(state)
+    no_client(monkeypatch)
+    assert main(["login", "claude"]) == 3
+    err = capsys.readouterr().err
+    assert str(state) in err
+    assert "Move it aside" in err
+    assert not (state / MARKER).exists()
+    assert (state / "keep-me").is_file()
+    assert json.loads((state / "settings.json").read_text(encoding="utf-8")) == {"model": "opus"}
+
+
+def test_a_login_refuses_a_symlinked_home(state, tmp_path, monkeypatch, capsys):
+    target = tmp_path / "elsewhere"
+    host_login.seed(CLAUDE, target)
+    state.parent.mkdir(parents=True)
+    state.symlink_to(target)
+    no_client(monkeypatch)
+    assert main(["login", "claude"]) == 3
+    assert "symbolic link" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("reset", [False, True], ids=["re-login", "reset"])
+def test_a_failed_logout_replaces_and_wipes_nothing(reset, state, client, monkeypatch, capsys):
+    """A logout that did not go through leaves its login in place: logging in
+    over it, or wiping it, could orphan a live grant."""
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    stray = state / "projects" / "p.jsonl"
+    stray.parent.mkdir()
+    stray.write_text("{}\n", encoding="utf-8")
+
+    def failing(argv, env, *, interactive, cwd):
+        client(argv, env, interactive=interactive, cwd=cwd)
+        return (1, "") if " ".join(argv[1:3]) == "auth logout" else (0, "")
+
+    monkeypatch.setattr(host_login, "run_client", failing)
+    assert main(["login", "claude", *(["--reset"] if reset else [])]) == 3
+    assert "auth login" not in client.verbs()
+    assert (state / CREDENTIALS).is_file()
+    assert stray.is_file()
+    err = capsys.readouterr().err
+    assert "exited 1" in err
+    assert ("--reset" in err) is reset
+
+
+def test_a_login_held_outside_a_file_is_logged_out_first(state, client):
+    """Where the login is no file (the macOS Keychain), the host's own status
+    says whether the home holds one."""
+    host_login.seed(CLAUDE, state)
+    assert main(["login", "claude"]) == 0
+    verbs = client.verbs()
+    assert verbs[:2] == ["auth status", "auth logout"]
+    assert verbs.index("auth logout") < verbs.index("auth login")
+
+
+def test_a_reset_of_a_home_without_a_login_logs_nothing_out(state, monkeypatch, capsys):
+    fake = FakeClient(state, logged_in=False)
+    monkeypatch.setattr(host_login, "run_client", fake)
+    host_login.seed(CLAUDE, state)
+    (state / "CLAUDE.md").write_text("synthetic\n", encoding="utf-8")
+    main(["login", "claude", "--reset"])
+    assert "auth logout" not in fake.verbs()
+    assert "auth login" in fake.verbs()
+    assert not (state / "CLAUDE.md").exists()
+    assert L3_NOTE not in capsys.readouterr().out
+
+
+def test_a_reset_that_cannot_wipe_stops_before_the_login(state, client, monkeypatch, capsys):
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    problem = host_login.LoginProblem(f"{state} vanished", "run it again")
+    monkeypatch.setattr(host_login, "wipe", lambda _home: problem)
+    assert main(["login", "claude", "--reset"]) == 3
+    assert "auth login" not in client.verbs()
+    assert f"{state} vanished" in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures("state")
+def test_a_login_refuses_an_overlapping_state_root(monkeypatch, capsys):
+    monkeypatch.setenv(STATE_VAR, str(Path.home()))
+    no_client(monkeypatch)
+    assert main(["login", "claude"]) == 3
+    assert STATE_VAR in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("argv", [["login", "claude"], ["logout", "claude"], ["status"]])
+def test_a_profile_in_the_default_directory_refuses_every_command(argv, state, tmp_path,
+                                                                 monkeypatch, capsys):
+    """Fallback F8 for the harness login's own host processes: whether the
+    host ignores the default profile directory when the profile variable
+    names the home's empty one is unverified (L8), so no login, logout or
+    status check starts beside a profile there — token or not."""
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    (tmp_path / "xdg" / "anthropic" / "work-profile-name").mkdir(parents=True)
+    monkeypatch.setenv(LONG_LIVED_TOKEN, "placeholder-not-a-token")
+    no_client(monkeypatch)
+    assert main(argv) == 3
+    err = capsys.readouterr().err
+    assert str(tmp_path / "xdg" / "anthropic") in err
+    assert "work-profile-name" not in err
+    assert "Move the profiles aside" in err
+
+
+@pytest.mark.parametrize("path", ["logout", "login-over-a-login", "reset"])
+def test_every_logout_runs_in_the_login_environment(path, state, client, monkeypatch):
+    """testing-harness spec: Logout stays in the home."""
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    for name, value in STEERING.items():
+        monkeypatch.setenv(name, value)
+    argv = {"logout": ["logout", "claude"], "login-over-a-login": ["login", "claude"],
+            "reset": ["login", "claude", "--reset"]}[path]
+    main(argv)
+    [logout] = [call for call in client.calls if call["verb"] == "auth logout"]
+    assert logout["env"] == login_env(CLAUDE, state, os.environ)
+    assert set(STEERING.values()).isdisjoint(logout["env"].values())
+    assert logout["env"]["CLAUDE_CONFIG_DIR"] == str(state)
+
+
+@pytest.mark.parametrize("passed", [False, True], ids=["L3-open", "L3-passed"])
+@pytest.mark.parametrize("path", ["logout", "login-over-a-login", "reset"])
+def test_the_logout_note_comes_first_until_l3(path, passed, state, client, monkeypatch,
+                                              capsys):
+    """testing-harness spec: Logout caveat until L3."""
+    monkeypatch.setattr(host_login, "L3_PASSED", passed)
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    printed = []
+    client.on_logout = lambda: printed.append(capsys.readouterr().out)
+    argv = {"logout": ["logout", "claude"], "login-over-a-login": ["login", "claude"],
+            "reset": ["login", "claude", "--reset"]}[path]
+    main(argv)
+    assert len(printed) == 1
+    assert (L3_NOTE in printed[0]) is not passed
+    assert "auth logout" in client.verbs()
+
+
+def test_logout_keeps_the_marker_and_settings(state, client):
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    assert main(["logout", "claude"]) == 0
+    assert (state / MARKER).is_file()
+    assert (state / "settings.json").is_file()
+    assert client.verbs() == ["auth logout"]
+
+
+def test_logout_without_a_home_has_nothing_to_log_out(state, monkeypatch, capsys):
+    no_client(monkeypatch)
+    assert main(["logout", "claude"]) == 0
+    assert "nothing to log out" in capsys.readouterr().out
+    assert not state.exists()
+
+
+@pytest.mark.parametrize("held", [False, True], ids=["foreign-files", "foreign-login"])
+def test_logout_refuses_an_unmarked_directory(held, state, monkeypatch, capsys):
+    """A directory at the home's path without the marker is refused with the
+    move-aside remedy, as every command refuses it: nothing in it is logged
+    out, and the refusal is no "nothing to log out"."""
+    state.mkdir(parents=True)
+    (state / "keep-me").write_text("synthetic\n", encoding="utf-8")
+    if held:
+        logged_in(state)
+    no_client(monkeypatch)
+    assert main(["logout", "claude"]) == 3
+    captured = capsys.readouterr()
+    assert str(state) in captured.err
+    assert "Move it aside" in captured.err
+    assert "nothing to log out" not in captured.out
+    assert not (state / MARKER).exists()
+    assert (state / "keep-me").is_file()
+    assert (state / CREDENTIALS).is_file() is held
+
+
+@pytest.mark.usefixtures("state")
+def test_logout_refuses_an_overlapping_state_root(monkeypatch, capsys):
+    monkeypatch.setenv(STATE_VAR, str(Path.home()))
+    no_client(monkeypatch)
+    assert main(["logout", "claude"]) == 3
+    assert STATE_VAR in capsys.readouterr().err
+
+
+def test_a_failed_standalone_logout_is_not_ready(state, monkeypatch, capsys):
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    monkeypatch.setattr(host_login, "run_client", lambda *_a, **_k: (124, ""))
+    assert main(["logout", "claude"]) == 3
+    assert "exited 124" in capsys.readouterr().out
+
+
+# ---------- status -------------------------------------------------------------
+
+
+def status_lines(out: str) -> dict[str, str]:
+    lines = [line for line in out.splitlines() if line]
+    pairs = dict(line.split(": ", 1) for line in lines)
+    assert list(pairs) == STATUS_KEYS
+    return pairs
+
+
+def test_status_of_a_ready_home(state, client, capsys):
+    """testing-harness spec: Status reveals no account details."""
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    assert main(["status"]) == 0
+    out, err = capsys.readouterr()
+    pairs = status_lines(out)
+    assert pairs["home"] == str(state)
+    assert (pairs["marker"], pairs["logged_in"], pairs["auth_method"]) == (
+        "yes", "yes", "claude.ai")
+    assert (pairs["api_provider"], pairs["config_dir_matches"], pairs["clean"]) == (
+        "firstParty", "yes", "yes")
+    assert pairs["access_expires"] == "in 5h"
+    assert pairs["runs_use"] == "harness"
+    for value in PRIVATE.values():
+        assert value not in out + err
+    assert client.verbs() == ["auth status"]
+
+
+@pytest.mark.usefixtures("client")
+def test_status_names_what_is_unclean_and_exits_not_ready(state, capsys):
+    host_login.seed(CLAUDE, state)
+    logged_in(state)
+    (state / "CLAUDE.md").write_text("synthetic\n", encoding="utf-8")
+    assert main(["status", "claude"]) == 3
+    out, err = capsys.readouterr()
+    assert status_lines(out)["clean"] == "CLAUDE.md"
+    assert err.startswith("untested: ")
+
+
+def test_status_of_a_missing_home_creates_nothing_and_starts_nothing(state, monkeypatch,
+                                                                     capsys):
+    no_client(monkeypatch)
+    assert main(["status"]) == 3
+    out, err = capsys.readouterr()
+    pairs = status_lines(out)
+    assert (pairs["marker"], pairs["logged_in"]) == ("no", "no")
+    assert "uv run poe host-login claude" in err
+    assert not state.exists()
+
+
+@pytest.mark.usefixtures("client")
+def test_status_reports_token_mode(state, monkeypatch, capsys):
+    monkeypatch.setenv(LONG_LIVED_TOKEN, "placeholder-not-a-token")
+    host_login.seed(CLAUDE, state)
+    main(["status"])
+    assert status_lines(capsys.readouterr().out)["runs_use"].startswith("token")
+
+
+def test_status_refuses_an_overlapping_state_root(monkeypatch, capsys):
+    """testing-harness spec: Override overlapping the operator's configuration."""
+    monkeypatch.setenv(STATE_VAR, str(Path.home()))
+    no_client(monkeypatch)
+    assert main(["status"]) == 3
+    assert STATE_VAR in capsys.readouterr().err
+
+
+def test_an_unknown_client_is_a_usage_error(state, capsys):
+    with pytest.raises(SystemExit) as usage:
+        main(["login", "gemini"])
+    assert usage.value.code == 2
+    assert not state.exists()
+    assert "gemini" in capsys.readouterr().err

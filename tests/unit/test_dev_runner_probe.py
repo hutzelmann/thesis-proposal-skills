@@ -40,7 +40,6 @@ from claude_runner import (
     exit_status,
     final_text,
     host_command,
-    host_failure,
     main,
     model_env,
     normalized_proposal,
@@ -54,11 +53,18 @@ from claude_runner import (
     verdict,
 )
 from helpers import FIXTURES, REPO, followed, shipped_registry
+from host_login import CLAUDE, LOGIN_COMMAND, LoginSource, allowlisted_env, login_note
 from l1_checks import HELPER_TOOLS, load_closing_note, verdict_l2_grades, verdict_single_context
-from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, isolated_env, tool_calls
+from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, tool_calls
 
 STREAMS = Path(__file__).resolve().parent / "data" / "routing_streams"
 ARGS = argparse.Namespace(scenario="check_report", model="haiku", no_skill=False)
+
+
+def host_failure(events: list[dict], returncode: int, stderr: str,
+                 source: LoginSource = LoginSource.AMBIENT) -> str | None:
+    """The runner's own, for an ambient run unless a test names the login."""
+    return claude_runner.host_failure(events, returncode, stderr, source)
 
 
 def events(name: str) -> list[dict]:
@@ -227,6 +233,25 @@ def test_host_failure_tells_the_operator_to_log_in_again():
     assert "/login" in host_failure([], 1, "Not logged in · Please run /login\n")
 
 
+EXPIRED_RESULT = [{
+    "type": "result", "subtype": "success", "is_error": True, "errors": None,
+    "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
+    "terminal_reason": "api_error", "total_cost_usd": 0, "num_turns": 1,
+}]
+
+
+@pytest.mark.parametrize("passed", [False, True])
+def test_host_failure_on_the_harness_login_names_host_login(passed, monkeypatch):
+    """testing-harness spec: Expired login names the remedy — the harness
+    login's one remedy, closing with the login note."""
+    monkeypatch.setattr(claude_runner.host_login, "L3_PASSED", passed)
+    message = host_failure(EXPIRED_RESULT, 0, "", LoginSource.HARNESS)
+    assert "OAuth session expired" in message
+    assert LOGIN_COMMAND in message
+    assert "/login" not in message
+    assert message.endswith(f"{login_note(LOGIN_COMMAND)}.")
+
+
 def test_host_failure_names_no_login_remedy_for_other_errors():
     stream = [{
         "type": "result", "subtype": "error_max_budget_usd", "is_error": True,
@@ -269,6 +294,29 @@ def test_summary_labels_an_isolated_run(tmp_path):
     assert out["config_dir"] == str(config)
     assert out["helper_calls"] == []
     assert out["single_context"] == "PASS: no helper agents spawned"
+    assert out["billing"] is None
+
+
+def test_summary_labels_the_login_and_its_directory(tmp_path, monkeypatch):
+    """testing-harness spec: Isolated run labelled; Write-back target labelled."""
+    monkeypatch.setenv(claude_runner.host_login.STATE_VAR, str(tmp_path / "state"))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    home = claude_runner.host_login.home(CLAUDE)
+    home.mkdir(parents=True)
+    (home / ".credentials.json").write_text("{}", encoding="utf-8")
+    config = tmp_path / "cfg"
+    config.mkdir()
+    try:
+        (config / ".credentials.json").symlink_to(home / ".credentials.json")
+    except OSError:
+        pytest.skip("symlinks cannot be created here")
+    out = summary(ARGS, True, "fine", events("recorded-result"), config)
+    assert (out["login"], out["login_dir"]) == ("harness", str(home))
+    ambient = summary(ARGS, True, "fine", events("recorded-result"), None)
+    assert (ambient["login"], ambient["login_dir"]) == ("ambient", None)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "placeholder-not-a-token")
+    token = summary(ARGS, True, "fine", events("recorded-result"), config)
+    assert (token["login"], token["login_dir"]) == ("token", None)
 
 
 def test_summary_applies_the_scenario_allowance_and_reports_extras():
@@ -547,7 +595,7 @@ def test_isolated_model_env_is_the_allowlist(tmp_path):
     # testing-harness spec: Isolated child environment — nothing of the
     # launching session, effort included, reaches an isolated run
     env = model_env(LAUNCH_ENV, tmp_path)
-    assert env == isolated_env(tmp_path, LAUNCH_ENV)
+    assert env == allowlisted_env(CLAUDE, tmp_path, LAUNCH_ENV)
     for dropped in ("CLAUDE_EFFORT", "CLAUDECODE", "OPENROUTER_API_KEY"):
         assert dropped not in env
     assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path)
@@ -704,10 +752,13 @@ def refused_stream(**rate) -> list[dict]:
     (model_stream(rate=False), 0, "rate limit not reported, overage cannot be ruled out"),
     (refused_stream(status="rejected"), 1, "'rejected'"),
     (refused_stream(overage=True), 1, "overage"),
+    (refused_stream(source="ANTHROPIC_API_KEY"), 1, "'ANTHROPIC_API_KEY'"),
 ])
 @pytest.mark.usefixtures("isolated")
 def test_billed_model_runs_are_untested_and_never_judged(stream, returncode, cause, monkeypatch,
                                                           tmp_path, judge):
+    """Every one records `billing`, so the smoke gate stops the later steps —
+    a failed run with an API-key source included."""
     fake_host(monkeypatch, stdout_of(stream), returncode=returncode)
     log = tmp_path / "log.jsonl"
     code = main(["write_from_seed", "--isolated", "--judge", "--summary-log", str(log)])
@@ -715,6 +766,7 @@ def test_billed_model_runs_are_untested_and_never_judged(stream, returncode, cau
     assert judge.prompts == []
     [line] = logged(log)
     assert cause in line["why"]
+    assert cause in line["billing"]
     if returncode:  # the host's own message stays, the billing reason is appended
         assert LIMIT_TEXT in line["why"]
 
@@ -1136,6 +1188,54 @@ def test_summary_log_appends_on_success_and_failure_paths(monkeypatch, tmp_path)
     main(["check_report", "--summary-log", str(log)])
     assert [(line["scenario"], line["outcome"]) for line in logged(log)] == [
         ("write_from_seed", "PASS"), ("check_report", "RUNNER FAILURE")]
+
+
+# ---------- the smoke gate: no host after a billing signal (testing-harness spec:
+# Smoke stops after a billing signal) ------------------------------------------------
+
+OVERAGE = "overage in use (rate limit five_hour)"
+
+
+def test_an_overage_run_records_its_billing_reason(monkeypatch, tmp_path):
+    fake_host(monkeypatch, stdout_of(model_stream(overage=True)))
+    log = tmp_path / "smoke.jsonl"
+    assert main(["check_report", "--summary-log", str(log)]) == EXIT_UNTESTED
+    [line] = logged(log)
+    assert line["billing"] == OVERAGE
+
+
+def test_a_clean_run_records_no_billing_reason(monkeypatch, tmp_path):
+    fake_run(monkeypatch, write_draft)
+    log = tmp_path / "smoke.jsonl"
+    main(["write_from_seed", "--summary-log", str(log)])
+    assert logged(log)[0]["billing"] is None
+
+
+def test_a_step_after_a_billing_signal_starts_no_host(monkeypatch, tmp_path, capsys):
+    log = tmp_path / "smoke.jsonl"
+    log.write_text(json.dumps({"scenario": "write_from_seed", "outcome": "UNTESTED",
+                               "exit_status": EXIT_UNTESTED, "why": "x",
+                               "billing": OVERAGE}) + "\n", encoding="utf-8")
+    refuse_isolation(monkeypatch, code=AssertionError("isolation was prepared"))
+    fake_host(monkeypatch, raises=AssertionError("a host was started after a billing signal"))
+    assert main(["import_messy", "--isolated", "--summary-log", str(log)]) == EXIT_UNTESTED
+    line = logged(log)[-1]
+    assert (line["scenario"], line["outcome"]) == ("import_messy", "UNTESTED")
+    assert line["why"].startswith(f"not run: write_from_seed reported {OVERAGE}")
+    assert "--summarize" in line["why"]
+    capsys.readouterr()
+    core = ["write_from_seed", "import_messy"]
+    assert main(["--summarize", str(log), "--expect", *core]) == EXIT_UNTESTED
+    assert "import_messy: not run: write_from_seed reported overage" in capsys.readouterr().out
+
+
+def test_a_log_without_billing_lets_the_step_run(monkeypatch, tmp_path):
+    log = tmp_path / "smoke.jsonl"
+    write_log(log, {"write_from_seed": 1})
+    seen = fake_host(monkeypatch, stdout_of(model_stream()))
+    main(["check_report", "--summary-log", str(log)])
+    assert "command" in seen
+    assert logged(log)[-1]["scenario"] == "check_report"
 
 
 def test_summary_rows_keep_the_latest_line_per_scenario():

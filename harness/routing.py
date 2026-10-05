@@ -4,24 +4,36 @@
 Every other harness task hands the agent a skill body and measures what it does
 with it. This one measures the step before that: the host reads only the eleven
 frontmatter descriptions and picks one. The verdict is the first `proposal-*`
-Skill invocation observed, after which the run is killed — everything past the
-selection is paid noise.
+Skill invocation observed, after which the run is stopped as soon as the
+routing turn's rate-limit report has been read (on 2.1.284 it follows the
+`Skill` call's tool result and the skill's instructions), the run has ended,
+or the next turn has begun — everything past the selection is paid noise.
 
 The measurement runs against an isolated CLAUDE_CONFIG_DIR holding exactly the
-skills under test, in an allowlisted environment, so the number describes a
-student's install rather than the developer's machine or session. The
-operator's claude.ai account would otherwise reach it through the linked login:
-the configuration's settings opt out of skill and plugin sync and connectors,
-every child gets the connector switch off and an empty Anthropic profile
-directory (the run is refused while the default one holds any entry), a case
-whose stream shows an account surface is stopped there and
-recorded as an error, and synced content found in the configuration after the
-sweep voids every case (`account_surfaces`). The report records those
-isolation conditions, so a report measured under others is not compared as a
-predecessor. The rig needs the `claude` binary and a logged-in subscription,
-which is why it is an on-demand instrument and not part of the L0 chain; the
-pure functions below and the dataset's integrity are. `follow_stream`, the
-stream reader with its deadline and its stop at the first decisive event, is
+skills under test, in the allowlisted environment `host_login.allowlisted_env`
+builds for every isolated Claude child, so the number describes a student's
+install rather than the developer's machine or session. `prepare_config` links
+the harness's own login (`host_login`: its home, checked by a preflight that
+fails closed), the directory `CLAUDE_REAL_CONFIG_DIR` names under the explicit
+opt-in, or nothing when a long-lived token is exported; the removed
+`ROUTING_CONFIG_DIR` override is refused. The operator's claude.ai account
+would otherwise reach a run through the linked login: the configuration's
+settings opt out of skill and plugin sync and connectors, every child gets the
+connector switch off and an empty Anthropic profile directory (the run is
+refused while the default one holds any entry), a case whose stream shows an
+account surface is stopped there and recorded as an error, and synced content
+found in the configuration after the sweep voids every case
+(`account_surfaces`). Billing is held to the same checks as the dev runner's
+(`billing_problem`, `billing_signals`, `case_billing`, which live here because
+`claude_cli` imports this module): a case whose stream shows billing other
+than the subscription voids the whole sweep, and no further case starts. The
+report records the isolation conditions, so a report measured under others is
+not compared as a predecessor; the raw run log also records the login the
+sweep linked and its directory. The rig needs the `claude` binary and a
+logged-in subscription, which is why it is an on-demand instrument and not
+part of the L0 chain; the pure functions below and the dataset's integrity
+are. `follow_stream`, the stream reader with its deadline and its stop at the
+first decisive event (termination before kill, `host_login.stop_child`), is
 shared with the dev runner.
 
 Usage:
@@ -50,10 +62,9 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+import host_login
 from account_surfaces import (
-    CONNECTORS_OFF,
     PINNED_SETTINGS,
-    PROFILE_VARIABLE,
     SETTINGS_FILE,
     SurfaceLeak,
     config_surfaces,
@@ -63,7 +74,18 @@ from account_surfaces import (
     stream_surfaces,
     surface_reason,
 )
-from host_login import CREDENTIALS, LONG_LIVED_TOKEN, RELOGIN, keep_login, login_remedy
+from host_login import (
+    CREDENTIALS,
+    LOGIN_COMMAND,
+    LONG_LIVED_TOKEN,
+    OPT_IN_VAR,
+    RELOGIN,
+    LoginProblem,
+    LoginSource,
+    keep_login,
+    login_remedy,
+    refusal,
+)
 
 HARNESS = Path(__file__).resolve().parent
 REPO = HARNESS.parent
@@ -84,10 +106,11 @@ KINDS = ("canonical", "oblique", "collision", "negative")
 # decided yet", it has failed to decide.
 MAX_PREPARATORY_CALLS = 3
 CASE_TIMEOUT_S = 90
-# How long a host asked to terminate gets before it is killed. A host stopped
-# between receiving a rotated login and writing it would strand the login
-# (host_login), so it is asked first and given time to finish the write.
-STOP_GRACE_S = 5
+# rate-limit statuses that mean a call stayed inside the plan: `allowed_warning`
+# was recorded at 0.82 weekly utilization (2026-10-04) and is a legitimate state
+ALLOWED_RATE_STATUS = ("allowed", "allowed_warning")
+# The environment variable a removed override used to name; it is refused now.
+ROUTING_OVERRIDE = "ROUTING_CONFIG_DIR"
 
 # What the selector could see when a report was measured. Change it only when
 # that changes; an outgoing report that records something else is then
@@ -283,6 +306,147 @@ def error_result_reason(events: list[dict]) -> str | None:
             f"{result.get('num_turns')} turns)")
 
 
+# ---------- billing checks over a stream ------------------------------------------
+# Pure, and shared: the dev runner, its judge (`claude_cli`, which imports them
+# from here, since it imports this module) and the routing rig hold every
+# Claude stream to the same billing checks.
+
+
+def init_event(events: list[dict]) -> dict:
+    """The host's `system/init` event, or {} when the stream carries none."""
+    return next((e for e in events
+                 if e.get("type") == "system" and e.get("subtype") == "init"), {})
+
+
+def model_usage(events: list[dict]) -> dict[str, dict]:
+    """The result event's per-model usage, keyed by served model ID."""
+    usage = result_event(events).get("modelUsage")
+    return usage if isinstance(usage, dict) else {}
+
+
+def version_label(events: list[dict]) -> str:
+    """The CLI version for a fail-closed reason: a host change is the usual cause."""
+    return init_event(events).get("claude_code_version") or "unknown"
+
+
+def rate_limit_infos(events: list[dict]) -> list[dict]:
+    return [e.get("rate_limit_info") or {} for e in events if e.get("type") == "rate_limit_event"]
+
+
+def _source_problem(events: list[dict]) -> str | None:
+    """The session billed the subscription login through Anthropic's own API.
+    The checks are source-free, so the reason names both remedies: an exported
+    key or helper, or a login that is not the subscription's."""
+    source = init_event(events).get("apiKeySource")
+    if source != "none":
+        return (f"the session used API-key source {source!r}, not the subscription login "
+                "(unset the key or key helper that supplied it, or log in again with the "
+                "subscription login — the remedy is never an API key)")
+    for model_id, usage in model_usage(events).items():
+        provider = (usage or {}).get("provider")
+        if provider != "firstParty":
+            return (f"{model_id} was served through provider {provider!r}, not Anthropic's "
+                    "own API (firstParty)")
+    return None
+
+
+def rate_refusal(events: list[dict]) -> str | None:
+    """A rate-limit report that rules the subscription out: overage in use, or
+    a status the plan does not allow. Reads only the reports present, so it
+    also classifies a run the host ended with an error — a run refused at the
+    limit ends that way and is untested, not a runner failure."""
+    for info in rate_limit_infos(events):
+        if info.get("isUsingOverage"):
+            return f"overage in use (rate limit {info.get('rateLimitType')})"
+        status = info.get("status")
+        if status not in ALLOWED_RATE_STATUS:
+            return (f"rate-limit status {status!r} is not one of "
+                    f"{', '.join(ALLOWED_RATE_STATUS)}")
+    return None
+
+
+def _unreported(events: list[dict]) -> str:
+    return (f"rate limit not reported, overage cannot be ruled out "
+            f"(Claude Code {version_label(events)})")
+
+
+def _flag_problem(events: list[dict]) -> str | None:
+    """Every rate-limit report carries its overage flag — a renamed field must
+    not read as "no overage"."""
+    if any(not isinstance(info.get("isUsingOverage"), bool) for info in rate_limit_infos(events)):
+        return (f"rate limit reported without an overage flag, overage cannot be ruled out "
+                f"(Claude Code {version_label(events)})")
+    return None
+
+
+def _rate_problem(events: list[dict]) -> str | None:
+    """A rate-limit report exists, none shows overage, every one carries its
+    overage flag, and every status is one the plan allows. Without a report or
+    a flag, "$0" would rest on the account setting alone, so their absence
+    fails closed too."""
+    if not rate_limit_infos(events):
+        return _unreported(events)
+    return rate_refusal(events) or _flag_problem(events)
+
+
+def billing_problem(events: list[dict]) -> str | None:
+    """Why a finished stream may not count as a subscription result — the
+    source and rate-limit checks the judge and the dev runner's model run share."""
+    return _source_problem(events) or _rate_problem(events)
+
+
+def billing_signals(events: list[dict]) -> list[str]:
+    """The explicit billing reasons a stream carries, complete or not: an
+    API-key source or a non-first-party provider, and overage in use or a
+    refused rate-limit status. Unlike `billing_problem`, an absent report is
+    no signal — a run stopped at `init` has none yet — so these can be named
+    beside an account surface without inventing a billing problem. The source
+    check needs the `init` event and reads nothing without one."""
+    source = _source_problem(events) if init_event(events) else None
+    return [reason for reason in (source, rate_refusal(events)) if reason]
+
+
+# The model name the host gives an assistant event it writes itself for a
+# failed API call — a dead login among them — with `isApiErrorMessage` set
+# (recorded in 2.1.258 session transcripts, 2026-10-03). No model served it.
+API_ERROR_MODEL = "<synthetic>"
+
+
+def model_turns(events: list[dict]) -> list[dict]:
+    """The assistant events a model produced: every one but the host's own
+    API-error message, which no model served and which carries no rate-limit
+    report — a dead login must keep its login remedy, not read as billing."""
+    return [e for e in events if e.get("type") == "assistant"
+            and not e.get("isApiErrorMessage")
+            and (e.get("message") or {}).get("model") != API_ERROR_MODEL]
+
+
+def case_billing(events: list[dict]) -> str | None:
+    """Why a routing case's stream rules the subscription out, or None: an
+    explicit billing signal, a rate-limit report without its overage flag, or
+    a model turn with no rate-limit report at all, so overage cannot be ruled
+    out — the dev runner's checks over the part of the stream the case read.
+    A case stopped before any model turn is not held to the report, and
+    neither is a case stopped for an account surface: the surface cut its
+    read short and errors that case alone (`case_result`), so only a billing
+    reason the stream itself shows voids the sweep. A routed case is read on
+    for the report (`_case_decided`): 2.1.284 writes one report per run,
+    after the routing turn's assistant events, and after a `Skill` call's
+    tool result and the skill's instructions (recorded 2026-10-05,
+    `route-before-report.jsonl`), so the rig reads past the route to the
+    report, the run's result or the next turn's first assistant event;
+    stopped at either of the last two, or at the deadline, without one, the
+    case is unreported."""
+    signals = billing_signals(events)
+    if signals:
+        return signals[0]
+    if rate_limit_infos(events):
+        return _flag_problem(events)
+    if not model_turns(events) or stream_surfaces(events, isolated=True):
+        return None
+    return _unreported(events)
+
+
 def route_from_events(events: list[dict], bound: int = MAX_PREPARATORY_CALLS) -> str | None:
     """First `proposal-*` skill invoked, or None when the case went unrouted.
 
@@ -303,23 +467,30 @@ def route_from_events(events: list[dict], bound: int = MAX_PREPARATORY_CALLS) ->
     return None
 
 
-def case_result(case: Case, events: list[dict], stream_error: str | None) -> Result:
+def case_result(case: Case, events: list[dict], stream_error: str | None,
+                source: LoginSource) -> Result:
     """What one measurement means.
 
     A claude.ai account surface outranks everything, a route included: a
     selection made with the account's synced skills competing is not a
-    measurement of the skills under test. Then a route outranks every error: a
-    host that fails after selecting has still selected. Without one, the host's
+    measurement of the skills under test. Billing other than the subscription
+    comes next: a routed case that billed per token is no measurement either,
+    and it voids the sweep (`main`). Then a route outranks every error: a host
+    that fails after selecting has still selected. Without one, the host's
     error result outranks the stream's error, so a dead login is reported in
-    the host's words rather than as "no events" — and never as unrouted, which
-    a negative case would count as correct: a sweep run while logged out would
-    otherwise pass every negative case and report every other case as not
-    selected.
+    the host's words, with the remedy for the login the sweep used (`source`),
+    rather than as "no events" — and never as unrouted, which a negative case
+    would count as correct: a sweep run while logged out would otherwise pass
+    every negative case and report every other case as not selected.
     """
     result = Result(case_id=case.id, expected=case.expected, kind=case.kind)
     leaks = stream_surfaces(events, isolated=True)
     if leaks:
         result.error = surface_reason(leaks, isolated=True)
+        return result
+    billing = case_billing(events)
+    if billing:
+        result.error = f"not a subscription result: {billing}"
         return result
     try:
         result.route = route_from_events(events)
@@ -328,7 +499,7 @@ def case_result(case: Case, events: list[dict], stream_error: str | None) -> Res
         return result
     if result.route is None:
         failure = error_result_reason(events)
-        result.error = login_remedy(failure) if failure else stream_error
+        result.error = login_remedy(failure, source) if failure else stream_error
     return result
 
 
@@ -349,18 +520,41 @@ def misroutes(results: list[Result]) -> list[Result]:
     return [r for r in results if r.error is None and not r.passed]
 
 
-def voided(results: list[Result], leaks: list[SurfaceLeak]) -> list[Result]:
-    """Every result of a sweep whose shared configuration holds synced content
-    afterwards, turned into an error naming that content. The whole sweep, not
-    only the cases after the content landed: a case started after it may have
-    loaded it with no tag in its stream. What each case measured stays in the
-    record — its route, and its own error after the voiding reason — so the
-    persisted run log still shows it; an errored result counts toward no
-    total (`classify`)."""
-    reason = ("synced content in the sweep's configuration voids every case: "
-              f"{surface_reason(leaks, isolated=True)}")
+def void(results: list[Result], reason: str) -> list[Result]:
+    """Every result of a sweep turned into an error naming `reason`. What each
+    case measured stays in the record — its route, and its own error after the
+    voiding reason — so the persisted run log still shows it; an errored
+    result counts toward no total (`classify`)."""
     return [replace(r, error=reason if r.error is None else f"{reason} The case's own error: "
                     f"{r.error}") for r in results]
+
+
+def voided(results: list[Result], leaks: list[SurfaceLeak]) -> list[Result]:
+    """Every result of a sweep whose shared configuration holds synced content
+    afterwards, voided. The whole sweep, not only the cases after the content
+    landed: a case started after it may have loaded it with no tag in its
+    stream."""
+    return void(results, "synced content in the sweep's configuration voids every case: "
+                f"{surface_reason(leaks, isolated=True)}")
+
+
+class BillingStop:
+    """The first billing reason a sweep's cases reported, shared across the
+    pool: once set, a case not yet started starts no host. Detection after a
+    case is the rig's only billing check, so it stops the rest of the sweep."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.reason: str | None = None
+
+    def trip(self, case_id: str, reason: str) -> None:
+        with self._lock:
+            if self.reason is None:
+                self.reason = f"case {case_id} was not a subscription result: {reason}"
+
+    def voiding(self) -> str:
+        return (f"a billing signal voids every case of the sweep ({self.reason}); no further "
+                "case was started.")
 
 
 def report_due(matrix: Matrix) -> bool:
@@ -480,29 +674,56 @@ def render_report(results: list[Result], matrix: Matrix, model: str,
 # ---------- isolated environment --------------------------------------------
 
 
+def _login_to_link() -> Path:
+    """The `.credentials.json` an isolated configuration links: the directory
+    `CLAUDE_REAL_CONFIG_DIR` names under the explicit opt-in (labelled, never a
+    fallback), else the harness login after its preflight. Never the
+    operator's own login because the harness login is missing or refused."""
+    opted = os.environ.get(OPT_IN_VAR)
+    if opted:
+        credentials = Path(opted) / CREDENTIALS
+        if not credentials.exists():
+            sys.exit(f"no stored login at {credentials}, which {OPT_IN_VAR} names as an "
+                     f"explicit opt-in: {RELOGIN} with CLAUDE_CONFIG_DIR={opted}, or unset "
+                     f"{OPT_IN_VAR} to use the harness login.")
+        return credentials
+    problem = host_login.preflight(host_login.CLAUDE)
+    if problem:
+        sys.exit(refusal(problem))
+    credentials = host_login.home(host_login.CLAUDE) / CREDENTIALS
+    if not credentials.exists():  # macOS keeps the login in the Keychain
+        sys.exit(refusal(LoginProblem(
+            f"the harness login home holds no {CREDENTIALS} to link (on macOS the login is a "
+            "Keychain entry, not a file)",
+            f"use token mode: run `claude setup-token` and export {LONG_LIVED_TOKEN}")))
+    return credentials
+
+
 def prepare_config(base: Path) -> Path:
     """A config directory holding only what the measurement needs.
 
     A fresh CLAUDE_CONFIG_DIR reports `Not logged in`, because subscription
     credentials live in the config directory. Rather than copy the secret, the
-    rig links it — and refuses to run without it, since falling back to the
+    rig links it — the harness's own login (`host_login`) by default, after its
+    preflight — and refuses to run without it, since falling back to the
     ambient configuration would silently measure the operator's own skills,
     hooks and plugins instead of a user's install. A long-lived token from
     `claude setup-token` in the environment needs no link: the child inherits
-    it, and nothing in the directory can be refreshed or stranded.
+    it, nothing in the directory can be refreshed or stranded, and the harness
+    login is neither checked nor read.
 
     Account surfaces follow the login, not the directory, so the settings hold
     the claude.ai opt-outs (`account_surfaces.PINNED_SETTINGS`) and the
     directory holds the empty profile directory the child's
-    `ANTHROPIC_CONFIG_DIR` names. A `ROUTING_CONFIG_DIR` override is used as
-    it is; `isolated_config` refuses it unless it was prepared the same way.
+    `ANTHROPIC_CONFIG_DIR` names. The removed `ROUTING_CONFIG_DIR` override is
+    refused rather than ignored, so nobody believes a prepared directory was
+    measured.
     """
-    override = os.environ.get("ROUTING_CONFIG_DIR")
-    if override:
-        return Path(override)
-
-    source = Path(os.environ.get("CLAUDE_REAL_CONFIG_DIR", Path.home() / ".claude"))
-    credentials = source / CREDENTIALS
+    if os.environ.get(ROUTING_OVERRIDE):
+        sys.exit(refusal(LoginProblem(
+            f"{ROUTING_OVERRIDE} is no longer read: isolated runs prepare their own "
+            "configuration and link the harness login",
+            f"unset {ROUTING_OVERRIDE}; set the harness login up once with `{LOGIN_COMMAND}`")))
     config = base / "config"
     config.mkdir(parents=True, exist_ok=True)
     (config / SETTINGS_FILE).write_text(json.dumps(dict(PINNED_SETTINGS), indent=2) + "\n",
@@ -510,13 +731,7 @@ def prepare_config(base: Path) -> Path:
     profile_dir(config).mkdir(mode=0o700, exist_ok=True)
     if os.environ.get(LONG_LIVED_TOKEN):
         return config
-
-    if not credentials.exists():
-        sys.exit(
-            f"no stored login at {credentials}: {RELOGIN}, set "
-            f"{LONG_LIVED_TOKEN} (from `claude setup-token`), or point "
-            f"ROUTING_CONFIG_DIR at a prepared config directory."
-        )
+    credentials = _login_to_link()
     link = config / CREDENTIALS
     if not link.exists():
         link.symlink_to(credentials)
@@ -525,66 +740,26 @@ def prepare_config(base: Path) -> Path:
 
 @contextmanager
 def isolated_config(prefix: str) -> Iterator[Path]:
-    """A prepared config directory for the duration of a run: the stored login
-    it links is kept current (`host_login.keep_login`), and the directory is
-    removed afterwards. Every configuration, an operator's override included,
-    is checked before the run: one not closed to the claude.ai account
-    surfaces exits with a message naming what is wrong, and the ambient
+    """A prepared config directory for the duration of a run: the login it
+    links is kept current (`host_login.keep_login`, which writes a refresh only
+    to the link's target), and the directory is removed afterwards. Every
+    configuration is checked before the run: one not closed to the claude.ai
+    account surfaces exits with a message naming what is wrong, and the ambient
     configuration is never used instead. So does a run whose children would
     find an Anthropic profile in the default profile directory
     (`account_surfaces.profile_store_problem`); they resolve it from this
-    process's environment, as the check does."""
+    process's environment, as the check does. That check comes first, before
+    `prepare_config` starts the harness login's status check."""
+    problem = profile_store_problem(os.environ)
+    if problem:
+        sys.exit(problem)
     with tempfile.TemporaryDirectory(prefix=prefix, ignore_cleanup_errors=True) as tmp:
         config = prepare_config(Path(tmp))
-        problem = isolation_problem(config) or profile_store_problem(os.environ)
+        problem = isolation_problem(config)
         if problem:
             sys.exit(problem)
         with keep_login(config / CREDENTIALS):
             yield config
-
-
-# What an isolated child inherits: the machine, never the launching session.
-# An allowlist, because the host and the desktop app keep adding variables —
-# DISABLE_MICROCOMPACT, API_TIMEOUT_MS, ANTHROPIC_BASE_URL — that no `CLAUDE*`
-# filter catches; a desktop-launched child recorded `entrypoint: claude-desktop`
-# on 2026-10-04. A name missing here fails a run loudly; a name leaking past a
-# denylist changes the measurement silently. Add one only with its reason. The
-# account-surface variables (the connector switch, the Anthropic profile
-# directory) are never admitted: `isolated_env` sets them itself.
-ADMITTED_ENV = frozenset({
-    "PATH", "HOME",
-    "CLAUDE_CODE_OAUTH_TOKEN",  # long-lived login: nothing is linked when it is set
-    "USER", "LOGNAME", "SHELL",  # identity; the host's Bash tool picks SHELL
-    "LANG", "LANGUAGE",  # with every LC_*: script I/O as on the student's machine
-    "TMPDIR", "TMP", "TEMP",
-    "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
-    "XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS",
-    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
-    "http_proxy", "https_proxy", "no_proxy", "all_proxy",
-    "SSL_CERT_FILE", "SSL_CERT_DIR", "NIX_SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
-    "NODE_USE_SYSTEM_CA", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
-    "SYSTEMROOT", "COMSPEC", "PATHEXT", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
-})
-
-
-def isolated_env(config: Path, environ: Mapping[str, str] | None = None) -> dict[str, str]:
-    """The environment of an isolated host child: the admitted names from
-    `environ` (default: this process's) plus three the harness sets, each
-    replacing any inherited value — CLAUDE_CONFIG_DIR set to `config`, the
-    claude.ai connector switch off, and ANTHROPIC_CONFIG_DIR naming the
-    configuration's empty profile directory. That last one is the only
-    `ANTHROPIC_` name the child carries, and it routes no billing.
-
-    Prints nothing — the dropped set holds the desktop session's messaging
-    token (testing-harness spec: Isolated child environment).
-    """
-    source = os.environ if environ is None else environ
-    env = {name: value for name, value in source.items()
-           if name in ADMITTED_ENV or name.startswith("LC_")}
-    env["CLAUDE_CONFIG_DIR"] = str(config)
-    env.update(CONNECTORS_OFF)
-    env[PROFILE_VARIABLE] = str(profile_dir(config))
-    return env
 
 
 def files_named(utterance: str) -> list[str]:
@@ -622,17 +797,6 @@ def stage_workspace(ws: Path, case: Case | None = None) -> None:
     for filename in wanted or [DEFAULT_PROPOSAL]:
         fixture = next(f for f, name in WORKSPACE_FIXTURES if name == filename)
         shutil.copy2(FIXTURES / fixture / filename, ws / filename)
-
-
-def halt(proc: subprocess.Popen) -> int:
-    """Stop a host: ask it to terminate, give it STOP_GRACE_S, then kill it.
-    The exit status is the harness's own, not the host's verdict on its run."""
-    proc.terminate()
-    try:
-        return proc.wait(timeout=STOP_GRACE_S)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        return proc.wait()
 
 
 def _read_events(lines: Iterable[str], events: list[dict],
@@ -680,7 +844,8 @@ def follow_stream(command: Sequence[str], *, cwd: Path, env: Mapping[str, str],
                   timeout: float, stop: Callable[[list[dict]], bool]) -> Followed:
     """Run a host and read its stream-json events as they arrive.
 
-    The host is stopped (`halt`) at the first event `stop` accepts, so what it
+    The host is stopped (`host_login.stop_child`: a termination request, a
+    grace, then a kill) at the first event `stop` accepts, so what it
     announced there — a route, or a claude.ai account surface — is not left
     running for the turns after it. A timer stops it at the deadline even when
     it writes nothing; a line that arrives after the deadline stops it too. On
@@ -702,7 +867,7 @@ def follow_stream(command: Sequence[str], *, cwd: Path, env: Mapping[str, str],
 
         def at_deadline() -> None:
             expired.set()
-            halt(proc)
+            host_login.stop_child(proc)
             _end_group(group)
 
         timer = threading.Timer(timeout, at_deadline)
@@ -729,7 +894,7 @@ def _settle(proc: subprocess.Popen, timer: threading.Timer, stop_host: bool) -> 
     bounds one that does not. Then the timer is retired and stdout closed."""
     if stop_host:
         timer.cancel()
-        returncode = halt(proc)
+        returncode = host_login.stop_child(proc)
     else:
         returncode = proc.wait()
     timer.cancel()
@@ -740,27 +905,69 @@ def _settle(proc: subprocess.Popen, timer: threading.Timer, stop_host: bool) -> 
     return returncode
 
 
+def _message_id(event: dict) -> str | None:
+    return (event.get("message") or {}).get("id")
+
+
+def _routing_event(events: list[dict]) -> dict:
+    """The assistant event that carried the route: the first one with which
+    the events up to it hold a route."""
+    return next((event for at, event in enumerate(events)
+                 if event.get("type") == "assistant"
+                 and route_from_events(events[:at + 1]) is not None), {})
+
+
+def _later_turn(events: list[dict]) -> bool:
+    """Whether the newest event is an assistant event of a turn after the
+    routing one: a message id other than the routing event's. The host starts
+    that turn only once the routing turn's response, and its report, ended."""
+    newest = events[-1]
+    return (newest.get("type") == "assistant"
+            and _message_id(newest) != _message_id(_routing_event(events)))
+
+
 def _case_decided(events: list[dict]) -> bool:
-    """The rig's stop condition: a surface in the newest event, or a route."""
-    return bool(stream_surfaces(events[-1:], isolated=True)) or (
-        route_from_events(events) is not None)
+    """The rig's stop condition: a surface in the newest event, or a route
+    followed by the first of its rate-limit report, the run's `result`, or the
+    next turn's first assistant event. 2.1.284 writes the report once, after
+    the routing turn's assistant events; recorded, it came before a `Glob`
+    call's result (2026-10-05) and after a `Read` call's (2026-10-04) and the
+    routing `Skill` call's (2026-10-05, `route-before-report.jsonl`: its tool
+    result, the skill's instructions as a second `user` event, then the
+    report, then the next turn); why is inferred (`add-harness-claude-login`
+    design, Context). So a routed case reads past the routing turn's `user`
+    events and its own later blocks, never past the next turn's first output;
+    stopping at the first `user` event voided every `Skill` route
+    (`skill-result-unreported.jsonl`). `case_billing` then judges what it read."""
+    if stream_surfaces(events[-1:], isolated=True):
+        return True
+    if route_from_events(events) is None:
+        return False
+    return (bool(rate_limit_infos(events)) or events[-1].get("type") == "result"
+            or _later_turn(events))
 
 
 def stream_events(ws: Path, config: Path, utterance: str, model: str,
                   timeout: int) -> tuple[list[dict], str | None]:
-    """Run one utterance, reading events until a route is decided or a claude.ai
-    account surface appears, then stop the host. A surface is the case's error
-    (testing-harness spec: Isolated measurement environment). On 2.1.284 `init`
-    and the command-list changes precede every assistant event, so a polluted
-    case costs one process start and no turns."""
+    """Run one utterance, reading events until a route is decided and its
+    rate-limit report read, the run ended or the next turn begun
+    (`_case_decided`), or a claude.ai account surface appears, then stop the
+    host; the deadline (`timeout`, `CASE_TIMEOUT_S` by default) bounds the
+    read either way. On 2.1.284 a `Skill` route's report arrived right after
+    the call's tool result and the skill's instructions, 2.2 s into the run,
+    and the run's `result` 30 s later, after seven turns in all (recorded
+    2026-10-05), so the stop saves the skill run. A surface is the case's
+    error (testing-harness spec: Isolated measurement environment). On
+    2.1.284 `init` and the command-list changes precede every assistant
+    event, so a polluted case costs one process start and no turns."""
     command = [
         "claude", "-p", utterance, "--model", model,
         "--output-format", "stream-json", "--verbose",
         "--allowed-tools", *ALLOWED_TOOLS,
         "--disallowed-tools", *DISALLOWED_TOOLS,
     ]
-    seen = follow_stream(command, cwd=ws, env=isolated_env(config), timeout=timeout,
-                         stop=_case_decided)
+    env = host_login.allowlisted_env(host_login.CLAUDE, config)
+    seen = follow_stream(command, cwd=ws, env=env, timeout=timeout, stop=_case_decided)
     leaks = stream_surfaces(seen.events, isolated=True)
     if leaks:
         return seen.events, surface_reason(leaks, isolated=True)
@@ -771,8 +978,12 @@ def stream_events(ws: Path, config: Path, utterance: str, model: str,
     return seen.events, None
 
 
-def measure(case: Case, config: Path, model: str, timeout: int,
-            keep_events: bool = False) -> Result:
+def measure(case: Case, config: Path, model: str, timeout: int, keep_events: bool,
+            stop: BillingStop, source: LoginSource) -> Result:
+    """One case: no host is started once an earlier case reported billing."""
+    if stop.reason:
+        return Result(case_id=case.id, expected=case.expected, kind=case.kind,
+                      error=f"not started: {stop.reason}")
     with tempfile.TemporaryDirectory(prefix="routing-") as tmp:
         ws = Path(tmp)
         stage_workspace(ws, case)
@@ -781,7 +992,10 @@ def measure(case: Case, config: Path, model: str, timeout: int,
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         (LOG_DIR / f"events-{case.id}.jsonl").write_text(
             "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
-    return case_result(case, events, error)
+    billing = case_billing(events)
+    if billing:
+        stop.trip(case.id, billing)
+    return case_result(case, events, error, source)
 
 
 # ---------- entry point ------------------------------------------------------
@@ -797,6 +1011,29 @@ def select_cases(cases: list[Case], args: argparse.Namespace) -> list[Case]:
 
 def epochs_for(_case: Case, override: int | None) -> int:
     return override if override is not None else DEFAULT_EPOCHS
+
+
+def sweep(work: list[Case], args: argparse.Namespace) -> tuple[list[Result], dict]:
+    """Measure every case in one shared isolated configuration, and record the
+    login it linked: its kind and its directory, the one place a refresh is
+    written back. A billing signal in any case voids the whole sweep, as
+    synced content left in the configuration does (testing-harness spec:
+    Billing signal in a routing case; Synced content found after a sweep)."""
+    stop = BillingStop()
+    with (isolated_config("routing-config-") as config,
+          ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool):
+        source = host_login.login_source(config, os.environ)
+        directory = host_login.login_dir(config, os.environ)
+        results = list(pool.map(
+            lambda c: measure(c, config, args.model, args.timeout, args.keep_events, stop,
+                              source), work))
+        # before the directory goes: content the background sync wrote
+        synced = config_surfaces(config)
+    if synced:
+        results = voided(results, synced)
+    if stop.reason:
+        results = void(results, stop.voiding())
+    return results, {"login": source.value, "login_dir": str(directory) if directory else None}
 
 
 def write_report(results: list[Result], matrix: Matrix, args: argparse.Namespace) -> None:
@@ -864,16 +1101,7 @@ def main(argv: list[str] | None = None) -> int:
 
     work = [c for c in selected for _ in range(epochs_for(c, args.epochs))]
     print(f"routing: {len(work)} measurements over {len(selected)} cases, model {args.model}")
-
-    with (isolated_config("routing-config-") as config,
-          ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool):
-        results = list(pool.map(
-            lambda c: measure(c, config, args.model, args.timeout, args.keep_events), work))
-        # before the directory goes: content the background sync wrote voids
-        # the sweep (testing-harness spec: Synced content found after a sweep)
-        synced = config_surfaces(config)
-    if synced:
-        results = voided(results, synced)
+    results, login = sweep(work, args)
 
     matrix = classify(results)
     passed, total = matrix.totals
@@ -890,6 +1118,7 @@ def main(argv: list[str] | None = None) -> int:
         "model": args.model,
         "skills_revision": skills_revision(),
         "isolation": ISOLATION_CONDITIONS,
+        **login,
         "results": [vars(r) for r in results],
     }
     (LOG_DIR / f"{stamp}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

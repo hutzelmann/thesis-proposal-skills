@@ -12,7 +12,10 @@ The child gets the same environment as an ambient dev run
 `CLAUDE_CODE_USE_*` switch is dropped, so an exported API key, gateway or
 cloud-provider switch cannot bill the calls per token, and the claude.ai
 connector switch is off. Without a subscription login the call fails with
-the host's own login message.
+the host's own login message. A call still running at its time limit is
+asked to terminate and killed only after the grace (`host_login.stop_child`):
+it runs on the operator's own login, which a kill part-way through a refresh
+could strand.
 
 Usage: uv run python harness/audit_llm_preflight.py [--model haiku] [--skill proposal-check]
 Exit codes: 0 = no category flagged, 1 = at least one flagged, 2 = runner failure.
@@ -29,6 +32,7 @@ import sys
 from pathlib import Path
 
 from account_surfaces import ambient_env
+from host_login import stop_child
 
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
@@ -94,16 +98,21 @@ def audit_skill(skill_dir: Path, model: str, timeout: int) -> tuple[list[str], d
         name=skill_dir.name,
         bundle=bundle_skill(skill_dir),
     )
-    result = subprocess.run(
+    proc = subprocess.Popen(
         ["claude", "-p", prompt, "--model", model],
-        env=ambient_env(os.environ),
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
+        env=ambient_env(os.environ), stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    if result.returncode != 0:
-        sys.exit(f"claude failed on {skill_dir.name}: {result.stderr.strip()[-800:]}")
-    verdicts = parse_verdict(result.stdout)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stop_child(proc)
+        sys.exit(f"claude did not finish on {skill_dir.name} within {timeout}s")
+    if proc.returncode != 0:
+        sys.exit(f"claude failed on {skill_dir.name}: {stderr.strip()[-800:]}")
+    verdicts = parse_verdict(stdout)
     if verdicts is None:
-        sys.exit(f"unparseable verdict for {skill_dir.name}: {result.stdout[-800:]}")
+        sys.exit(f"unparseable verdict for {skill_dir.name}: {stdout[-800:]}")
     flagged = [c for c in CATEGORIES if (verdicts.get(c) or {}).get("flagged")]
     return flagged, verdicts
 

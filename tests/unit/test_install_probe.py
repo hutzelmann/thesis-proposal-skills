@@ -362,6 +362,8 @@ def test_a_refused_isolation_is_untested_and_never_runs_the_host(probe, monkeypa
     [line] = logged(log)
     assert (line["outcome"], line["why"]) == ("UNTESTED", "no stored login to link")
     assert (line["config"], line["config_dir"]) == ("isolated", None)
+    # the probe always isolates: the login it would have linked, never "ambient"
+    assert (line["login"], line["login_dir"]) == ("harness", None)
 
 
 def test_a_drifted_prompt_is_a_runner_failure_with_its_line(probe, monkeypatch, tmp_path):

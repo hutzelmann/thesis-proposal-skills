@@ -1,0 +1,28 @@
+{"type": "system", "subtype": "init", "apiKeySource": "none", "claude_code_version": "2.1.284", "model": "claude-sonnet-5-5"}
+{"type": "assistant", "message": {"id": "msg_recorded_m1", "model": "claude-sonnet-5-5", "stop_reason": null, "content": [{"type": "tool_use", "name": "Skill", "input": {"skill": "proposal-review"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "content": "Launching skill: proposal-review"}]}}
+{"type": "user", "message": {"content": [{"type": "text", "text": "Synthetic stand-in for the skill's instructions."}]}}
+{"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "isUsingOverage": false}}
+{"type": "assistant", "message": {"id": "msg_recorded_m2", "model": "claude-sonnet-5-5", "stop_reason": null, "content": [{"type": "tool_use", "name": "Glob", "input": {"pattern": "*.md"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "content": "synthetic file list"}]}}
+{"type": "assistant", "message": {"id": "msg_recorded_m2", "model": "claude-sonnet-5-5", "stop_reason": null, "content": [{"type": "tool_use", "name": "Glob", "input": {"pattern": "**/*.md"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "content": "synthetic file list"}]}}
+{"type": "assistant", "message": {"id": "msg_recorded_m3", "model": "claude-sonnet-5-5", "stop_reason": null, "content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "draft.md"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "content": "synthetic file contents"}]}}
+{"type": "assistant", "message": {"id": "msg_recorded_m3", "model": "claude-sonnet-5-5", "stop_reason": null, "content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "notes.md"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "content": "synthetic file contents"}]}}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "assistant", "message": {"id": "msg_recorded_m4", "model": "claude-sonnet-5-5", "stop_reason": null, "content": [{"type": "thinking", "thinking": "synthetic"}]}}
+{"type": "assistant", "message": {"id": "msg_recorded_m4", "model": "claude-sonnet-5-5", "stop_reason": null, "content": [{"type": "text", "text": "Synthetic review."}]}}
+{"type": "result", "subtype": "success", "is_error": false, "num_turns": 7}

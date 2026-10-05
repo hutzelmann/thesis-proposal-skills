@@ -2,22 +2,32 @@
 child environment).
 
 The child of an isolated run gets an allowlisted environment, not the
-launcher's with CLAUDE_CONFIG_DIR swapped. The synthetic environment below
-has the shape of a desktop-app session as observed on 2026-10-04 — every value
-a fake marker, so no test can print or compare a real secret.
+launcher's with CLAUDE_CONFIG_DIR swapped, and one function builds it for
+every isolated Claude child: the rig's, the isolated dev run's, the judge's
+call and its preflight, and the harness login's status check
+(`host_login.allowlisted_env`). The synthetic environment below has the shape
+of a desktop-app session as observed on 2026-10-04 — every value a fake
+marker, so no test can print or compare a real secret.
 """
 
 import json
 import os
-from pathlib import PurePosixPath
+from functools import partial
+from pathlib import Path, PurePosixPath
 
+import anyio
+import claude_cli
 import claude_runner
+import host_login
 import pytest
 import routing
 from account_surfaces import CONNECTORS_OFF, PROFILE_DIR
 from claude_cli import parse_events
 from helpers import followed
-from routing import ADMITTED_ENV, isolated_env
+from host_login import CLAUDE, LoginSource, allowlisted_env
+
+isolated_env = partial(allowlisted_env, CLAUDE)
+ADMITTED_ENV = CLAUDE.admitted
 
 # never created: the function only names the directory to the child
 CONFIG = PurePosixPath("/fake/devrun-config/config")
@@ -161,7 +171,7 @@ def test_defaults_to_the_process_environment():
 
 
 def test_admitted_names_stay_reviewed():
-    """Every admission is a reviewed line in routing.py; nothing the host
+    """Every admission is a reviewed line in host_login.py; nothing the host
     owns or a desktop session binds may slip into the list."""
     assert {"PATH", "HOME", "CLAUDE_CODE_OAUTH_TOKEN"} <= ADMITTED_ENV
     owned = {n for n in ADMITTED_ENV
@@ -266,3 +276,105 @@ def test_routing_rig_hands_the_child_the_allowlisted_environment(monkeypatch, tm
     assert "DISABLE_MICROCOMPACT" not in env
     assert env["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
     assert env["ANTHROPIC_CONFIG_DIR"] == PROFILE
+
+
+# ---------- one builder for every isolated child -----------------------------------
+
+SUBSCRIPTION_STATUS = json.dumps({"loggedIn": True, "authMethod": "claude.ai",
+                                  "apiProvider": "firstParty"})
+JUDGE_STREAM = (Path(__file__).resolve().parent / "data" / "claude_cli_streams"
+                / "success.jsonl").read_text(encoding="utf-8")
+
+
+def judge_envs(monkeypatch, config) -> dict:
+    """The environments the judge's preflight and its call hand their child."""
+    seen: dict = {}
+
+    async def fake_run_child(command, _stdin, env, _cwd, _timeout):
+        if command[1:3] == ["auth", "status"]:
+            seen["preflight"] = env
+            return 0, SUBSCRIPTION_STATUS, ""
+        seen["call"] = env
+        return 0, JUDGE_STREAM, ""
+
+    monkeypatch.setattr(claude_cli, "run_child", fake_run_child)
+    anyio.run(lambda: claude_cli.preflight(config, LoginSource.HARNESS))
+    anyio.run(lambda: claude_cli.call("p", model="claude-fixture-1-0", effort="medium",
+                                      system_prompt="s", config=config,
+                                      source=LoginSource.HARNESS))
+    return seen
+
+
+def every_site(monkeypatch, tmp_path) -> dict:
+    """The environment each isolated Claude child gets for one configuration,
+    from one launching environment: the rig, the isolated dev run, the judge's
+    call and its preflight, and the harness login's status check."""
+    config = tmp_path / "config"
+    config.mkdir()
+    rig = capture_popen(monkeypatch)
+    routing.stream_events(tmp_path, config, "utterance", "haiku", 5)
+    status: dict = {}
+
+    def client(_argv, env, **_seam):
+        status["env"] = env
+        return 0, "{}"
+
+    monkeypatch.setattr(host_login, "run_client", client)
+    host_login.read_status(CLAUDE, config)
+    return {"rig": rig["env"], "dev run": claude_runner.model_env(os.environ, config),
+            **judge_envs(monkeypatch, config), "status": status["env"]}
+
+
+@pytest.mark.usefixtures("desktop_session")
+def test_every_isolated_child_gets_the_same_environment(monkeypatch, tmp_path):
+    """testing-harness spec: One allowlist for every isolated child. The status
+    check alone drops the long-lived token: it reports the home's own login."""
+    envs = every_site(monkeypatch, tmp_path)
+    expected = isolated_env(tmp_path / "config")
+    for site, env in envs.items():
+        if site == "status":
+            expected_here = {n: v for n, v in expected.items() if n != "CLAUDE_CODE_OAUTH_TOKEN"}
+            assert env == expected_here, site
+        else:
+            assert env == expected, site
+
+
+@pytest.mark.usefixtures("desktop_session")
+def test_every_site_calls_the_one_builder(monkeypatch, tmp_path):
+    """One monkeypatch of the module attribute reaches every site."""
+    sentinel = {"PATH": "/fake/sentinel-path", "CLAUDE_CODE_OAUTH_TOKEN": "fake-sentinel"}
+    calls = []
+
+    def builder(record, *_config_and_environ):
+        calls.append(record)
+        return dict(sentinel)
+
+    monkeypatch.setattr(host_login, "allowlisted_env", builder)
+    envs = every_site(monkeypatch, tmp_path)
+    assert {site: env.get("PATH") for site, env in envs.items()} == dict.fromkeys(
+        envs, "/fake/sentinel-path")
+    assert calls == [CLAUDE] * len(envs)
+
+
+@pytest.mark.usefixtures("desktop_session")
+def test_the_judge_now_carries_the_machine_and_drops_the_desktop_session(monkeypatch,
+                                                                         tmp_path):
+    """testing-harness spec: Judge child outside this requirement (now the
+    reverse) — proxy, CA trust, SHELL and LANGUAGE reach the judge; the
+    desktop session's XDG_SESSION_TYPE, an effort setting and a key do not."""
+    monkeypatch.setenv("LANGUAGE", "de_DE:en")
+    config = tmp_path / "config"
+    envs = judge_envs(monkeypatch, config)
+    for env in envs.values():
+        for name in ("HTTPS_PROXY", "SSL_CERT_FILE", "NIX_SSL_CERT_FILE", "SHELL", "LANGUAGE"):
+            assert env[name] == os.environ[name], name
+        for name in ("XDG_SESSION_TYPE", "CLAUDE_EFFORT", "ANTHROPIC_API_KEY"):
+            assert name not in env, name
+        assert env["CLAUDE_CONFIG_DIR"] == str(config)
+
+
+def test_the_second_allowlists_are_gone():
+    for name in ("ADMITTED_ENV", "isolated_env"):
+        assert not hasattr(routing, name), name
+    for name in ("ENV_KEEP", "ENV_KEEP_PREFIXES", "child_env"):
+        assert not hasattr(claude_cli, name), name

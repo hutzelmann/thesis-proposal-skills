@@ -16,9 +16,30 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import host_login
 import model_currency
 import pytest
 from helpers import FIXTURES, MODEL_CATALOG, REPO, failing_fetch, fixture_proposal
+
+
+@pytest.fixture(scope="session")
+def _absent_state_root(tmp_path_factory) -> Path:
+    return tmp_path_factory.mktemp("harness-state") / "absent"
+
+
+@pytest.fixture(autouse=True)
+def _harness_login_offline(monkeypatch, _absent_state_root):
+    """L0 never touches a real login: every test sees a harness state root
+    with no login home in it, so an isolated configuration prepared without a
+    test's own setup is refused by the preflight before any client could start
+    (a missing home starts none), and the operator's opt-in, a long-lived
+    token exported for token mode and the removed override in the
+    developer's shell cannot reach a test. Tests that need a home point
+    `THESIS_PROPOSAL_DEV_STATE` at their own `tmp_path`; tests that need a
+    token set one."""
+    monkeypatch.setenv(host_login.STATE_VAR, str(_absent_state_root))
+    for name in (host_login.OPT_IN_VAR, host_login.LONG_LIVED_TOKEN, "ROUTING_CONFIG_DIR"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)

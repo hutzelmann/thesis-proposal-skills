@@ -19,22 +19,30 @@ from pathlib import Path
 
 import anyio
 import claude_cli
+import host_login
 import pytest
-from account_surfaces import CONNECTORS_OFF, PROFILE_DIR
+from account_surfaces import PROFILE_DIR
 from claude_cli import (
     Criterion,
     SubscriptionUnavailable,
     build_command,
     check_auth_status,
-    child_env,
-    parse_stream,
 )
+from host_login import CLAUDE, LOGIN_COMMAND, LoginSource, allowlisted_env
 from l2_rubrics import read_grade
 
 DATA = Path(__file__).resolve().parent / "data"
 STREAMS = DATA / "claude_cli_streams"
 MODEL = "claude-fixture-1-0"
 SYSTEM = "You grade text against a rubric."
+# the judge's configuration: only named to the child, never created
+CONFIG = Path("judge-config")
+# the login the remedies below name, unless a test says otherwise
+SOURCE = LoginSource.OPERATOR
+
+
+def parse_stream(events, requested, effort, source=SOURCE):
+    return claude_cli.parse_stream(events, requested, effort, source)
 
 
 def stream(name: str) -> list[dict]:
@@ -82,16 +90,17 @@ def test_call_sends_the_prompt_on_stdin_never_in_argv(monkeypatch):
     monkeypatch.setattr(claude_cli, "run_child", fake_run_child)
     prompt = "GRADE THIS DRAFT: unique-prompt-marker-31"
     result = anyio.run(lambda: claude_cli.call(
-        prompt, model=MODEL, effort="medium", system_prompt=SYSTEM, config=None,
-        environ={"PATH": "/usr/bin"}))
+        prompt, model=MODEL, effort="medium", system_prompt=SYSTEM, config=CONFIG,
+        source=SOURCE, environ={"PATH": "/usr/bin"}))
     assert result.text.endswith("GRADE: C")
     assert seen["stdin"] == prompt
     assert not any("unique-prompt-marker-31" in arg for arg in seen["command"])
     assert seen["cwd"] == claude_cli.workdir()
-    assert seen["env"] == {"PATH": "/usr/bin", **CONNECTORS_OFF}
+    assert seen["env"] == allowlisted_env(CLAUDE, CONFIG, {"PATH": "/usr/bin"})
 
 
-# ---------- child_env ---------------------------------------------------------
+# ---------- the judge's environment (built by host_login.allowlisted_env, which
+# test_isolated_env.py covers for every site) ------------------------------------
 
 LAUNCHING_ENV = {
     "PATH": "/usr/bin", "HOME": "/home/x", "USER": "x", "LOGNAME": "x", "LANG": "C.UTF-8",
@@ -107,52 +116,41 @@ LAUNCHING_ENV = {
 KEPT = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "XDG_RUNTIME_DIR")
 
 
-def test_child_env_keeps_only_the_allowlist():
-    env = child_env(LAUNCHING_ENV)
-    assert set(env) == {*KEPT, "CLAUDE_CONFIG_DIR", *CONNECTORS_OFF}
+def judge_env(monkeypatch, launching: dict) -> dict:
+    """The environment the judge's call hands its child."""
+    seen = {}
+
+    async def fake_run_child(_command, _stdin_text, env, _cwd, _timeout):
+        seen["env"] = env
+        return 0, stream_text("success"), ""
+
+    monkeypatch.setattr(claude_cli, "run_child", fake_run_child)
+    anyio.run(lambda: claude_cli.call("p", model=MODEL, effort="medium", system_prompt=SYSTEM,
+                                      config=CONFIG, source=SOURCE, environ=launching))
+    return seen["env"]
+
+
+def test_the_judge_keeps_the_machine_and_drops_credentials_effort_and_session(monkeypatch):
+    """testing-harness spec: Credentials and session settings never forwarded."""
+    env = judge_env(monkeypatch, {**LAUNCHING_ENV,
+                                  "CLAUDE_CODE_OAUTH_TOKEN": "placeholder-token",
+                                  "ENABLE_CLAUDEAI_MCP_SERVERS": "true"})
     for name in KEPT:
         assert env[name] == LAUNCHING_ENV[name]
-
-
-def test_child_env_always_switches_claudeai_connectors_off(tmp_path):
-    """testing-harness spec: Connector switch on every host child — the judge's
-    included, whatever the launching environment says."""
-    launching = {**LAUNCHING_ENV, "ENABLE_CLAUDEAI_MCP_SERVERS": "true"}
-    for config in (None, tmp_path):
-        assert child_env(launching, config)["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
-
-
-def test_child_env_names_the_empty_profile_directory_only_with_a_config(tmp_path):
-    launching = {**LAUNCHING_ENV, "ANTHROPIC_CONFIG_DIR": "/home/x/.config/anthropic"}
-    assert "ANTHROPIC_CONFIG_DIR" not in child_env(launching)
-    env = child_env(launching, tmp_path / "cfg")
-    assert env["ANTHROPIC_CONFIG_DIR"] == str(tmp_path / "cfg" / PROFILE_DIR)
-
-
-def test_child_env_drops_credentials_routing_effort_and_session_variables():
-    env = child_env(LAUNCHING_ENV)
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "placeholder-token"
+    assert env["CLAUDE_CONFIG_DIR"] == str(CONFIG)
+    assert env["ANTHROPIC_CONFIG_DIR"] == str(CONFIG / PROFILE_DIR)
+    assert env["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
     for name in LAUNCHING_ENV:
         if name.startswith(("ANTHROPIC_", "CLAUDE_CODE_", "MAX_THINKING")) or name.endswith(
                 "_API_KEY") or name in ("CLAUDE_EFFORT", "CLAUDECODE", "PYTHONPATH"):
-            assert name not in env, name
+            assert LAUNCHING_ENV[name] != env.get(name), name
 
 
-def test_child_env_points_at_the_isolated_config(tmp_path):
-    env = child_env(LAUNCHING_ENV, tmp_path / "cfg")
-    assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "cfg")
-
-
-def test_child_env_passes_the_long_lived_subscription_token_through():
-    env = child_env({**LAUNCHING_ENV, "CLAUDE_CODE_OAUTH_TOKEN": "placeholder-token"})
-    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "placeholder-token"
-    assert "CLAUDE_CODE_ENTRYPOINT" not in env
-
-
-def test_child_env_does_not_mutate_its_input(tmp_path):
-    before = dict(os.environ)
+def test_the_judge_leaves_its_launching_environment_alone(monkeypatch):
     snapshot = dict(LAUNCHING_ENV)
-    child_env(LAUNCHING_ENV, tmp_path)
-    child_env(os.environ, tmp_path)
+    before = dict(os.environ)
+    judge_env(monkeypatch, LAUNCHING_ENV)
     assert snapshot == LAUNCHING_ENV
     assert dict(os.environ) == before
 
@@ -251,6 +249,44 @@ def test_expired_login_is_reported_with_the_relogin_instruction_first():
     assert "overage" not in exc.value.reason
 
 
+@pytest.mark.parametrize(("source", "remedy"), [
+    (LoginSource.HARNESS, LOGIN_COMMAND), (LoginSource.OPERATOR, "`/login`"),
+    (LoginSource.TOKEN, "claude setup-token")])
+def test_an_expired_login_names_the_remedy_for_the_login_in_use(source, remedy):
+    """testing-harness spec: Expired login during judging."""
+    with pytest.raises(SubscriptionUnavailable) as exc:
+        parse_stream(stream("expired-login"), MODEL, "medium", source)
+    assert remedy in exc.value.reason
+    assert exc.value.billing is None
+
+
+def test_a_billing_problem_is_marked_as_billing():
+    with pytest.raises(SubscriptionUnavailable) as exc:
+        parse_stream(stream("overage"), MODEL, "medium")
+    assert "overage" in exc.value.billing
+
+
+@pytest.mark.parametrize(("signal", "fragment"), [
+    ({"type": "rate_limit_event", "rate_limit_info": {
+        "status": "allowed", "isUsingOverage": True, "rateLimitType": "five_hour"}}, "overage"),
+    ({"type": "system", "subtype": "init", "apiKeySource": "ANTHROPIC_API_KEY"},
+     "'ANTHROPIC_API_KEY'"),
+], ids=["overage", "api-key-source"])
+def test_an_error_result_still_carries_its_billing_signal(signal, fragment):
+    """A judge call the host ended with an error is untested on the error, but
+    a billing signal beside it is named and carried as `billing`, so a judged
+    smoke step stops the later ones — as the model-under-test run does."""
+    init = {"type": "system", "subtype": "init", "apiKeySource": "none"}
+    error = {"type": "result", "subtype": "error_during_execution", "is_error": True,
+             "errors": ["synthetic failure"], "total_cost_usd": 0, "num_turns": 1}
+    events = [signal, error] if signal["type"] == "system" else [init, signal, error]
+    with pytest.raises(SubscriptionUnavailable) as exc:
+        parse_stream(events, MODEL, "medium")
+    assert "synthetic failure" in exc.value.reason
+    assert fragment in exc.value.reason
+    assert fragment in exc.value.billing
+
+
 def test_billing_problem_reads_only_source_and_rate_limit():
     assert claude_cli.billing_problem(stream("success")) is None
     assert claude_cli.billing_problem(stream("model-mismatch")) is None
@@ -295,13 +331,14 @@ def status(**fields):
 
 
 def test_subscription_login_passes():
-    check_auth_status(status(), {})
+    check_auth_status(status(), {}, SOURCE)
 
 
 def test_long_lived_token_passes_only_when_exported():
-    check_auth_status(status(authMethod="oauth_token"), {"CLAUDE_CODE_OAUTH_TOKEN": "x"})
+    check_auth_status(status(authMethod="oauth_token"), {"CLAUDE_CODE_OAUTH_TOKEN": "x"},
+                      LoginSource.TOKEN)
     with pytest.raises(SubscriptionUnavailable):
-        check_auth_status(status(authMethod="oauth_token"), {})
+        check_auth_status(status(authMethod="oauth_token"), {}, SOURCE)
 
 
 @pytest.mark.parametrize("bad", [
@@ -309,11 +346,27 @@ def test_long_lived_token_passes_only_when_exported():
 ])
 def test_other_logins_are_refused_with_the_relogin_instruction(bad):
     with pytest.raises(SubscriptionUnavailable) as exc:
-        check_auth_status(status(**bad), {})
+        check_auth_status(status(**bad), {}, SOURCE)
     assert "/login" in exc.value.reason
     for value in PRIVATE.values():
         assert value not in exc.value.reason
     assert "API key" not in exc.value.reason.replace("never an API key", "")
+
+
+@pytest.mark.parametrize("passed", [False, True])
+@pytest.mark.parametrize(("source", "remedy"), [
+    (LoginSource.HARNESS, LOGIN_COMMAND), (LoginSource.OPERATOR, "`/login`"),
+    (LoginSource.TOKEN, "claude setup-token")])
+def test_a_refused_login_names_the_remedy_for_the_login_in_use(source, remedy, passed,
+                                                               monkeypatch):
+    """testing-harness spec: API-key login refused — the remedy for the login in
+    use; the harness login's closes with the login note."""
+    monkeypatch.setattr(host_login, "L3_PASSED", passed)
+    with pytest.raises(SubscriptionUnavailable) as exc:
+        check_auth_status(status(loggedIn=False), {}, source)
+    assert remedy in exc.value.reason
+    if source is LoginSource.HARNESS:
+        assert exc.value.reason.endswith(host_login.login_note(LOGIN_COMMAND))
 
 
 def test_preflight_runs_auth_status_with_the_child_environment(monkeypatch, tmp_path):
@@ -324,8 +377,9 @@ def test_preflight_runs_auth_status_with_the_child_environment(monkeypatch, tmp_
         return 0, json.dumps(status()), ""
 
     monkeypatch.setattr(claude_cli, "run_child", fake_run_child)
-    anyio.run(lambda: claude_cli.preflight(tmp_path, {**LAUNCHING_ENV}))
+    anyio.run(lambda: claude_cli.preflight(tmp_path, SOURCE, {**LAUNCHING_ENV}))
     assert seen["command"] == ["claude", "auth", "status", "--json"]
+    assert seen["env"] == allowlisted_env(CLAUDE, tmp_path, LAUNCHING_ENV)
     assert "ANTHROPIC_API_KEY" not in seen["env"]
     assert seen["env"]["CLAUDE_CONFIG_DIR"] == str(tmp_path)
     assert seen["env"]["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
@@ -338,7 +392,9 @@ def test_preflight_without_json_is_unavailable(monkeypatch, tmp_path):
 
     monkeypatch.setattr(claude_cli, "run_child", fake_run_child)
     with pytest.raises(SubscriptionUnavailable, match="/login"):
-        anyio.run(lambda: claude_cli.preflight(tmp_path, {}))
+        anyio.run(lambda: claude_cli.preflight(tmp_path, SOURCE, {}))
+    with pytest.raises(SubscriptionUnavailable, match=LOGIN_COMMAND):
+        anyio.run(lambda: claude_cli.preflight(tmp_path, LoginSource.HARNESS, {}))
 
 
 # ---------- concurrency, warm-up, notional bounds ------------------------------
@@ -373,8 +429,9 @@ async def no_preflight(*_args, **_kwargs):
 
 
 def judge_all(criteria, **kwargs):
-    options = {"model": MODEL, "effort": "medium", "system_prompt": SYSTEM, "config": None,
-               "cap": 5.0, "environ": {}, "notify": lambda _line: None, **kwargs}
+    options = {"model": MODEL, "effort": "medium", "system_prompt": SYSTEM, "config": CONFIG,
+               "source": SOURCE, "cap": 5.0, "environ": {}, "notify": lambda _line: None,
+               **kwargs}
     return anyio.run(lambda: claude_cli.judge_all(criteria, **options))
 
 
@@ -390,8 +447,8 @@ def test_ten_direct_calls_never_exceed_four_children(monkeypatch):
         async with anyio.create_task_group() as tg:
             for _ in range(10):
                 tg.start_soon(lambda: claude_cli.call(
-                    "p", model=MODEL, effort="medium", system_prompt=SYSTEM, config=None,
-                    environ={}))
+                    "p", model=MODEL, effort="medium", system_prompt=SYSTEM, config=CONFIG,
+                    source=SOURCE, environ={}))
 
     anyio.run(ten)
     assert host.calls == 10
@@ -418,6 +475,13 @@ def test_unavailable_call_stops_further_calls(monkeypatch):
     assert all(g.passed is None for g in run.grades)
     assert "overage" in run.grades[0].reason
     assert "overage" in run.grades[4].reason
+    assert "overage" in run.billing  # what stops a smoke sequence
+
+
+def test_a_grade_carries_no_billing_reason(monkeypatch):
+    monkeypatch.setattr(claude_cli, "run_child", FakeHost())
+    monkeypatch.setattr(claude_cli, "preflight", no_preflight)
+    assert judge_all(criteria(2)).billing is None
 
 
 def test_missing_grade_line_is_untested_and_stops(monkeypatch):
@@ -494,6 +558,30 @@ def test_timeout_kills_and_reaps_the_child(tmp_path, monkeypatch):
             os.kill(process.pid, 0)  # reaped: not even a zombie keeps the PID
 
 
+TRAPS_SIGTERM = (
+    "import pathlib, signal, sys, time\n"
+    "def done(*_):\n"
+    "    pathlib.Path(sys.argv[1]).write_text('terminated', encoding='utf-8')\n"
+    "    sys.exit(0)\n"
+    "signal.signal(signal.SIGTERM, done)\n"
+    "pathlib.Path(sys.argv[2]).write_text('ready', encoding='utf-8')\n"
+    "time.sleep(60)\n"
+)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="SIGTERM handlers are POSIX")
+def test_a_timed_out_child_is_asked_to_terminate_first(tmp_path, monkeypatch):
+    """testing-harness spec: Time limit kills the child — a termination request
+    first, so a host part-way through writing a refreshed login can finish."""
+    monkeypatch.setattr(host_login, "TERM_GRACE_S", 5)
+    marker, ready = tmp_path / "terminated", tmp_path / "ready"
+    child = [sys.executable, "-c", TRAPS_SIGTERM, str(marker), str(ready)]
+    with pytest.raises(SubscriptionUnavailable, match="timed out"):
+        anyio.run(lambda: claude_cli.run_child(child, "", dict(os.environ), tmp_path, 1.5))
+    assert ready.exists(), "the child installed its handler within the limit"
+    assert marker.read_text(encoding="utf-8") == "terminated"
+
+
 def test_run_child_writes_stdin_and_reads_both_streams(tmp_path):
     echo = [sys.executable, "-c",
             "import sys; data = sys.stdin.read(); print(data.upper()); "
@@ -510,7 +598,8 @@ def test_nonzero_exit_without_a_result_reports_stderr(monkeypatch):
     monkeypatch.setattr(claude_cli, "run_child", failing)
     with pytest.raises(SubscriptionUnavailable) as exc:
         anyio.run(lambda: claude_cli.call(
-            "p", model=MODEL, effort="medium", system_prompt=SYSTEM, config=None, environ={}))
+            "p", model=MODEL, effort="medium", system_prompt=SYSTEM, config=CONFIG,
+            source=SOURCE, environ={}))
     assert "Not logged in" in exc.value.reason
     assert "`/login`" in exc.value.reason
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import audit_llm_preflight
 import audit_scan
 import audit_status
+import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -111,11 +112,16 @@ def test_audit_child_gets_the_ambient_environment(monkeypatch):
         monkeypatch.setenv(name, value)
     seen = {}
 
-    def fake_run(command, **kwargs):
-        seen["env"] = kwargs["env"]
-        return subprocess.CompletedProcess(command, 0, '{"categories": {}}', "")
+    class FakeAudit:
+        returncode = 0
 
-    monkeypatch.setattr(audit_llm_preflight.subprocess, "run", fake_run)
+        def __init__(self, _command, **kwargs):
+            seen["env"] = kwargs["env"]
+
+        def communicate(self, **_kwargs):
+            return '{"categories": {}}', ""
+
+    monkeypatch.setattr(audit_llm_preflight.subprocess, "Popen", FakeAudit)
     flagged, _ = audit_llm_preflight.audit_skill(REPO / "skills" / "proposal-check", "haiku", 5)
     assert flagged == []
     env = seen["env"]
@@ -123,3 +129,25 @@ def test_audit_child_gets_the_ambient_environment(monkeypatch):
     assert not [n for n in env if n.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))]
     assert env["UNRELATED_SETTING"] == "kept"
     assert env["PATH"] == os.environ["PATH"]
+
+
+def test_a_timed_out_audit_call_is_asked_to_terminate_first(monkeypatch):
+    """add-harness-claude-login: no host child is killed without a termination
+    request first — the audit child runs on the operator's own login."""
+    stopped = []
+
+    class SlowAudit:
+        returncode = None
+
+        def __init__(self, command, **kwargs):
+            pass
+
+        def communicate(self, timeout):
+            raise subprocess.TimeoutExpired("claude", timeout)
+
+    monkeypatch.setattr(audit_llm_preflight.subprocess, "Popen", SlowAudit)
+    monkeypatch.setattr(audit_llm_preflight, "stop_child", stopped.append)
+    with pytest.raises(SystemExit) as refused:
+        audit_llm_preflight.audit_skill(REPO / "skills" / "proposal-check", "haiku", 5)
+    assert "within 5s" in str(refused.value.code)
+    assert len(stopped) == 1

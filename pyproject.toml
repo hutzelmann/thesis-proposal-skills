@@ -41,6 +41,13 @@ models = "python3 harness/model_currency.py"
 # skill selection, not skill behaviour: needs a host install and a subscription,
 # so it stays out of `test` and out of CI. Its verdict logic is covered there.
 routing = "python harness/routing.py"
+# the harness's own Claude login, in a home outside ~/.claude (harness/host_login.py).
+# host-login and host-logout are the operator's: interactive, refused without a
+# terminal or inside an agent session, and never run by an agent (AGENTS.md).
+# host-status makes no model call and prints no account details; anyone may run it.
+host-login = "python harness/host_login.py login"
+host-status = "python harness/host_login.py status"
+host-logout = "python harness/host_login.py logout"
 audit = "python scripts/audit_scan.py"
 audit-status = "python scripts/audit_status.py"
 identify = "python scripts/identify_release.py"
@@ -58,7 +65,12 @@ setup = ["_sync_dev", "_hooks", "_merge_driver"]
 # money. Each step is isolated with a hard budget cap; no envfile, so no key
 # file is loaded, and the runner strips billing variables from every model run
 # (testing-harness spec: Subscription text roles). Steps are commands, not task
-# references (default_item_type), and a failing step does not stop the others.
+# references (default_item_type), and a failing step does not stop the others —
+# except a billing signal: once a step's line in the summary log carries
+# `billing` (overage, an API-key source, no rate-limit report), every later
+# step starts no host and records itself as not run, untested. The sequence
+# cannot branch on that, so the runner reads the log (`--summary-log`); a log a
+# dead sequence left behind is cleared by `--summarize`, the closing step.
 # The closing step names every scenario (--expect), so a step that exits before
 # recording its line is listed as a runner failure rather than left out.
 [tool.poe.tasks.smoke]

@@ -36,10 +36,16 @@ tool calls (Agent/Task/Workflow) and an advisory single-context verdict —
 the probe for the fan-out class of failure, which no other harness path can
 see — plus the model the host served and its CLI version. `--isolated` runs
 against a fresh host configuration (the routing rig's `isolated_config`, which
-keeps the linked stored login current and holds only the claude.ai opt-out
-settings and an empty Anthropic profile directory) and an allowlisted
-environment (the rig's `isolated_env`), so a run measures the default host
-rather than the operator's session mode; the summary says which (`config`).
+links the harness's own login after its preflight — `uv run poe host-login
+claude` sets it up once — or the `CLAUDE_REAL_CONFIG_DIR` opt-in, or nothing
+under a long-lived token, keeps that login current, and holds only the
+claude.ai opt-out settings and an empty Anthropic profile directory) and the
+allowlisted environment `host_login.allowlisted_env` builds for every isolated
+Claude child, the judge's included, so a run measures the default host rather
+than the operator's session mode. The summary says which (`config`), which
+login a run linked (`login`) and that login's directory (`login_dir`), the one
+place a refresh is written back. A login that no longer serves is named with
+that login's one remedy (`host_login.login_remedy`).
 
 The host's stream is read as it arrives (`routing.follow_stream`), and the host
 is stopped at the first event that shows a claude.ai account surface — in an
@@ -56,7 +62,12 @@ isolated run's allowlist admits none of them in the first place; its one
 `ANTHROPIC_` name is the empty profile directory the harness sets), the
 claude.ai connector switch is off in both modes, and a run whose stream shows
 an API-key source, overage, a refused rate-limit status or no rate-limit
-report at all is untested, never passed. `--rejudge` re-grades kept
+report at all is untested, never passed; its summary line carries the reason
+as `billing`. A run given `--summary-log` starts no host once an earlier line
+in that log carries `billing`: detection after a run is the only billing check
+a Claude run has, so `poe smoke` stops there, and `--summarize` clears the log.
+A host still running at its time limit is asked to terminate and killed only
+after a grace (`host_login.stop_child`). `--rejudge` re-grades kept
 workspaces without running the model again; `--max-notional` caps the judge
 calls' cumulative notional cost (plan quota, not money).
 
@@ -90,6 +101,7 @@ from pathlib import Path
 
 import anyio
 import claude_cli
+import host_login
 import support
 from account_surfaces import (
     SurfaceLeak,
@@ -99,7 +111,7 @@ from account_surfaces import (
     surface_reason,
 )
 from claude_cli import Criterion, Grade, JudgeRun, parse_events
-from host_login import LOGIN_FAILURE, login_remedy
+from host_login import LOGIN_FAILURE, LoginSource, login_remedy
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
@@ -134,7 +146,6 @@ from routing import (
     error_result_reason,
     follow_stream,
     isolated_config,
-    isolated_env,
     result_event,
     tool_calls,
 )
@@ -475,9 +486,10 @@ def install_probe_verdict(answered: bool, home: Path, ws: Path, chat: str) -> tu
 
 def run_install_probe(args: argparse.Namespace, scenario: dict) -> int:
     """Two temp homes' worth of isolation, always: the host's config is the
-    routing rig's isolated one (logged in without the real home, the stored
-    login kept current), and HOME is empty, so whatever the installer writes
-    lands where the verdict looks. Exit statuses as for a dev run."""
+    routing rig's isolated one (logged in without the real home: the harness
+    login, kept current, or a long-lived token), and HOME is empty, so
+    whatever the installer writes lands where the verdict looks. Exit
+    statuses as for a dev run."""
     base = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
     ws, home, served = base / "proposals", base / "home", base / "served"
     for d in (ws, home, served):
@@ -510,7 +522,10 @@ def run_install_probe(args: argparse.Namespace, scenario: dict) -> int:
             traceback.print_exc()
             failure = RunnerFailure(f"runner crashed: {exc!r}")
             out, status = failure_summary(args, failure, config), failure.status
-        out["config"] = "isolated"  # the probe never runs ambient
+        # the probe never runs ambient, so a refused isolation names the
+        # login it would have linked
+        out["config"] = "isolated"
+        out.update(login_label(config, isolated=True))
         emit(out, args.summary_log)
         if chat:
             print("\n--- chat tail ---\n" + chat[-1200:])
@@ -567,11 +582,13 @@ def host_command(request: str, model: str, budget: float | None = None) -> list[
     return command
 
 
-def host_failure(events: list[dict], returncode: int, stderr: str) -> str | None:
-    """Why the run is a runner failure, or None — with the re-login instruction
-    when the reason is the stored login, which no rerun repairs."""
+def host_failure(events: list[dict], returncode: int, stderr: str,
+                 source: LoginSource) -> str | None:
+    """Why the run is a runner failure, or None — with the one remedy for the
+    login the run used (`source`) when the reason is that login, which no
+    rerun repairs."""
     message = host_failure_reason(events, returncode, stderr)
-    return login_remedy(message) if message else None
+    return login_remedy(message, source) if message else None
 
 
 def host_failure_reason(events: list[dict], returncode: int, stderr: str) -> str | None:
@@ -595,14 +612,16 @@ def host_failure_reason(events: list[dict], returncode: int, stderr: str) -> str
 class RunnerFailure(Exception):
     """The run ended without a verdict. `untested` when the subscription could
     not serve it (exit status 3), else another runner failure (4); `events`
-    is whatever stream the host produced, saved into a kept workspace."""
+    is whatever stream the host produced, saved into a kept workspace;
+    `billing` the billing reason when that is why the run is untested."""
 
     def __init__(self, message: str, untested: bool = False,
-                 events: list[dict] | None = None):
+                 events: list[dict] | None = None, billing: str | None = None):
         super().__init__(message)
         self.message = message
         self.untested = untested
         self.events = events or []
+        self.billing = billing
 
     @property
     def status(self) -> int:
@@ -615,12 +634,13 @@ def model_env(environ: Mapping[str, str], config: Path | None) -> dict[str, str]
     Ambient: `account_surfaces.ambient_env` — the inherited one minus every
     variable that can move its billing off the subscription login, with the
     claude.ai connector switch off. Effort and session settings stay — they
-    are part of what an ambient run measures. Isolated: the routing rig's
-    allowlisted `isolated_env`, which admits no billing variable and nothing of
-    the launching session, effort included, so the run measures the default
-    host (testing-harness spec: Isolated child environment)."""
+    are part of what an ambient run measures. Isolated: the one allowlisted
+    environment of every isolated Claude child (`host_login.allowlisted_env`),
+    which admits no billing variable and nothing of the launching session,
+    effort included, so the run measures the default host (testing-harness
+    spec: Isolated child environment)."""
     if config is not None:
-        return isolated_env(config, environ)
+        return host_login.allowlisted_env(host_login.CLAUDE, config, environ)
     return ambient_env(environ)
 
 
@@ -632,11 +652,13 @@ def surface_failure(leaks: list[SurfaceLeak], events: list[dict],
     surface never hides overage, and so is the host's own failure or its
     timeout, if any. `isolated` picks which opt-outs the message says failed."""
     message = surface_reason(leaks, isolated=isolated)
-    for signal in claude_cli.billing_signals(events):
+    signals = claude_cli.billing_signals(events)
+    for signal in signals:
         message += f" Also not a subscription result: {signal}."
     if host_reason:
         message += f" The host also failed: {host_reason}"
-    return RunnerFailure(message, untested=True, events=events)
+    return RunnerFailure(message, untested=True, events=events,
+                         billing=signals[0] if signals else None)
 
 
 def run_claude(ws: Path, request: str, model: str, timeout: int,
@@ -657,8 +679,9 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
     or timed out), is untested.
 
     A run the host failed raises `RunnerFailure` — untested when the login was
-    refused or the stream reports overage or a refused rate-limit status (a
-    run stopped at the plan limit ends with an error result), else a runner
+    refused or the stream shows an explicit billing signal: an API-key source,
+    a foreign provider, overage or a refused rate-limit status (a run stopped
+    at the plan limit ends with an error result), else a runner
     failure; so does a finished run whose stream shows billing other than the
     subscription.
     """
@@ -668,6 +691,7 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
         # environment so the installer can never touch the operator's skills
         env.update(HOME=str(home), USERPROFILE=str(home))
     isolated = config is not None
+    source = host_login.login_source(config, os.environ)
     seen = follow_stream(host_command(request, model, budget), cwd=ws, env=env,
                          timeout=timeout,
                          stop=lambda events: bool(stream_surfaces(events[-1:], isolated)))
@@ -675,23 +699,25 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
     if seen.stopped:
         raise surface_failure(stream_surfaces(events, isolated), events, isolated=isolated)
     late = f"claude did not finish within {timeout}s" if seen.timed_out else None
-    failure = late or host_failure(events, seen.returncode, seen.stderr)
+    failure = late or host_failure(events, seen.returncode, seen.stderr, source)
     synced = config_surfaces(config) if config is not None else []
     if synced:  # checked before the configuration is removed, a timed-out run included
         raise surface_failure(synced, events, failure, isolated=True)
     if late:
         raise RunnerFailure(late, events=events)
     if failure:
-        # only an explicit report counts here: a budget overrun with allowed
-        # statuses stays a runner failure, and so does a stream with no report
-        refusal = claude_cli.rate_refusal(events)
-        message = f"{failure} (not a subscription result: {refusal})" if refusal else failure
-        raise RunnerFailure(message, untested=bool(refusal or LOGIN_FAILURE.search(failure)),
-                            events=events)
+        # only an explicit signal counts here — an API-key source, a foreign
+        # provider, overage or a refused status: a budget overrun on the
+        # subscription stays a runner failure, and so does a stream with no report
+        signals = claude_cli.billing_signals(events)
+        billing = signals[0] if signals else None
+        message = f"{failure} (not a subscription result: {billing})" if billing else failure
+        raise RunnerFailure(message, untested=bool(billing or LOGIN_FAILURE.search(failure)),
+                            events=events, billing=billing)
     billing = claude_cli.billing_problem(events)
     if billing:
         raise RunnerFailure(f"not a subscription result: {billing}", untested=True,
-                            events=events)
+                            events=events, billing=billing)
     return events
 
 
@@ -775,8 +801,10 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
         **identity(args, events),
         "arm": "baseline" if args.no_skill else "with-skill",
         "l1": "PASS" if passed else "FAIL", "why": why,
+        "billing": None,
         "config": "isolated" if config else "ambient",
         "config_dir": str(config) if config else None,
+        **login_label(config, isolated=config is not None),
         **telemetry(events),
         "helper_calls": [name for name in names if name in HELPER_TOOLS],
         "single_context": f"{'PASS' if single else 'FAIL'}: {single_why}",
@@ -794,10 +822,24 @@ def failure_summary(args: argparse.Namespace, failure: RunnerFailure,
         "arm": "baseline" if args.no_skill else "with-skill",
         "outcome": OUTCOMES[failure.status], "exit_status": failure.status,
         "why": failure.message,
+        "billing": failure.billing,
         "config": "isolated" if args.isolated else "ambient",
         "config_dir": str(config) if config else None,
+        **login_label(config, isolated=args.isolated),
         **telemetry(failure.events),
     }
+
+
+def login_label(config: Path | None, *, isolated: bool) -> dict:
+    """Which login the run linked, and that login's directory — the one place
+    a refresh is written back (`host_login.login_dir`). An isolated run whose
+    configuration could not be prepared names the login it would have linked."""
+    if config is None and isolated:
+        source, directory = host_login.planned_source(os.environ), None
+    else:
+        source = host_login.login_source(config, os.environ)
+        directory = host_login.login_dir(config, os.environ)
+    return {"login": source.value, "login_dir": str(directory) if directory else None}
 
 
 def exit_status(*, runner_failure: bool, failed: bool, untested: bool) -> int:
@@ -1075,15 +1117,18 @@ def judge_criteria(name: str, scenario: dict, ws: Path,
     ], {}
 
 
-def run_judge(judge: Judge, criteria: list[Criterion], config: Path | None,
+def run_judge(judge: Judge, criteria: list[Criterion], config: Path,
               projection: bool = False) -> JudgeRun:
-    """Every judge call of the invocation under one event loop: the login
-    preflight, the warm-up alone, then the bounded fan-out."""
+    """Every judge call of the invocation under one event loop, in the
+    isolated configuration `config`: the login preflight, the warm-up alone,
+    then the bounded fan-out."""
     if not criteria:
         return JudgeRun((), 0.0)
     return anyio.run(partial(
         claude_cli.judge_all, criteria, model=judge.model, effort=judge.effort,
-        system_prompt=JUDGE_SYSTEM, config=config, cap=judge.cap, projection=projection))
+        system_prompt=JUDGE_SYSTEM, config=config,
+        source=host_login.login_source(config, os.environ), cap=judge.cap,
+        projection=projection))
 
 
 GRADE_NAMES = {True: "PASS", False: "FAIL", None: "UNTESTED"}
@@ -1120,8 +1165,9 @@ def l2_report(judge: Judge, grades: tuple[Grade, ...] | list[Grade],
 def enter_isolation(stack: ExitStack, prefix: str) -> Path:
     """The isolated configuration, a sibling temp directory outside the
     workspace (staging and the verdicts' `*.md` glob never see it). Preparing
-    it exits with a message when no stored login exists or another run's
-    refresh never arrives: the subscription cannot serve the run — untested."""
+    it exits with a message when the harness login fails its preflight, the
+    opted-in login is missing, or another run's refresh never arrives: the
+    subscription cannot serve the run — untested."""
     try:
         return stack.enter_context(isolated_config(prefix))
     except SystemExit as exc:
@@ -1155,9 +1201,9 @@ def completed_run(args: argparse.Namespace, judge: Judge | None, scenario: dict,
     status = EXIT_PASS if passed else EXIT_FAIL
     if judge:
         criteria, not_judged = judge_criteria(args.scenario, scenario, ws, request)
-        l2, l2_status = l2_report(judge, run_judge(judge, criteria, config).grades,
-                                  not_judged, out["model"])
-        out.update(l2)
+        judged = run_judge(judge, criteria, config)
+        l2, l2_status = l2_report(judge, judged.grades, not_judged, out["model"])
+        out.update(l2, billing=judged.billing)
         status = aggregate_status([status, l2_status])
     out["outcome"], out["exit_status"] = OUTCOMES[status], status
     return out, status
@@ -1273,6 +1319,36 @@ NO_LINE = ("no summary line: the step ended before recording one (a usage error,
            "crash outside the run, or a kill)")
 
 
+def earlier_billing(log: Path | None) -> tuple[str, str] | None:
+    """The scenario and reason of the first line in a summary log that carries
+    `billing`, or None."""
+    if log is None or not log.is_file():
+        return None
+    for line in parse_events(log.read_text(encoding="utf-8")):
+        if line.get("billing"):
+            return str(line.get("scenario")), str(line["billing"])
+    return None
+
+
+def billing_gate(args: argparse.Namespace) -> int | None:
+    """Start no host after an earlier step of the same sequence reported
+    billing other than the subscription (testing-harness spec: Smoke stops
+    after a billing signal): record this step as not run, untested, and return
+    its status. None when the run may proceed. A log left behind by a sequence
+    that died before `--summarize` keeps refusing — fail-closed — and the
+    message says how to clear it."""
+    earlier = earlier_billing(args.summary_log)
+    if earlier is None:
+        return None
+    scenario, reason = earlier
+    failure = RunnerFailure(
+        f"not run: {scenario} reported {reason} earlier in {args.summary_log}, and no later "
+        "step starts a host after a billing signal (a log a dead sequence left behind is "
+        f"cleared with --summarize {args.summary_log})", untested=True)
+    emit(failure_summary(args, failure, None), args.summary_log)
+    return failure.status
+
+
 def summary_rows(lines: list[dict], expected: tuple[str, ...] | list[str] = ()) -> list[dict]:
     """One row per scenario — per workspace for a re-grade — from its latest
     line, in the order the scenarios first appeared; then a runner-failure row
@@ -1361,6 +1437,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.summarize:
             return summarize(args.summarize, args.expect or ())
         judge = resolve_judge(args, parser)
+        stopped = billing_gate(args)
+        if stopped is not None:
+            return stopped
         if args.rejudge:
             return rejudge(args, judge)
         scenario = SCENARIOS[args.scenario]

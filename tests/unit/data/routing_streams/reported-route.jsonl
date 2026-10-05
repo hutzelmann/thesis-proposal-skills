@@ -1,0 +1,5 @@
+{"type": "system", "subtype": "init", "apiKeySource": "none", "claude_code_version": "2.1.207", "tools": ["Skill", "Read", "Glob"]}
+{"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "isUsingOverage": false, "rateLimitType": "five_hour"}}
+{"type": "system", "subtype": "thinking_tokens"}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Searching for sources fits the literature skill."}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Skill", "input": {"skill": "proposal-lit-search"}}]}}

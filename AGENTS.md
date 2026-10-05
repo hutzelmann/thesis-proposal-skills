@@ -75,7 +75,12 @@ uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (ne
 uv run poe audit-status            # post-publish: skills.sh verdicts vs audit-baseline.json
 uv run poe install-check           # README npx command + install.py vs tracked tree (networked; own CI workflow + weekly)
 uv run poe identify <bug-report/>  # resolve a submitted report's hashes.txt to the revision it ran
+uv run poe host-login claude [--reset]  # the user only, interactive: the harness's own Claude login
+uv run poe host-status             # harness login state; no model call, no account details (agents may run it)
+uv run poe host-logout claude      # the user only: log the harness login out
 ```
+
+Agents never run `host-login` or `host-logout` — not through Bash, not through a terminal tool, and not through a TTY wrapper such as `script` — and relay a refusal that names either one to the user as a USER ACTION. The commands' own terminal and agent-session refusals are speed bumps; this rule is the guard.
 
 A user's bug report is produced by `proposal-troubleshoot`, whose collector emits git blob
 hashes for every installed skill file. `poe identify` compares them against the trees in this
