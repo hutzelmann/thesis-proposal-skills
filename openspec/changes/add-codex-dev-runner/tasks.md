@@ -264,6 +264,23 @@ Ground rules for every task below:
 - [x] 5.3 Run `uv run poe specs` and `openspec validate add-codex-dev-runner --strict`, and confirm both pass.
 
   *Done 2026-10-06:* 20 of 20 items valid; the change is valid.
+- [x] 5.4 Apply the review findings of 2026-10-06 (autonomous; L0 only, no model call). Each finding was checked against the code; fixed unless marked otherwise:
+  - **Windows CI (blocker).** The `fcntl` usage rule now comes last and exempts `--rejudge`; `run_lock` raises `RunLockUnsupported` (a `RunLockRefused`, exit 3) instead of `RuntimeError`, and `host-login`/`host-logout codex` refuse before creating anything. The Codex end-to-end tests skip on `host_login.fcntl is None` (`LOCKS`, `POSIX`, `POSIX_LOCKS`), the seeding test included. Checked with a scratch plugin that sets `host_login.fcntl = None` over the whole `test-fast` lane: green.
+  - **Codex logout at its limit (major).** `run_client` takes the record's `stop_signal`; `_logout` and `read_status` pass it, so a Codex logout gets SIGINT. L0: a real `run_client` against a fake `codex` that traps SIGINT. `run_client` now also drains the pipe after the stop (a ResourceWarning the new test exposed).
+  - **A timed-out run skipped the after-run checks (major).** `codex_cli.timeout_problem` applies the explicit billing signals and the isolation check to the session record captured before the raise; `claude_runner.run_codex` maps it. A failed run that shows a broken isolation is untested too (`_untested_failure`, formerly `_with_billing`).
+  - **Plan use unconfirmed on a failed run.** Rebutted, recorded as a choice: a failed or timed-out run without a quota report stays a runner failure, because the scenario "Codex interrupted before kill" requires a runner failure naming the limit. The spec's "After every run" list now says so, with the new scenario "Timed-out run that drew credits", and design Decision 12 matches (revised through the `openspec-update-change` skill without its per-edit confirmation, as in 0.1; L0: `test_a_codex_run_at_its_limit_is_checked_like_any_other`).
+  - **Fail-open quota parsing (major).** A credits block must carry boolean `hasCredits`/`has_credits` and `unlimited` and a balance that is absent, null or a finite number, else the read is unavailable (before) or plan use cannot be confirmed (after); a window without a numeric used percentage is unavailable.
+  - **Status against unadopted homes (major, and the `--quota` minor).** `codex_cli.status` runs `login status`, `features list` and the quota read (and creates the lock file) only for an accepted location and a present, marked, owner-only, clean home; otherwise `logged_in: unknown` and `quota: not read`.
+  - **Untested coverage gaps.** L0 cases for the usage-limit error (three event shapes, `billing` set), all three refresh-failure wordings (two event shapes, both `X8_PASSED` values), the timeout path end to end against a fake `codex` (session record captured and deleted, `codex.harness` last, lock free) and through `main` (exit 4 naming the limit, or 3 with the billing or isolation cause).
+  - **Feature parser (minor).** Any non-blank line that is not one `name stage state` row refuses, naming the line.
+  - **Lock descriptor (two minors).** The fake `codex` now reports whether it holds the lock's open file description, and the end-to-end test asserts it. A lingering model process keeping the lock is recorded for task 7.3; `RunLockBusy`'s cause names `fuser -v <lock>`.
+  - **`CODEX_HOME` by value (minor).** `assert_codex_env(env, home)` refuses a missing `CODEX_HOME` or one naming another directory, naming the variable, never its value.
+  - **Judge pin (minor).** The test now fakes `claude_cli.run_child` and records `host_login.allowlisted_env`, so the real judge path builds the children's environments.
+  - **Re-grade label (minor).** `rejudge_lines` carries `label: host.run_label`.
+  - **`kind` by substring and unused seam fields (minors).** `LoginProblem` gains `kind` (default `subscription`), set where the problem is built (`check_codex_version`, `features_problem`, the run lock: `precondition`); `CodexRefused.of(problem)` reads it. Deviation from design Decision 2's sketch: `JudgeBackend.call`/`preflight` and `Host.binary` are dropped, since nothing read them (the judge reaches `claude_cli.judge_all` through `run_judge`; a host's binary is its login record's). `RunProblem.kind` stays: the L0 tests pin the classification.
+  - **Per-client branches (minor).** `HostLogin` gains `run_locked`, `login_in_status`, `offenders` and `status_command`; the profile rule follows `record.profile`; no `record.name ==` branch remains in `host_login`, and `wipe(home_dir, record)` is called the same way for every client (the Claude test's stub updated).
+  - **Login and logout environment (minor).** Narrowed the docs rather than adding a check: `codex_cli.start`'s docstring and the README name the children the guard covers; the login and logouts run in `login_env`, which drops the same families by construction.
+  - **Fixture provenance (minor).** Every README row names its source file and tag.
 
 ## 6. CLI update and rehearsal on the free plan (D6(b), no model call)
 
@@ -316,7 +333,8 @@ If Plus has not been bought when sections 0 to 6 are done, mark each task here a
   - the outcome is not untested for a billing, login or isolation reason;
   - the summary records the CLI version, `effort_served`, and quota before and after;
   - the kept events hold `codex.session`, `codex.turn_context` and `codex.token_count` with `rate_limits` and `plan_type` (X4);
-  - `codex.skills` lists only the workspace's skill (X9).
+  - `codex.skills` lists only the workspace's skill (X9);
+  - once the run has ended, the run lock is free: `fuser -v <home>/.harness-run.lock` shows no holder (added by the review of 2026-10-06: the lock descriptor is inheritable, so a process the model left running could hold it).
 
   Record the results here, then delete the kept workspace after `record-codex-streams` has reduced it. Do not run a second Codex scenario, or `--judge`, without a new go.
 

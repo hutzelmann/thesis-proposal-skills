@@ -14,9 +14,12 @@ backstop, failing closed:
   `HOME` and XDG directories (`run_env`), which hide `~/.agents/skills`, shell
   start-up files and key files. `start` checks the final environment right
   before `Popen` and refuses one that still carries a `CODEX_*`, `OPENAI_*`,
-  `OPENROUTER_*` or `*_API_KEY` variable other than `CODEX_HOME`
-  (`BillingEnvError`): `exec` honours `CODEX_API_KEY` above every stored login,
-  and its login restriction would then log the harness home out.
+  `OPENROUTER_*` or `*_API_KEY` variable other than `CODEX_HOME`, or whose
+  `CODEX_HOME` does not name the harness home (`BillingEnvError`): `exec`
+  honours `CODEX_API_KEY` above every stored login, its login restriction
+  would then log the harness home out, and another home routes elsewhere.
+  The login and the logouts are no such child: they run in
+  `host_login.login_env`, which drops the same families by construction.
 - **Before the run**, under the run lock (`host_login.run_lock`), the plan
   quota is read through `codex app-server`'s `account/rateLimits/read`, a GET
   of plan usage and not a model call (`read_quota`). The run is refused when
@@ -53,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import queue
 import re
@@ -64,6 +68,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack, suppress
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path, PurePath
 
 import host_login
@@ -133,24 +138,33 @@ def command(scenario: Mapping, ws: Path, model: str, effort: str | None = None) 
 
 class CodexRefused(Exception):
     """A Codex run that is untested: `message` in the one refusal template,
-    `kind` one of `subscription`, `isolation` or `precondition`, `billing` the
-    billing cause where that is the reason."""
+    `kind` one of `subscription`, `isolation` or `precondition` (the
+    `LoginProblem`'s own, set where it was built), `billing` the billing
+    cause where that is the reason."""
 
     def __init__(self, message: str, kind: str, events: list[dict] | None = None,
                  billing: str | None = None):
         super().__init__(message)
         self.message, self.kind, self.events, self.billing = message, kind, events or [], billing
 
+    @classmethod
+    def of(cls, problem: LoginProblem, billing: str | None = None) -> CodexRefused:
+        return cls(refusal(problem), problem.kind, billing=billing)
+
 
 class BillingEnvError(CodexRefused):
     """A Codex child's final environment still carries a variable of the
-    stripped families; names it, never its value."""
+    stripped families, or a `CODEX_HOME` that is not the harness home; names
+    the variables, never their values."""
 
-    def __init__(self, names: Sequence[str]):
-        problem = LoginProblem(
-            f"the Codex child's environment still carries {', '.join(names)}, which could bill "
-            "the run per token or log the harness home out", "report it: the harness's "
-            "environment builder let it through", CODEX.name)
+    def __init__(self, names: Sequence[str], wrong_home: bool = False):
+        causes = [f"still carries {', '.join(names)}, which could bill the run per token or "
+                  "log the harness home out"] if names else []
+        causes += ["does not set CODEX_HOME to the harness home, so the child could run in "
+                   "another login"] if wrong_home else []
+        problem = LoginProblem(f"the Codex child's environment {' and '.join(causes)}",
+                               "report it: the harness's environment builder let it through",
+                               CODEX.name)
         super().__init__(refusal(problem), "subscription", billing=problem.cause)
         self.names = list(names)
 
@@ -205,20 +219,24 @@ def ignored_env(environ: Mapping[str, str]) -> list[str]:
     return sorted(name for name in environ if CODEX.stripped(name))
 
 
-def assert_codex_env(env: Mapping[str, str]) -> None:
+def assert_codex_env(env: Mapping[str, str], home: Path) -> None:
     """Refuse a final child environment that carries a stripped-family name
-    other than the ones the harness sets (`CODEX_HOME` alone)."""
+    other than the one the harness sets (`CODEX_HOME`), or whose `CODEX_HOME`
+    is missing or names another directory than the harness home `home`."""
     leaks = sorted(name for name in env if CODEX.stripped(name) and name not in CODEX_EXEMPT)
-    if leaks:
-        raise BillingEnvError(leaks)
+    wrong_home = env.get(CODEX.home_var) != str(home)
+    if leaks or wrong_home:
+        raise BillingEnvError(leaks, wrong_home)
 
 
-def start(argv: Sequence[str], *, cwd: Path, env: Mapping[str, str],
+def start(argv: Sequence[str], *, home: Path, cwd: Path, env: Mapping[str, str],
           stdin: int = subprocess.DEVNULL, pass_fds: Sequence[int] = ()) -> subprocess.Popen:
-    """The single place a Codex child is started: the final environment is
-    checked immediately before `Popen`; on Linux the child gets the
-    parent-death interrupt."""
-    assert_codex_env(env)
+    """The single place the Codex children the billing guard covers are
+    started — the run, `login status`, `features list`, `--version` and the
+    quota read: the final environment is checked against the harness home
+    immediately before `Popen`; on Linux the child gets the parent-death
+    interrupt."""
+    assert_codex_env(env, home)
     return subprocess.Popen(list(argv), cwd=cwd, env=dict(env), stdin=stdin,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             encoding="utf-8", errors="replace", pass_fds=tuple(pass_fds),
@@ -229,7 +247,7 @@ def spawn(argv: Sequence[str], *, home: Path, cwd: Path,
           environ: Mapping[str, str] | None = None, scratch: Path | None = None,
           stdin: int = subprocess.DEVNULL, pass_fds: Sequence[int] = ()) -> subprocess.Popen:
     """Start a Codex child in the harness home's environment and leave it running."""
-    return start(argv, cwd=cwd, env=child_env(home, environ, scratch), stdin=stdin,
+    return start(argv, home=home, cwd=cwd, env=child_env(home, environ, scratch), stdin=stdin,
                  pass_fds=pass_fds)
 
 
@@ -239,7 +257,8 @@ def run(argv: Sequence[str], *, home: Path, cwd: Path, timeout: float,
     """Run a Codex child to completion (`host_login.run_host`, stopped with an
     interrupt at `timeout`), started through `start`."""
     return host_login.run_host(CODEX, argv, cwd=cwd, env=child_env(home, environ, scratch),
-                               timeout=timeout, input=input, pass_fds=pass_fds, start=start)
+                               timeout=timeout, input=input, pass_fds=pass_fds,
+                               start=partial(start, home=home))
 
 
 def _cwd(home: Path) -> Path:
@@ -312,7 +331,8 @@ class Credits:
 class Quota:
     """One quota report, from the app-server's answer or a session record's
     `rate_limits`: `error` says why the read is unavailable, None when it
-    answered."""
+    answered; `unrecognised` says why a credits block that is present has
+    a shape the guard does not read (then `credits` is None)."""
 
     error: str | None = None
     primary: Window | None = None
@@ -320,6 +340,7 @@ class Quota:
     credits: Credits | None = None
     plan_type: str | None = None
     reached_type: str | None = None
+    unrecognised: str | None = None
 
     def snapshot(self) -> dict:
         """What the harness home keeps: window usage, reset times and the plan
@@ -334,10 +355,13 @@ def _pick(data: Mapping, *names: str) -> object:
 
 
 def _number(value: object) -> float | None:
+    """A finite number, or a string that parses as one; None otherwise (a
+    boolean, `nan`, `12,50`, `$12.50`)."""
     try:
-        return float(value) if value is not None and not isinstance(value, bool) else None
+        number = float(value) if value is not None and not isinstance(value, bool) else None
     except (TypeError, ValueError):
         return None
+    return number if number is not None and math.isfinite(number) else None
 
 
 def _integer(value: object) -> int | None:
@@ -346,18 +370,33 @@ def _integer(value: object) -> int | None:
 
 
 def _window(data: object) -> Window | None:
-    if not isinstance(data, dict):
+    """A quota window; one that is present but not an object reads as a
+    window without a used percentage, which the guard refuses."""
+    if data is None:
         return None
+    if not isinstance(data, dict):
+        return Window(None, None, None)
     return Window(_number(_pick(data, "used_percent", "usedPercent")),
                   _integer(_pick(data, "window_minutes", "windowDurationMins", "windowMinutes")),
                   _integer(_pick(data, "resets_at", "resetsAt")))
 
 
-def _credits(data: object) -> Credits | None:
+def _credits(data: object) -> tuple[Credits | None, str | None]:
+    """The credits block, or why its shape is not recognised (D2(a): strictly
+    fail-closed, so a renamed field or a changed format never reads as "no
+    credits"): `hasCredits` and `unlimited` must be booleans, and the balance
+    absent, null or a number. An absent or null block is no credits state."""
+    if data is None:
+        return None, None
     if not isinstance(data, dict):
-        return None
-    return Credits(bool(_pick(data, "has_credits", "hasCredits")), bool(data.get("unlimited")),
-                   _number(data.get("balance")))
+        return None, "the credits state is not an object"
+    has, unlimited = _pick(data, "has_credits", "hasCredits"), data.get("unlimited")
+    if not (isinstance(has, bool) and isinstance(unlimited, bool)):
+        return None, "the credits state carries no boolean hasCredits and unlimited"
+    balance = _number(data.get("balance"))
+    if data.get("balance") is not None and balance is None:
+        return None, "the credits balance is not a number"
+    return Credits(has, unlimited, balance), None
 
 
 def quota_from_limits(limits: object) -> Quota:
@@ -367,9 +406,10 @@ def quota_from_limits(limits: object) -> Quota:
         return Quota(error="the answer carries no rate limits")
     plan = _pick(limits, "plan_type", "planType")
     reached = _pick(limits, "rate_limit_reached_type", "rateLimitReachedType")
+    credits, unrecognised = _credits(limits.get("credits"))
     return Quota(None, _window(limits.get("primary")), _window(limits.get("secondary")),
-                 _credits(limits.get("credits")), str(plan) if plan else None,
-                 str(reached) if reached else None)
+                 credits, str(plan) if plan else None, str(reached) if reached else None,
+                 unrecognised)
 
 
 def parse_quota(answer: object) -> Quota:
@@ -400,11 +440,20 @@ EMPTY_CREDITS = ("empty the Codex credit balance and turn automatic reload off i
                  "settings, then rerun")
 
 
+def _unmeasured(quota: Quota) -> str | None:
+    window = next((w for w in (quota.primary, quota.secondary)
+                   if w is not None and w.used_percent is None), None)
+    return f"the {window.name} window carries no used percentage" if window else None
+
+
 def _unavailable(quota: Quota) -> LoginProblem | None:
     why = quota.error or (
         "the answer carries no primary quota window" if quota.primary is None else
-        "the answer carries no credits state, so a credit draw cannot be ruled out"
-        if quota.credits is None else None)
+        _unmeasured(quota) or (
+            f"its credits state is not recognised ({quota.unrecognised}), so a credit draw "
+            "cannot be ruled out" if quota.unrecognised else
+            "the answer carries no credits state, so a credit draw cannot be ruled out"
+            if quota.credits is None else None))
     if why is None:
         return None
     return LoginProblem(f"the plan quota read is unavailable: {why}", QUOTA_UNAVAILABLE_REMEDY,
@@ -461,6 +510,8 @@ def describe(quota: Quota) -> str:
               for w in (quota.primary, quota.secondary) if w]
     if quota.credits is not None:
         parts.append(f"credits {quota.credits.detail}")
+    if quota.unrecognised:
+        parts.append(f"credits unrecognised ({quota.unrecognised})")
     return "; ".join(parts)
 
 
@@ -541,31 +592,41 @@ def read_quota(home: Path, environ: Mapping[str, str] | None = None) -> Quota:
 _ON, _OFF = {"true", "on", "enabled", "yes"}, {"false", "off", "disabled", "no"}
 
 
-def parse_features(listing: str) -> dict[str, bool]:
-    """`codex features list`, one feature per line with its state last; lines
-    without a state (a header, say) are skipped. Shaped after 0.133's local
+def parse_features(listing: str) -> tuple[dict[str, bool], list[str]]:
+    """`codex features list` as (states, unparsed lines): every non-blank line
+    must be one `name stage state` row whose state is a known word. Anything
+    else is returned as unparsed, so a format change refuses rather than
+    hides an enabled feature (fail-closed). Shaped after 0.133's local
     output; X7 confirms the 0.160 format."""
-    states = {}
+    states, unparsed = {}, []
     for line in listing.splitlines():
         parts = line.split()
-        if len(parts) >= 2 and parts[-1].lower() in _ON | _OFF:
-            states[parts[0]] = parts[-1].lower() in _ON
-    return states
+        if len(parts) == 3 and parts[2].lower() in _ON | _OFF:
+            states[parts[0]] = parts[2].lower() in _ON
+        elif parts:
+            unparsed.append(line.strip())
+    return states, unparsed
+
+
+FEATURES_PARSER = "report it: the feature listing does not match the parser"
 
 
 def features_problem(listing: str, allowed: Sequence[str]) -> LoginProblem | None:
-    """Refuse when anything outside `allowed` reads enabled, or the listing
-    shows no feature state at all."""
-    states = parse_features(listing)
+    """Refuse when a line of the listing does not parse, when the listing
+    shows no feature state at all, or when anything outside `allowed` reads
+    enabled: a precondition of the run."""
+    states, unparsed = parse_features(listing)
+    if unparsed:
+        return LoginProblem(f"`codex features list` printed a line the parser does not read: "
+                            f"{unparsed[0]!r}", FEATURES_PARSER, CODEX.name, "precondition")
     if not states:
-        return LoginProblem("`codex features list` reported no feature states",
-                            "report it: the feature listing does not match the parser",
-                            CODEX.name)
+        return LoginProblem("`codex features list` reported no feature states", FEATURES_PARSER,
+                            CODEX.name, "precondition")
     extra = sorted(name for name, enabled in states.items() if enabled and name not in allowed)
     if extra:
         return LoginProblem(f"features outside the allowlist read enabled: {', '.join(extra)}",
                             "report it: the pinned feature list does not match this CLI",
-                            CODEX.name)
+                            CODEX.name, "precondition")
     return None
 
 
@@ -887,12 +948,14 @@ def _provider_problem(events: list[dict]) -> LoginProblem | None:
 def _unconfirmed_problem(events: list[dict]) -> LoginProblem | None:
     report = _last(events, "codex.token_count")
     limits = report.get("rate_limits")
+    quota = quota_from_limits(limits)
     why = ("no session record was read" if not report and not _last(events, "codex.session")
            else "the session record carries no quota report" if not report
            else "its quota report carries no rate limits" if not isinstance(limits, dict)
-           else "its quota report carries no credits state"
-           if not isinstance(limits.get("credits"), dict)
-           else "its quota report carries no plan type" if not limits.get("plan_type") else None)
+           else f"its quota report's credits state is not recognised ({quota.unrecognised})"
+           if quota.unrecognised
+           else "its quota report carries no credits state" if quota.credits is None
+           else "its quota report carries no plan type" if not quota.plan_type else None)
     if why is None:
         return None
     return LoginProblem(f"plan use cannot be confirmed: {why}",
@@ -984,31 +1047,45 @@ def effort_problem(events: list[dict], effort: str | None) -> RunProblem | None:
                       "model serves", True, "precondition")
 
 
-def _with_billing(failure: RunProblem, events: list[dict]) -> RunProblem:
-    """A failed run whose session record also shows an explicit billing
-    signal is untested for billing, naming both."""
+def _untested_failure(failure: RunProblem, events: list[dict], skill_root: Path) -> RunProblem:
+    """A failed or timed-out run whose saved events also show an explicit
+    billing signal is untested for billing, and one that shows a broken
+    isolation (a foreign skill, a cloud-skill tool, an MCP call) is untested
+    for isolation, naming both. A missing quota report is no explicit signal
+    here: a run that failed or hit its limit stays a runner failure naming
+    why (testing-harness spec: Codex interrupted before kill)."""
     if failure.untested:
         return failure
     signal = explicit_billing(events)
-    if signal is None:
-        return failure
-    return RunProblem(f"{failure.message} (not a plan result: {refusal(signal)})", True,
-                      "subscription", billing=signal.cause)
+    if signal is not None:
+        return RunProblem(f"{failure.message} (not a plan result: {refusal(signal)})", True,
+                          "subscription", billing=signal.cause)
+    isolation = isolation_problem(events, skill_root)
+    if isolation is not None:
+        return RunProblem(f"{failure.message} ({isolation.message})", True, "isolation")
+    return failure
 
 
 def run_problem(events: list[dict], *, skill_root: Path, effort: str | None) -> RunProblem | None:
     """Everything a finished run's saved events say against a verdict, in
-    order: a failure (with any explicit billing signal), the billing guard,
-    the isolation, the served effort."""
+    order: a failure (with any explicit billing signal or broken isolation),
+    the billing guard, the isolation, the served effort."""
     harness = harness_record(events)
     failure = failure_reason(events, int(harness.get("exit_code") or 0),
                              str(harness.get("stderr_tail") or ""))
     if failure:
-        return _with_billing(failure, events)
+        return _untested_failure(failure, events, skill_root)
     billing = billing_problem(events)
     if billing:
         return RunProblem(refusal(billing), True, "subscription", billing=billing.cause)
     return isolation_problem(events, skill_root) or effort_problem(events, effort)
+
+
+def timeout_problem(failed: CodexRunFailed, *, skill_root: Path) -> RunProblem:
+    """A run stopped at its time limit: a runner failure naming the limit,
+    unless the session record captured before the raise shows an explicit
+    billing signal or a broken isolation."""
+    return _untested_failure(RunProblem(failed.message, False), failed.events, skill_root)
 
 
 # ---------- the run ---------------------------------------------------------------------------
@@ -1045,8 +1122,7 @@ def isolated_home(_stack: ExitStack, _args: argparse.Namespace,
     untested otherwise. Every Codex run is isolated: Codex has no ambient mode."""
     problem = preflight(environ)
     if problem:
-        kind = "precondition" if "Codex CLI" in problem.cause else "subscription"
-        raise CodexRefused(refusal(problem), kind)
+        raise CodexRefused.of(problem)
     return host_login.home(CODEX, os.environ if environ is None else environ)
 
 
@@ -1100,18 +1176,19 @@ def run_codex(ws: Path, request: str, *, model: str, effort: str | None, timeout
               ) -> list[dict]:
     """One Codex run under a single hold of the run lock: the quota read, the
     feature allowlist, the run (whose child holds the lock too), the capture.
-    Raises `RunLockBusy`, `CodexRefused` (untested) or `CodexRunFailed`; the
-    events it returns are checked afterwards by `run_problem`."""
+    Raises `host_login.RunLockRefused`, `CodexRefused` (untested) or
+    `CodexRunFailed` (checked by `timeout_problem`); the events it returns are
+    checked afterwards by `run_problem`."""
     environ = os.environ if environ is None else environ
     with host_login.run_lock(home) as fd:
         quota = read_quota(home, environ)
         problem = quota_problem(quota)
         if problem:
-            raise CodexRefused(refusal(problem), "subscription", billing=problem.cause)
+            raise CodexRefused.of(problem, billing=problem.cause)
         _, listing, _ = probe(["features", "list", *feature_flags(scenario)], home, environ)
         problem = features_problem(listing, allowed_features(scenario))
         if problem:
-            raise CodexRefused(refusal(problem), "precondition")
+            raise CodexRefused.of(problem)
         return _exec(ws, request, command(scenario, ws, model, effort), home=home,
                      timeout=timeout, environ=environ, fd=fd, quota=quota)
 
@@ -1123,34 +1200,38 @@ def _yes(flag: bool) -> str:
     return "yes" if flag else "no"
 
 
-def _probes(home: Path, environ: Mapping[str, str], run_probes: bool
-            ) -> tuple[tuple[int, int, int] | None, str, str | None]:
-    """The CLI version, the login method and the feature listing; nothing is
-    probed but the version when the home is missing, so a status creates
-    nothing."""
-    if not run_probes:
-        return None, "none", None
-    version = host_login.codex_version(probe(["--version"], home, environ)[1])
-    if not home.is_dir():
-        return version, "none", None
-    method = login_method(home, environ)
-    listing = probe(["features", "list", *feature_flags({})], home, environ)[1]
-    return version, method, listing
+def _logged_in(home: Path, method: str | None) -> str:
+    if method is None:
+        return "unknown" if home.is_dir() else "no"
+    return _yes(method != "none")
 
 
 def status(home: Path, environ: Mapping[str, str], *, live_quota: bool = False,
            run_probes: bool = True) -> tuple[dict[str, str], LoginProblem | None]:
     """The lines of `host-status codex` — only the keys of the spec's status
     list, booleans, enums, versions, an age and the quota windows — and the
-    first reason the home is not ready. `auth.json` is never opened."""
-    version, method, listing = _probes(home, environ, run_probes)
+    first reason the home is not ready. `auth.json` is never opened.
+
+    Only `--version` runs before the home is known to be the harness's own:
+    `login status`, `features list` and the `--quota` read (with its run
+    lock file) run only when `run_probes` holds (the location was not
+    refused) and the home is present, marked, owner-only and clean, so a
+    status never points `CODEX_HOME` at a directory the harness does not
+    adopt — a copied `~/.codex` among them — and never creates a file there."""
+    version = (host_login.codex_version(probe(["--version"], home, environ)[1])
+               if run_probes else None)
+    presence = host_login.check_presence(home, CODEX)
+    unclean = host_login.check_codex_home(home) if presence is None else None
+    adopted = run_probes and presence is None and unclean is None
+    method = login_method(home, environ) if adopted else None
+    listing = probe(["features", "list", *feature_flags({})], home, environ)[1] if adopted else None
     features = features_problem(listing, ALLOWED_FEATURES) if listing is not None else None
     offenders = host_login.codex_offenders(home) if home.is_dir() else []
     lines = {
         "home": str(home),
         "marker": _yes((home / MARKER).is_file()),
-        "logged_in": _yes(method != "none"),
-        "auth_method": method if method != "none" else "-",
+        "logged_in": _logged_in(home, method),
+        "auth_method": method if method not in (None, "none") else "-",
         "config_pinned": _yes(home.is_dir() and host_login.config_difference(home) is None),
         "clean": ", ".join(offenders) if offenders else _yes(home.is_dir()),
         "last_written": host_login.auth_age(home),
@@ -1160,13 +1241,14 @@ def status(home: Path, environ: Mapping[str, str], *, live_quota: bool = False,
         "last_quota": last_quota(home),
         "runs_use": "harness",
     }
-    problem = ((host_login.check_codex_version(version) if run_probes else None)
-               or host_login.check_presence(home, CODEX)
-               or host_login.check_codex_login(method, home)
-               or host_login.check_codex_home(home) or features)
-    if live_quota and home.is_dir():
-        with host_login.run_lock(home):
-            quota = read_quota(home, environ)
-        lines["quota"] = describe(quota)
-        problem = problem or quota_problem(quota)
+    problem = ((host_login.check_codex_version(version) if run_probes else None) or presence
+               or (host_login.check_codex_login(method, home) if method is not None else None)
+               or unclean or features)
+    if live_quota:
+        lines["quota"] = "not read: the harness home is not ready"
+        if adopted:
+            with host_login.run_lock(home):
+                quota = read_quota(home, environ)
+            lines["quota"] = describe(quota)
+            problem = problem or quota_problem(quota)
     return lines, problem

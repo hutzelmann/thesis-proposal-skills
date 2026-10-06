@@ -320,7 +320,7 @@ codex exec --json --strict-config --skip-git-repo-check -C <ws> -s workspace-wri
   - "Not logged in";
   - usage-limit text (UNVERIFIED wording; the session record's `rate_limit_reached_type` is the primary signal).
 
-  After that come `turn.failed` or `error`, a non-zero exit with the stderr tail, and finally the absence of `turn.completed`: "codex emitted no completed turn". A timeout is a runner failure that names the limit.
+  After that come `turn.failed` or `error`, a non-zero exit with the stderr tail, and finally the absence of `turn.completed`: "codex emitted no completed turn". A timeout is a runner failure that names the limit. A failed or timed-out run whose captured session record shows an explicit signal (rows 1 and 3–6 below) or a broken isolation is untested instead, naming both (`_untested_failure`, `timeout_problem`; review of 2026-10-06); row 2 alone leaves it a runner failure.
 - **`billing_problem(events, effort)`** walks the reduced records in the order of the spec's after-run list:
   1. a provider other than `openai`;
   2. plan use unconfirmed: no `codex.token_count`, no `rate_limits`, no credits block, or no `plan_type`;

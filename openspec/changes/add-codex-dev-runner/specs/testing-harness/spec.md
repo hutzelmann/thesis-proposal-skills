@@ -139,6 +139,8 @@ The runner SHALL keep the last quota snapshot in the harness home. The snapshot 
 - **Logged out by the restriction.** The client's login restriction logging the home out because an API key was in use SHALL make the run untested, with the harness login remedy.
 - **Model rerouted.** A model reroute SHALL make the run untested. The message names the requested model and the served model.
 
+A run that failed, or that was stopped at its time limit, is read the same way, from the session record captured before it was deleted. If that record shows another provider, a plan that is not allowed, credits, a reached limit or a model reroute, or if the run's isolation did not hold (requirement: Dev-runner host adapters), the run SHALL be untested, and the message SHALL name both the failure and that cause. Plan use unconfirmed alone does not make such a run untested: it stays a runner failure that names why it failed, its time limit included.
+
 The summary SHALL report each quota window's usage before and after the run.
 
 **Never in CI.** No CI workflow SHALL use a ChatGPT login.
@@ -188,6 +190,10 @@ The summary SHALL report each quota window's usage before and after the run.
 #### Scenario: Credits drawn during a run
 - **WHEN** a run's session record reports credits drawn or a credit balance above zero
 - **THEN** the run is untested, and the message names the credits as the cause and emptying the balance as the one remedy
+
+#### Scenario: Timed-out run that drew credits
+- **WHEN** a Codex run is stopped at its time limit, and the session record captured before the stop reports credits drawn
+- **THEN** the run is untested, not a runner failure, and the message names the time limit and the credits
 
 #### Scenario: Refresh token reused
 - **WHEN** a run fails with Codex's message that the refresh token was already used

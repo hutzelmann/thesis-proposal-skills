@@ -641,8 +641,8 @@ def test_preflight_on_a_missing_home_starts_no_client(tmp_path, monkeypatch):
 def test_read_status_keeps_only_the_four_fields(harness_home, monkeypatch):
     seen = {}
 
-    def client(argv, env, *, interactive, cwd):
-        seen.update(argv=argv, env=env, interactive=interactive, cwd=cwd)
+    def client(argv, env, *, interactive, cwd, stop_signal):
+        seen.update(argv=argv, env=env, interactive=interactive, cwd=cwd, stop=stop_signal)
         return 0, json.dumps(ready(harness_home))
 
     monkeypatch.setenv(LONG_LIVED_TOKEN, "placeholder-not-a-token")
@@ -652,6 +652,7 @@ def test_read_status_keeps_only_the_four_fields(harness_home, monkeypatch):
                       "apiProvider": "firstParty", "configDirectory": str(harness_home)}
     assert seen["argv"] == ["claude", "auth", "status", "--json"]
     assert not seen["interactive"]
+    assert seen["stop"] == CLAUDE.stop_signal  # a termination request at the limit
     assert seen["env"]["CLAUDE_CONFIG_DIR"] == str(harness_home)
     assert seen["env"]["ANTHROPIC_CONFIG_DIR"] == str(harness_home / PROFILE_DIR)
     assert LONG_LIVED_TOKEN not in seen["env"]  # the home's own login, not the token

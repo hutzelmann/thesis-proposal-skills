@@ -12,8 +12,8 @@ a fresh isolated Claude configuration, never in another host's login home.
 
 The `Host` objects are built in `claude_runner.HOSTS`, where the Claude
 callables live, as lambdas over the module attributes, so that every existing
-monkeypatch of `run_claude`, `isolated_config`, `follow_stream` and
-`claude_cli.call`/`preflight` keeps working. This module holds only the
+monkeypatch of `run_claude`, `isolated_config` and `follow_stream` keeps
+working; a host's binary is its login record's (`login.binary`). This module holds only the
 shapes; it imports nothing but `host_login`, so `codex_cli` may use it
 without an import cycle.
 """
@@ -46,12 +46,11 @@ class RunView:
 
 @dataclass(frozen=True)
 class JudgeBackend:
-    """The CLI that grades dev runs (`host`), its call and login check, and
-    the isolation it enters for a run whose own configuration it cannot reuse."""
+    """The CLI that grades dev runs (`host`) and the isolation it enters for a
+    run whose own configuration it cannot reuse. Its calls and its login check
+    are `claude_cli.judge_all`'s, reached through `claude_runner.run_judge`."""
 
     host: str
-    call: Callable
-    preflight: Callable
     isolation: Callable[[ExitStack], Path]
 
 
@@ -67,7 +66,6 @@ class Host:
     no ambient mode."""
 
     name: str
-    binary: str
     skill_dir: tuple[str, str]
     run: Callable[..., list[dict]]
     read: Callable[[list[dict], argparse.Namespace], RunView]

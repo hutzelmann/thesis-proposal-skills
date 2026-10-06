@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import os
+import signal
+import sys
 import time
 from pathlib import Path
 
@@ -54,10 +56,10 @@ class FakeClient:
         self.calls: list[dict] = []
         self.on_logout = None
 
-    def __call__(self, argv, env, *, interactive, cwd):
+    def __call__(self, argv, env, *, interactive, cwd, stop_signal=None):
         verb = " ".join(argv[1:3])
         self.calls.append({"verb": verb, "argv": list(argv), "env": dict(env),
-                           "interactive": interactive, "cwd": cwd})
+                           "interactive": interactive, "cwd": cwd, "stop_signal": stop_signal})
         if verb == "auth logout" and self.on_logout:
             self.on_logout()
         if verb == "auth status":
@@ -194,12 +196,12 @@ def test_seeding_happens_before_the_login_starts(state, client, monkeypatch):
     """testing-harness spec: Opt-outs seeded before the login."""
     seen = {}
 
-    def recording(argv, env, *, interactive, cwd):
+    def recording(argv, env, **seam):
         if " ".join(argv[1:3]) == "auth login":
             settings = json.loads((state / "settings.json").read_text(encoding="utf-8"))
             seen.update(settings=settings, profile=(state / PROFILE_DIR).is_dir(),
                         marker=(state / MARKER).is_file())
-        return client(argv, env, interactive=interactive, cwd=cwd)
+        return client(argv, env, **seam)
 
     monkeypatch.setattr(host_login, "run_client", recording)
     main(["login", "claude"])
@@ -285,8 +287,8 @@ def test_a_failed_logout_replaces_and_wipes_nothing(reset, state, client, monkey
     stray.parent.mkdir()
     stray.write_text("{}\n", encoding="utf-8")
 
-    def failing(argv, env, *, interactive, cwd):
-        client(argv, env, interactive=interactive, cwd=cwd)
+    def failing(argv, env, **seam):
+        client(argv, env, **seam)
         return (1, "") if " ".join(argv[1:3]) == "auth logout" else (0, "")
 
     monkeypatch.setattr(host_login, "run_client", failing)
@@ -325,7 +327,7 @@ def test_a_reset_that_cannot_wipe_stops_before_the_login(state, client, monkeypa
     host_login.seed(CLAUDE, state)
     logged_in(state)
     problem = host_login.LoginProblem(f"{state} vanished", "run it again")
-    monkeypatch.setattr(host_login, "wipe", lambda _home: problem)
+    monkeypatch.setattr(host_login, "wipe", lambda _home, _record: problem)
     assert main(["login", "claude", "--reset"]) == 3
     assert "auth login" not in client.verbs()
     assert f"{state} vanished" in capsys.readouterr().err
@@ -532,7 +534,8 @@ CODEX_STATUS_KEYS = ["home", "marker", "logged_in", "auth_method", "config_pinne
                      "last_written", "cli_version", "min_version", "features_ok", "last_quota",
                      "runs_use"]
 X8_NOTE = "whether this logs out your other ChatGPT sessions is unverified (X8)"
-POSIX_LOCKS = pytest.mark.skipif(os.name != "posix", reason="the run lock is a POSIX file lock")
+POSIX_LOCKS = pytest.mark.skipif(host_login.fcntl is None,
+                                 reason="the run lock is a POSIX file lock")
 MASKED_KEY = "sk-proj-***SYNTH"
 CODEX_STEERING = {
     "CODEX_API_KEY": "placeholder-codex-key",
@@ -554,10 +557,10 @@ class FakeCodexClient:
         self.on_logout = None
         self.home: Path | None = None
 
-    def __call__(self, argv, env, *, interactive, cwd):
+    def __call__(self, argv, env, *, interactive, cwd, stop_signal=None):
         verb = argv[1]
         self.calls.append({"verb": verb, "argv": list(argv), "env": dict(env),
-                           "interactive": interactive, "cwd": cwd})
+                           "interactive": interactive, "cwd": cwd, "stop_signal": stop_signal})
         hook = {"login": self.on_login, "logout": self.on_logout}.get(verb)
         if hook:
             hook()
@@ -659,6 +662,7 @@ def test_the_codex_login_is_the_chatgpt_login(device, codex_state, codex_client,
     assert set(CODEX_STEERING.values()).isdisjoint(login["env"].values())
 
 
+@POSIX_LOCKS
 def test_the_codex_configuration_is_seeded_before_the_login(codex_state, codex_client):
     """testing-harness spec: Codex configuration seeded before the login."""
     import tomllib
@@ -717,6 +721,42 @@ def test_the_codex_logout_note_comes_first_until_x8(path, passed, codex_state, c
     assert (X8_NOTE in printed[0]) is not passed
     [logout] = [call for call in codex_client.calls if call["verb"] == "logout"]
     assert logout["env"] == login_env(host_login.CODEX, codex_state, os.environ)
+    assert logout["stop_signal"] == signal.SIGINT  # the client's own stop request
+
+
+SLOW_LOGOUT = """
+import pathlib, signal, sys, time
+here = pathlib.Path(__file__).parent
+def done(*_):
+    (here / "interrupted").write_text("interrupted", encoding="utf-8")
+    sys.exit(0)
+signal.signal(signal.SIGINT, done)
+(here / "argv").write_text(" ".join(sys.argv[1:]), encoding="utf-8")
+time.sleep(60)
+"""
+
+
+@POSIX_LOCKS
+def test_a_codex_logout_at_its_limit_is_interrupted_not_terminated(codex_state, tmp_path,
+                                                                   monkeypatch, capsys):
+    """testing-harness spec: Stopping a host child — the harness login's logout
+    at its limit gets the client's own stop request, an interrupt for Codex.
+    The real `run_client` starts a fake `codex` that traps SIGINT."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    script = bindir / "codex"
+    script.write_text(f"#!{sys.executable}\n{SLOW_LOGOUT}", encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setattr(host_login, "CLIENT_TIMEOUT_S", 1.5)
+    monkeypatch.setattr(host_login, "TERM_GRACE_S", 5)
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    assert main(["logout", "codex"]) == 3
+    assert (bindir / "argv").read_text(encoding="utf-8") == "logout"
+    assert (bindir / "interrupted").read_text(encoding="utf-8") == "interrupted"
+    assert "exited 124" in capsys.readouterr().out
+    assert not lock_held(codex_state)
 
 
 def codex_status_lines(out: str, keys: list[str] = CODEX_STATUS_KEYS) -> dict[str, str]:
@@ -885,3 +925,73 @@ def test_a_held_run_lock_makes_a_codex_logout_not_ready(codex_state, codex_clien
     err = capsys.readouterr().err
     assert err.startswith("untested: another Codex run holds the harness home")
     assert host_login.LOCK_NAME in err
+
+
+def refused_location(home: Path, tmp_path: Path, monkeypatch) -> str:
+    """A marked, logged-in home whose state root lies in the (faked) system
+    temporary directory: `check_location` refuses it."""
+    host_login.seed(host_login.CODEX, home)
+    codex_logged_in(home)
+    monkeypatch.setattr(host_login, "system_tempdir", lambda: str(tmp_path))
+    return "temporary directory"
+
+
+def unmarked_copy(home: Path, _tmp_path: Path, _monkeypatch) -> str:
+    """An operator's `~/.codex` copied to the harness path: a login, no marker."""
+    home.mkdir(parents=True)
+    (home / "config.toml").write_text(host_login.PINNED_CONFIG_TOML, encoding="utf-8")
+    codex_logged_in(home)
+    return host_login.MARKER
+
+
+def unpinned_config(home: Path, _tmp_path: Path, _monkeypatch) -> str:
+    host_login.seed(host_login.CODEX, home)
+    codex_logged_in(home)
+    with (home / "config.toml").open("a", encoding="utf-8") as fh:
+        fh.write('model_provider_override = "openrouter"\n')
+    return "config.toml"
+
+
+@pytest.mark.parametrize("arrange", [refused_location, unmarked_copy, unpinned_config],
+                         ids=["refused-location", "unmarked-home", "unpinned-config"])
+def test_codex_status_probes_no_home_the_harness_does_not_adopt(arrange, codex_state, tmp_path,
+                                                                monkeypatch, capsys):
+    """testing-harness spec: Codex home in the temporary directory; Unmarked
+    directory never adopted — `status codex --quota` runs neither `login
+    status`, `features list` nor the quota read against such a home, and
+    creates no lock file in it."""
+    import codex_cli
+
+    named = arrange(codex_state, tmp_path, monkeypatch)
+    no_client(monkeypatch)
+
+    def no_read(*_args, **_kwargs):
+        pytest.fail("the quota read started")
+
+    monkeypatch.setattr(codex_cli, "read_quota", no_read)
+    assert main(["status", "codex", "--quota"]) == 3
+    assert [call for call in codex_cli.probe.calls if call != ["--version"]] == []
+    assert not (codex_state / host_login.LOCK_NAME).exists()
+    out, err = capsys.readouterr()
+    pairs = codex_status_lines(out, [*CODEX_STATUS_KEYS, "quota"])
+    assert pairs["quota"].startswith("not read")
+    assert (pairs["logged_in"], pairs["features_ok"]) == ("unknown", "unknown")
+    assert named in err
+
+
+@pytest.mark.parametrize("argv", [["login", "codex"], ["logout", "codex"],
+                                  ["status", "codex", "--quota"]])
+def test_without_posix_file_locks_the_codex_commands_refuse_cleanly(argv, codex_state,
+                                                                    codex_client, monkeypatch,
+                                                                    capsys):
+    """Windows: no traceback, exit 3 in the one template, and a login or logout
+    creates nothing and starts no client."""
+    monkeypatch.setattr(host_login, "fcntl", None)
+    if argv[0] != "login":
+        host_login.seed(host_login.CODEX, codex_state)
+        codex_logged_in(codex_state)
+    assert main(argv) == 3
+    assert codex_client.calls == []
+    err = capsys.readouterr().err
+    assert err.startswith("untested: this platform lacks POSIX file locks")
+    assert argv[0] != "login" or not codex_state.exists()

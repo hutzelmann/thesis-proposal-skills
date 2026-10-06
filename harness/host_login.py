@@ -61,16 +61,19 @@ other ChatGPT sessions is unverified (`NOTES`, `login_note(remedy, client)`).
 
 **The Codex run lock.** `run_lock` takes an exclusive `flock` on
 `<home>/.harness-run.lock` within `LOCK_WAIT_S`, else raises `RunLockBusy`
-(untested, exit 3). Runs, the quota read, logins, logouts, resets and
-`status codex --quota` take it; a run's child receives the descriptor and
-holds the lock for as long as it lives (`run_host(..., pass_fds=)`), and on
-Linux gets a parent-death interrupt (`child_preexec`).
+(untested, exit 3); on a platform without POSIX file locks it raises
+`RunLockUnsupported`, and the Codex login and logout refuse before creating
+anything. Runs, the quota read, logins, logouts, resets and `status codex
+--quota` take it; a run's child receives the descriptor and holds the lock
+for as long as it lives (`run_host(..., pass_fds=)`), and on Linux gets a
+parent-death interrupt (`child_preexec`).
 
 **Stopping a child.** `stop_child` sends the client's own stop request — a
 termination request to Claude, an interrupt to Codex (`HostLogin.stop_signal`),
 which ends its turn — and kills only after `TERM_GRACE_S`, so a host part-way
 through writing a refreshed login can finish (whether Claude Code does is live
-check L9).
+check L9). `run_host` and `run_client` (the logouts and the status check at
+`CLIENT_TIMEOUT_S`) both pass the record's stop signal.
 
 **The linked login.** An isolated configuration holds a symlink to the
 `.credentials.json` it uses: the harness home's by default, the directory
@@ -216,7 +219,13 @@ class HostLogin:
     the Codex record and leave Claude's behaviour as it was: `strip_suffixes`
     widens the stripped families, `stop_signal` is the client's own stop
     request, and `outside_tempdir` bars a home inside the system temporary
-    directory."""
+    directory. The per-client behaviour of the commands is data too:
+    `run_locked` (the client's runs, logins, logouts and resets take the run
+    lock, not the refresh claim), `login_in_status` (where the login is no
+    file in the home, the client's own status decides whether it holds one),
+    `offenders` (what makes the home unclean, in place of `home_offenders`)
+    and `status_command` (the client's own `status`). A client that reads an
+    Anthropic profile directory is one with a `profile`."""
 
     name: str
     binary: str
@@ -238,6 +247,10 @@ class HostLogin:
     stop_signal: int = signal.SIGTERM
     outside_tempdir: bool = False
     allowed: tuple[str, ...] = ()
+    run_locked: bool = False
+    login_in_status: bool = True
+    offenders: Callable[[Path], list[str]] | None = None
+    status_command: Callable[[argparse.Namespace, Mapping[str, str]], int] | None = None
 
     def child_vars(self, config: PurePath) -> dict[str, str]:
         """What the harness itself sets in every child of this client, replacing
@@ -395,6 +408,11 @@ CODEX = HostLogin(
     stop_signal=signal.SIGINT,
     outside_tempdir=True,
     allowed=("skills/.system",),
+    run_locked=True,
+    # the pinned configuration keeps the login in `auth.json`, never opened
+    login_in_status=False,
+    offenders=lambda home_dir: codex_offenders(home_dir),
+    status_command=lambda args, environ: cmd_status_codex(args, environ),
 )
 RECORDS: Mapping[str, HostLogin] = {"claude": CLAUDE, "codex": CODEX}
 LOGIN_FAILURE = CLAUDE.failure
@@ -402,22 +420,37 @@ LOGIN_FAILURE = CLAUDE.failure
 
 @dataclass(frozen=True)
 class LoginProblem:
-    """Why the harness login cannot serve a run: the cause, its one remedy, and
-    the client whose login note closes the refusal."""
+    """Why the harness login cannot serve a run: the cause, its one remedy,
+    the client whose login note closes the refusal, and which of the three
+    kinds of untested it is (`subscription`, `isolation` or `precondition`;
+    add-codex-dev-runner design Decision 12), set where the problem is built."""
 
     cause: str
     remedy: str
     client: str = "claude"
+    kind: str = "subscription"
 
 
-class RunLockBusy(Exception):
-    """The Codex run lock stayed held past `LOCK_WAIT_S`. Carries the
-    `LoginProblem` that `refusal` renders; the runner maps it to untested and
-    `main` to exit 3."""
+class RunLockRefused(Exception):
+    """The Codex run lock could not be taken. Carries the `LoginProblem` that
+    `refusal` renders; the runner maps it to untested and `main` to exit 3."""
 
     def __init__(self, problem: LoginProblem):
         super().__init__(problem.cause)
         self.problem = problem
+
+
+class RunLockBusy(RunLockRefused):
+    """The Codex run lock stayed held past `LOCK_WAIT_S`."""
+
+
+class RunLockUnsupported(RunLockRefused):
+    """This platform has no POSIX file locks (Windows), so no run lock."""
+
+
+NO_FILE_LOCKS = LoginProblem(
+    "this platform lacks POSIX file locks (fcntl), which the Codex run lock needs",
+    "run the Codex harness commands on Linux or macOS", "codex", "precondition")
 
 
 class LoginSource(Enum):
@@ -548,9 +581,14 @@ def run_lock(home_dir: Path, wait: float | None = None) -> Iterator[int]:
     Yields the descriptor, which a child receives through `pass_fds`: `flock`
     binds to the open file description, so the lock stays held while that
     child lives, even after the harness is killed. The harness never unlocks
-    explicitly — that would release the child's hold too; it only closes."""
+    explicitly — that would release the child's hold too; it only closes.
+
+    The descriptor is inheritable, so a process the model starts inside
+    `codex exec` and leaves running may hold the lock too (unverified until
+    the first live run); the refusal therefore names `fuser`, which shows
+    the holder. Without POSIX file locks it raises `RunLockUnsupported`."""
     if fcntl is None:
-        raise RuntimeError("the Codex run lock needs POSIX file locks")
+        raise RunLockUnsupported(NO_FILE_LOCKS)
     path = home_dir / LOCK_NAME
     handle = path.open("ab")  # binary: the lock file holds nothing
     with suppress(OSError):
@@ -564,8 +602,9 @@ def run_lock(home_dir: Path, wait: float | None = None) -> Iterator[int]:
             if time.monotonic() >= deadline:
                 handle.close()
                 raise RunLockBusy(LoginProblem(
-                    f"another Codex run holds the harness home ({path})", "rerun after it ends",
-                    CODEX.name)) from None
+                    f"another Codex run holds the harness home ({path}), or a process a run "
+                    f"left behind does (`fuser -v {path}` names it)", "rerun after it ends",
+                    CODEX.name, "precondition")) from None
             time.sleep(LOCK_POLL_S)
     try:
         yield handle.fileno()
@@ -772,7 +811,7 @@ def home_offenders(record: HostLogin, home_dir: Path) -> list[str]:
 def check_home(record: HostLogin, home_dir: Path) -> LoginProblem | None:
     """The home is clean. A dirty home means the opt-outs failed under this
     account, so the remedy is to remove the entry or start over."""
-    offenders = (codex_offenders(home_dir) if record.name == CODEX.name
+    offenders = (record.offenders(home_dir) if record.offenders
                  else home_offenders(record, home_dir))
     if not offenders:
         return None
@@ -881,11 +920,12 @@ def check_codex_version(version: tuple[int, int, int] | None) -> LoginProblem | 
     minimum = version_text(CODEX_MIN_VERSION)
     if version is None:
         return LoginProblem("the Codex CLI reported no version (is `codex` installed and on "
-                            "PATH?)", f"install the Codex CLI {minimum} or later", CODEX.name)
+                            "PATH?)", f"install the Codex CLI {minimum} or later", CODEX.name,
+                            "precondition")
     if version < CODEX_MIN_VERSION:
         return LoginProblem(f"the installed Codex CLI is {version_text(version)}, older than "
                             f"the pinned minimum {minimum}", CODEX_UPDATE.format(minimum),
-                            CODEX.name)
+                            CODEX.name, "precondition")
     return None
 
 
@@ -948,10 +988,15 @@ def refusal(problem: LoginProblem) -> str:
 
 
 def run_client(argv: Sequence[str], env: Mapping[str, str], *, interactive: bool,
-               cwd: Path) -> tuple[int, str]:
+               cwd: Path, stop_signal: int = signal.SIGTERM) -> tuple[int, str]:
     """Start the client binary: interactively on the operator's terminal (the
     login), or quietly with its stdout captured and bounded by
-    CLIENT_TIMEOUT_S. The runner seam the L0 tests fake."""
+    CLIENT_TIMEOUT_S, at which it gets the client's own stop request
+    (`stop_signal`: the record's — an interrupt for Codex). The runner seam
+    the L0 tests fake. It starts the login, the logouts and Claude's status
+    check, in the environment its caller built (`login_env`, which drops the
+    client's billing families by construction); the Codex children the
+    billing guard covers start through `codex_cli.start` instead."""
     try:
         if interactive:
             return subprocess.run(list(argv), env=dict(env), cwd=cwd, check=False).returncode, ""
@@ -963,7 +1008,8 @@ def run_client(argv: Sequence[str], env: Mapping[str, str], *, interactive: bool
     try:
         out, _ = proc.communicate(timeout=CLIENT_TIMEOUT_S)
     except subprocess.TimeoutExpired:
-        stop_child(proc)
+        stop_child(proc, stop_signal)
+        proc.communicate()  # drains and closes the pipe
         return 124, ""
     return proc.returncode, out or ""
 
@@ -975,7 +1021,7 @@ def read_status(record: HostLogin, home_dir: Path) -> dict:
     env = allowlisted_env(record, home_dir)
     env.pop(LONG_LIVED_TOKEN, None)
     _, out = run_client([record.binary, *record.status_argv], env, interactive=False,
-                        cwd=home_dir)
+                        cwd=home_dir, stop_signal=record.stop_signal)
     try:
         data = json.loads(out)
     except ValueError:
@@ -1265,17 +1311,14 @@ def logout_note(client: str = "claude") -> None:
 def client_lock(record: HostLogin, home_dir: Path) -> Iterator[None]:
     """What a logout, a reset or a login over a login holds: the lock the
     client's runs take — Claude's refresh claim, the Codex run lock."""
-    if record.name == CODEX.name:
-        with run_lock(home_dir):
-            yield
-    else:
-        with held_claim(home_dir):
-            yield
+    with run_lock(home_dir) if record.run_locked else held_claim(home_dir):
+        yield
 
 
 def _logout(record: HostLogin, home_dir: Path, environ: Mapping[str, str]) -> int:
     code, _ = run_client([record.binary, *record.logout_argv],
-                         login_env(record, home_dir, environ), interactive=False, cwd=home_dir)
+                         login_env(record, home_dir, environ), interactive=False, cwd=home_dir,
+                         stop_signal=record.stop_signal)
     return code
 
 
@@ -1299,7 +1342,7 @@ def _start_over(record: HostLogin, home_dir: Path, environ: Mapping[str, str], *
     already holds the run lock for its whole sequence (`cmd_login`)."""
     if logged_in:
         logout_note(record.name)
-    with held_claim(home_dir) if record.name == CLAUDE.name else nullcontext():
+    with nullcontext() if record.run_locked else held_claim(home_dir):
         code = _logout(record, home_dir, environ) if logged_in else 0
         if code != 0:
             again = record.reset_command if reset else record.login_command
@@ -1307,8 +1350,7 @@ def _start_over(record: HostLogin, home_dir: Path, environ: Mapping[str, str], *
                                 "login there was neither replaced nor wiped",
                                 f"rerun `{again}` once the client can log out", record.name)
         if reset:
-            # Claude's wipe is called as it always was (its tests replace it)
-            problem = wipe(home_dir) if record.name == CLAUDE.name else wipe(home_dir, record)
+            problem = wipe(home_dir, record)
             if problem:
                 return problem
             seed(record, home_dir)
@@ -1316,22 +1358,26 @@ def _start_over(record: HostLogin, home_dir: Path, environ: Mapping[str, str], *
 
 
 def _home_or_problem(record: HostLogin, environ: Mapping[str, str]) -> Path | LoginProblem:
-    """The record's home, or why no command may touch it: its location, and
-    for Claude the default Anthropic profile directory (a Codex client reads
-    no Anthropic profile)."""
+    """The record's home, or why no command may touch it: its location, the
+    default Anthropic profile directory for a client that reads one (a Codex
+    client reads no Anthropic profile), and for a client whose commands take
+    the run lock a platform without POSIX file locks — checked before
+    anything is created."""
     root = state_root(environ)
-    claude_only = profile_problem(environ) if record.name == CLAUDE.name else None
+    profile = profile_problem(environ) if record.profile else None
+    locks = NO_FILE_LOCKS if record.run_locked and fcntl is None else None
     return (check_location(root, environ, record=record, tempdir=system_tempdir())
-            or claude_only or root / "hosts" / record.name)
+            or profile or locks or root / "hosts" / record.name)
 
 
 def _holds_login(record: HostLogin, home_dir: Path) -> bool:
     """An existing home's login: its credentials file (Linux; for Codex, whose
-    pinned configuration keeps it in a file, only that — never opened), or
-    Claude's own status, where the login is no file (the macOS Keychain)."""
+    pinned configuration keeps it in a file, only that — never opened), or,
+    for a client whose status decides (`login_in_status`), its own status,
+    where the login is no file (Claude in the macOS Keychain)."""
     if (home_dir / record.credentials).exists():
         return True
-    return record.name == CLAUDE.name and bool(read_status(record, home_dir).get("loggedIn"))
+    return record.login_in_status and bool(read_status(record, home_dir).get("loggedIn"))
 
 
 def _login_argv(record: HostLogin, args: argparse.Namespace) -> list[str]:
@@ -1360,9 +1406,8 @@ def cmd_login(record: HostLogin, args: argparse.Namespace, environ: Mapping[str,
     if not existed:
         seed(record, home_dir)
     logged_in = existed and _holds_login(record, home_dir)
-    codex = record.name == CODEX.name
     with ExitStack() as hold:
-        if codex:
+        if record.run_locked:
             hold.enter_context(run_lock(home_dir))
         if logged_in or (existed and args.reset):
             problem = _start_over(record, home_dir, environ, reset=args.reset,
@@ -1370,7 +1415,7 @@ def cmd_login(record: HostLogin, args: argparse.Namespace, environ: Mapping[str,
             if problem:
                 print(refusal(problem), file=sys.stderr)
                 return EXIT_NOT_READY
-            if codex and args.reset:  # the wipe took the lock file with it
+            if record.run_locked and args.reset:  # the wipe took the lock file with it
                 hold.enter_context(run_lock(home_dir))
         run_client(_login_argv(record, args), login_env(record, home_dir, environ),
                    interactive=True, cwd=home_dir)
@@ -1470,8 +1515,8 @@ def cmd_status_codex(args: argparse.Namespace, environ: Mapping[str, str]) -> in
 
 def cmd_status(record: HostLogin, args: argparse.Namespace,
                environ: Mapping[str, str]) -> int:
-    if record.name == CODEX.name:
-        return cmd_status_codex(args, environ)
+    if record.status_command:
+        return record.status_command(args, environ)
     root = state_root(environ)
     home_dir = root / "hosts" / record.name
     problem = check_location(root, environ) or profile_problem(environ)
@@ -1511,7 +1556,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Exit 0 ready, 2 usage or refused to start, 3 not ready (untested) —
-    a held Codex run lock included."""
+    a Codex run lock that is held or that this platform cannot take
+    included."""
     parser = build_parser()
     args = parser.parse_args(argv)
     for option, given in (("--device-auth", getattr(args, "device_auth", False)),
@@ -1520,8 +1566,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"{option} applies to the codex client only")
     try:
         return COMMANDS[args.command](RECORDS[args.client], args, os.environ)
-    except RunLockBusy as busy:
-        print(refusal(busy.problem), file=sys.stderr)
+    except RunLockRefused as refused:
+        print(refusal(refused.problem), file=sys.stderr)
         return EXIT_NOT_READY
 
 

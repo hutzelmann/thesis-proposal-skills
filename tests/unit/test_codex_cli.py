@@ -22,6 +22,7 @@ import textwrap
 import threading
 import time
 from argparse import Namespace
+from contextlib import ExitStack
 from pathlib import Path
 
 import claude_runner
@@ -36,7 +37,8 @@ from l1_checks import verdict_single_context, verdict_supervise_verifier
 STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
 WS = Path(tempfile.gettempdir()) / "devrun-check_report-fixture"  # never created
 SKILL_ROOT = WS / ".agents" / "skills"
-POSIX = pytest.mark.skipif(os.name != "posix", reason="POSIX signals and file locks")
+POSIX = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None,
+                           reason="POSIX signals and file locks")
 LINUX = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="prctl is Linux-only")
 X8_NOTE = "Whether this logs out your other ChatGPT sessions is unverified (X8)"
 CODEX_NOTE = "Your own Codex login is not affected"
@@ -99,8 +101,9 @@ def test_a_second_run_lock_waits_then_refuses(tmp_path, monkeypatch):
         assert time.monotonic() - started >= 0.3
     problem = busy.value.problem
     assert isinstance(problem, LoginProblem)
-    assert problem.client == "codex"
+    assert (problem.client, problem.kind) == ("codex", "precondition")
     assert str(tmp_path / host_login.LOCK_NAME) in problem.cause
+    assert f"fuser -v {tmp_path / host_login.LOCK_NAME}" in problem.cause  # a lingering holder
     message = refusal(problem)
     assert message.startswith("untested: another Codex run holds the harness home")
     assert message.endswith(f"{CODEX_NOTE}.")
@@ -241,6 +244,16 @@ def test_without_posix_file_locks_the_codex_runner_is_a_usage_error(monkeypatch,
     assert "POSIX file locks" in capsys.readouterr().err
 
 
+def test_without_posix_file_locks_the_run_lock_refuses_cleanly(tmp_path, monkeypatch):
+    monkeypatch.setattr(host_login, "fcntl", None)
+    with pytest.raises(host_login.RunLockUnsupported) as refused, host_login.run_lock(tmp_path):
+        pass
+    assert isinstance(refused.value, host_login.RunLockRefused)
+    assert refused.value.problem.kind == "precondition"
+    assert refusal(refused.value.problem).startswith("untested: this platform lacks POSIX")
+    assert not (tmp_path / host_login.LOCK_NAME).exists()
+
+
 # ---------- 2.4: the billing guard ------------------------------------------------------
 
 LAUNCH = {
@@ -300,6 +313,34 @@ def test_a_leaking_builder_is_stopped_before_any_child_starts(leak, tmp_path, mo
     assert leak in str(refused.value)
     assert "placeholder-leaked-value" not in str(refused.value)
     assert isinstance(refused.value, codex_cli.CodexRefused)
+    assert popen_calls == []
+
+
+@pytest.mark.parametrize("value", ["/fake/home/.codex", None], ids=["inherited", "missing"])
+def test_a_codex_home_other_than_the_harness_home_is_refused(value, tmp_path, monkeypatch,
+                                                            popen_calls):
+    """A builder that let an inherited CODEX_HOME win (or dropped it, so Codex
+    would fall back to `~/.codex`) is stopped before any child starts; the
+    variable is named, its value never."""
+    real = host_login.allowlisted_env
+
+    def leaking(record, config, environ=None):
+        env = real(record, config, environ)
+        if value is None:
+            del env["CODEX_HOME"]
+        else:
+            env["CODEX_HOME"] = value
+        return env
+
+    monkeypatch.setattr(host_login, "allowlisted_env", leaking)
+    with pytest.raises(codex_cli.BillingEnvError) as refused:
+        codex_cli.spawn(["codex", "app-server"], home=tmp_path, cwd=tmp_path, environ=LAUNCH)
+    message = str(refused.value)
+    assert "does not set CODEX_HOME to the harness home" in message
+    assert "/fake/home/.codex" not in message
+    assert refused.value.kind == "subscription"
+    with pytest.raises(codex_cli.BillingEnvError):
+        codex_cli.run(["codex", "exec"], home=tmp_path, cwd=tmp_path, timeout=5, environ=LAUNCH)
     assert popen_calls == []
 
 
@@ -369,6 +410,75 @@ def test_quota_ok_passes_and_no_answer_is_unavailable():
     assert credits.remedy.count("empty") == 1  # emptying the balance is the one remedy
     assert codex_cli.QUOTA_STOP_PERCENT == 90
     assert codex_cli.ALLOWED_PLANS == ("plus", "pro")
+
+
+CREDITS_EMPTY = {"hasCredits": False, "unlimited": False, "balance": "0"}
+
+
+def with_credits(credits: object) -> dict:
+    """`quota-ok.json` with its credits block replaced in both places."""
+    data = answer("quota-ok")
+    for limits in (data["result"]["rateLimits"], data["result"]["rateLimitsByLimitId"]["codex"]):
+        limits["credits"] = credits
+    return data
+
+
+def with_record_credits(credits: object) -> list[dict]:
+    """`success.jsonl` with the session record's credits block replaced."""
+    events = stream("success")
+    next(e for e in reversed(events) if e["type"] == "codex.token_count")[
+        "rate_limits"]["credits"] = credits
+    return events
+
+
+@pytest.mark.parametrize(("credits", "named"), [
+    ({}, "boolean"),
+    ({"available": True, "amount": "25.00"}, "boolean"),
+    ({"hasCredits": "false", "unlimited": False, "balance": "0"}, "boolean"),
+    ({**CREDITS_EMPTY, "balance": "12,50"}, "not a number"),
+    ({**CREDITS_EMPTY, "balance": "$12.50"}, "not a number"),
+    ({**CREDITS_EMPTY, "balance": "12.50 USD"}, "not a number"),
+    ({**CREDITS_EMPTY, "balance": "nan"}, "not a number"),
+    ("none", "not an object"),
+])
+def test_an_unrecognised_credits_state_fails_closed_before_and_after_the_run(credits, named):
+    """D2(a): a renamed field or a changed balance format never reads as "no
+    credits" — before the run the read is unavailable, after it plan use
+    cannot be confirmed."""
+    before = codex_cli.quota_problem(codex_cli.parse_quota(with_credits(credits)))
+    assert before is not None
+    assert "unavailable" in before.cause
+    assert named in before.cause
+    after = codex_cli.billing_problem(with_record_credits(credits))
+    assert after is not None
+    assert "plan use cannot be confirmed" in after.cause
+    assert named in after.cause
+
+
+@pytest.mark.parametrize("credits", [
+    CREDITS_EMPTY, {"hasCredits": False, "unlimited": False},
+    {"has_credits": False, "unlimited": False, "balance": None}, {**CREDITS_EMPTY, "balance": 0},
+])
+def test_a_recognised_empty_credits_state_passes(credits):
+    assert codex_cli.quota_problem(codex_cli.parse_quota(with_credits(credits))) is None
+    assert codex_cli.billing_problem(with_record_credits(credits)) is None
+
+
+@pytest.mark.parametrize(("window", "named"), [
+    ({"windowDurationMins": 300, "resetsAt": 1791300000}, "5-hour window"),
+    ({"usedPercent": "most", "windowDurationMins": 300}, "5-hour window"),
+    ("full", "unnamed window"),
+])
+def test_a_window_without_a_used_percentage_is_unavailable(window, named):
+    data = answer("quota-ok")
+    data["result"]["rateLimitsByLimitId"]["codex"]["primary"] = window
+    problem = codex_cli.quota_problem(codex_cli.parse_quota(data))
+    assert problem is not None
+    assert "unavailable" in problem.cause
+    assert f"the {named} carries no used percentage" in problem.cause
+    data = answer("quota-ok")
+    data["result"]["rateLimitsByLimitId"]["codex"]["secondary"] = window
+    assert "unavailable" in codex_cli.quota_problem(codex_cli.parse_quota(data)).cause
 
 
 def test_the_quota_snapshot_holds_no_secret():
@@ -473,6 +583,52 @@ def test_a_login_failure_names_the_codex_login(name, passed, monkeypatch):
     assert problem.message.rstrip(".").endswith(CODEX_NOTE if passed else X8_NOTE)
 
 
+REFRESH = ("Your access token could not be refreshed because your refresh token {}. Please log "
+           "out and sign in again.")
+
+
+@pytest.mark.parametrize("passed", [False, True], ids=["X8-open", "X8-passed"])
+@pytest.mark.parametrize("wording", ["has expired", "was revoked", "was already used"])
+@pytest.mark.parametrize("kind", ["turn.failed", "error"])
+def test_every_refresh_failure_wording_names_the_codex_login(kind, wording, passed,
+                                                            monkeypatch):
+    """testing-harness spec: Codex plan billing guard, Refresh failed — the
+    already used, expired and revoked wordings (`manager.rs` @0.160)."""
+    monkeypatch.setattr(host_login, "X8_PASSED", passed)
+    message = REFRESH.format(wording)
+    event = ({"type": kind, "error": {"message": message}} if kind == "turn.failed"
+             else {"type": kind, "message": message})
+    problem = codex_cli.failure_reason([{"type": "turn.started"}, event], 1, "")
+    assert problem is not None
+    assert (problem.untested, problem.kind, problem.billing) == (True, "subscription", None)
+    assert wording in problem.message
+    assert "uv run poe host-login codex" in problem.message
+    assert problem.message.rstrip(".").endswith(CODEX_NOTE if passed else X8_NOTE)
+
+
+@pytest.mark.parametrize("event", [
+    {"type": "turn.failed", "error": {"message": "You've hit your usage limit (synthetic)."}},
+    {"type": "error", "message": "synthetic: usage limit reached for the 5-hour window"},
+    {"type": "item.completed", "item": {"id": "e", "type": "error",
+                                        "message": "Synthetic: you hit your limit."}},
+])
+def test_a_usage_limit_error_is_untested_for_billing(event):
+    """testing-harness spec: Codex plan billing guard, Limit reached — a
+    usage-limit error makes the run untested, and `billing` carries it for the
+    summary-log gate."""
+    events = [*stream("success")[:2], event]
+    problem = codex_cli.failure_reason(events, 1, "")
+    assert problem is not None
+    assert (problem.untested, problem.kind) == (True, "subscription")
+    assert problem.billing is not None
+    assert problem.billing.startswith("usage limit: ")
+    assert "Rerun after the limit resets" in problem.message
+    assert "host-login" not in problem.message
+    through = codex_cli.run_problem([*events, {"type": "codex.harness", "exit_code": 1}],
+                                    skill_root=SKILL_ROOT, effort=None)
+    assert through == problem
+
+
 def test_failure_reason_carries_codex_message_or_the_missing_turn():
     failed = codex_cli.failure_reason(stream("turn-failed"), 1, "")
     assert failed is not None
@@ -554,6 +710,22 @@ def test_features_problem_refuses_a_feature_outside_the_allowlist():
     assert codex_cli.features_problem(on, helpers) is None
     assert codex_cli.features_problem(on, codex_cli.ALLOWED_FEATURES) is not None
     assert codex_cli.features_problem("", codex_cli.ALLOWED_FEATURES) is not None
+
+
+@pytest.mark.parametrize("line", [
+    "realtime_conversation          experimental    true (default)",  # annotated
+    "realtime_conversation          true",  # no stage column
+    "NAME                           STAGE           STATE",  # a header the parser lacks
+])
+def test_a_feature_line_the_parser_does_not_read_refuses(line):
+    """Fail-closed on format drift: a listing where only enabled lines carry an
+    annotation must not hide the enabled feature."""
+    problem = codex_cli.features_problem(f"{listing('ok')}{line}\n", codex_cli.ALLOWED_FEATURES)
+    assert problem is not None
+    assert line.strip() in problem.cause
+    assert problem.remedy == codex_cli.FEATURES_PARSER
+    assert problem.kind == "precondition"
+    assert codex_cli.features_problem(f"\n{listing('ok')}\n\n", codex_cli.ALLOWED_FEATURES) is None
 
 
 def test_codex_tool_calls_map_each_item_to_its_canonical_name():
@@ -671,6 +843,45 @@ def test_a_failed_turn_is_a_runner_failure():
     assert not problem.untested
 
 
+FAILED_TURN = {"type": "turn.failed", "error": {"message": "synthetic transport error"}}
+
+
+@pytest.mark.parametrize(("name", "kind", "fragments"), [
+    ("mcp-call", "isolation", ["mcp__docs__publish", "isolation did not hold"]),
+    ("foreign-skill", "isolation", ["grill-me"]),
+    ("credits-drawn", "subscription", ["not a plan result", "credits"]),
+    ("provider-leak", "subscription", ["not a plan result", "openrouter"]),
+])
+def test_a_failed_run_with_a_billing_or_isolation_signal_is_untested(name, kind, fragments):
+    """testing-harness spec: MCP tool call in a Codex run; Foreign skill
+    offered — the failure is named, but the run is untested, not a runner
+    failure."""
+    problem = codex_cli.run_problem([*stream(name), FAILED_TURN], skill_root=SKILL_ROOT,
+                                    effort=None)
+    assert problem is not None
+    assert (problem.untested, problem.kind) == (True, kind)
+    assert problem.message.startswith("codex failed: synthetic transport error (")
+    for fragment in fragments:
+        assert fragment in problem.message
+    assert (problem.billing is not None) is (kind == "subscription")
+
+
+@pytest.mark.parametrize(("problem", "kind"), [
+    (host_login.check_codex_version((0, 133, 0)), "precondition"),
+    (host_login.check_codex_version(None), "precondition"),
+    (host_login.check_codex_login("api-key", WS / "codex-home"), "subscription"),
+    (host_login.check_presence(WS / "missing-home", CODEX), "subscription"),  # never created
+], ids=["old-cli", "no-cli", "api-key-login", "no-home"])
+def test_a_preflight_refusal_carries_the_kind_its_check_set(problem, kind, monkeypatch):
+    """design Decision 12: the kind is data on the `LoginProblem`, set where
+    the check builds it, never read back out of the message."""
+    monkeypatch.setattr(codex_cli, "preflight", lambda _environ=None: problem)
+    with pytest.raises(codex_cli.CodexRefused) as refused:
+        codex_cli.isolated_home(ExitStack(), Namespace())
+    assert refused.value.kind == kind
+    assert refused.value.message == refusal(problem)
+
+
 def test_capture_rollout_reduces_and_deletes_the_session_record(tmp_path):
     home = tmp_path / "codex-home"
     day = home / "sessions" / "2026" / "10" / "06"
@@ -719,7 +930,7 @@ def test_without_a_session_record_plan_use_cannot_be_confirmed(tmp_path):
 
 
 FAKE_CODEX = """
-import json, os, pathlib, sys
+import json, os, pathlib, sys, time
 here = pathlib.Path(__file__).parent
 verb = sys.argv[1]
 if verb == "app-server":
@@ -735,10 +946,20 @@ elif verb == "features":
     print((here / "features.txt").read_text(encoding="utf-8"), end="")
 elif verb == "exec":
     prompt = sys.stdin.read()
+    # whether the harness handed this child the run lock's open file
+    # description: one of its descriptors is the lock file itself
+    lock = os.stat(pathlib.Path(os.environ["CODEX_HOME"]) / ".harness-run.lock")
+    held = []
+    for fd in range(3, 256):
+        try:
+            found = os.fstat(fd)
+        except OSError:
+            continue
+        held.append((found.st_dev, found.st_ino) == (lock.st_dev, lock.st_ino))
     (here / "exec.json").write_text(json.dumps({
         "argv": sys.argv[1:], "prompt": prompt, "env": sorted(os.environ),
-        "home": os.environ.get("HOME"), "codex_home": os.environ.get("CODEX_HOME")}),
-        encoding="utf-8")
+        "home": os.environ.get("HOME"), "codex_home": os.environ.get("CODEX_HOME"),
+        "lock_inherited": any(held)}), encoding="utf-8")
     day = pathlib.Path(os.environ["CODEX_HOME"]) / "sessions" / "2026" / "10" / "06"
     day.mkdir(parents=True, exist_ok=True)
     thread = "0199a0f0-0000-7000-8000-000000000001"
@@ -746,27 +967,42 @@ elif verb == "exec":
         (here / "rollout.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
     for line in (here / "events.jsonl").read_text(encoding="utf-8").splitlines():
         print(line, flush=True)
+    if (here / "hang").exists():  # a run that outlives its time limit
+        time.sleep(60)
 """
 
 
-@POSIX
-def test_run_codex_holds_the_lock_reads_the_quota_runs_and_captures(tmp_path):
-    """The whole run against a fake `codex`: quota read, feature listing, the
-    exec with its scratch HOME and the stripped environment, the capture."""
+def fake_run(tmp_path: Path, *, cloud_tool: bool = True) -> tuple[dict, Path, Path, Path]:
+    """A fake `codex` whose quota read answers Plus, whose feature listing
+    passes and whose exec writes `rollout-success.jsonl` (without its
+    cloud-skill call unless `cloud_tool`) and prints `success.jsonl`'s exec
+    events. Returns (environ, bindir, home, ws)."""
     environ = {**fake_codex(tmp_path, FAKE_CODEX), "CODEX_API_KEY": "placeholder-key",
                "HOME": str(tmp_path / "operator-home")}
     bindir = tmp_path / "bin"
     (bindir / "answer.json").write_text(json.dumps(answer("quota-ok")), encoding="utf-8")
     (bindir / "features.txt").write_text(listing("ok"), encoding="utf-8")
     home, ws = tmp_path / "codex-home", tmp_path / "ws"
+    rollout = [line for line in (STREAMS / "rollout-success.jsonl").read_text(
+        encoding="utf-8").splitlines() if cloud_tool or '"namespace":"skills"' not in line]
     (bindir / "rollout.jsonl").write_text(
-        (STREAMS / "rollout-success.jsonl").read_text(encoding="utf-8").replace(
-            "/tmp/devrun-check_report-fixture", str(ws)), encoding="utf-8")
+        "\n".join(rollout).replace("/tmp/devrun-check_report-fixture", str(ws)) + "\n",
+        encoding="utf-8")
     exec_events = [e for e in stream("success") if not e["type"].startswith("codex.")]
     (bindir / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in exec_events),
                                          encoding="utf-8")
     host_login.seed(CODEX, home)
     ws.mkdir()
+    return environ, bindir, home, ws
+
+
+@POSIX
+def test_run_codex_holds_the_lock_reads_the_quota_runs_and_captures(tmp_path):
+    """The whole run against a fake `codex`: quota read, feature listing, the
+    exec with its scratch HOME, the stripped environment and the lock's
+    descriptor, the capture."""
+    environ, bindir, home, ws = fake_run(tmp_path)
+    exec_events = [e for e in stream("success") if not e["type"].startswith("codex.")]
     events = codex_cli.run_codex(ws, "Please check broken-format.md.", model="gpt-fixture-a",
                                  effort=None, timeout=60, home=home,
                                  scenario=claude_runner.SCENARIOS["check_report"],
@@ -777,6 +1013,7 @@ def test_run_codex_holds_the_lock_reads_the_quota_runs_and_captures(tmp_path):
     assert seen["home"] not in (str(tmp_path / "operator-home"), None)
     assert "CODEX_API_KEY" not in seen["env"]
     assert seen["argv"][-1] == "-"
+    assert seen["lock_inherited"] is True  # design Decision 7: the child holds the lock
     kinds = [e["type"] for e in events]
     assert kinds[:len(exec_events)] == [e["type"] for e in exec_events]
     assert "codex.session" in kinds
@@ -792,6 +1029,34 @@ def test_run_codex_holds_the_lock_reads_the_quota_runs_and_captures(tmp_path):
     assert "skills.load" in problem.message
     assert str(ws) not in problem.message  # the workspace's own skill passes
     assert not lock_held(home)
+
+
+@POSIX
+@pytest.mark.parametrize("cloud_tool", [False, True], ids=["clean-record", "cloud-skill-call"])
+def test_a_run_at_its_limit_is_interrupted_captured_and_named(cloud_tool, tmp_path,
+                                                              monkeypatch):
+    """testing-harness spec: Codex interrupted before kill — the run ends as a
+    runner failure naming the limit, its session record captured and deleted
+    first; a record that shows a broken isolation makes it untested instead."""
+    monkeypatch.setattr(host_login, "TERM_GRACE_S", 5)
+    environ, bindir, home, ws = fake_run(tmp_path, cloud_tool=cloud_tool)
+    (bindir / "hang").write_text("", encoding="utf-8")
+    with pytest.raises(codex_cli.CodexRunFailed) as failed:
+        codex_cli.run_codex(ws, "request", model="gpt-fixture-a", effort=None, timeout=2,
+                            home=home, scenario=claude_runner.SCENARIOS["check_report"],
+                            environ=environ)
+    assert failed.value.message == "codex did not finish within 2s"
+    kinds = [e["type"] for e in failed.value.events]
+    assert kinds[0] == "thread.started"  # what the child wrote before the interrupt
+    assert "codex.session" in kinds
+    assert kinds[-1] == "codex.harness"
+    assert failed.value.events[-1]["exit_code"] is None
+    assert not (home / "sessions").exists()
+    assert not lock_held(home)
+    late = codex_cli.timeout_problem(failed.value, skill_root=ws / ".agents" / "skills")
+    assert late.message.startswith("codex did not finish within 2s")
+    assert (late.untested, late.kind) == ((True, "isolation") if cloud_tool else (False, None))
+    assert ("skills.load" in late.message) is cloud_tool
 
 
 @POSIX

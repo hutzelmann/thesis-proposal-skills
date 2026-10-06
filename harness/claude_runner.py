@@ -1272,20 +1272,24 @@ def run_codex(ws: Path, request: str, args: argparse.Namespace, home: Path) -> l
     runner's outcomes: a held run lock, a billing guard refusal, a feature
     outside the allowlist, an effort not served, a login Codex rejected and a
     broken isolation are untested (exit 3); a failed turn, a missing turn and
-    the time limit are runner failures."""
+    the time limit are runner failures — unless that run's session record also
+    shows an explicit billing signal or a broken isolation, which makes it
+    untested too."""
+    skill_root = ws.joinpath(*HOSTS["codex"].skill_dir)
     try:
         events = codex_cli.run_codex(ws, request, model=args.model, effort=args.effort,
                                      timeout=args.timeout, home=home,
                                      scenario=SCENARIOS[args.scenario])
-    except host_login.RunLockBusy as busy:
+    except host_login.RunLockRefused as busy:
         raise RunnerFailure(refusal(busy.problem), untested=True) from None
     except codex_cli.CodexRefused as refused:
         raise RunnerFailure(refused.message, untested=True, events=refused.events,
                             billing=refused.billing) from None
     except codex_cli.CodexRunFailed as failed:
-        raise RunnerFailure(failed.message, events=failed.events) from None
-    problem = codex_cli.run_problem(events, skill_root=ws.joinpath(*HOSTS["codex"].skill_dir),
-                                    effort=args.effort)
+        late = codex_cli.timeout_problem(failed, skill_root=skill_root)
+        raise RunnerFailure(late.message, untested=late.untested, events=failed.events,
+                            billing=late.billing) from None
+    problem = codex_cli.run_problem(events, skill_root=skill_root, effort=args.effort)
     if problem:
         raise RunnerFailure(problem.message, untested=problem.untested, events=events,
                             billing=problem.billing)
@@ -1303,7 +1307,7 @@ def codex_label(home: Path | None) -> dict:
 # follow_stream keeps working (design Decision 2).
 HOSTS: dict[str, Host] = {
     "claude": Host(
-        name="claude", binary="claude", skill_dir=(".claude", "skills"),
+        name="claude", skill_dir=(".claude", "skills"),
         run=lambda ws, request, args, config: run_claude(
             ws, request, args.model, args.timeout, budget=args.max_budget_usd, config=config),
         read=lambda events, args: claude_read(events, args),
@@ -1312,7 +1316,7 @@ HOSTS: dict[str, Host] = {
         login=host_login.CLAUDE,
         label=lambda config, isolated: login_label(config, isolated=isolated)),
     "codex": Host(
-        name="codex", binary="codex", skill_dir=(".agents", "skills"),
+        name="codex", skill_dir=(".agents", "skills"),
         run=lambda ws, request, args, home: run_codex(ws, request, args, home),
         read=lambda events, args: codex_cli.codex_read(
             events, args, codex_rates(getattr(args, "model", None))),
@@ -1324,8 +1328,6 @@ HOSTS: dict[str, Host] = {
 # D3(a): the Claude dev judge grades every host's runs, in its own isolation
 JUDGE = JudgeBackend(
     host="claude",
-    call=lambda *a, **k: claude_cli.judge_all(*a, **k),
-    preflight=lambda *a, **k: claude_cli.preflight(*a, **k),
     isolation=lambda stack: enter_isolation(stack, "devjudge-config-"))
 # where the support report reads its logs (report.py): no dev run writes there
 SUPPORT_LOGS = REPO / "logs" / "evals"
@@ -1351,8 +1353,6 @@ def usage_problem(args: argparse.Namespace) -> str | None:
          f"--summary-log {args.summary_log} lies inside logs/evals, where the support report "
          "reads its logs; a dev-runner summary is never written there"),
         (not codex and args.effort is not None, "--effort applies to --host codex only"),
-        (codex and host_login.fcntl is None,
-         "--host codex needs POSIX file locks (fcntl), which this platform lacks"),
         (codex and bool(scenario.get("install")),
          f"{args.scenario} is an install-prompt scenario, which runs on the Claude host only"),
         (codex and not args.rejudge and not model,
@@ -1362,6 +1362,10 @@ def usage_problem(args: argparse.Namespace) -> str | None:
         (codex and args.max_budget_usd is not None,
          "--max-budget-usd is refused on --host codex: Codex offers no hard budget cap, and "
          "the runner never ignores one"),
+        # last, so every other usage error reads the same on every platform; a
+        # re-grade takes no lock and starts no Codex process
+        (codex and not args.rejudge and host_login.fcntl is None,
+         "--host codex needs POSIX file locks (fcntl), which this platform lacks"),
     )
     return next((message for refused, message in rules if refused), None)
 
@@ -1484,8 +1488,8 @@ def rejudge_lines(args: argparse.Namespace, judge: Judge,
         served = host.read(load_events(ws), args).model
         l2, status = l2_report(judge, [next(grades) for _ in criteria], not_judged, served)
         lines.append({"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
-                      "host": host.name, "model": served, **l2, "outcome": OUTCOMES[status],
-                      "exit_status": status})
+                      "host": host.name, "label": host.run_label, "model": served, **l2,
+                      "outcome": OUTCOMES[status], "exit_status": status})
     return lines
 
 

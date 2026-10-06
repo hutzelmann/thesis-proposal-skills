@@ -4,13 +4,15 @@ testing-harness spec: Dev-runner host adapters, Subscription text roles).
 The Codex host is driven end to end with `codex_cli.run_codex` replaced by a
 fake that returns a synthetic saved event list (`data/codex_streams/`), and its
 preflight stubbed: no test starts `codex`, and no test needs a ChatGPT login.
+A `--host codex` run is a usage error without POSIX file locks (the Windows CI
+job), so the end-to-end runs carry `LOCKS`; the usage errors and the re-grade
+run everywhere.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 import claude_cli
@@ -38,6 +40,8 @@ STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
 CLAUDE_STREAMS = Path(__file__).resolve().parent / "data" / "routing_streams"
 CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
 LABEL = "dev-runner (codex), not comparable to matrix"
+LOCKS = pytest.mark.skipif(host_login.fcntl is None,
+                           reason="a --host codex run needs POSIX file locks")
 
 
 def stream(name: str, ws: Path) -> list[dict]:
@@ -126,23 +130,30 @@ def test_a_run_without_a_host_is_labelled_claude():
 CODEX_RUN = ["check_report", "--host", "codex", "--model", "gpt-fixture-a"]
 
 
+@pytest.mark.parametrize("locks", [True, False], ids=["file-locks", "no-file-locks"])
 @pytest.mark.parametrize(("argv", "named"), [
-    (["check_report", "--host", "codex"], "--model"),
+    (["check_report", "--host", "codex"], "requires --model"),
     (["check_report", "--host", "codex", "--model", "openai/gpt-fixture-a"], "provider"),
     ([*CODEX_RUN, "--max-budget-usd", "1"], "budget cap"),
-    (["install_prompt", "--host", "codex", "--model", "gpt-fixture-a"], "install"),
-    (["check_report", "--effort", "high"], "--effort"),
+    (["install_prompt", "--host", "codex", "--model", "gpt-fixture-a"], "install-prompt"),
+    (["check_report", "--effort", "high"], "--effort applies"),
     ([*CODEX_RUN, "--effort", "ultra"], "ultra"),
 ])
-def test_codex_usage_errors_stage_nothing_and_start_nothing(argv, named, monkeypatch, capsys):
+def test_codex_usage_errors_stage_nothing_and_start_nothing(argv, named, locks, monkeypatch,
+                                                           capsys):
     """testing-harness spec: Codex run without a model; Install scenario on Codex;
-    Budget cap refused on Codex."""
+    Budget cap refused on Codex. Each reads the same without POSIX file locks:
+    that rule comes last."""
     refuse_staging(monkeypatch)
     no_codex(monkeypatch)
+    if not locks:
+        monkeypatch.setattr(host_login, "fcntl", None)
     with pytest.raises(SystemExit) as usage:
         main(argv)
     assert usage.value.code == EXIT_USAGE
-    assert named in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert named in err
+    assert "POSIX file locks" not in err
 
 
 @pytest.mark.parametrize("host", sorted(HOSTS))
@@ -181,6 +192,7 @@ def test_codex_stages_the_skill_where_codex_discovers_it(tmp_path):
 # ---------- end to end on Codex ---------------------------------------------------------
 
 
+@LOCKS
 def test_a_codex_run_is_summarized_and_labelled(codex_home, tmp_path, monkeypatch):
     """testing-harness spec: Codex dev run labelled by host; Codex run reports no cost."""
     runs = fake_codex_run(monkeypatch)
@@ -204,6 +216,7 @@ def test_a_codex_run_is_summarized_and_labelled(codex_home, tmp_path, monkeypatc
     assert "outcome" in line
 
 
+@LOCKS
 @pytest.mark.usefixtures("codex_home")
 def test_the_isolated_flag_is_implied_on_codex(tmp_path, monkeypatch):
     fake_codex_run(monkeypatch)
@@ -221,6 +234,7 @@ def test_the_isolated_flag_is_implied_on_codex(tmp_path, monkeypatch):
         codex_cli.ALLOWED_FEATURES)), "precondition"), None, None, "realtime_conversation"),
     (None, "effort-dropped", "xhigh", "xhigh"),
 ])
+@LOCKS
 @pytest.mark.usefixtures("codex_home")
 def test_a_codex_precondition_is_untested_not_a_runner_failure(raises, stream_name, effort,
                                                               named, tmp_path, monkeypatch):
@@ -236,6 +250,7 @@ def test_a_codex_precondition_is_untested_not_a_runner_failure(raises, stream_na
         assert "medium" in line["why"]
 
 
+@LOCKS
 @pytest.mark.usefixtures("codex_home")
 def test_a_codex_billing_refusal_is_untested_and_records_billing(tmp_path, monkeypatch):
     fake_codex_run(monkeypatch, name="credits-drawn")
@@ -246,6 +261,38 @@ def test_a_codex_billing_refusal_is_untested_and_records_billing(tmp_path, monke
     assert "Empty the Codex credit balance" in line["why"]
 
 
+LIMIT = "codex did not finish within 600s"
+
+
+@LOCKS
+@pytest.mark.parametrize(("name", "status", "billing", "named"), [
+    ("success", EXIT_RUNNER, False, LIMIT),
+    ("credits-drawn", EXIT_UNTESTED, True, "Empty the Codex credit balance"),
+    ("provider-leak", EXIT_UNTESTED, True, "openrouter"),
+    ("plan-free", EXIT_UNTESTED, True, "free"),
+    ("limit-reached", EXIT_UNTESTED, True, "reached"),
+    ("mcp-call", EXIT_UNTESTED, False, "mcp__docs__publish"),
+])
+@pytest.mark.usefixtures("codex_home")
+def test_a_codex_run_at_its_limit_is_checked_like_any_other(name, status, billing, named,
+                                                            tmp_path, monkeypatch):
+    """testing-harness spec: Codex interrupted before kill (a runner failure
+    naming the limit), and the after-run billing and isolation checks, which
+    hold for a timed-out run too: its captured session record decides."""
+    def timed_out(ws, _request, **_kwargs):
+        raise codex_cli.CodexRunFailed(LIMIT, stream(name, ws))
+
+    monkeypatch.setattr(codex_cli, "run_codex", timed_out)
+    log = tmp_path / "log.jsonl"
+    assert main([*CODEX_RUN, "--summary-log", str(log)]) == status
+    [line] = logged(log)
+    assert line["exit_status"] == status
+    assert line["why"].startswith(LIMIT)
+    assert named in line["why"]
+    assert bool(line.get("billing")) is billing
+
+
+@LOCKS
 def test_a_codex_preflight_refusal_is_untested_and_starts_no_run(tmp_path, monkeypatch):
     monkeypatch.setenv(STATE_VAR, str(tmp_path / "state"))
     monkeypatch.setattr(host_login, "system_tempdir", lambda: str(tmp_path / "system-tmp"))
@@ -261,6 +308,7 @@ def test_a_codex_preflight_refusal_is_untested_and_starts_no_run(tmp_path, monke
     assert (line["host"], line["config"], line["login"]) == ("codex", "isolated", "harness")
 
 
+@LOCKS
 def test_the_default_codex_preflight_refuses_a_home_in_the_temporary_directory(tmp_path,
                                                                              monkeypatch):
     """testing-harness spec: Codex home in the temporary directory — the real
@@ -290,50 +338,78 @@ def claude_home(tmp_path, monkeypatch):
     return home
 
 
+JUDGE_STREAM = (Path(__file__).resolve().parent / "data" / "claude_cli_streams"
+                / "success.jsonl").read_text(encoding="utf-8")
+JUDGE_STATUS = json.dumps({"loggedIn": True, "authMethod": "claude.ai",
+                           "apiProvider": "firstParty"})
+
+
+@LOCKS
 def test_a_codex_run_is_graded_in_a_fresh_claude_isolation(codex_home, claude_home, tmp_path,
                                                            monkeypatch):
-    """testing-harness spec: Codex run graded by the Claude judge."""
+    """testing-harness spec: Codex run graded by the Claude judge. The real
+    judge path builds the judge children's environments (`allowlisted_env`,
+    recorded); only the child start (`claude_cli.run_child`) is faked."""
     monkeypatch.setenv("CODEX_HOME", str(codex_home))  # the operator's, inherited
     order: list[str] = []
-    seen: dict = {}
+    built: list[tuple] = []
+    children: list[dict] = []
 
     def produce(ws):
         order.append("codex run")
         write_draft(ws)
 
     fake_codex_run(monkeypatch, produce=produce)
+    real = host_login.allowlisted_env
 
-    async def judge_all(criteria, *, model, effort, config, source, **_options):
+    def recording(record, config, environ=None):
+        built.append((record, config, environ))
+        return real(record, config, environ)
+
+    async def run_child(command, _stdin, env, _cwd, _timeout):
         order.append("judge")
-        link = config / CREDENTIALS
-        seen.update(config=config, link=link.resolve(), source=source,
-                    env=host_login.allowlisted_env(CLAUDE, config, os.environ))
-        call = JudgeCall("GRADE: C", model, "2.1.284", effort, 10, 0.01,
-                         RateLimit("allowed", "five_hour", 0.1))
-        return JudgeRun(tuple(Grade(c.name, True, "ok", call) for c in criteria), 0.02)
+        link = Path(env["CLAUDE_CONFIG_DIR"]) / CREDENTIALS  # gone once the judge is done
+        children.append({"command": command, "env": dict(env), "link": link.resolve()})
+        if command[1:3] == ["auth", "status"]:
+            return 0, JUDGE_STATUS, ""
+        model = command[command.index("--model") + 1]
+        return 0, JUDGE_STREAM.replace("claude-fixture-1-0", model), ""
 
-    monkeypatch.setattr(claude_cli, "judge_all", judge_all)
+    monkeypatch.setattr(host_login, "allowlisted_env", recording)
+    monkeypatch.setattr(claude_cli, "run_child", run_child)
     log = tmp_path / "log.jsonl"
     argv = ["write_from_seed", "--host", "codex", "--model", "gpt-fixture-a", "--judge",
             "--summary-log", str(log)]
     assert main(argv) == 0
-    assert order == ["codex run", "judge"]
-    config = seen["config"]
-    assert seen["link"] == (claude_home / CREDENTIALS).resolve()
-    assert seen["source"] == host_login.LoginSource.HARNESS
+    assert order[0] == "codex run"
+    assert set(order[1:]) == {"judge"}
+    assert children[0]["command"][1:3] == ["auth", "status"]  # the judge's preflight first
+    assert len(children) > 1
+    [config] = {config for _, config, _ in built}
+    assert all(record is CLAUDE for record, _, _ in built)
+    assert len(built) == len(children)
     assert str(codex_home) not in str(config)
-    assert "CODEX_HOME" not in seen["env"]
-    assert str(codex_home) not in json.dumps(seen["env"])
-    assert seen["env"]["CLAUDE_CONFIG_DIR"] == str(config)
+    for child in children:
+        assert child["link"] == (claude_home / CREDENTIALS).resolve()
+        assert "CODEX_HOME" not in child["env"]
+        assert str(codex_home) not in json.dumps(child["env"])
+        assert child["env"]["CLAUDE_CONFIG_DIR"] == str(config)
     [line] = logged(log)
     assert line["l2_label"] == claude_runner.JUDGE_LABEL
     assert line["self_graded"] is False
     assert line["label"] == LABEL
+    assert {c["grade"] for c in line["l2"]["criteria"].values()} == {"PASS"}
 
 
-def test_rejudging_a_codex_workspace_reads_it_with_the_codex_reader(tmp_path, monkeypatch):
-    """testing-harness spec: Codex workspace re-graded."""
+@pytest.mark.parametrize("locks", [True, False], ids=["file-locks", "no-file-locks"])
+def test_rejudging_a_codex_workspace_reads_it_with_the_codex_reader(locks, tmp_path,
+                                                                    monkeypatch):
+    """testing-harness spec: Codex workspace re-graded; Inverted-hybrid runners
+    (the re-grade carries the host's not-comparable label). A re-grade takes no
+    lock, so it runs without POSIX file locks too."""
     no_codex(monkeypatch)
+    if not locks:
+        monkeypatch.setattr(host_login, "fcntl", None)
     ws = tmp_path / "kept"
     ws.mkdir()
     write_draft(ws)
@@ -357,4 +433,6 @@ def test_rejudging_a_codex_workspace_reads_it_with_the_codex_reader(tmp_path, mo
                  "--summary-log", str(log)]) == 0
     [line] = logged(log)
     assert line["model"] == "gpt-fixture-b"  # the Codex reader: the reroute target
+    assert (line["host"], line["label"]) == ("codex", LABEL)
+    assert line["l2_label"] == claude_runner.JUDGE_LABEL
     assert configs == [isolated]
