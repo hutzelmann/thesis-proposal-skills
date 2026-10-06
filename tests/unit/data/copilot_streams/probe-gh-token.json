@@ -61,7 +61,7 @@
     },
     {
       "name": "tmp_write",
-      "output": "1",
+      "output": "denied",
       "sandboxed": true
     }
   ]

@@ -59,6 +59,10 @@ def _harness_login_offline(monkeypatch, _absent_state_root):
         monkeypatch.delenv(name, raising=False)
 
 
+# stands in for the system's temporary directories in L0 (see `_copilot_offline`)
+L0_TEMP_STANDIN = "/nonexistent-l0-system-tmp"
+
+
 @pytest.fixture(autouse=True)
 def _copilot_offline(monkeypatch):
     """No test can start the real `copilot` (add-copilot-dev-runner design
@@ -66,8 +70,17 @@ def _copilot_offline(monkeypatch):
     script, before any `Popen`. The full suite also reruns after a real token
     exists in the default state root, so a test that missed a seam would
     otherwise spend credits without a go; `_harness_login_offline` above
-    keeps every test's state root in a temporary directory as well."""
+    keeps every test's state root in a temporary directory as well.
+
+    The Copilot work directory (Decision 7, D-b) never lies in a temporary
+    directory, but every test's `tmp_path` does: so `host_login.temp_dirs`
+    names a stand-in that holds no test directory, and the per-user runtime
+    directory is never found, so no test writes under the real
+    `/run/user/<uid>`; a Copilot workspace then lies under the test's state
+    root. Tests of those seams set them themselves."""
     monkeypatch.setattr(copilot_cli, "binary", _no_real_copilot)
+    monkeypatch.setattr(host_login, "temp_dirs", lambda: (L0_TEMP_STANDIN,))
+    monkeypatch.setattr(copilot_cli, "runtime_dir", lambda _uid=None: None)
 
 
 @pytest.fixture

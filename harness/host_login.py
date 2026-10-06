@@ -555,11 +555,14 @@ def account_home(uid: int | None = None) -> Path:
 def deny_list(home_dir: Path, account: Path, uid: int | None = None) -> list[str]:
     """The sandbox deny list, built by construction (Decision 3): the whole
     account home, the per-user runtime directory (the session bus and the
-    agent sockets), the state root where it lies outside the account home,
-    and the token file — absolute paths, so no `~` resolves under scratch."""
+    agent sockets), the temporary directories (`temp_dirs`: the shared `/tmp`,
+    which holds every other process's temporary files and the operator's
+    Claude session scratchpads, and this process's own), the state root
+    where it lies outside the account home, and the token file — absolute
+    paths, so no `~` resolves under scratch."""
     uid = (os.getuid() if hasattr(os, "getuid") else 0) if uid is None else uid
     state = home_dir.parent.parent
-    deny = [str(account), f"/run/user/{uid}"]
+    deny = [str(account), f"/run/user/{uid}", *temp_dirs()]
     if not _within(state.resolve(), account.resolve()):
         deny.append(str(state))
     return [*deny, str(token_path(home_dir))]
@@ -893,6 +896,23 @@ def system_tempdir() -> str:
     """The system temporary directory, which a Codex home may not lie in; the
     seam L0 tests replace, since their own `tmp_path` lies inside it."""
     return tempfile.gettempdir()
+
+
+# the system's shared temporary directory, whatever TMPDIR says
+SHARED_TMP = "/tmp"
+
+
+def temp_dirs() -> tuple[str, ...]:
+    """The temporary directories the Copilot sandbox denies and no Copilot
+    workspace or scratch directory may lie in (add-copilot-dev-runner, the
+    user's decision D-b): the shared `/tmp`, and this process's own
+    temporary directory (`tempfile.gettempdir()`, which `TMPDIR` moves) where
+    it lies outside it — both by their real paths, `/tmp` first. Read when the
+    home is seeded and whenever its settings are compared. The seam L0 tests
+    replace, since their own `tmp_path` lies inside it."""
+    shared = Path(os.path.realpath(SHARED_TMP))
+    own = Path(os.path.realpath(tempfile.gettempdir()))
+    return (str(shared),) if _within(own, shared) else (str(shared), str(own))
 
 
 def check_location(root: Path, environ: Mapping[str, str], repo: Path = REPO,
@@ -1306,14 +1326,19 @@ def check_copilot_home(home_dir: Path, account: Path | None = None,
                        offenders: list[str] | None = None) -> LoginProblem | None:
     """The Copilot home is clean (`copilot_offenders`, or the list a caller
     already read); refused naming the offending key paths or entries, with the
-    reset remedy."""
+    reset remedy. Settings that differ — a home seeded before the pinned
+    settings changed, such as the deny list's temporary directories (D-b) —
+    cannot be removed, only seeded again, so their remedy is the reset alone."""
     offenders = copilot_offenders(home_dir, account) if offenders is None else offenders
     if not offenders:
         return None
+    reseed = any(o.startswith(f"{COPILOT_SETTINGS} ") for o in offenders)
+    remedy = (f"run `{COPILOT.reset_command}`, which seeds the pinned settings again (it asks "
+              "for the token again and records a new approval stop)" if reseed else
+              f"remove {'it' if len(offenders) == 1 else 'them'}, or run "
+              f"`{COPILOT.reset_command}`")
     return LoginProblem(f"the harness login home {home_dir} is not clean: it holds "
-                        f"{', '.join(offenders)}",
-                        f"remove {'it' if len(offenders) == 1 else 'them'}, or run "
-                        f"`{COPILOT.reset_command}`", COPILOT.name)
+                        f"{', '.join(offenders)}", remedy, COPILOT.name)
 
 
 def token_problem(value: str) -> LoginProblem | None:

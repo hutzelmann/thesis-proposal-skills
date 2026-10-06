@@ -64,6 +64,8 @@ from host_login import (
 
 HOUR_MS = 3_600_000
 PRIVATE = {"email": "erika.musterfrau@example.org", "orgName": "Example Org", "orgId": "org-0000"}
+# taken at import, before the conftest replaces the seam with a stand-in
+REAL_TEMP_DIRS = host_login.temp_dirs
 
 
 def _symlinks_available(tmp: Path) -> bool:
@@ -1222,7 +1224,9 @@ def copilot_home(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(host_login.pwd is None, reason="the password database is POSIX")
 def test_the_deny_list_is_built_by_construction_from_the_password_entry(copilot_home, tmp_path):
-    """testing-harness spec: Copilot settings seeded before the token is read."""
+    """testing-harness spec: Copilot settings seeded before the token is read.
+    The temporary directories (D-b) follow the runtime directory; L0 names a
+    stand-in for them (conftest), since every `tmp_path` lies in the real one."""
     settings = json.loads((copilot_home / "settings.json").read_text(encoding="utf-8"))
     sandbox = settings["sandbox"]
     assert (sandbox["enabled"], sandbox["allowBypass"], sandbox["allowDevToolAccess"]) == (
@@ -1230,8 +1234,8 @@ def test_the_deny_list_is_built_by_construction_from_the_password_entry(copilot_
     assert sandbox["auth"] == {"git": False, "gh": False}
     deny = sandbox["userPolicy"]["filesystem"]["deniedPaths"]
     state = copilot_home.parent.parent
-    assert deny == [str(tmp_path / "account"), "/run/user/4242", str(state),
-                    str(host_login.token_path(copilot_home))]
+    assert deny == [str(tmp_path / "account"), "/run/user/4242", *host_login.temp_dirs(),
+                    str(state), str(host_login.token_path(copilot_home))]
     assert all(str(tmp_path / "scratch-home") not in path for path in deny)
     assert "deniedPaths" not in sandbox["userPolicy"]  # the package's path, not the docs'
     assert (settings["autoUpdate"], settings["memory"], settings["disableAllHooks"],
@@ -1242,11 +1246,44 @@ def test_the_deny_list_is_built_by_construction_from_the_password_entry(copilot_
 
 
 @pytest.mark.skipif(host_login.pwd is None, reason="the password database is POSIX")
-def test_a_state_root_inside_the_account_home_is_covered_by_the_home(tmp_path):
+def test_a_state_root_inside_the_account_home_is_covered_by_the_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(host_login, "temp_dirs", lambda: ("/tmp", "/var/tmp/own"))
     account = tmp_path / "account"
     home = account / ".local" / "state" / "thesis-proposal-dev" / "hosts" / "copilot"
     deny = host_login.deny_list(home, account, uid=1000)
-    assert deny == [str(account), "/run/user/1000", str(home.parent / "copilot.token")]
+    assert deny == [str(account), "/run/user/1000", "/tmp", "/var/tmp/own",
+                    str(home.parent / "copilot.token")]
+
+
+@pytest.mark.parametrize(("own", "expected"), [
+    ("/tmp", ("/tmp",)),
+    ("/tmp/claude-1000", ("/tmp",)),  # inside /tmp: covered by it
+    ("/var/tmp/elsewhere", ("/tmp", "/var/tmp/elsewhere")),
+])
+def test_the_temporary_directories_are_the_shared_one_and_the_process_own(own, expected,
+                                                                          monkeypatch):
+    """The user's decision D-b: the deny list and the Copilot work directory
+    keep out the shared `/tmp`, whatever TMPDIR says, and the process's own
+    temporary directory where TMPDIR moves it outside `/tmp`."""
+    monkeypatch.setattr(host_login.tempfile, "gettempdir", lambda: own)
+    monkeypatch.setattr(host_login.os.path, "realpath", lambda path: str(path))
+    assert REAL_TEMP_DIRS() == expected
+
+
+def test_a_home_seeded_before_the_deny_list_changed_needs_a_reset(copilot_home):
+    """A home whose settings carry the deny list from before D-b (no
+    temporary directory) refuses, and the remedy is the reset alone: a
+    settings file cannot be removed, only seeded again."""
+    path = copilot_home / "settings.json"
+    old = json.loads(path.read_text(encoding="utf-8"))
+    denied = old["sandbox"]["userPolicy"]["filesystem"]["deniedPaths"]
+    old["sandbox"]["userPolicy"]["filesystem"]["deniedPaths"] = [
+        p for p in denied if p not in host_login.temp_dirs()]
+    path.write_text(json.dumps(old), encoding="utf-8")
+    problem = host_login.check_copilot_home(copilot_home)
+    assert "sandbox.userPolicy.filesystem.deniedPaths" in problem.cause
+    assert problem.remedy.startswith(f"run `{COPILOT.reset_command}`")
+    assert "remove" not in problem.remedy
 
 
 @pytest.mark.parametrize(("change", "named"), [

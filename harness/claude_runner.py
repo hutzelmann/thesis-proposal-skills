@@ -1389,6 +1389,25 @@ def run_copilot(ws: Path, request: str, args: argparse.Namespace, home: Path) ->
     return events
 
 
+def copilot_work_root() -> Path:
+    """The Copilot work directory the run's workspace is made in
+    (`copilot_cli.work_root`, never the system temporary directory, which the
+    Copilot sandbox denies); a refusal is untested."""
+    try:
+        return copilot_cli.work_root()
+    except copilot_cli.CopilotRefused as refused:
+        raise RunnerFailure(refused.message, untested=True) from None
+
+
+def new_workspace(host: Host, scenario_name: str) -> Path:
+    """A run's temporary workspace, owner-only: in the host's own work
+    directory where it names one (`Host.workspace_root`), otherwise in the
+    system temporary directory. Raises `RunnerFailure` (untested) when the
+    host's directory cannot be had."""
+    root = host.workspace_root() if host.workspace_root else None
+    return Path(tempfile.mkdtemp(prefix=f"devrun-{scenario_name}-", dir=root))
+
+
 def copilot_label(home: Path | None) -> dict:
     """Every Copilot run is isolated in the Copilot harness home, on the
     harness login (the token file beside it)."""
@@ -1425,7 +1444,8 @@ HOSTS: dict[str, Host] = {
         isolation=lambda stack, args: copilot_isolation(stack, args),
         login=host_login.COPILOT,
         label=lambda home, _isolated: copilot_label(home),
-        always_isolated=True),
+        always_isolated=True,
+        workspace_root=lambda: copilot_work_root()),
 }
 # D3(a): the Claude dev judge grades every host's runs, in its own isolation
 JUDGE = JudgeBackend(
@@ -1573,7 +1593,11 @@ def emit(out: dict, log: Path | None) -> None:
 def dev_run(args: argparse.Namespace, judge: Judge | None) -> int:
     host = host_for(args)
     scenario = SCENARIOS[args.scenario]
-    ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
+    try:
+        ws = new_workspace(host, args.scenario)
+    except RunnerFailure as failure:  # no Copilot work directory: nothing was made
+        emit(failure_summary(args, failure, None), args.summary_log)
+        return failure.status
     # the isolated config's linked credentials are as reachable for the child as
     # ~/.claude is in ambient mode, and a refresh the child performs is written
     # back to them; a Claude judge reuses the same config, after L1. A Codex run
@@ -1615,9 +1639,14 @@ def copilot_preflight_only(args: argparse.Namespace) -> int:
     check before the run (`copilot_cli.preflight_report`), delete the
     workspace. A recorded stop is printed and does not decide the outcome.
     Exit 0 when every other check passes, 3 otherwise (a held run lock and a
-    refused child environment included); no prompt-mode child."""
+    refused child environment included); no prompt-mode child. The
+    workspace is made in the Copilot work directory, as a run's is."""
     scenario = SCENARIOS[args.scenario]
-    ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
+    try:
+        ws = new_workspace(HOSTS["copilot"], args.scenario)
+    except RunnerFailure as failure:
+        print(failure.message, file=sys.stderr)
+        return EXIT_UNTESTED
     try:
         stage(scenario, ws, install_skill=not args.no_skill, skill_dir=HOSTS["copilot"].skill_dir)
         try:

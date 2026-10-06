@@ -80,7 +80,10 @@ class Host:
     list or raises the runner's failure; `isolation(stack, args)` prepares
     what the run executes in (None for an ambient Claude run); `label(config,
     isolated)` names the login a run used. `always_isolated` marks a host with
-    no ambient mode."""
+    no ambient mode. `workspace_root()` names the directory the run's
+    temporary workspace is made in, where the host needs one of its own
+    (Copilot: its work directory, never the system temporary directory, which
+    its sandbox denies); None makes it in the system temporary directory."""
 
     name: str
     skill_dir: tuple[str, str]
@@ -90,6 +93,7 @@ class Host:
     login: HostLogin
     label: Callable[[Path | None, bool], dict]
     always_isolated: bool = False
+    workspace_root: Callable[[], Path] | None = None
 
     @property
     def run_label(self) -> str:

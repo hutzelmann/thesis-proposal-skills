@@ -47,6 +47,8 @@ SKILL_ROOT = WS / ".agents" / "skills"
 NOTE = "Your own Copilot login is not affected"
 POSIX = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None,
                            reason="POSIX file locks and signals")
+# taken at import, before the conftest replaces the seam (no test writes under /run/user)
+REAL_RUNTIME_DIR = copilot_cli.runtime_dir
 
 
 def stream(name: str, ws: Path = WS) -> list[dict]:
@@ -170,6 +172,9 @@ def shell(params, calls):
     name = probe_name(params["command"])
     ident = f"probe-{len(calls)}"
     calls.append(name)
+    if name == "tmp_write" and CONFIG.get("tmp_reaches_host"):  # a host /tmp left writable
+        target = params["command"].split(": > ", 1)[1].split(" 2>", 1)[0].strip("'")
+        pathlib.Path(target).write_text("", encoding="utf-8")
     if params["sessionId"] in SANDBOXED:
         found = next(r for r in CONFIG["probe"]["results"] if r["name"] == name)
         data = {"toolCallId": ident, "success": True, "sandboxed": found["sandboxed"]}
@@ -720,7 +725,8 @@ def test_a_deleted_budget_reads_as_possible_overage_and_the_remedy_never_deletes
     problem = copilot_cli.status_problem(status_of("status-budget"))
     message = refusal(problem)
     assert "overage is permitted" in problem.cause
-    assert STOP_USAGE in message and "never deleting it" in message
+    assert STOP_USAGE in message
+    assert "never deleting it" in message
     assert "delete the" not in message.lower()
     assert "delete" not in copilot_cli.STOP_BUDGET.replace("deleting", "")
 
@@ -1200,6 +1206,160 @@ def test_scan_problem_names_a_real_parent_file(tmp_path):
     assert "AGENTS.md" in problem.cause
 
 
+def test_scan_refuses_a_workspace_in_a_temporary_directory(tmp_path):
+    """testing-harness spec: Copilot workspace outside the system temporary
+    directory — the scan is the backstop for the work directory (D-b)."""
+    found = copilot_cli.scan_parents(WS_P, lambda _p: False, account=ACCOUNT, repo=REPO_P,
+                                     temps=[PurePosixPath("/tmp")])
+    assert found == [f"the workspace {WS_P} lies inside /tmp"]
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    problem = copilot_cli.scan_problem(ws, account=tmp_path / "account", repo=REPO,
+                                       temps=[tmp_path])
+    assert problem.kind == "isolation"
+    assert f"lies inside {tmp_path.resolve()}" in problem.cause
+
+
+# ---------- the work directory (Decision 7, the user's decision D-b) ---------------------------
+
+STATE_P = PurePosixPath("/srv/devrun/state")
+RUNTIME_P = PurePosixPath("/run/user/1000")
+RUNTIME_WORK = RUNTIME_P / "thesis-proposal-dev" / "work" / "copilot"
+AVOID = [ACCOUNT, REPO_P, PurePosixPath("/tmp")]
+
+
+@pytest.mark.parametrize(("state", "runtime", "expected"), [
+    (STATE_P, RUNTIME_P, STATE_P / "work" / "copilot"),  # the state root, where it may
+    (ACCOUNT / ".local/state/thesis-proposal-dev", RUNTIME_P, RUNTIME_WORK),  # the default
+    (PurePosixPath("/tmp/state"), RUNTIME_P, RUNTIME_WORK),
+    (REPO_P / "state", RUNTIME_P, RUNTIME_WORK),
+    (ACCOUNT / ".local/state/thesis-proposal-dev", None, None),  # nowhere
+])
+def test_choose_work_root_keeps_out_of_the_home_the_repository_and_temp(state, runtime, expected):
+    """Pure: under the state root where it lies outside the operator's home
+    (whose own skills the client's parent walk lists), the repository and the
+    temporary directories; otherwise under the per-user runtime directory."""
+    assert copilot_cli.choose_work_root(state, runtime, avoid=AVOID) == expected
+
+
+def _mode(path: Path) -> int:
+    return path.stat().st_mode & 0o777
+
+
+@POSIX
+def test_work_root_under_the_state_root_is_made_owner_only(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    monkeypatch.setenv(host_login.STATE_VAR, str(state))
+    root = copilot_cli.work_root()
+    assert root == state.resolve() / "work" / "copilot"
+    assert [_mode(p) for p in (state, state / "work", root)] == [0o700, 0o700, 0o700]
+    assert copilot_cli.work_root() == root  # an existing one is reused
+    assert copilot_cli.work_problem() is None
+
+
+@POSIX
+def test_work_root_falls_back_to_the_runtime_directory(tmp_path, monkeypatch):
+    """The default layout: the state root lies in the account home, so the
+    work directory is the per-user runtime directory's."""
+    account = tmp_path / "account"
+    state = account / ".local" / "state" / "thesis-proposal-dev"
+    runtime = tmp_path / "run-user-1000"
+    runtime.mkdir(mode=0o700)
+    monkeypatch.setenv(host_login.STATE_VAR, str(state))
+    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
+    monkeypatch.setattr(copilot_cli, "runtime_dir", lambda _uid=None: runtime)
+    root = copilot_cli.work_root()
+    assert root == runtime / "thesis-proposal-dev" / "work" / "copilot"
+    assert _mode(runtime / "thesis-proposal-dev") == 0o700
+    assert not state.exists()  # nothing made under the home
+
+
+def test_without_a_work_directory_nothing_is_made_and_the_run_is_refused(tmp_path, monkeypatch):
+    """testing-harness spec: No Copilot work directory."""
+    account = tmp_path / "account"
+    state = account / ".local" / "state" / "thesis-proposal-dev"
+    monkeypatch.setenv(host_login.STATE_VAR, str(state))
+    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.work_root()
+    assert refused.value.kind == "precondition"
+    assert str(state) in refused.value.message
+    assert "/run/user/<uid>" in refused.value.message
+    assert copilot_cli.work_problem().kind == "precondition"
+    assert not account.exists()
+
+
+def test_a_refused_state_root_gets_no_work_directory(monkeypatch):
+    """The location check comes first: an override inside the repository is
+    refused with its own remedy, and nothing is created there."""
+    state = REPO / ".devrun-test-state-never-made"
+    monkeypatch.setenv(host_login.STATE_VAR, str(state))
+    problem = copilot_cli.work_problem()
+    assert "inside the repository" in problem.cause
+    assert not state.exists()
+
+
+def test_runtime_dir_is_only_a_private_directory_of_the_user(monkeypatch):
+    uid = 4242
+
+    def lstat(mode: int, owner: int = uid):
+        return lambda _path: os.stat_result((mode, 0, 0, 1, owner, 0, 0, 0, 0, 0))
+
+    monkeypatch.setattr(copilot_cli.os, "lstat", lstat(0o040700))
+    assert REAL_RUNTIME_DIR(uid) == Path(f"/run/user/{uid}")
+    for wrong in (lstat(0o040755), lstat(0o040700, owner=0), lstat(0o120777)):
+        monkeypatch.setattr(copilot_cli.os, "lstat", wrong)
+        assert REAL_RUNTIME_DIR(uid) is None
+
+    def missing(_path):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(copilot_cli.os, "lstat", missing)
+    assert REAL_RUNTIME_DIR(uid) is None
+
+
+def test_the_copilot_workspace_is_made_in_the_work_directory(tmp_path, monkeypatch):
+    """testing-harness spec: Copilot workspace outside the system temporary
+    directory — a run's (and `--preflight-only`'s) workspace comes from the
+    host's work directory; Claude's and Codex's stay where they were."""
+    monkeypatch.setenv(host_login.STATE_VAR, str(tmp_path / "state"))
+    ws = claude_runner.new_workspace(claude_runner.HOSTS["copilot"], "check_report")
+    assert ws.parent == copilot_cli.work_root()
+    assert ws.name.startswith("devrun-check_report-")
+    assert _mode(ws) & 0o077 == 0
+    other = claude_runner.new_workspace(claude_runner.HOSTS["codex"], "check_report")
+    try:
+        assert other.parent == Path(tempfile.gettempdir())
+    finally:
+        shutil.rmtree(other)
+
+
+@pytest.mark.parametrize("preflight", [False, True])
+def test_a_run_without_a_work_directory_is_untested_and_makes_nothing(preflight, tmp_path,
+                                                                      monkeypatch):
+    account = tmp_path / "account"
+    state = account / ".local" / "state" / "thesis-proposal-dev"
+    monkeypatch.setenv(host_login.STATE_VAR, str(state))
+    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
+    monkeypatch.setattr(claude_runner.tempfile, "mkdtemp",
+                        lambda *_a, **_k: pytest.fail("a workspace was made"))
+    argv = ["check_report", "--host", "copilot", "--model", "copilot-fixture-a",
+            "--max-ai-credits", "30", *(["--preflight-only"] if preflight else [])]
+    assert claude_runner.main(argv) == claude_runner.EXIT_UNTESTED
+    assert not account.exists()
+
+
+def test_the_status_command_without_a_work_directory_reads_nothing(home, monkeypatch):
+    gap = LoginProblem("no work directory", "fix it", COPILOT.name, "precondition")
+    monkeypatch.setattr(copilot_cli, "work_problem", lambda _environ=None: gap)
+    monkeypatch.setattr(copilot_cli, "installed_version",
+                        lambda *_a: pytest.fail("a child started"))
+    monkeypatch.setattr(copilot_cli, "read_status", lambda *_a, **_k: pytest.fail("a read ran"))
+    lines, problem = copilot_cli.status(home, os.environ)
+    assert problem is gap
+    assert lines["auth_type"] == "unknown"
+
+
 def test_roster_problem_names_the_extra_skill_and_server():
     """testing-harness spec: Skill roster off."""
     staged = ["proposal-check"]
@@ -1297,17 +1457,42 @@ def test_probe_problem_passes_a_clean_probe_and_refuses_unsandboxed_or_missing()
     assert "session.options.update gave no answer" in unapplied.cause
 
 
-def test_the_measured_rows_are_printed_not_refused_but_must_be_sandboxed():
-    """Decision 13, network and /tmp: the namespace and /tmp rows are recorded
-    for K6, not yet a rule — whatever they read, they refuse nothing — but a
-    measured command the client did not report as sandboxed still refuses."""
+def test_the_measured_row_is_printed_not_refused_but_must_be_sandboxed():
+    """Decision 13, network: the namespace row is recorded for K6, not yet a
+    rule — whatever it reads, it refuses nothing — but a measured command the
+    client did not report as sandboxed still refuses."""
     supported, results = probe("probe-ok")
+    assert set(copilot_cli.MEASURED_TARGETS) == {"net_ns"}
     assert set(copilot_cli.MEASURED_TARGETS) <= {r.name for r in results}
-    open_host = {"net_ns": "shared", "host_tmp": "readable", "tmp_write": "writable"}
-    widened = [ProbeResult(r.name, open_host.get(r.name, r.output), r.sandboxed) for r in results]
+    widened = [ProbeResult(r.name, "shared" if r.name == "net_ns" else r.output, r.sandboxed)
+               for r in results]
     assert copilot_cli.probe_problem(widened, supported) is None
     loose = [ProbeResult(r.name, r.output, None if r.name == "net_ns" else True) for r in results]
     assert "(net_ns)" in copilot_cli.probe_problem(loose, supported).cause
+
+
+@pytest.mark.parametrize(("row", "word", "named"), [
+    ("host_tmp", "readable", "a file in the host's /tmp"),
+    ("tmp_write", "writable", "a write into the host's /tmp"),
+    ("host_tmp", "unknown", "a file in the host's /tmp"),
+])
+def test_the_host_tmp_rows_refuse_unless_denied(row, word, named):
+    """testing-harness spec: Host temporary directory denied to the sandboxed
+    shell (the user's decision D-b): K6 read `host_tmp readable` and
+    `tmp_write writable`, which now refuse for isolation, naming the
+    directory and never any output; a missing row is a probe without an
+    answer."""
+    supported, results = probe("probe-ok")
+    assert set(copilot_cli.TMP_TARGETS) <= set(copilot_cli.REQUIRED_PROBES)
+    opened = [ProbeResult(r.name, word if r.name == row else r.output, r.sandboxed)
+              for r in results]
+    problem = copilot_cli.probe_problem(opened, supported)
+    assert problem.kind == "isolation"
+    assert named in problem.cause
+    assert word not in refusal(problem).replace(named, "")
+    missing = copilot_cli.probe_problem([r for r in results if r.name != row], supported)
+    assert missing.kind == "precondition"
+    assert row in missing.cause
 
 
 def test_the_write_row_is_judged_on_the_host(tmp_path):
@@ -1439,7 +1624,8 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
                                                account=account, uid=1000,
                                                script=tmp_path / "check.py", host=host))
     assert set(commands) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
-                             "skill_script", *copilot_cli.MEASURED_TARGETS}
+                             "skill_script", *copilot_cli.TMP_TARGETS,
+                             *copilot_cli.MEASURED_TARGETS}
     for name in (*copilot_cli.READ_TARGETS, "host_tmp"):
         assert commands[name].endswith("&& echo readable || echo denied")
         assert ">/dev/null 2>&1" in commands[name]
@@ -1458,10 +1644,11 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
     assert "'net:[4026531840]'" in commands["net_ns"]
     assert commands["net_ns"].count("echo ") == 3  # unknown, shared, private
     assert commands["tmp_write"] == f": > {host.marker} 2>/dev/null; echo $?"
-    # without a host side, the measured rows are left out
+    # without a host side, the host rows are left out (the /tmp ones then read
+    # as no answer, test_the_host_tmp_rows_refuse_unless_denied)
     bare = dict(copilot_cli.probe_commands(token_file=tmp_path / "t", server_pid=1,
                                            harness_pid=2, account=account, uid=1000, script=None))
-    assert not set(bare) & set(copilot_cli.MEASURED_TARGETS)
+    assert not set(bare) & {*copilot_cli.MEASURED_TARGETS, *copilot_cli.TMP_TARGETS}
 
 
 def test_no_scenario_prompt_names_a_skill_by_slash_command():
@@ -2009,12 +2196,14 @@ def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home,
     assert (found.supported, found.unapplied) == (True, None)
     assert {r.name for r in found.results} == {
         *copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python", "skill_script",
-        *copilot_cli.MEASURED_TARGETS}
+        *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS}
     assert all(r.sandboxed is True for r in found.results)
     assert copilot_cli.probe_problem(found.results, found.supported, found.unapplied) is None
     by = {r.name: r.output for r in found.results}
     assert by["tmp_write"] == "denied"  # judged on the host: the fake wrote nothing there
     assert list(host_tmp.iterdir()) == []  # the sentinel removed
+    # the run's scratch home lies in the work directory, never in a temporary directory
+    assert run.scratch.parent == copilot_cli.work_root()
     assert sessions(home) == []
     assert calls(log)[0]["cwd"] == str(ws)
     argv = calls(log)[0]["argv"]
@@ -2025,6 +2214,28 @@ def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home,
     assert _contains(argv, list(copilot_cli.TOKEN_FLAGS))
     assert TOKEN not in json.dumps(argv)
     assert "--sandbox" not in argv  # changes nothing on the server (K6 diagnosis)
+
+
+@pytest.mark.usefixtures("home")
+def test_a_write_that_reaches_the_host_tmp_refuses_the_probe(tmp_path, monkeypatch):
+    """testing-harness spec: Host temporary directory denied to the sandboxed
+    shell. The shell's write is judged on the host: one the host sees reads
+    `writable` and refuses for isolation, whatever exit code the shell printed;
+    the probe's files are removed either way."""
+    fake_copilot(tmp_path, monkeypatch, tmp_reaches_host=True)
+    host_tmp = tmp_path / "host-tmp"
+    host_tmp.mkdir()
+    monkeypatch.setattr(copilot_cli, "PROBE_TMP", host_tmp)
+    ws = staged_ws(tmp_path)
+    run = copilot_cli.new_run(ws=ws, model="copilot-fixture-a")
+    run.token, run.scratch = TOKEN, copilot_cli.make_scratch("devrun-test-")
+    found = copilot_cli.confinement_probe(run)
+    by = {r.name: r.output for r in found.results}
+    assert (by["host_tmp"], by["tmp_write"]) == ("denied", "writable")
+    problem = copilot_cli.probe_problem(found.results, found.supported, found.unapplied)
+    assert problem.kind == "isolation"
+    assert "a write into the host's /tmp" in problem.cause
+    assert list(host_tmp.iterdir()) == []
 
 
 def probe_run(tmp_path: Path) -> copilot_cli.Run:

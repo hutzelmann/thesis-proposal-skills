@@ -49,9 +49,16 @@ and every check here is the backstop, failing closed:
   prompt mode does, and only then runs fixed commands through
   `session.shell.executeUserRequested`; it refuses unless the sandboxed shell
   is denied the token file, the client's and the harness's own process
-  environments, `~/.ssh`, `~/.config/gh`, `gh` and git authentication, still
-  runs the skills, and reports every command as sandboxed; last, the
+  environments, `~/.ssh`, `~/.config/gh`, `gh` and git authentication and the
+  host's shared /tmp (reading it, or writing a file the host then sees),
+  still runs the skills, and reports every command as sandboxed; last, the
   clean-home check once more, on the home as those reads left it.
+- **The work directory** (`work_root`): the workspace and every scratch home
+  are made owner-only under the harness state directory where it lies
+  outside the operator's home, the repository and the temporary
+  directories, otherwise under the per-user runtime directory, never in the
+  system temporary directory, which the sandbox denies (the user's decision
+  D-b); without either, the run is refused as a precondition.
 - **During the run** (`ConfinementWatch`): prompt mode applies the home's
   sandbox itself, which nothing before the run can observe, so the child's
   output is read as it arrives and the child is stopped at the first shell
@@ -230,13 +237,14 @@ class CopilotRefused(Exception):
     billing cause where that is the reason."""
 
     def __init__(self, message: str, kind: str, events: list[dict] | None = None,
-                 billing: str | None = None):
+                 billing: str | None = None, problem: LoginProblem | None = None):
         super().__init__(message)
         self.message, self.kind, self.events, self.billing = message, kind, events or [], billing
+        self.problem = problem
 
     @classmethod
     def of(cls, problem: LoginProblem, billing: str | None = None) -> CopilotRefused:
-        return cls(refusal(problem), problem.kind, billing=billing)
+        return cls(refusal(problem), problem.kind, billing=billing, problem=problem)
 
 
 class BillingEnvError(CopilotRefused):
@@ -301,19 +309,107 @@ def run_env(env: Mapping[str, str], scratch: Path) -> dict[str, str]:
             "XDG_RUNTIME_DIR": str(scratch / "run")}
 
 
-def make_scratch(prefix: str) -> Path:
-    """A fresh scratch home with its XDG directories, under the system
-    temporary directory (outside the operator's home and the repository)."""
-    scratch = Path(tempfile.mkdtemp(prefix=prefix))
+# ---------- the work directory (Decision 7, the user's decision D-b) ------------------------
+
+WORK_PARTS = ("work", "copilot")
+NO_WORK_REMEDY = (f"point {host_login.STATE_VAR} at a directory of its own outside your home, the "
+                  "repository and the system temporary directory, or log in through a session "
+                  "that provides the per-user runtime directory /run/user/<uid> (systemd-logind)")
+
+
+def runtime_dir(uid: int | None = None) -> Path | None:
+    """The per-user runtime directory, `/run/user/<uid>`, where it is a real
+    directory the user owns and nobody else may enter (systemd-logind's);
+    None elsewhere. The seam L0 tests replace, so no test writes there."""
+    if not hasattr(os, "getuid"):
+        return None
+    uid = os.getuid() if uid is None else uid
+    path = Path(f"/run/user/{uid}")
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return None
+    private = stat.S_ISDIR(info.st_mode) and info.st_uid == uid and not info.st_mode & 0o077
+    return path if private else None
+
+
+def choose_work_root(state: PurePath, runtime: PurePath | None, *,
+                     avoid: Iterable[PurePath]) -> PurePath | None:
+    """Where every Copilot workspace and scratch directory lives (Decision 7):
+    under the harness state directory where it lies outside every directory
+    of `avoid` — the operator's home, whose own skills the client's
+    parent-folder walk would list, the repository, and the temporary
+    directories the sandbox denies; otherwise under the per-user runtime
+    directory; otherwise nowhere. Pure."""
+    if not any(state == root or root in state.parents for root in avoid):
+        return state.joinpath(*WORK_PARTS)
+    if runtime is not None:
+        return runtime.joinpath(host_login.STATE_NAME, *WORK_PARTS)
+    return None
+
+
+def _private_dirs(root: Path) -> bool:
+    """Create the missing levels of `root` owner-only, top down; whether it is
+    then a real directory (never a link)."""
+    missing = []
+    level = root
+    while not level.exists() and not level.is_symlink() and level != level.parent:
+        missing.append(level)
+        level = level.parent
+    for path in reversed(missing):
+        path.mkdir(mode=0o700)
+        path.chmod(0o700)  # whatever the umask
+    return root.is_dir() and not root.is_symlink()
+
+
+def work_root(environ: Mapping[str, str] | None = None) -> Path:
+    """The Copilot work directory (`choose_work_root`), created owner-only:
+    never the system temporary directory, which the sandbox denies and where
+    the operator's other processes keep their files (D-b). The state root's
+    location check comes first, so a refused override gets nothing created;
+    without either location the run is refused as untested for a
+    precondition (`CopilotRefused`), and nothing is created."""
+    environ = os.environ if environ is None else environ
+    state = host_login.state_root(environ)
+    problem = host_login.check_location(state, environ, record=COPILOT)
+    if problem:
+        raise CopilotRefused.of(problem)
+    avoid = [host_login.account_home().resolve(), REPO.resolve(),
+             *(Path(tmp).resolve() for tmp in host_login.temp_dirs())]
+    root = choose_work_root(state.resolve(), runtime_dir(), avoid=avoid)
+    if root is None or not _private_dirs(Path(root)):
+        raise CopilotRefused.of(_problem(
+            f"the Copilot workspace has no place outside the system temporary directory and "
+            f"your home: the harness state directory {state} lies inside your home, the "
+            f"repository or a temporary directory, and no private per-user runtime directory "
+            f"exists{'' if root is None else f' ({root} is not a directory)'}",
+            NO_WORK_REMEDY, "precondition"))
+    return Path(root)
+
+
+def work_problem(environ: Mapping[str, str] | None = None) -> LoginProblem | None:
+    """Why no Copilot work directory can be had (`work_root`), or None."""
+    try:
+        work_root(environ)
+    except CopilotRefused as refused:
+        return refused.problem
+    return None
+
+
+def make_scratch(prefix: str, environ: Mapping[str, str] | None = None) -> Path:
+    """A fresh scratch home with its XDG directories, owner-only, in the
+    Copilot work directory (`work_root`): outside the operator's home, the
+    repository and the system temporary directory."""
+    scratch = Path(tempfile.mkdtemp(prefix=prefix, dir=work_root(environ)))
     for name in SCRATCH_VARS:
         Path(run_env({}, scratch)[name]).mkdir(mode=0o700, parents=True, exist_ok=True)
     return scratch
 
 
 @contextmanager
-def call_scratch() -> Iterator[Path]:
+def call_scratch(environ: Mapping[str, str] | None = None) -> Iterator[Path]:
     """A scratch home for one short call, removed afterwards."""
-    scratch = make_scratch("devrun-copilot-call-")
+    scratch = make_scratch("devrun-copilot-call-", environ)
     try:
         yield scratch
     finally:
@@ -555,7 +651,7 @@ def copilot_version(stdout: str) -> tuple[int, int, int] | None:
 
 def installed_version(home: Path, environ: Mapping[str, str] | None,
                       token: str | None) -> tuple[int, int, int] | None:
-    with call_scratch() as scratch:
+    with call_scratch(environ) as scratch:
         return copilot_version(short(["--version"], home=home, scratch=scratch, token=token,
                                      environ=environ)[1])
 
@@ -826,7 +922,7 @@ def read_status(home: Path, environ: Mapping[str, str] | None = None, *, token: 
     stopped afterwards, answered or not, at STATUS_TIMEOUT_S at the latest.
     `token=None` reads without the token (`host-status copilot --no-token`).
     Callers hold the run lock."""
-    with call_scratch() as scratch:
+    with call_scratch(environ) as scratch:
         try:
             proc = spawn(headless(scratch, token), home=home, cwd=scratch, scratch=scratch,
                          token=token, environ=environ, stdin=subprocess.PIPE, text=False)
@@ -1262,12 +1358,14 @@ SCAN_PATHS = (
 
 
 def scan_parents(ws: PurePath, exists: Callable[[PurePath], bool], *, account: PurePath,
-                 repo: PurePath) -> list[str]:
+                 repo: PurePath, temps: Iterable[PurePath] = ()) -> list[str]:
     """Pure over `exists`: every skill directory other than the staged one, and
     every instruction, agent, rule, hook, MCP or client settings file the
     client reads, in the workspace or any parent folder up to `/` — and a
-    workspace inside the operator's home or the repository."""
-    found = [f"the workspace {ws} lies inside {root}" for root in (account, repo)
+    workspace inside the operator's home, the repository or a temporary
+    directory the sandbox denies (`temps`; the work directory keeps it out,
+    Decision 7)."""
+    found = [f"the workspace {ws} lies inside {root}" for root in (account, repo, *temps)
              if ws == root or root in ws.parents]
     for level in (ws, *ws.parents):
         found += [str(level / rel) for rel in SCAN_PATHS
@@ -1275,10 +1373,12 @@ def scan_parents(ws: PurePath, exists: Callable[[PurePath], bool], *, account: P
     return found
 
 
-def scan_problem(ws: Path, account: Path | None = None, repo: Path = REPO) -> LoginProblem | None:
+def scan_problem(ws: Path, account: Path | None = None, repo: Path = REPO,
+                 temps: Iterable[str | Path] | None = None) -> LoginProblem | None:
     account = host_login.account_home() if account is None else account
+    temps = host_login.temp_dirs() if temps is None else temps
     found = scan_parents(ws.resolve(), lambda p: Path(p).exists(), account=account.resolve(),
-                         repo=repo.resolve())
+                         repo=repo.resolve(), temps=[Path(t).resolve() for t in temps])
     if not found:
         return None
     return _problem(f"the workspace is not isolated: {'; '.join(found)}",
@@ -1365,17 +1465,19 @@ AUTH_TARGETS = {"gh_token": "the GitHub CLI's token over the session bus",
                 "git_credential": "git's stored credential for github.com"}
 RUN_TARGETS = {"python": "the skills' interpreter (python3)",
                "skill_script": "a staged skill script"}
-REQUIRED_PROBES = (*READ_TARGETS, *AUTH_TARGETS, "python")
-# Measured and printed, not yet refused (Decision 13, network and /tmp): whether
-# the sandboxed shell shares the harness's network namespace (`shared` or
-# `private`), can read a file the harness put in the host's /tmp (`readable` or
-# `denied`), and can write one there that the host then sees (`writable` or
-# `denied`, judged by the harness on the host after the probe: a write into the
-# sandbox's own overlay or tmpfs reaches nothing). K6 records them before the
-# first paid run; a rule on them is a change of its own.
-MEASURED_TARGETS = {"net_ns": "the harness's network namespace",
-                    "host_tmp": "a file in the host's /tmp",
-                    "tmp_write": "a write into the host's /tmp"}
+# The host's shared /tmp, refused since the user's decision D-b (2026-10-06;
+# K6 had read them `readable` and `writable`): a file the harness put there
+# must read `denied`, and a file the shell writes there must not reach the
+# host — `tmp_write` is judged on the host after the probe (`_row_output`),
+# because a write into a denied directory lands in the sandbox's own throwaway
+# layer and exits 0 (measured), so only the host can tell.
+TMP_TARGETS = {"host_tmp": "a file in the host's /tmp",
+               "tmp_write": "a write into the host's /tmp"}
+REQUIRED_PROBES = (*READ_TARGETS, *AUTH_TARGETS, "python", *TMP_TARGETS)
+# Measured and printed, not yet refused (Decision 13, network): whether the
+# sandboxed shell shares the harness's network namespace (`shared` or
+# `private`). K6 read `private`; a rule on it is a change of its own.
+MEASURED_TARGETS = {"net_ns": "the harness's network namespace"}
 # the host's own /tmp and the harness's network namespace (Linux paths, read on
 # the host; the probe runs only where the client's sandbox does)
 PROBE_TMP = "/tmp"
@@ -1479,10 +1581,11 @@ def probe_problem(results: Sequence[ProbeResult], supported: object = True,
                   unapplied: str | None = None) -> LoginProblem | None:
     """Pure over the probe's results (Decision 13). A session the pinned
     sandbox block was not applied to refuses for isolation, before any row;
-    so does any target readable, `gh`/`git` authentication that exits 0, or a
-    command the client did not report as sandboxed. A probe that could not
-    run, or a skill line that fails, refuses as a precondition. The message
-    names the targets, never any output."""
+    so does any target readable, a host /tmp row other than `denied`,
+    `gh`/`git` authentication that exits 0, or a command the client did not
+    report as sandboxed. A probe that could not run, or a skill line that
+    fails, refuses as a precondition. The message names the targets, never
+    any output."""
     if supported is not True:
         return _problem("the client reports that this host cannot run its sandbox",
                         f"install {', '.join(SANDBOX_TOOLS)} and check that `bwrap --ro-bind / "
@@ -1495,7 +1598,8 @@ def probe_problem(results: Sequence[ProbeResult], supported: object = True,
     if missing:
         return _problem(f"the confinement probe gave no answer for {', '.join(missing)}",
                         UNAVAILABLE_REMEDY, "precondition")
-    reached = [label for name, label in READ_TARGETS.items() if by[name].output != "denied"]
+    reached = [label for name, label in {**READ_TARGETS, **TMP_TARGETS}.items()
+               if by[name].output != "denied"]
     reached += [label for name, label in AUTH_TARGETS.items() if _exit_code(by[name].output) in (
         None, 0)]
     if reached:
@@ -1574,10 +1678,11 @@ def _own_net_ns() -> str | None:
 
 @contextmanager
 def probe_host(tmp: Path | str | None = None) -> Iterator[ProbeHost]:
-    """The host side of the probe's measured rows: the harness's own network
-    namespace, a file written into the host's /tmp (PROBE_TMP) for
-    `host_tmp`, and a free name beside it for `tmp_write`; both files removed
-    afterwards."""
+    """The host side of the probe's host rows: the harness's own network
+    namespace (`net_ns`, measured), a file written into the host's /tmp
+    (PROBE_TMP) for `host_tmp`, and a free name beside it for `tmp_write`
+    (both refusing since D-b); both files removed afterwards. Without a /tmp
+    the two rows are left out, which `probe_problem` reads as no answer."""
     tmp = Path(PROBE_TMP if tmp is None else tmp)
     if not tmp.is_dir():
         yield ProbeHost(_own_net_ns())
@@ -2748,7 +2853,7 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
     run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort, cap=cap,
                   ws_id=workspace_identity(ws))
     run.home = home
-    run.scratch = make_scratch("devrun-copilot-home-")
+    run.scratch = make_scratch("devrun-copilot-home-", run.environ)
     try:
         with host_login.run_lock(home, record=COPILOT) as fd:
             _require(step(run) for step in LOCKED)
@@ -2774,7 +2879,7 @@ def preflight_report(ws: Path, scenario: Mapping, *, model: str, effort: str | N
     checks.append(Check("workspace", scan_problem(ws)))
     if checks[-1].problem:
         return checks, False
-    run.scratch = make_scratch("devrun-copilot-home-")
+    run.scratch = make_scratch("devrun-copilot-home-", run.environ)
     try:
         with host_login.run_lock(run.home, record=COPILOT):
             checks += list(gate_checks(run))
@@ -2871,8 +2976,12 @@ def status(home: Path, environ: Mapping[str, str], *, models: bool = False,
     The reads run only when the location was not refused (`run_probes`) and
     the home is present, marked, owner-only and clean, under the run lock.
     The `clean` line and the refusal both name the home as the reads left it:
-    a read whose child wrote into the home is reported, not hidden."""
+    a read whose child wrote into the home is reported, not hidden. Without a
+    Copilot work directory for the reads' scratch homes (`work_problem`), no
+    child starts and that is the first reason."""
     token, token_gap, token_line = _token_state(home)
+    work_gap = work_problem(environ) if run_probes else None
+    run_probes = run_probes and work_gap is None
     version = installed_version(home, environ, token) if run_probes else None
     presence = host_login.check_presence(home, COPILOT)
     adopted = run_probes and presence is None and not host_login.copilot_offenders(home)
@@ -2889,7 +2998,7 @@ def status(home: Path, environ: Mapping[str, str], *, models: bool = False,
     lines.update(_model_lines(st) if models else {})
     lines.update({"logged_in": "unknown" if bare is None else _yes(bare.logged_in)}
                  if no_token else {})
-    problem = ((check_copilot_version(version) if run_probes else None) or presence
+    problem = (work_gap or (check_copilot_version(version) if run_probes else None) or presence
                or host_login.check_copilot_home(home, offenders=offenders))
     return lines, (problem or token_gap or machine_problem(environ)
                    or (status_problem(st) if st else None))
@@ -2917,11 +3026,11 @@ def main(argv: list[str] | None = None) -> int:
     environ = os.environ
     run = new_run(environ)
     problem = (host_login.check_location(run.root, environ, record=COPILOT)
-               or host_login.check_presence(run.home, COPILOT))
+               or host_login.check_presence(run.home, COPILOT) or work_problem(environ))
     if problem:
         print(refusal(problem), file=sys.stderr)
         return host_login.EXIT_NOT_READY
-    with call_scratch() as scratch:
+    with call_scratch(environ) as scratch:
         env = child_env(run.home, environ, scratch, token=None)
         assert_copilot_env(env, run.home)
         return subprocess.run(cmd, env=env, cwd=scratch, check=False).returncode
