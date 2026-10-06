@@ -20,7 +20,14 @@ import copilot_cli
 import host_login
 import model_currency
 import pytest
-from helpers import FIXTURES, MODEL_CATALOG, REPO, failing_fetch, fixture_proposal
+from helpers import (
+    COPILOT_TOKEN,
+    FIXTURES,
+    MODEL_CATALOG,
+    REPO,
+    failing_fetch,
+    fixture_proposal,
+)
 
 
 class RealCopilotStarted(AssertionError):
@@ -61,6 +68,31 @@ def _copilot_offline(monkeypatch):
     otherwise spend credits without a go; `_harness_login_offline` above
     keeps every test's state root in a temporary directory as well."""
     monkeypatch.setattr(copilot_cli, "binary", _no_real_copilot)
+
+
+@pytest.fixture
+def copilot_account(tmp_path, monkeypatch) -> Path:
+    """An account home of the test's own for the Copilot host: the deny list,
+    the workspace scan and the probe read `host_login.account_home`, never the
+    operator's."""
+    account = tmp_path / "account"
+    account.mkdir()
+    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
+    return account
+
+
+@pytest.fixture
+def copilot_home(tmp_path, monkeypatch, copilot_account) -> Path:
+    """A seeded Copilot harness home under a state root in `tmp_path`, beside an
+    account home of the test's own (`copilot_account`), with the synthetic
+    token in the token file beside it (owner-only)."""
+    monkeypatch.setenv(host_login.STATE_VAR, str(tmp_path / "state"))
+    path = host_login.home(host_login.COPILOT)
+    assert not path.is_relative_to(copilot_account)
+    host_login.seed(host_login.COPILOT, path)
+    host_login.token_path(path).write_text(COPILOT_TOKEN + "\n", encoding="utf-8")
+    host_login.token_path(path).chmod(0o600)
+    return path
 
 
 @pytest.fixture(autouse=True)

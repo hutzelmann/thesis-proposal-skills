@@ -21,6 +21,7 @@ import copilot_cli
 import host_login
 import pytest
 from account_surfaces import CONNECTORS_OFF, PINNED_SETTINGS, PROFILE_DIR
+from helpers import COPILOT_TOKEN, copilot_reply
 from host_login import (
     AGENT_MARKERS,
     CLAIM_NAME,
@@ -1000,18 +1001,13 @@ def test_without_posix_file_locks_the_codex_commands_refuse_cleanly(argv, codex_
 
 # ---------- the Copilot token-file commands (add-copilot-dev-runner) ------------------
 
-COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
 COPILOT_STATUS_KEYS = ["home", "marker", "token_present", "auth_type", "host_ok", "plan_class",
                        "token_based_billing", "overage_permitted", "overage_count",
                        "overage_entitlement", "remaining_pct", "reset_date", "stop", "clean",
                        "cli_version", "pinned_version", "sandbox", "runs_use"]
-STREAMS_DIR = Path(__file__).resolve().parent / "data" / "copilot_streams"
 SANDBOX_PROBLEM = copilot_cli.sandbox_problem  # the real one, before a fixture stubs it
+VERSION_READ = copilot_cli.installed_version  # the real one: it starts `copilot --version`
 POSIX_LOCKS = pytest.mark.skipif(host_login.fcntl is None, reason="the run lock needs fcntl")
-
-
-def copilot_reply(name: str) -> dict:
-    return json.loads((STREAMS_DIR / f"{name}.json").read_text(encoding="utf-8"))
 
 
 class FakeStatusRead:
@@ -1039,12 +1035,11 @@ class FakeStatusRead:
 
 
 @pytest.fixture
-def copilot_state(state, tmp_path, monkeypatch):
-    """The state root of `state`, an account home of the test's own, no real
-    client: the version and the status read are faked."""
-    account = tmp_path / "account"
-    account.mkdir()
-    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
+def copilot_state(state, copilot_account, monkeypatch):
+    """The state root of `state`, an account home of the test's own
+    (`copilot_account`), no real client: the version and the status read are
+    faked."""
+    assert not state.is_relative_to(copilot_account)
     monkeypatch.setattr(copilot_cli, "installed_version", lambda *_a: (1, 0, 91))
     monkeypatch.setattr(copilot_cli, "managed_problem", lambda *_a: None)
     monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
@@ -1136,10 +1131,12 @@ def test_the_copilot_login_refuses_without_a_terminal_or_inside_an_agent(copilot
 @POSIX_LOCKS
 @pytest.mark.usefixtures("copilot_state")
 def test_after_a_login_a_live_run_waits_for_the_approval(monkeypatch):
-    """testing-harness spec: First run after a login waits for approval."""
+    """testing-harness spec: First run after a login waits for approval — before
+    any Copilot process starts: the real version read is back in place, so a
+    `copilot --version` before the stop row would reach the conftest sentinel."""
     enter_token(monkeypatch)
     assert main(["login", "copilot"]) == 0
-    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    monkeypatch.setattr(copilot_cli, "installed_version", VERSION_READ)
     popen: list = []
     monkeypatch.setattr(copilot_cli.subprocess, "Popen", lambda *a, **_k: popen.append(a))
     with pytest.raises(copilot_cli.CopilotRefused) as refused:

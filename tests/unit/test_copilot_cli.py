@@ -22,7 +22,9 @@ import sys
 import tempfile
 import textwrap
 from argparse import Namespace
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 import claude_cli
 import claude_runner
@@ -32,26 +34,23 @@ import pytest
 import routing
 from claude_cli import Grade, JudgeCall, JudgeRun, RateLimit
 from copilot_cli import Check, ProbeResult, RunProblem
-from helpers import CLEAN_DRAFT, REPO
+from helpers import CLEAN_DRAFT, COPILOT_STREAMS, REPO, copilot_stream
+from helpers import COPILOT_TOKEN as TOKEN
+from helpers import copilot_reply as load
 from host_login import COPILOT, LoginProblem, refusal
 from l1_checks import verdict_single_context, verdict_supervise_verifier
 
-STREAMS = Path(__file__).resolve().parent / "data" / "copilot_streams"
+STREAMS = COPILOT_STREAMS
 WS = Path(tempfile.gettempdir()) / "devrun-check_report-copilot"  # never created
 SKILL_ROOT = WS / ".agents" / "skills"
-TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
 NOTE = "Your own Copilot login is not affected"
 POSIX = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None,
                            reason="POSIX file locks and signals")
 
 
 def stream(name: str, ws: Path = WS) -> list[dict]:
-    text = (STREAMS / f"{name}.jsonl").read_text(encoding="utf-8").replace("__WS__", str(ws))
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
-
-
-def load(name: str) -> object:
-    return json.loads((STREAMS / f"{name}.json").read_text(encoding="utf-8"))
+    """A saved stream with this file's default workspace path filled in."""
+    return copilot_stream(name, ws)
 
 
 def status_of(name: str, models: bool = True) -> copilot_cli.Status:
@@ -105,9 +104,11 @@ def send(message):
     sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
     sys.stdout.buffer.flush()
 
-PROBES = (("environ", "client_environ"), (".ssh", "ssh_dir"), (".config/gh", "gh_config"),
+PROBES = ((f"/proc/{os.getpid()}/environ", "client_environ"),  # this server's own pid
+          (f"/proc/{os.getppid()}/environ", "harness_environ"),  # the harness that started it
+          (".ssh", "ssh_dir"), (".config/gh", "gh_config"),
           ("gh auth token", "gh_token"), ("git credential", "git_credential"),
-          ("python3 -c", "python"), ("--help", "skill_script"), ("cat ", "token_file"))
+          ("python3 -c", "python"), ("--help", "skill_script"), ("copilot.token", "token_file"))
 
 def probe_name(command):
     return next(name for needle, name in PROBES if needle in command)
@@ -236,18 +237,9 @@ def calls(log: Path) -> list[dict]:
 
 
 @pytest.fixture
-def home(tmp_path, monkeypatch):
-    """A seeded Copilot home with the synthetic token beside it, under a state
-    root in `tmp_path`; the account home is a directory of the test's own."""
-    monkeypatch.setenv(host_login.STATE_VAR, str(tmp_path / "state"))
-    account = tmp_path / "account"
-    account.mkdir()
-    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
-    path = host_login.home(COPILOT)
-    host_login.seed(COPILOT, path)
-    host_login.token_path(path).write_text(TOKEN + "\n", encoding="utf-8")
-    host_login.token_path(path).chmod(0o600)
-    return path
+def home(copilot_home):
+    """This file's name for the shared seeded Copilot home (conftest)."""
+    return copilot_home
 
 
 # ---------- 3.3: the environment and the pre-spawn assertion ----------------------------------
@@ -433,6 +425,24 @@ def test_the_token_reader_refuses_a_missing_or_classic_token(home):
     assert "missing" in problem.cause
 
 
+def test_the_token_line_follows_the_token_file_not_the_wording_of_its_cause(tmp_path,
+                                                                           monkeypatch):
+    """`host-status copilot`'s `token_present` reads the token file's state, so a
+    state root whose path holds "fine-grained" still reports a missing token."""
+    monkeypatch.setenv(host_login.STATE_VAR, str(tmp_path / "fine-grained-check" / "state"))
+    home = host_login.home(COPILOT)
+    home.mkdir(parents=True)
+
+    def line() -> str:
+        return copilot_cli.status(home, {}, run_probes=False)[0]["token_present"]
+
+    assert line() == "no"
+    host_login.token_path(home).write_text("ghp_CLASSIC_PLACEHOLDER\n", encoding="utf-8")
+    assert line() == "not fine-grained"
+    host_login.token_path(home).write_text(TOKEN + "\n", encoding="utf-8")
+    assert line() == "yes"
+
+
 # ---------- 3.4: the status read and the billing guard ----------------------------------------
 
 KEPT = {"error", "logged_in", "auth_type", "host", "auth_errors", "has_user", "plan", "sku",
@@ -577,6 +587,43 @@ def test_billing_after_flags_and_stops(name, named):
     assert problem.untested
     assert named in problem.message
     assert problem.billing
+    assert problem.message.endswith(f"{NOTE}.")
+
+
+def test_a_reached_soft_cap_is_reported_in_the_template_and_its_stop_names_the_cap():
+    """testing-harness spec: Soft cap reached records a stop — a billing stop
+    naming the cap, and the result in the one refusal template."""
+    assessment = copilot_cli.assess(stream("soft-cap"))
+    message = assessment.problem.message
+    assert assessment.problem.untested
+    assert "limit reached, not a result" in message
+    assert "credit cap 30" in message
+    assert "31.4 of 30 credits" in message
+    assert message.endswith(f"{NOTE}.")
+    [cause] = [cause for kind, cause in assessment.stops if kind == "billing"]
+    assert "credit cap 30" in cause
+    assert "31.4 of 30 credits" in cause
+    limit = copilot_cli.assess(stream("quota-error")).problem.message
+    assert limit.startswith("untested: ")
+    assert limit.endswith(f"{NOTE}.")
+
+
+def test_a_shutdown_without_readable_consumption_stops_and_reports_no_credits():
+    """A shutdown record whose `totalNanoAiu` is missing leaves the consumption
+    unreadable: untested with a billing stop, and the credits read as absent,
+    never as zero."""
+    events = stream("success")
+    shutdown = next(e for e in events if e["type"] == "copilot.shutdown")
+    del shutdown["totalNanoAiu"], shutdown["modelMetrics"]
+    assert copilot_cli.credits_used(events) is None
+    problem, stop = copilot_cli.billing_after(h(events)["before"], h(events)["after"], events, 30)
+    assert stop
+    assert problem.untested
+    assert "no readable consumption" in problem.message
+    assert copilot_cli.assess(events).stops[0][0] == "billing"
+    telemetry = copilot_cli.copilot_read(events, Namespace(model="copilot-fixture-a",
+                                                           effort=None)).telemetry
+    assert (telemetry["ai_credits"], telemetry["notional_usd"]) == (None, None)
 
 
 def test_billing_after_overage_growth_and_an_unavailable_read_stop():
@@ -616,19 +663,32 @@ def test_a_quota_error_is_untested_without_a_stop():
     assert not [kind for kind, _ in assessment.stops if kind == "billing"]
 
 
+class Spy:
+    """`subprocess.Popen` that records each start and then starts it for real."""
+
+    def __init__(self):
+        self.calls: list[list[str]] = []
+        self.real = subprocess.Popen
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append(list(argv))
+        return self.real(argv, **kwargs)
+
+
+@POSIX
 @pytest.mark.parametrize(("kind", "untested_kind", "remedy"), [
     ("billing", "subscription", "github.com/settings/billing"),
     ("isolation", "isolation", "read the run's findings"),
     ("approval", "precondition", "approve the next run"),
 ])
 def test_a_recorded_stop_refuses_the_next_run_before_any_child(kind, untested_kind, remedy,
-                                                              home, monkeypatch):
+                                                              home, tmp_path, monkeypatch):
     """testing-harness spec: Recorded stop refuses later runs; First run after a
-    login waits for approval."""
+    login waits for approval. Measured against a fake client that would answer
+    `--version`: no Copilot process starts at all, the version check's included."""
     copilot_cli.record_stop(home, kind, f"a synthetic {kind} cause")
-    monkeypatch.setattr(copilot_cli, "installed_version", lambda *_a: (1, 0, 91))
-    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
-    popen = Recorder()
+    log = fake_copilot(tmp_path, monkeypatch)
+    popen = Spy()
     monkeypatch.setattr(copilot_cli.subprocess, "Popen", popen)
     with pytest.raises(copilot_cli.CopilotRefused) as refused:
         copilot_cli.isolated_home(None, Namespace())
@@ -637,6 +697,81 @@ def test_a_recorded_stop_refuses_the_next_run_before_any_child(kind, untested_ki
     assert remedy.lower() in refused.value.message.lower()
     assert host_login.CLEAR_STOP_COMMAND in refused.value.message
     assert popen.calls == []
+    assert calls(log) == []
+
+
+def held_then(action):
+    """`host_login.run_lock` that runs `action` once the lock is taken: what a
+    login or another run did while this run waited on the lock."""
+    real = host_login.run_lock
+
+    @contextmanager
+    def run_lock(home_dir, *args, **kwargs):
+        with real(home_dir, *args, **kwargs) as fd:
+            action()
+            yield fd
+
+    return run_lock
+
+
+@POSIX
+@pytest.mark.parametrize(("kind", "untested_kind"), [
+    ("billing", "subscription"), ("isolation", "isolation"), ("approval", "precondition")])
+def test_a_stop_recorded_while_the_run_waited_on_the_lock_refuses_it(kind, untested_kind, home,
+                                                                     tmp_path, monkeypatch):
+    """testing-harness spec: Recorded stop refuses later runs — a stop another
+    run or a login recorded after this run's checks before the lock is read
+    again under the lock, before any child."""
+    skip_scan(monkeypatch)
+    log = fake_copilot(tmp_path, monkeypatch)
+    monkeypatch.setattr(host_login, "run_lock", held_then(
+        lambda: copilot_cli.record_stop(home, kind, f"a synthetic {kind} cause")))
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                effort=None, cap=30, timeout=30, home=home,
+                                scenario=claude_runner.SCENARIOS["check_report"])
+    assert refused.value.kind == untested_kind
+    assert f"a synthetic {kind} cause" in refused.value.message
+    assert calls(log) == []
+
+
+@POSIX
+def test_the_token_is_read_under_the_lock(home, tmp_path, monkeypatch):
+    """A login that replaced the token while the run waited on the lock: every
+    child carries the new token, never the one read before the lock."""
+    skip_scan(monkeypatch)
+    second = "github_pat_SECOND_SYNTHETIC_TEST_ONLY"
+    log = fake_copilot(tmp_path, monkeypatch, token=second)
+    monkeypatch.setattr(host_login, "run_lock", held_then(
+        lambda: host_login.token_path(home).write_text(second + "\n", encoding="utf-8")))
+    events = copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                     effort=None, cap=30, timeout=30, home=home,
+                                     scenario=claude_runner.SCENARIOS["check_report"])
+    assert calls(log)
+    assert all(c["token_ok"] for c in calls(log))
+    assert copilot_cli.run_problem(events) is None
+
+
+@pytest.mark.parametrize("text", ["{not json", "[1, 2]", '{"stop": "billing"}', '{"stop": {}}',
+                                  '{"stop": null}'])
+def test_an_unreadable_stop_record_refuses_rather_than_reads_as_none(text, home):
+    """A damaged stop record is a stop: it refuses with the clear-stop remedy, a
+    new snapshot keeps it, and the clear option removes it."""
+    (home / copilot_cli.QUOTA_FILE).write_text(text, encoding="utf-8")
+    problem = copilot_cli.stop_problem(copilot_cli.read_stop(home))
+    assert problem is not None
+    assert "cannot be read" in problem.cause
+    assert host_login.CLEAR_STOP_COMMAND in problem.remedy
+    copilot_cli.write_snapshot(home, status_of("status-ok"))
+    assert copilot_cli.read_stop(home)["kind"] == "billing"
+    assert copilot_cli.clear_stop(home) is not None
+    assert copilot_cli.read_stop(home) is None
+    assert copilot_cli.stop_problem(copilot_cli.read_stop(home)) is None
+
+
+def test_a_stop_record_that_is_no_file_refuses(home):
+    (home / copilot_cli.QUOTA_FILE).mkdir()
+    assert "cannot be read" in copilot_cli.stop_problem(copilot_cli.read_stop(home)).cause
 
 
 def test_stops_append_causes_and_keep_the_stronger_kind(home):
@@ -821,6 +956,17 @@ def test_a_sandbox_not_reported_active_is_untested_and_stops(name):
     assert ("isolation", "the sandbox was ignored or not reported active") in assessment.stops
 
 
+@pytest.mark.parametrize(("name", "named"), [("auth-error", "fine-grained token"),
+                                             ("quota-error", "limit reached")])
+def test_a_run_with_no_shell_call_records_an_isolation_stop_whatever_ended_it(name, named):
+    """testing-harness spec: Sandbox ignored — a run that lacks the client's
+    report that the sandbox is active stops, a run a session error ended
+    included; the error still leads the message."""
+    assessment = copilot_cli.assess(stream(name))
+    assert ("isolation", "the sandbox was ignored or not reported active") in assessment.stops
+    assert named in assessment.problem.message
+
+
 def probe(name: str) -> tuple[object, list[ProbeResult]]:
     data = load(name)
     return data["host_support"]["supported"], [ProbeResult(**r) for r in data["results"]]
@@ -829,6 +975,7 @@ def probe(name: str) -> tuple[object, list[ProbeResult]]:
 @pytest.mark.parametrize(("name", "target", "kind"), [
     ("probe-token-readable", "the token file", "isolation"),
     ("probe-environ-readable", "the client process's environment", "isolation"),
+    ("probe-harness-environ-readable", "the harness process's environment", "isolation"),
     ("probe-gh-token", "the GitHub CLI's token", "isolation"),
     ("probe-git-credential", "git's stored credential", "isolation"),
     ("probe-skill-fails", "a staged skill script", "precondition"),
@@ -854,7 +1001,8 @@ def test_probe_problem_passes_a_clean_probe_and_refuses_unsandboxed_or_missing()
 
 def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
     commands = dict(copilot_cli.probe_commands(token_file=tmp_path / "copilot.token",
-                                               server_pid=4242, account=tmp_path / "account",
+                                               server_pid=4242, harness_pid=4343,
+                                               account=tmp_path / "account",
                                                uid=1000, script=tmp_path / "check.py"))
     assert set(commands) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
                              "skill_script"}
@@ -862,6 +1010,7 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
         assert commands[name].endswith("&& echo readable || echo denied")
         assert ">/dev/null 2>&1" in commands[name]
     assert "/proc/4242/environ" in commands["client_environ"]
+    assert "/proc/4343/environ" in commands["harness_environ"]
     assert "unix:path=/run/user/1000/bus" in commands["gh_token"]
     assert "GIT_TERMINAL_PROMPT=0" in commands["git_credential"]
 
@@ -1018,6 +1167,34 @@ def test_a_helpers_second_model_does_not_make_the_run_untested():
     assert copilot_cli.run_problem(stream("helper-spawn")) is None
 
 
+def test_each_task_call_is_cross_checked_with_its_subagent():
+    """design Decision 10: a `task` call is read as `Agent`, cross-checked with
+    `subagent.started` both ways, so the helper count the verdicts read holds."""
+    events = stream("helper-spawn")
+    unstarted = [e for e in events if e.get("type") != "subagent.started"]
+    problem = copilot_cli.run_problem(unstarted)
+    assert (problem.untested, problem.kind) == (True, "precondition")
+    assert "t3" in problem.message
+    stray = [*events, {"type": "subagent.started", "data": {"toolCallId": "t9",
+                                                            "agentName": "extra"}}]
+    problem = copilot_cli.run_problem(stray)
+    assert (problem.untested, problem.kind) == (True, "precondition")
+    assert "t9" in problem.message
+
+
+def test_the_session_version_is_cross_checked_with_the_pinned_one():
+    """design Decision 10: the CLI version the session file reports is the one
+    the preflight checked."""
+    events = stream("success")
+    h(events)["cli_version"] = "1.0.91"
+    assert copilot_cli.run_problem(events) is None
+    next(e for e in events if e["type"] == "copilot.session_start")["copilotVersion"] = "1.0.92"
+    problem = copilot_cli.run_problem(events)
+    assert (problem.untested, problem.kind) == (True, "precondition")
+    assert "1.0.92" in problem.message
+    assert "1.0.91" in problem.message
+
+
 @pytest.mark.parametrize(("name", "untested", "named"), [
     ("auth-error", True, "fine-grained token"),
     ("exit0-error", False, "model_call"),
@@ -1146,6 +1323,66 @@ def test_an_unavailable_read_after_the_run_records_a_billing_stop(home, tmp_path
 
 
 @POSIX
+def test_a_read_after_the_run_that_raises_is_unavailable_and_stops(home, tmp_path, monkeypatch):
+    """A broken pipe during the read after the run (the server's request answered
+    into a closed stream) is an unavailable read: untested, with a billing stop."""
+    skip_scan(monkeypatch)
+    fake_copilot(tmp_path, monkeypatch)
+    real, reads = copilot_cli.read_status, []
+
+    def read_status(*args, **kwargs):
+        reads.append(kwargs.get("models"))
+        if len(reads) > 1:
+            raise BrokenPipeError(32, "Broken pipe")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(copilot_cli, "read_status", read_status)
+    events = copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                     effort=None, cap=30, timeout=30, home=home,
+                                     scenario=claude_runner.SCENARIOS["check_report"])
+    assert copilot_cli.harness_record(events)["after"] is None
+    assert "cannot be ruled out" in copilot_cli.run_problem(events).message
+    assert copilot_cli.read_stop(home)["kind"] == "billing"
+
+
+@POSIX
+def test_an_after_run_step_that_raises_still_scrubs_and_records_a_billing_stop(home, tmp_path,
+                                                                              monkeypatch):
+    """The after-run steps fail closed: whatever raises between the child's exit
+    and the stops, the workspace is scrubbed and a billing stop is recorded."""
+    skip_scan(monkeypatch)
+    ws = staged_ws(tmp_path)
+    fake_copilot(tmp_path, monkeypatch, write=[str(ws / "leak.md")])
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("synthetic failure of an after-run step")
+
+    monkeypatch.setattr(copilot_cli, "capture_session", broken)
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        copilot_cli.run_copilot(ws, "check", model="copilot-fixture-a", effort=None, cap=30,
+                                timeout=30, home=home,
+                                scenario=claude_runner.SCENARIOS["check_report"])
+    assert TOKEN not in (ws / "leak.md").read_text(encoding="utf-8")
+    stop = copilot_cli.read_stop(home)
+    assert stop["kind"] == "billing"
+    assert "did not complete" in stop["cause"]
+
+
+def test_an_answer_into_a_closed_stream_does_not_raise():
+    """`Rpc._route` answers a server's request; a server that already closed its
+    input must not break the read."""
+    closed = SimpleNamespace(stdin=SimpleNamespace(write=_broken_pipe, flush=_broken_pipe),
+                             stdout=SimpleNamespace(readline=lambda: b"", read=lambda _n: b""))
+    rpc = copilot_cli.Rpc(closed)  # type: ignore[arg-type]
+    rpc._route({"id": 7, "method": "permission.request"})
+    assert rpc.call("ping", {}, deadline=0) is None
+
+
+def _broken_pipe(*_args):
+    raise BrokenPipeError(32, "Broken pipe")
+
+
+@POSIX
 def test_a_timed_out_run_is_stopped_and_its_session_still_read(home, tmp_path, monkeypatch):
     skip_scan(monkeypatch)
     monkeypatch.setattr(host_login, "TERM_GRACE_S", 5)
@@ -1205,7 +1442,7 @@ def test_preflight_only_starts_no_prompt_child_and_reports_the_stop(home, tmp_pa
     checks, ready = copilot_cli.preflight_report(ws, claude_runner.SCENARIOS["check_report"],
                                                  model="copilot-fixture-a", effort=None)
     names = [c.name for c in checks]
-    assert names == ["location", "home", "clean", "token", "version", "stop", "managed_settings",
+    assert names == ["location", "home", "clean", "token", "stop", "version", "managed_settings",
                      "sandbox_tools", "workspace", "status", "model", "rosters",
                      "confinement_probe"]
     assert ready is True
@@ -1216,6 +1453,46 @@ def test_preflight_only_starts_no_prompt_child_and_reports_the_stop(home, tmp_pa
     assert not list((home / copilot_cli.SESSION_STATE).iterdir())
     roster = names.index("rosters")
     assert names.index("confinement_probe") > roster
+
+
+@POSIX
+@pytest.mark.usefixtures("home")
+def test_preflight_only_goes_on_past_rows_that_leave_the_later_reads_safe(tmp_path, monkeypatch):
+    """testing-harness spec: Copilot preflight only — every check before the run
+    runs and is printed: a missing sandbox tool and a refused status row do not
+    hold back the rosters and the confinement probe, which K6 reads."""
+    skip_scan(monkeypatch)
+    monkeypatch.setattr(copilot_cli, "managed_problem", lambda *_a, **_k: None)
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: LoginProblem(
+        "the Copilot sandbox needs slirp4netns on PATH", "install slirp4netns", "copilot",
+        "precondition"))
+    log = fake_copilot(tmp_path, monkeypatch, status="status-no-entitlement-field")
+    checks, ready = copilot_cli.preflight_report(staged_ws(tmp_path),
+                                                 claude_runner.SCENARIOS["check_report"],
+                                                 model="copilot-fixture-x", effort=None)
+    by = {c.name: c for c in checks}
+    assert ready is False
+    assert list(by)[-4:] == ["status", "model", "rosters", "confinement_probe"]
+    assert by["sandbox_tools"].problem is not None
+    assert by["status"].problem is not None
+    assert by["model"].problem is not None
+    assert (by["rosters"].problem, by["confinement_probe"].problem) == (None, None)
+    assert "run" not in [c["kind"] for c in calls(log)]
+
+
+@POSIX
+@pytest.mark.usefixtures("home")
+def test_preflight_only_ends_at_a_row_that_makes_a_later_start_unsafe(tmp_path, monkeypatch):
+    """A version other than the pinned one ends the report: the later reads
+    speak the pinned version's server interface."""
+    skip_scan(monkeypatch)
+    log = fake_copilot(tmp_path, monkeypatch, version="GitHub Copilot CLI 1.0.90.")
+    checks, ready = copilot_cli.preflight_report(staged_ws(tmp_path),
+                                                 claude_runner.SCENARIOS["check_report"],
+                                                 model="copilot-fixture-a", effort=None)
+    assert ready is False
+    assert checks[-1].name == "version"
+    assert [c["kind"] for c in calls(log)] == ["version"]
 
 
 @POSIX

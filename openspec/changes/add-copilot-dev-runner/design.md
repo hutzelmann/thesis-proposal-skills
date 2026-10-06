@@ -283,14 +283,16 @@ The cost of D-C3(b) is nil in schedule, because changes 1 to 3 gate this change'
 - **Preflight order.** Nothing spawns before the location is known to be safe: a refused state-directory override must find nothing created, and `copilot --version` already unpacks the package into `COPILOT_CACHE_HOME`, which lies under the state root. Then cheap and local checks, then everything under one lock hold:
   1. the location (`check_location`);
   2. the marker and mode;
-  3. `copilot --version` against `COPILOT_PINNED_VERSION = (1, 0, 91)`, the first `spawn`;
-  4. `check_copilot_home`;
-  5. the token file and its prefix;
-  6. a recorded stop of any kind. `--preflight-only` prints it and goes on;
+  3. `check_copilot_home`;
+  4. the token file and its prefix;
+  5. a recorded stop of any kind. It reads only `quota.json` and starts nothing, so a stop refuses before the first Copilot process, as the spec requires. `--preflight-only` prints it and goes on;
+  6. `copilot --version` against `COPILOT_PINNED_VERSION = (1, 0, 91)`, the first `spawn`, carrying the token like every Copilot child;
   7. `/etc/github-copilot/managed-settings.json` and `/etc/github-copilot/policy.d` (1.0.91);
   8. the sandbox tools (Decision 13);
   9. the parent-folder scan (Decision 7);
-  10. under the lock: `read_status`, then `status_problem`, then the rosters (Decision 7), then the confinement probe (Decision 13). After those come the run and the read after it.
+  10. under the lock: the recorded stop and the token file read again, then `read_status`, then `status_problem`, then the rosters (Decision 7), then the confinement probe (Decision 13). After those come the run and the read after it. The second reading exists because a run waits up to `LOCK_WAIT_S` (30 s) for the lock: in that window another run can record a billing or isolation stop, and a login, which holds the lock while it prompts, replaces the token and records the approval stop. Read only before the lock, the stop would be missed and the old token used.
+
+  *Revised 2026-10-06 (review follow-up).* The first implementation ran the version check third, then fifth after the token; with the stop sixth, a recorded stop still started `copilot --version` before refusing, and the L0 tests that claimed "no `Popen`" stubbed the version read away. The stop now comes before the version, and those tests run against the fake client with a recording `Popen`.
 - **`check_copilot_home(home, account_home)`** is an allow-list, because `config.json` overrides `settings.json`. It checks three things:
   - `settings.json` must equal `pinned_settings`;
   - every top-level key of `config.json` must lie in `MANAGED_STATE_KEYS`. That set starts from the four keys the operator's own home shows (`expAssignmentsCache`, `firstLaunchAt`, `lastLoggedInUser`, `loggedInUsers`); K3 fixes it at the pin, and widening it is a reviewed change;
@@ -334,6 +336,8 @@ The cost of D-C3(b) is nil in schedule, because changes 1 to 3 gate this change'
   - `roster_problem(skills, mcps, staged)` is pure. Skills must equal the staged names plus a subset of `BUILTIN_SKILLS = ("customize-cloud-agent", "github-pr-media")` (1.0.91, measured), each staged name with source `project`. MCP servers must be a subset of `BUILTIN_MCP = ("github-mcp-server", "githubiq")` with source `builtin`.
   - Both sets are pinned per CLI version by the V-pass.
 - **`--preflight-only`** runs every step of Decision 6's order, plus staging, the rosters and the confinement probe, prints each result, deletes the workspace and the probe's session folder, and exits 0 or 3. A recorded stop is printed and does not decide the exit status, so K3 runs while the approval stop still holds. It starts no `-p` child. K3 and K6 use it.
+  - **Which refusals end it.** A refused stop, sandbox-tools, status, model or roster row is printed and the option goes on (`copilot_cli.REPORTED`): the later reads are model-free and need only the token and the workspace, so K6 can read the probe's rows even while, say, the guard refuses a reply without `overage_entitlement`. A refused location, home, clean state, token, version, managed settings file or parent-folder scan ends it, because a later start would then be unsafe: a child under a refused location or in an unclean home, without the token, speaking another version's server interface, under a managed policy, or beside parent-folder files such as hooks. A run stops at its first refusal of any row.
+  - **Options it would ignore** (`--rejudge`, which would make a judge call, `--judge` and `--keep`) are usage errors.
 
 ### 8. The command
 
@@ -359,6 +363,7 @@ copilot -p <prompt> --output-format json --stream off --no-color
   - A served fixture gets `127.0.0.1`, which is where `claude_runner` binds its fixture server.
   - The import, lit-search and reverse skills map, through a pinned `SKILL_HOSTS` table, to the API hosts their scripts contact.
   - An L0 test extracts every `https?://host` from those skills' `scripts/` and asserts that each one appears in the table. A new host then fails a test rather than a run.
+  - Some hosts in those scripts are reached by no request. They sit in a second table, `NOT_CONTACTED`, each with its reason: `github.com` (the repository named in the User-Agent string), `openalex.org` (the API-key help text), `arxiv.org` (an XML namespace of the arXiv feed) and `www.w3.org` (the Atom namespace). A host enters that table only with a reason showing that no request reaches it; any other new host goes into `SKILL_HOSTS`, so the change that adds it is reviewed as a URL approval.
 - **`auto` is refused** as a usage error. Under D-C1(a) the served model could never equal the request, so every run would be untested.
 - **Flag provenance.**
   - Every flag is in the 1.0.67 help, except two: the hidden `--no-auto-login`, and `--sandbox`, which arrived in 1.0.70.
@@ -370,13 +375,15 @@ copilot -p <prompt> --output-format json --stream off --no-color
 
 `copilot_cli.run_copilot(...)`:
 
-1. Take the lock, run the preflight, and keep `before = read_status(...)`.
+1. Take the lock, read the recorded stop and the token file again (Decision 6, step 10), run the preflight, and keep `before = read_status(...)`.
 2. Start the child through `spawn`, with `Popen`, `pass_fds=(lock_fd,)` and the parent-death `preexec_fn`, under the wall-clock timeout. On timeout, `stop_child(proc, SIGTERM)`, then kill after `TERM_GRACE_S`.
 3. Capture stdout and stderr.
 4. Read `<home>/session-state/<uuid>/events.jsonl`. Its path is known even after a timeout. Reduce it, and append the result as `copilot.*` records. When a `result` line exists, cross-check its `sessionId`. Pass stdout, stderr and the records through `scrub` before anything is saved or reported (Decision 4).
 5. Keep `after = read_status(...)`.
 6. Delete `session-state/<uuid>/` and the scratch logs, which are never saved.
 7. Release the lock.
+
+Steps 3 to 6 fail closed. A read after the run that raises (a broken pipe while answering the server, a scratch home that cannot be made) counts as unavailable, which records a billing stop. Anything else that raises after the child started stops the child if it still runs, scrubs the workspace, records a billing stop ("the checks after the run did not complete") and lets the exception surface as a runner failure. Without this, an exception there would leave no stop, an unscrubbed workspace that `--keep` keeps, and no saved events.
 
 Then:
 
@@ -392,16 +399,19 @@ Then:
 - **`billing_after(before, after, view, cap) -> (problem, stop)`** is pure. `after` is `None` when the read after the run is unavailable. The `stop` flag is set for these cases:
   - the overage grew;
   - `after is None`, because overage growth cannot then be ruled out;
+  - a `session.shutdown` whose `totalNanoAiu` is missing or not a number. Consumption that cannot be read is never read as zero: `credits_used` returns None, the summary's `ai_credits` and `notional_usd` are null, and the run is untested;
   - consumption above twice the cap;
   - zero nano-AIU with tokens reported;
   - no `session.shutdown`. The problem is then a runner failure, not untested (Decision 11);
-  - `session_limits` or `ai_credit_soft_cap_exhausted`.
+  - `session_limits` or `ai_credit_soft_cap_exhausted`. The cause names the run's cap and, when the stream carries `session_limits_exhausted.requested`, the credits used and allowed, so the stop names the cap as the spec's scenario asks.
+
+  The untested results of the guard and of `failure_reason` (a rejected token, a quota or rate limit, a reached cap) all read in the one refusal template, the login note included.
 - **Stops persist across invocations.** `poe dev` takes one scenario per invocation (`claude_runner.py:1276`), so "skip the remaining scenarios" can only mean "refuse later invocations". `record_stop(home, kind, cause)` writes `{"stop": {"kind", "cause", "at"}}` into `quota.json` with `os.replace`; a second cause found by the same run is appended to `cause`. The kinds:
   - `billing`, from `billing_after`;
   - `isolation`, from the sandbox ignored or not reported active, and from a `scrub` hit (Decision 4);
   - `approval`, from every `host-login copilot` that writes a token file (Decision 4).
 
-  The preflight refuses while that entry exists, and only `host-login copilot --clear-stop` or `--reset` removes it; a reset records a new approval stop.
+  The preflight refuses while that entry exists, and only `host-login copilot --clear-stop` or `--reset` removes it; a reset records a new approval stop. A `quota.json` that exists but cannot be read, that is not a JSON object, or whose `stop` is not a non-empty object reads as a billing stop ("the stop record in quota.json cannot be read"), never as no stop; a new status snapshot keeps it as that stop, and `--clear-stop` removes it.
   - *Rejected:* a stop that lasts within one invocation only, which would be vacuous; clearing through `host-status`, which agents may run; and no stop at all, because the next preflight catches drawn overage but not a soft-cap overshoot, broken accounting, or a sandbox that silently stopped confining.
   - *Rejected for the go:* a go given only in chat. At K3 an agent runs the exact live command with `--preflight-only` added, so one dropped flag would spend credits without it. The approval stop makes the go something the user does at a terminal.
 
@@ -421,13 +431,13 @@ Then:
   | `mcpServerName` and `mcpToolName` | `mcp__<server>__<tool>` |
   | `report_intent`, `update_todo`, `task_complete`, `store_memory`, `ask_user`, `sql`, `fetch_copilot_cli_documentation` | internal |
 
-  Any other name is an `unknown_tool` finding.
+  Any other name is an `unknown_tool` finding. The `task` cross-check (`helper_after`) pairs every `task` start with a `subagent.started` by `toolCallId`, both ways: a task call that started no subagent would let the verifier verdict count a spawn that never ran, and a subagent no task call shows would hide a helper from the single-context verdict. Either is untested for a precondition.
 - **`routing.tool_calls`** appends `copilot_tool_calls(events)` after the Claude and Codex shapes. The event types never collide, so these all work unchanged: `HELPER_TOOLS`, `verdict_supervise_verifier`, `verdict_single_context` and `route_from_events`, which needs `payload["skill"]` (`routing.py:247-252`).
 - **`copilot_read(events, args) -> RunView`:**
   - `final_text` is the last top-level `assistant.message.content`;
   - `model_requested` is `args.model`;
   - `model` is the set of top-level `assistant.message.model` values together with the `modelMetrics` keys: one name, several names, or `"unreported"`. That these name the served model is UNVERIFIED until K5;
-  - `cli_version` comes from `copilot.session_start`, cross-checked with the preflight.
+  - `cli_version` comes from `copilot.session_start`, cross-checked with the preflight (`version_after`): a session that reports another version than the pinned one the preflight checked, recorded in the runner's own record, is untested for a precondition. A session record without a version is left to the other findings.
 - **Telemetry:**
   - `cost_usd = None`;
   - `ai_credits = totalNanoAiu / 1e9`;
@@ -451,12 +461,13 @@ Then:
 | A preflight row: version, home, token, auth, the guard's rows, model, managed settings, scan, roster, sandbox tools, confinement probe, stop, lock | 3: subscription, isolation or precondition, per the spec's list. A stop maps by kind: billing to subscription, isolation to isolation, approval to precondition |
 | `session.error`, authentication or authorization | 3, subscription, with the PAT remedy and the not-affected note |
 | `errorType` quota or rate_limit | 3, subscription: "limit reached, not a result" |
-| `session_limits` or `ai_credit_soft_cap_exhausted`; overage grew; the read after the run unavailable; more than twice the cap; zero nano-AIU with tokens | 3, subscription, with a billing stop recorded |
+| `session_limits` or `ai_credit_soft_cap_exhausted`; overage grew; the read after the run unavailable; no readable `totalNanoAiu`; more than twice the cap; zero nano-AIU with tokens | 3, subscription, with a billing stop recorded |
 | An isolation finding (Decision 10) | 3, isolation |
 | The sandbox ignored or not reported active; a `scrub` hit | 3, isolation, with an isolation stop recorded |
-| Served model differs (outside a helper scenario's usage); `model_change.cause == "rate_limit_auto_switch"`; effort reported unapplied; an unknown tool | 3, precondition |
+| Served model differs (outside a helper scenario's usage); `model_change.cause == "rate_limit_auto_switch"`; effort reported unapplied; an unknown tool; a `task` call and `subagent.started` that do not pair up; a session CLI version other than the pinned one | 3, precondition |
 | A non-zero exit with no classifiable event, no `result` line, or a timeout | 4 |
 | No `session.shutdown` | 4, with a billing stop recorded |
+| A step after the child's start that raises | 4 ("runner crashed"), with the workspace scrubbed and a billing stop recorded |
 | A verdict | 0 or 1 |
 
 The process exit code is never trusted on its own.
@@ -477,6 +488,7 @@ The process exit code is never trusted on its own.
   - **The confinement probe**, under the lock and after the rosters. `confinement_probe(home, env)` starts the headless server through `spawn`, creates a session carrying the run's sandbox settings and the scratch workspace as its working directory, and runs fixed commands through the session's model-free shell call (`session.shell.exec` at 1.0.67). Each command discards its own output and prints one word, `denied` or `readable`, or its exit code:
     - read the token file;
     - read `/proc/<pid>/environ` of the headless server, whose pid the harness knows and whose environment holds the token, as the run's client process does;
+    - read `/proc/<pid>/environ` of the harness's own process (`os.getpid()`). It keeps every inherited variable the child builder drops (`GH_TOKEN`, `GITHUB_TOKEN`, provider keys, an exported `COPILOT_GITHUB_TOKEN`), and the deny list names paths, not `/proc`. The server's row can pass because the client process is not dumpable, which says nothing about the harness, so this row reads `denied` only when the sandbox hides the host's processes. *Chosen 2026-10-06 (review follow-up)* over dropping those variables from the runner's own environment, which would not cover its parents (`uv`, `poe`, the shell); one row suffices, because every process of the operator's is equally visible once the host's `/proc` is;
     - list the operator's real `~/.ssh` and `~/.config/gh`;
     - `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<uid>/bus gh auth token >/dev/null 2>&1; echo $?`, and `git credential fill` for `github.com`, with terminal prompts off and its output discarded;
     - run `python3 -c 'print(1)'` and one skill script's `--help` from the staged workspace, which must succeed, so that the deny list has not broken the skills.
@@ -485,7 +497,7 @@ The process exit code is never trusted on its own.
   - **Settled by task 1.2 (Facts at 1.0.91).** The 1.0.91 headless server offers `session.shell.executeUserRequested`, a model-free shell call that returns the command's output and exit code, and every completion carries `tool.execution_complete.sandboxed`, delivered as a `session.event` notification. No call returns the resolved policy. The probe therefore runs its fixed commands through `executeUserRequested` in a session created with `session.create {sessionId, workingDirectory: ws, model}`, collects the `sandboxed` flag of each command's completion, and refuses for isolation unless every one reads true. It also asks `sandbox.getHostSupport` first and refuses as a precondition when `supported` is not true. The server is started without `--sandbox`: the home's pinned `sandbox.enabled` governs its sessions, and the per-command flag checks that it did. Whether the call runs inside the sandbox is thus measured on every probe rather than assumed; K6 reads the rows.
 - **After the run.** The run is untested for isolation, and an isolation stop is recorded, in either case:
   - the CLI's sandbox warning appears, from `session.warning`, `session.error`, `session.info` or stderr, with a text the V-pass names (`SANDBOX_WARNINGS`: "Sandboxing is enabled but is not supported", "Sandboxing is enabled but not supported on this platform", "sandbox enforcement unavailable", and the 1.0.70 "was ignored");
-  - the sandbox-active report the V-pass names is absent: a shell-tool `tool.execution_complete` whose `sandboxed` is not true, or no shell-tool completion at all. K6b confirms on the first run. Until then an absent report also stops, and the user clears the stop after reading the kept events.
+  - the sandbox-active report the V-pass names is absent: a shell-tool `tool.execution_complete` whose `sandboxed` is not true, or no shell-tool completion at all. K6b confirms on the first run. Until then an absent report also stops, and the user clears the stop after reading the kept events. That holds whatever ended the run, a session error included: a run that a rejected token or a quota error ended before any tool call also records the stop. *Recorded 2026-10-06 (review follow-up):* the first implementation exempted any run with a session error and no shell call; the exemption is removed, because neither the spec nor this decision has it and a non-fatal error (such as the soft-cap error after a view-only run) also matched it. A `--reset` clears the stop with the rest of the home; after a limit error the user clears it.
 - **Residual risk with the sandbox.**
   - The token file lies outside the home since this revision (Decision 4), so the 1.0.89 session-file grant cannot cover it. Whether the deny list holds for it, and for the CLI process's environment, is what the probe measures before every run.
   - Until the V-pass confirms the probe, the token's reach is bounded by its scope (Copilot Requests only), its expiry, revocation on its own, and `scrub`. The README states the deny claim as unverified until K6 passes.

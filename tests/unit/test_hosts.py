@@ -34,7 +34,7 @@ from claude_runner import (
     stage,
     summary,
 )
-from helpers import CLEAN_DRAFT, REPO
+from helpers import CLEAN_DRAFT, COPILOT_TOKEN, REPO, copilot_stream
 from host_login import CLAUDE, CODEX, CREDENTIALS, STATE_VAR, LoginProblem, refusal
 
 STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
@@ -444,17 +444,9 @@ def test_rejudging_a_codex_workspace_reads_it_with_the_codex_reader(locks, tmp_p
 
 # ---------- the Copilot host (add-copilot-dev-runner) ------------------------------------
 
-COPILOT_STREAMS = Path(__file__).resolve().parent / "data" / "copilot_streams"
 COPILOT_LABEL = "dev-runner (copilot), not comparable to matrix"
 COPILOT_RUN = ["check_report", "--host", "copilot", "--model", "copilot-fixture-a",
                "--max-ai-credits", "30"]
-COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
-
-
-def copilot_stream(name: str, ws: Path) -> list[dict]:
-    text = (COPILOT_STREAMS / f"{name}.jsonl").read_text(encoding="utf-8")
-    return [json.loads(line) for line in text.replace("__WS__", str(ws)).splitlines()
-            if line.strip()]
 
 
 def no_copilot(monkeypatch):
@@ -467,19 +459,12 @@ def no_copilot(monkeypatch):
 
 
 @pytest.fixture
-def copilot_home(tmp_path, monkeypatch):
-    """A seeded Copilot harness home with the synthetic token beside it; the
-    checks before the lock that would start the client are stubbed."""
-    monkeypatch.setenv(STATE_VAR, str(tmp_path / "state"))
-    account = tmp_path / "account"
-    account.mkdir()
-    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
-    home = host_login.home(host_login.COPILOT)
-    host_login.seed(host_login.COPILOT, home)
-    host_login.token_path(home).write_text(COPILOT_TOKEN + "\n", encoding="utf-8")
+def copilot_home(copilot_home, monkeypatch):
+    """The shared seeded Copilot harness home (conftest), with the checks
+    before the lock that would start the client stubbed."""
     monkeypatch.setattr(copilot_cli, "installed_version", lambda *_a: (1, 0, 91))
     monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
-    return home
+    return copilot_home
 
 
 def fake_copilot_run(monkeypatch, name="success", produce=None, raises=None) -> list[dict]:
@@ -515,6 +500,11 @@ def fake_copilot_run(monkeypatch, name="success", produce=None, raises=None) -> 
     (["check_report", "--max-ai-credits", "30"], "--max-ai-credits applies"),
     ([*COPILOT_RUN, "--effort", "ultra"], "ultra"),
     ([*COPILOT_RUN, "--summary-log", "logs/evals/x.jsonl"], "lies inside logs/evals"),
+    ([*COPILOT_RUN, "--preflight-only", "--keep"], "--preflight-only takes no --keep"),
+    (["write_from_seed", *COPILOT_RUN[1:], "--preflight-only", "--judge"],
+     "--preflight-only takes no --judge"),
+    (["write_from_seed", "--host", "copilot", "--rejudge", "/tmp/devrun-x", "--preflight-only"],
+     "--preflight-only takes no --rejudge"),
 ])
 def test_copilot_usage_errors_stage_nothing_and_start_nothing(argv, named, monkeypatch, capsys):
     """testing-harness spec: Copilot run without a pinned model; Credit cap required;

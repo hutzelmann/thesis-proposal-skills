@@ -42,7 +42,7 @@ This change lands after `close-claudeai-surfaces`, `add-harness-claude-login` an
     - a scan of the workspace and every parent folder;
     - `skill list` and `mcp list` roster checks, which make no model call;
     - a refusal on Windows, or when any tool the sandbox needs is missing;
-    - a confinement probe through the headless server's model-free shell call, which refuses the run when the sandboxed shell can reach the token file, the client's environment, `~/.ssh`, `~/.config/gh`, or `gh` or git authentication. That the call runs inside the sandbox is confirmed by the V-pass.
+    - a confinement probe through the headless server's model-free shell call, which refuses the run when the sandboxed shell can reach the token file, the client's or the harness's process environment, `~/.ssh`, `~/.config/gh`, or `gh` or git authentication. That the call runs inside the sandbox is confirmed by the V-pass.
   - After the run, a sandbox reported ignored or not active, or the token's value in the child's output, marks the run untested and records an isolation stop.
 - **A Copilot plan billing guard.**
   - The operator keeps no Copilot budget at all.

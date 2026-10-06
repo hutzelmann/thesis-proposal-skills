@@ -24,7 +24,7 @@ import pytest
 import routing
 from account_surfaces import CONNECTORS_OFF, PROFILE_DIR
 from claude_cli import parse_events
-from helpers import followed
+from helpers import COPILOT_TOKEN, followed
 from host_login import CLAUDE, LoginSource, allowlisted_env
 
 isolated_env = partial(allowlisted_env, CLAUDE)
@@ -372,9 +372,6 @@ def test_the_judge_now_carries_the_machine_and_drops_the_desktop_session(monkeyp
         for name in ("XDG_SESSION_TYPE", "CLAUDE_EFFORT", "ANTHROPIC_API_KEY"):
             assert name not in env, name
         assert env["CLAUDE_CONFIG_DIR"] == str(config)
-
-
-COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
 
 
 def test_the_builder_reads_no_token_and_the_copilot_caller_adds_exactly_one(tmp_path):

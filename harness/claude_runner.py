@@ -1473,6 +1473,11 @@ def _copilot_rules(args: argparse.Namespace, host: str,
          f"--max-ai-credits {cap} is below the minimum {copilot_cli.MIN_AI_CREDITS}"),
         (not copilot and cap is not None, "--max-ai-credits applies to --host copilot only"),
         (not copilot and args.preflight_only, "--preflight-only applies to --host copilot only"),
+        # it runs the checks before a run and nothing else: an option it would
+        # ignore is refused, never dropped (--rejudge would make a judge call)
+        *((args.preflight_only and bool(getattr(args, option)),
+           f"--preflight-only takes no --{option}: it runs the checks before a run, makes no "
+           "model call and keeps no workspace") for option in ("rejudge", "judge", "keep")),
     )
 
 

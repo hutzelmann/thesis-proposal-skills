@@ -73,7 +73,7 @@ from pathlib import Path, PurePath
 
 import host_login
 from host_login import CODEX, MARKER, LoginProblem, LoginSource, login_remedy, refusal
-from hosts import NETWORK_SKILLS, RunView, needs_network  # noqa: F401  (re-exported)
+from hosts import RunView, needs_network
 
 # ---------- the command (design Decisions 5 and 6) ---------------------------------------
 

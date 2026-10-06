@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,10 @@ REGISTRY_PATH = REPO / "harness" / "models.toml"
 NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
 # the draft the dev-runner tests place in a workspace as a run's produced draft
 CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+# the Copilot host's synthetic fixtures (README there) and the synthetic token
+# every Copilot test writes into a token file or hands to a child
+COPILOT_STREAMS = REPO / "tests" / "unit" / "data" / "copilot_streams"
+COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
 
 
 @dataclass(frozen=True)
@@ -83,6 +88,21 @@ def followed(events: list[dict], stop: Callable[[list[dict]], bool], *, returnco
         if stop(seen):
             return Followed(seen, -15, "", stopped=True, timed_out=False)
     return Followed(seen, returncode, stderr, stopped=False, timed_out=timed_out)
+
+
+def copilot_stream(name: str, ws: Path | str | None = None) -> list[dict]:
+    """A saved Copilot event list from COPILOT_STREAMS, its `__WS__` placeholder
+    replaced by `ws` when one is given."""
+    text = (COPILOT_STREAMS / f"{name}.jsonl").read_text(encoding="utf-8")
+    if ws is not None:
+        text = text.replace("__WS__", str(ws))
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def copilot_reply(name: str) -> object:
+    """A Copilot JSON fixture from COPILOT_STREAMS: a status reply, a model
+    listing, a roster or a probe."""
+    return json.loads((COPILOT_STREAMS / f"{name}.json").read_text(encoding="utf-8"))
 
 
 def failing_fetch(message: str):

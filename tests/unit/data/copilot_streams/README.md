@@ -83,9 +83,10 @@ needs no exemption for them. Every fake token is short and obviously synthetic
 | `skills-extra.json` | synthetic, from @github/copilot 1.0.91 offline `copilot skill list --json` (source `inherited`, measured) | plus an `inherited` skill: the roster refuses, naming it |
 | `mcp-ok.json` | synthetic, from @github/copilot 1.0.91 offline `copilot mcp list --json` (shape) | only the built-in `github-mcp-server`, source `builtin` |
 | `mcp-extra.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (MCP server sources) | plus a `user` server: the roster refuses, naming it |
-| `probe-ok.json` | synthetic, from @github/copilot 1.0.91 `session.shell.executeUserRequested` and `tool.execution_complete.sandboxed` | every target denied, `gh` and `git` non-zero, the interpreter and the skill script run, every command sandboxed |
+| `probe-ok.json` | synthetic, from @github/copilot 1.0.91 `session.shell.executeUserRequested` and `tool.execution_complete.sandboxed` | every target denied (the harness process's environment among them), `gh` and `git` non-zero, the interpreter and the skill script run, every command sandboxed |
 | `probe-token-readable.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | the token file readable: refused for isolation |
 | `probe-environ-readable.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | the client process's environment readable: refused for isolation |
+| `probe-harness-environ-readable.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | the harness process's own environment readable (the host's `/proc` reachable from the sandbox): refused for isolation |
 | `probe-gh-token.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | `gh auth token` over the session bus exits 0: refused for isolation |
 | `probe-git-credential.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | `git credential fill` for github.com exits 0: refused for isolation |
 | `probe-skill-fails.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | the skill script fails: refused as a precondition |

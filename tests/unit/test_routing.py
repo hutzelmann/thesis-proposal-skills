@@ -28,7 +28,7 @@ import copilot_cli
 import host_login
 import pytest
 import routing
-from helpers import REPO, followed
+from helpers import REPO, copilot_stream, followed
 from host_login import LOGIN_COMMAND, LoginSource, login_note
 from routing import (
     DEFAULT_PROPOSAL,
@@ -1148,17 +1148,11 @@ def test_repo_ships_the_stream_fixture_readme():
     assert REPO.joinpath("harness", "routing_cases.toml").is_file()
 
 
-def _copilot(name: str) -> list[dict]:
-    path = STREAMS.parent / "copilot_streams" / f"{name}.jsonl"
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()]
-
-
 def test_tool_calls_read_the_copilot_shape_beside_claude_and_codex():
     """testing-harness spec: Skill tool call read as Skill; Copilot subagent spawn
     — through `tool_calls`, whose Claude and Codex readings are unchanged."""
-    assert route_from_events(_copilot("success")) == "proposal-check"
-    names = [name for name, _ in tool_calls(_copilot("helper-spawn"))]
+    assert route_from_events(copilot_stream("success")) == "proposal-check"
+    names = [name for name, _ in tool_calls(copilot_stream("helper-spawn"))]
     assert names.count("Agent") == 1
     assert "Skill" in names
     codex = STREAMS.parent / "codex_streams" / "success.jsonl"

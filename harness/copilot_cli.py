@@ -21,28 +21,34 @@ the backstop, failing closed:
   records, the workspace files — before anything is saved, printed or judged;
   a hit makes the run untested for isolation and records an isolation stop.
   Every child carries `--no-auto-login`, so no stored or `gh` login is used.
-- **Before the run** (`preflight_checks`, then `gate_checks` under the run
-  lock): the location, the home's marker and mode, the clean-home allow-list,
-  the token's prefix, `copilot --version` against COPILOT_PINNED_VERSION, a
-  recorded stop, the machine-wide managed settings, the sandbox tools, the
-  workspace's parent folders (`scan_parents`), then the model-free status read
-  through the headless server (`read_status`: raw `quota_snapshots`, never the
-  client's mapped `getQuota` values), the billing guard (`status_problem`),
-  the model listing, the skill and MCP rosters (`roster_problem`) and the
-  confinement probe (`confinement_probe`, `probe_problem`), which runs fixed
-  commands through `session.shell.executeUserRequested` and refuses unless the
-  sandboxed shell is denied the token file, the client's environment, `~/.ssh`,
-  `~/.config/gh`, `gh` and git authentication, still runs the skills, and
-  reports every command as sandboxed.
+- **Before the run** (`preflight_checks`, then `LOCKED` and `gate_checks`
+  under the run lock): the location, the home's marker and mode, the
+  clean-home allow-list, the token's prefix, a recorded stop (before the
+  first child starts), `copilot --version` against COPILOT_PINNED_VERSION, the
+  machine-wide managed settings, the sandbox tools, the workspace's parent
+  folders (`scan_parents`); then, holding the lock, the stop and the token
+  file once more (another run or a login may have changed them while this
+  one waited), the model-free status read through the headless server
+  (`read_status`: raw `quota_snapshots`, never the client's mapped `getQuota`
+  values), the billing guard (`status_problem`), the model listing, the skill
+  and MCP rosters (`roster_problem`) and the confinement probe
+  (`confinement_probe`, `probe_problem`), which runs fixed commands through
+  `session.shell.executeUserRequested` and refuses unless the sandboxed shell
+  is denied the token file, the client's and the harness's own process
+  environments, `~/.ssh`, `~/.config/gh`, `gh` and git authentication, still
+  runs the skills, and reports every command as sandboxed.
 - **After the run** (`assess`): the session file is reduced into `copilot.*`
   records (`reduce_session`) and deleted; the status is read again; overage
-  growth, an unavailable read, more than twice the credit cap, zero nano-AIU
-  with tokens and a reached soft cap or session limit record a billing stop; a
-  sandbox warning or a shell completion not reported `sandboxed` records an
-  isolation stop. A stop refuses every later run until the operator clears it
-  with `uv run poe host-login copilot --clear-stop`; so does the approval stop
-  every login records, which makes the first model call after a login the
-  operator's explicit go.
+  growth, an unavailable read, unreadable consumption, more than twice the
+  credit cap, zero nano-AIU with tokens and a reached soft cap or session
+  limit record a billing stop; a sandbox warning, a shell completion not
+  reported `sandboxed`, or no shell completion at all records an isolation
+  stop. The steps after the child's start fail closed (`_execute`): one that
+  raises still scrubs the workspace and records a billing stop. A stop — a
+  damaged stop record included — refuses every later run until the operator
+  clears it with `uv run poe host-login copilot --clear-stop`; so does the
+  approval stop every login records, which makes the first model call after
+  a login the operator's explicit go.
 
 Copilot tool events map to the canonical tool names (`copilot_tool_calls`), so
 the shared verdicts and the route reader work unchanged. Copilot reports AI
@@ -258,13 +264,12 @@ def call_scratch() -> Iterator[Path]:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def token_env(home: Path, *, strict: bool = True) -> dict[str, str] | LoginProblem:
-    """`{COPILOT_GITHUB_TOKEN: <token>}` from the token file — the one reader of
+def _token_file(home: Path) -> tuple[str, LoginProblem | None]:
+    """The token file's value and why it cannot be used — the one reader of
     that file outside the login and the logout (Decision 4). One trailing
-    newline is stripped and the prefix re-checked; a missing, empty or classic
-    token refuses the run as untested (`CopilotRefused`), or with
-    `strict=False` comes back as the `LoginProblem`. The value goes nowhere
-    else: never an argv, a log line or a message."""
+    newline is stripped and the prefix re-checked. An empty value means the
+    file is missing or empty; a problem with a value means it is not a
+    fine-grained token."""
     path = host_login.token_path(home)
     try:
         value = path.read_text(encoding="utf-8").removesuffix("\n")
@@ -275,13 +280,19 @@ def token_env(home: Path, *, strict: bool = True) -> dict[str, str] | LoginProbl
                _problem(f"the token in {path} is not a fine-grained token",
                         host_login.COPILOT_TOKEN_REMEDY)
                if host_login.token_problem(value) else None)
+    return value, problem
+
+
+def token_env(home: Path, *, strict: bool = True) -> dict[str, str] | LoginProblem:
+    """`{COPILOT_GITHUB_TOKEN: <token>}` from the token file (`_token_file`). A
+    missing, empty or classic token refuses the run as untested
+    (`CopilotRefused`), or with `strict=False` comes back as the
+    `LoginProblem`. The value goes nowhere else: never an argv, a log line or
+    a message."""
+    value, problem = _token_file(home)
     if problem and strict:
         raise CopilotRefused.of(problem)
     return problem or {COPILOT.token_env: value}  # type: ignore[dict-item]
-
-
-def token_value(home: Path) -> str:
-    return token_env(home)[COPILOT.token_env]  # type: ignore[index]
 
 
 def scrub(text: str, token: str | None) -> tuple[str, bool]:
@@ -605,9 +616,10 @@ class Rpc:
     def _route(self, message: dict) -> None:
         if "method" not in message:
             return
-        if "id" in message:  # a request from the server
-            self.send({"id": message["id"], "error": {"code": -32601,
-                                                      "message": "not supported"}})
+        if "id" in message:  # a request from the server; a closed input leaves it unanswered
+            with suppress(OSError, ValueError):
+                self.send({"id": message["id"], "error": {"code": -32601,
+                                                          "message": "not supported"}})
         else:
             self.notes.append(message)
 
@@ -616,7 +628,7 @@ class Rpc:
         ident, self.ident = self.ident, self.ident + 1
         try:
             self.send({"id": ident, "method": method, "params": params})
-        except OSError:
+        except (OSError, ValueError):  # a broken pipe, or an input already closed
             return None
         while (message := self._next(deadline)) is not None:
             if message.get("id") == ident and "method" not in message:
@@ -832,12 +844,28 @@ def snapshot_record(status: Status | None) -> dict | None:
             "remaining_pct": snap.percent_remaining, "reset_date": status.reset_date}
 
 
-def _quota_data(home: Path) -> dict:
-    with suppress(OSError, ValueError):
-        data = json.loads((home / QUOTA_FILE).read_text(encoding="utf-8"))
+_DAMAGED = object()  # a status snapshot file that exists but cannot be read
+
+
+def _quota_file(home: Path) -> dict | object:
+    """The status snapshot file's content: {} when there is none, `_DAMAGED`
+    when it exists but is not readable JSON holding an object."""
+    try:
+        text = (home / QUOTA_FILE).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except OSError:
+        return _DAMAGED
+    with suppress(ValueError):
+        data = json.loads(text)
         if isinstance(data, dict):
             return data
-    return {}
+    return _DAMAGED
+
+
+def _quota_data(home: Path) -> dict:
+    data = _quota_file(home)
+    return data if isinstance(data, dict) else {}
 
 
 def _write_quota(home: Path, data: dict) -> None:
@@ -848,17 +876,28 @@ def _write_quota(home: Path, data: dict) -> None:
 
 
 def write_snapshot(home: Path, status: Status | None) -> None:
-    """Keep the last status snapshot, and any recorded stop with it."""
+    """Keep the last status snapshot, and any recorded stop with it — a
+    damaged stop record among them, which is kept as the stop it reads as."""
     record = snapshot_record(status)
     if record is None:
         return
-    stop = _quota_data(home).get("stop")
+    stop = read_stop(home)
     _write_quota(home, {**record, **({"stop": stop} if stop else {})})
 
 
 def read_stop(home: Path) -> dict | None:
-    stop = _quota_data(home).get("stop")
-    return stop if isinstance(stop, dict) else None
+    """The recorded stop, or None when the snapshot file holds none. A record
+    that cannot be read — an unreadable file, invalid JSON, a `stop` that is
+    not a non-empty object — is a billing stop saying so: stops are the
+    fail-closed backstop, so damage refuses rather than reads as none."""
+    data = _quota_file(home)
+    if isinstance(data, dict) and "stop" not in data:
+        return None
+    stop = data.get("stop") if isinstance(data, dict) else None
+    if isinstance(stop, dict) and stop:
+        return stop
+    return {"kind": "billing", "cause": f"the stop record in {QUOTA_FILE} cannot be read",
+            "at": "unknown"}
 
 
 def record_stop(home: Path, kind: str, cause: str) -> None:
@@ -866,7 +905,7 @@ def record_stop(home: Path, kind: str, cause: str) -> None:
     A second cause is appended; the stronger kind stays (an approval stop
     gives way to an isolation or a billing stop)."""
     data = _quota_data(home)
-    old = data.get("stop") if isinstance(data.get("stop"), dict) else None
+    old = read_stop(home)
     at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     if old:
         stronger = kind if STOP_KINDS.get(kind, 0) > STOP_KINDS.get(old.get("kind"), 0) else (
@@ -879,12 +918,15 @@ def record_stop(home: Path, kind: str, cause: str) -> None:
 
 
 def clear_stop(home: Path) -> dict | None:
-    """Remove a recorded stop of any kind, change nothing else; the removed stop."""
+    """Remove a recorded stop of any kind, a damaged record included, and
+    change nothing else readable; the removed stop."""
+    stop = read_stop(home)
+    if stop is None:
+        return None
     data = _quota_data(home)
-    stop = data.pop("stop", None)
-    if stop is not None:
-        _write_quota(home, data)
-    return stop if isinstance(stop, dict) else None
+    data.pop("stop", None)
+    _write_quota(home, data)
+    return stop
 
 
 STOP_REMEDIES = {
@@ -973,6 +1015,9 @@ def _version_check(run: Run) -> Check:
 
 
 def _stop_check(run: Run) -> Check:
+    """A recorded stop of any kind. It reads only the status snapshot file and
+    starts nothing, so it comes before the first Copilot child (the version
+    check), and runs again under the run lock (`run_copilot`)."""
     stop = read_stop(run.home)
     problem = stop_problem(stop)
     return Check("stop", problem, f"{stop.get('kind')} ({stop.get('cause')})" if stop else "none",
@@ -1022,8 +1067,15 @@ def machine_problem(environ: Mapping[str, str]) -> LoginProblem | None:
 
 
 PREFLIGHT: tuple[Callable[[Run], Check], ...] = (
-    _location_check, _presence_check, _clean_check, _token_check, _version_check, _stop_check,
+    _location_check, _presence_check, _clean_check, _token_check, _stop_check, _version_check,
     _managed_check, _sandbox_check)
+# The rows whose refusal leaves every later read safe to start: `--preflight-only`
+# prints them and goes on, so every check that can run does (spec: Copilot
+# preflight only). Any other refusal makes a later start unsafe — a child under
+# a refused location or in an unclean home, without the token, on another CLI
+# version, under a managed policy or beside the parent folders' files — and
+# ends the report. A run (`_require`) stops at the first refusal of any row.
+REPORTED = frozenset({"stop", "sandbox_tools", "status", "model", "rosters"})
 
 
 def preflight_checks(run: Run) -> Iterator[Check]:
@@ -1031,12 +1083,13 @@ def preflight_checks(run: Run) -> Iterator[Check]:
     the location, the marker and the mode pass: `--version` unpacks the
     package under the state root. The token check comes before the version
     check, so that every Copilot child, the version check included, carries
-    the token. A failing row ends the sequence, except a recorded stop, which
-    `--preflight-only` prints and passes."""
+    the token, and a recorded stop refuses before that first child starts.
+    A failing row ends the sequence unless it is one `--preflight-only`
+    prints and passes (REPORTED)."""
     for step in PREFLIGHT:
         check = step(run)
         yield check
-        if check.problem and check.name != "stop":
+        if check.problem and check.name not in REPORTED:
             return
 
 
@@ -1146,8 +1199,13 @@ def staged_names(ws: Path) -> list[str]:
 
 # -- the confinement probe (Decision 13) --
 
+# `harness_environ` reads the harness's own process, which keeps every inherited
+# variable the child builder drops (GH_TOKEN and the like, if exported): denied
+# only when the sandbox hides the host's processes, whatever the client
+# process's own dumpability says about `client_environ`
 READ_TARGETS = {"token_file": "the token file",
                 "client_environ": "the client process's environment",
+                "harness_environ": "the harness process's environment",
                 "ssh_dir": "the operator's ~/.ssh", "gh_config": "the operator's ~/.config/gh"}
 AUTH_TARGETS = {"gh_token": "the GitHub CLI's token over the session bus",
                 "git_credential": "git's stored credential for github.com"}
@@ -1166,8 +1224,8 @@ class ProbeResult:
     sandboxed: bool | None
 
 
-def probe_commands(*, token_file: Path, server_pid: int, account: Path, uid: int,
-                   script: Path | None) -> list[tuple[str, str]]:
+def probe_commands(*, token_file: Path, server_pid: int, harness_pid: int, account: Path,
+                   uid: int, script: Path | None) -> list[tuple[str, str]]:
     """The probe's fixed commands. Each discards its own output and prints one
     word or its exit code, so no output of the target ever leaves the sandbox."""
     readable = "{} >/dev/null 2>&1 && echo readable || echo denied"
@@ -1175,6 +1233,7 @@ def probe_commands(*, token_file: Path, server_pid: int, account: Path, uid: int
     commands = [
         ("token_file", readable.format(f"cat {q(str(token_file))}")),
         ("client_environ", readable.format(f"cat /proc/{server_pid}/environ")),
+        ("harness_environ", readable.format(f"cat /proc/{harness_pid}/environ")),
         ("ssh_dir", readable.format(f"ls -A {q(str(account / '.ssh'))}")),
         ("gh_config", readable.format(f"ls -A {q(str(account / '.config' / 'gh'))}")),
         ("gh_token", f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus gh auth token "
@@ -1261,7 +1320,8 @@ def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: floa
     uid = os.getuid() if hasattr(os, "getuid") else 0
     calls = []
     for name, command in probe_commands(token_file=host_login.token_path(run.home),
-                                        server_pid=pid, account=host_login.account_home(),
+                                        server_pid=pid, harness_pid=os.getpid(),
+                                        account=host_login.account_home(),
                                         uid=uid, script=_probe_script(run.ws)):  # type: ignore[arg-type]
         reply = rpc.call("session.shell.executeUserRequested",
                          {"sessionId": session_id, "requestId": uuid.uuid4().hex,
@@ -1341,15 +1401,21 @@ def _probe_check(run: Run) -> Check:
 
 GATE: tuple[Callable[[Run], Check], ...] = (_status_check, _model_check, _roster_check,
                                            _probe_check)
+# what a run reads again once it holds the lock, before any child: the rows the
+# lock's other holders change (a stop recorded by another run or a login, the
+# token a login replaced)
+LOCKED: tuple[Callable[[Run], Check], ...] = (_stop_check, _token_check)
 
 
 def gate_checks(run: Run) -> Iterator[Check]:
     """Under one hold of the run lock: the status read and its billing guard,
-    the model listing, the rosters, then the confinement probe (Decision 6)."""
+    the model listing, the rosters, then the confinement probe (Decision 6).
+    A refusal ends the sequence unless `--preflight-only` prints and passes
+    it (REPORTED): each of these is model-free."""
     for step in GATE:
         check = step(run)
         yield check
-        if check.problem:
+        if check.problem and check.name not in REPORTED:
             return
 
 
@@ -1614,13 +1680,12 @@ def _usage(events: list[dict]) -> dict[str, int]:
 
 
 def credits_used(events: list[dict]) -> float | None:
-    """The run's consumption in AI credits: `totalNanoAiu / 1e9`, None without
-    a shutdown record."""
-    shutdown = _last(events, "copilot.shutdown")
-    if not shutdown:
-        return None
-    nano = shutdown.get("totalNanoAiu")
-    return round(nano / NANO, 4) if _is_number(nano) else 0.0
+    """The run's consumption in AI credits: `totalNanoAiu / 1e9`; None without
+    a shutdown record, or with one whose `totalNanoAiu` is not a number —
+    consumption that cannot be read is never zero (`billing_after` stops on
+    it)."""
+    nano = _last(events, "copilot.shutdown").get("totalNanoAiu")
+    return round(nano / NANO, 4) if _is_number(nano) else None
 
 
 def _notices(events: list[dict], kind: str) -> list[str]:
@@ -1700,26 +1765,30 @@ def _error_text(error: dict) -> str:
     return f"{error.get('errorType') or 'error'}{code}: {error.get('message') or 'no message'}"
 
 
-def soft_cap_reached(events: list[dict]) -> str | None:
-    """The stream reports that the credit cap or the session limit was reached."""
-    for error in _errors(events):
-        if error.get("errorCode") == SOFT_CAP or error.get("errorType") == "session_limits":
-            return _error_text(error)
-    exhausted = _last(events, "session_limits_exhausted.requested")
-    if exhausted:
-        data = _data(exhausted)
-        return f"the session limit was reached ({data.get('usedAiCredits')} of " \
-               f"{data.get('maxAiCredits')} credits)"
-    return None
+def soft_cap_reached(events: list[dict], cap: float) -> str | None:
+    """The stream reports that the credit cap or the session limit was reached:
+    the client's error, the run's credit cap, and the credits used and allowed
+    where the client reports them."""
+    error = next((e for e in _errors(events) if e.get("errorCode") == SOFT_CAP
+                  or e.get("errorType") == "session_limits"), None)
+    exhausted = _data(_last(events, "session_limits_exhausted.requested"))
+    if error is None and not exhausted:
+        return None
+    used = (f", {exhausted.get('usedAiCredits')} of {exhausted.get('maxAiCredits')} credits "
+            "used" if exhausted else "")
+    what = _error_text(error) if error else "the session limit was reached"
+    return f"{what} (the run's credit cap {cap:g}{used})"
 
 
-def failure_reason(events: list[dict], returncode: int, stderr: str) -> RunProblem | None:
+def failure_reason(events: list[dict], returncode: int, stderr: str,
+                   cap: float) -> RunProblem | None:
     """Why a run ended without a verdict, in this order: a token Copilot
-    rejected (untested, the token remedy and the not-affected note), a quota
-    or rate limit (untested, a limit reached), the credit cap or session limit
-    (untested; `billing_after` records the stop), any other session error (the
-    event decides, not the exit code), a non-zero exit (the scrubbed stderr
-    tail), and no closing result line."""
+    rejected (untested, the token remedy), a quota or rate limit (untested, a
+    limit reached), the credit cap or session limit (untested; `billing_after`
+    records the stop), any other session error (the event decides, not the
+    exit code), a non-zero exit (the scrubbed stderr tail), and no closing
+    result line. The untested ones read in the one refusal template, the
+    not-affected note included."""
     errors = _errors(events)
     auth = next((e for e in errors if e.get("errorType") in AUTH_ERRORS), None)
     if auth:
@@ -1727,14 +1796,17 @@ def failure_reason(events: list[dict], returncode: int, stderr: str) -> RunProbl
                                            host_login.COPILOT_TOKEN_REMEDY)), True, "subscription")
     limit = next((e for e in errors if e.get("errorType") in LIMIT_ERRORS), None)
     if limit:
-        return RunProblem(f"untested: copilot reported {_error_text(limit)}: limit reached, not a "
-                          "result. Rerun after the limit resets", True, "subscription",
-                          billing=f"limit reached: {_error_text(limit)}")
-    cap = soft_cap_reached(events)
-    if cap:
-        return RunProblem(f"untested: {cap}: limit reached, not a result. Rerun with a higher "
-                          "--max-ai-credits once the billing stop is cleared", True,
-                          "subscription", billing=f"credit cap reached: {cap}")
+        return RunProblem(refusal(_problem(
+            f"copilot reported {_error_text(limit)}: limit reached, not a result",
+            "rerun after the limit resets")), True, "subscription",
+            billing=f"limit reached: {_error_text(limit)}")
+    reached = soft_cap_reached(events, cap)
+    if reached:
+        return RunProblem(refusal(_problem(
+            f"{reached}: limit reached, not a result",
+            f"check github.com/settings/billing, run `{host_login.CLEAR_STOP_COMMAND}`, then "
+            "rerun with a higher --max-ai-credits")), True, "subscription",
+            billing=f"credit cap reached: {reached}")
     if errors:
         return RunProblem(f"copilot failed: {_error_text(errors[-1])}", False)
     if returncode != 0:
@@ -1763,9 +1835,21 @@ def _overage_grew(before: object, after: object) -> bool:
     return new > (old if _is_number(old) else 0)  # type: ignore[operator]
 
 
+def _consumption_reasons(events: list[dict], cap: float) -> list[str]:
+    credits = credits_used(events)
+    if credits is None:
+        return ["the shutdown record carries no readable consumption (totalNanoAiu), so the "
+                "run's draw on the plan cannot be read"]
+    if credits > 2 * cap:
+        return [f"the run consumed {credits:g} credits, more than twice its cap of {cap:g}"]
+    if credits == 0 and sum(_usage(events).values()) > 0:
+        return ["the shutdown record reports zero consumption while the per-model usage "
+                "reports tokens"]
+    return []
+
+
 def _billing_reasons(before: object, after: object, events: list[dict], cap: float
                      ) -> list[str]:
-    credits = credits_used(events) or 0.0
     reasons = []
     if after is None:
         reasons.append("the status read after the run is unavailable, so overage growth cannot "
@@ -1773,14 +1857,9 @@ def _billing_reasons(before: object, after: object, events: list[dict], cap: flo
     elif _overage_grew(before, after):
         reasons.append(f"the overage count grew from {_snapshot_value(before, 'overage_count')} "
                        f"to {_snapshot_value(after, 'overage_count')}")
-    if credits > 2 * cap:
-        reasons.append(f"the run consumed {credits:g} credits, more than twice its cap of "
-                       f"{cap:g}")
-    if credits == 0 and sum(_usage(events).values()) > 0:
-        reasons.append("the shutdown record reports zero consumption while the per-model usage "
-                       "reports tokens")
-    cap_note = soft_cap_reached(events)
-    return reasons + ([f"the stream reports a reached limit ({cap_note})"] if cap_note else [])
+    reasons += _consumption_reasons(events, cap)
+    reached = soft_cap_reached(events, cap)
+    return reasons + ([f"the stream reports a reached limit ({reached})"] if reached else [])
 
 
 def billing_after(before: object, after: object, events: list[dict], cap: float
@@ -1788,8 +1867,9 @@ def billing_after(before: object, after: object, events: list[dict], cap: float
     """The billing guard after a run (spec: After every run) and whether it
     records a billing stop: no shutdown record (a runner failure, consumption
     unreadable), overage grown or appeared, the read after unavailable
-    (`after is None`), more than twice the cap, zero nano-AIU with tokens, or
-    a reached soft cap or session limit. Pure."""
+    (`after is None`), a shutdown record without a readable `totalNanoAiu`,
+    more than twice the cap, zero nano-AIU with tokens, or a reached soft cap
+    or session limit. Pure."""
     if not _last(events, "copilot.shutdown"):
         return RunProblem("copilot recorded no session shutdown, so the run's consumption cannot "
                           "be read; a billing stop is recorded", False, final=True), True
@@ -1811,15 +1891,14 @@ def _shell_reports(events: list[dict]) -> list[object]:
 def sandbox_after(events: list[dict], stderr: str = "") -> RunProblem | None:
     """The client's warning that the sandbox did not engage (stream, session
     file or stderr), or no report that it did: a shell completion whose
-    `sandboxed` is not true, or no shell completion at all. Untested for
-    isolation; the caller records an isolation stop."""
+    `sandboxed` is not true, or no shell completion at all — whatever ended
+    the run, a session error included (design Decision 13: until a recorded
+    run confirms the report, its absence stops). Untested for isolation; the
+    caller records an isolation stop."""
     warnings = _notices(events, "sandbox") + [line for line in stderr.splitlines()
                                               if sandbox_warned(line)]
     reports = _shell_reports(events)
-    # a run a session error ended before any shell call ran nothing unconfined;
-    # its error decides the outcome, and no isolation stop is recorded for it
     why = ("the client warned that the sandbox did not engage" if warnings else
-           None if not reports and _errors(events) else
            "the stream carries no report that the sandbox is active (no shell call)"
            if not reports else
            "a shell call was not reported as sandboxed" if any(r is not True for r in reports)
@@ -1900,6 +1979,37 @@ def unknown_after(events: list[dict], offered: Iterable[str]) -> RunProblem | No
                       f"{', '.join(names)}", True, "precondition")
 
 
+def helper_after(events: list[dict]) -> RunProblem | None:
+    """Each `task` call (read as `Agent`) cross-checked with `subagent.started`
+    by `toolCallId`, both ways (Decision 10): a task call that started no
+    subagent, or a subagent no task call shows, leaves the helper count the
+    verdicts read unconfirmed. Untested for a precondition."""
+    tasks = {str(s.get("toolCallId")) for s in _starts(events, top_level=False)
+             if s.get("toolName") == "task"}
+    started = {str(_data(e).get("toolCallId")) for e in events
+               if e.get("type") == "subagent.started"}
+    why = (f"the task call {', '.join(sorted(tasks - started))} started no subagent"
+           if tasks - started else
+           f"a subagent started without a task call ({', '.join(sorted(started - tasks))})"
+           if started - tasks else None)
+    if why is None:
+        return None
+    return RunProblem(f"untested: {why}, so the helper count cannot be confirmed", True,
+                      "precondition")
+
+
+def version_after(events: list[dict]) -> RunProblem | None:
+    """The CLI version the session file reports, cross-checked with the one
+    the preflight checked (Decision 10). A session record without a version
+    is left to the other findings."""
+    reported = _last(events, "copilot.session_start").get("copilotVersion")
+    checked = harness_record(events).get("cli_version")
+    if not reported or not checked or str(reported) == str(checked):
+        return None
+    return RunProblem(f"untested: the session reports CLI {reported}, not the {checked} the "
+                      "preflight checked", True, "precondition")
+
+
 @dataclass(frozen=True)
 class Assessment:
     problem: RunProblem | None
@@ -1942,14 +2052,15 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
         True, "isolation") if harness.get("scrub_hit") else None
     failure = (RunProblem(timed_out, False) if timed_out else
                failure_reason(events, int(harness.get("exit_code") or 0),
-                              str(harness.get("stderr_tail") or "")))
+                              str(harness.get("stderr_tail") or ""), cap))
     billing, billing_stop = billing_after(harness.get("before"), harness.get("after"), events, cap)
     sandbox = sandbox_after(events, str(harness.get("stderr_tail") or ""))
     problems = [scrubbed, failure, session_problem(events), billing, sandbox,
                 isolation_after(events, harness.get("roster") or [],
                                 str(harness.get("skill_root") or "")),
                 model_after(events, model, helpers, effort),
-                unknown_after(events, available_tools(helpers, bool(harness.get("network"))))]
+                unknown_after(events, available_tools(helpers, bool(harness.get("network")))),
+                helper_after(events), version_after(events)]
     stops = ([("isolation", "the token's value appeared in a child's output")] if scrubbed else [])
     stops += [("billing", billing.billing or billing.message)] if billing_stop and billing else []
     stops += [("isolation", "the sandbox was ignored or not reported active")] if sandbox else []
@@ -1991,7 +2102,13 @@ def _communicate(proc: subprocess.Popen, timeout: float) -> tuple[str, str, bool
 
 
 def _after_status(run: Run) -> Status | None:
-    after = read_status(run.home, run.environ, token=run.token)
+    """The read after the run; None when it is unavailable, a read that raised
+    included (a broken pipe, a scratch home that could not be made), which
+    `billing_after` turns into a billing stop."""
+    try:
+        after = read_status(run.home, run.environ, token=run.token)
+    except Exception:  # fail closed: an after-read that raised is an unavailable one
+        return None
     return None if after.error or after.snapshot is None else after
 
 
@@ -2008,16 +2125,14 @@ def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun:
                 COPILOT_PINNED_VERSION)}
 
 
-def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
-    """The prompt-mode child, holding the lock through `pass_fds`; then the
-    session file, the read after, the scrub, the snapshot and the stops."""
-    session_id = str(uuid.uuid4())
-    log_dir = run.scratch / "logs"  # type: ignore[operator]
-    argv = command(run.scenario, request, model=run.model, effort=run.effort,  # type: ignore[arg-type]
-                   session_id=session_id, log_dir=log_dir, cap=run.cap)
-    begun = time.monotonic()
-    proc = spawn(argv, home=run.home, cwd=run.ws, scratch=run.scratch, token=run.token,  # type: ignore[arg-type]
-                 environ=run.environ, pass_fds=(fd,))
+AFTER_INCOMPLETE = ("the checks after the run did not complete, so its draw on the plan and its "
+                    "output were not checked")
+
+
+def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
+            timeout: float) -> tuple[list[dict], str | None]:
+    """Wait for the child, then the session file, the read after, the scrub,
+    the snapshot and the stops; the events and the time-limit message."""
     out, err, timed_out = _communicate(proc, timeout)
     records, file_hit = capture_session(run.home, session_id, run.token)
     after = _after_status(run)
@@ -2032,6 +2147,29 @@ def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
     limit = f"copilot did not finish within {timeout:g}s" if timed_out else None
     for kind, cause in assess(events, timed_out=limit).stops:
         record_stop(run.home, kind, cause)
+    return events, limit
+
+
+def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
+    """The prompt-mode child, holding the lock through `pass_fds`, then
+    `_settle`. The steps after the start fail closed: whatever raises among
+    them, the child is stopped, the workspace scrubbed and a billing stop
+    recorded before the exception goes on."""
+    session_id = str(uuid.uuid4())
+    log_dir = run.scratch / "logs"  # type: ignore[operator]
+    argv = command(run.scenario, request, model=run.model, effort=run.effort,  # type: ignore[arg-type]
+                   session_id=session_id, log_dir=log_dir, cap=run.cap)
+    begun = time.monotonic()
+    proc = spawn(argv, home=run.home, cwd=run.ws, scratch=run.scratch, token=run.token,  # type: ignore[arg-type]
+                 environ=run.environ, pass_fds=(fd,))
+    try:
+        events, limit = _settle(run, proc, session_id, begun=begun, timeout=timeout)
+    except BaseException:
+        if proc.poll() is None:
+            host_login.stop_child(proc, signal.SIGTERM)
+        scrub_tree(run.ws, run.token)  # type: ignore[arg-type]
+        record_stop(run.home, "billing", AFTER_INCOMPLETE)
+        raise
     if limit:
         raise CopilotRunFailed(limit, events)
     return events
@@ -2041,7 +2179,10 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
                 timeout: float, home: Path, scenario: Mapping,
                 environ: Mapping[str, str] | None = None) -> list[dict]:
     """One Copilot run under a single hold of the run lock (Decision 9): the
-    parent-folder scan, then under the lock the status read before, the model
+    parent-folder scan, then under the lock the recorded stop and the token
+    file read again (`LOCKED`: a run waits up to LOCK_WAIT_S for the lock,
+    during which another run may record a stop or a login may replace the
+    token and record the approval stop), the status read before, the model
     listing, the rosters and the confinement probe, the run (whose child holds
     the lock too), the session file, the read after, the scrub and the stops.
     Raises `host_login.RunLockRefused`, `CopilotRefused` (untested) or
@@ -2051,10 +2192,11 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
     if problem:
         raise CopilotRefused.of(problem)
     run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort, cap=cap)
-    run.home, run.token = home, token_value(home)
+    run.home = home
     run.scratch = make_scratch("devrun-copilot-home-")
     try:
         with host_login.run_lock(home, record=COPILOT) as fd:
+            _require(step(run) for step in LOCKED)
             _require(gate_checks(run))
             return _execute(run, request, fd, timeout)
     finally:
@@ -2064,12 +2206,15 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
 def preflight_report(ws: Path, scenario: Mapping, *, model: str, effort: str | None,
                      environ: Mapping[str, str] | None = None) -> tuple[list[Check], bool]:
     """`--preflight-only` (Decision 7): every check that comes before the run,
-    staging, the rosters and the confinement probe included, each recorded;
-    a recorded stop is printed and does not decide the outcome. No prompt-mode
-    child starts, and the probe's session folder is deleted."""
+    staging, the rosters and the confinement probe included, each recorded.
+    A refused row in REPORTED (the stop, the sandbox tools, the status, the
+    model, the rosters) is printed and the report goes on; any other refusal
+    makes a later start unsafe and ends it. A recorded stop does not decide
+    the outcome. No prompt-mode child starts, and the probe's session folder
+    is deleted."""
     run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort)
     checks = list(preflight_checks(run))
-    if any(c.problem and c.name != "stop" for c in checks):
+    if any(c.problem and c.name not in REPORTED for c in checks):
         return checks, False
     checks.append(Check("workspace", scan_problem(ws)))
     if checks[-1].problem:
@@ -2097,10 +2242,13 @@ def _show(value: object) -> str:
 
 
 def _token_state(home: Path) -> tuple[str | None, LoginProblem | None, str]:
-    found = token_env(home, strict=False)
-    if isinstance(found, LoginProblem):
-        return None, found, "not fine-grained" if "fine-grained" in found.cause else "no"
-    return found[COPILOT.token_env], None, "yes"  # type: ignore[index]
+    """The token, why it cannot be used, and the `token_present` line — read
+    from the file's state (no value, or a value that is not fine-grained),
+    never from the wording of the refusal."""
+    value, problem = _token_file(home)
+    if problem:
+        return None, problem, "not fine-grained" if value else "no"
+    return value, None, "yes"
 
 
 def _sandbox_line(environ: Mapping[str, str]) -> str:

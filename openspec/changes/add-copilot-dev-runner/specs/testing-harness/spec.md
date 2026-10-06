@@ -15,7 +15,7 @@ A Copilot run SHALL draw only on the included AI credits of the operator's Copil
 - **An isolation stop**, for a run whose sandbox was ignored or not reported active, or whose output carried the token's value (requirement: Dev-runner host adapters). Its one remedy is reading the run's findings and then clearing the stop.
 - **The approval stop**, which the login command records whenever it writes a token file, a reset included. It holds back the first model call after every login until the operator approves it. Its one remedy is clearing the stop, which is that approval.
 
-While a stop is recorded, every later Copilot run SHALL be refused before any Copilot process starts. The refusal names the stop's cause and its remedy. Only the operator clears a stop, with the login command's clear option or a reset; a reset records a new approval stop. Both carry the login command's terminal and agent-marker refusals (requirement: Harness-owned host logins). A stop SHALL NOT refuse the status command or the preflight-only option (requirement: Dev-runner host adapters), which make no model call; both report it.
+While a stop is recorded, every later Copilot run SHALL be refused before any Copilot process starts. The refusal names the stop's cause and its remedy. A stop record that cannot be read SHALL count as a recorded billing stop. Only the operator clears a stop, with the login command's clear option or a reset; a reset records a new approval stop. Both carry the login command's terminal and agent-marker refusals (requirement: Harness-owned host logins). A stop SHALL NOT refuse the status command or the preflight-only option (requirement: Dev-runner host adapters), which make no model call; both report it.
 
 **Environment.** These Copilot children are covered: the run, the version check, the status read, the confinement probe, and the skill and MCP listings. Each SHALL receive one final environment. The same function that builds the isolated Claude child's environment builds it from the Copilot record (requirement: Isolated child environment), and the token is added after that function. That requirement's allowlist, configuration-directory variable and account-surface variables govern Claude children only; this requirement prescribes the Copilot child's environment. The one exception is the status command's on-request read without the token (requirement: Harness-owned host logins), whose child receives the same environment less the token variable. It holds:
 
@@ -67,9 +67,12 @@ The runner SHALL keep the last status snapshot in the harness home. It holds onl
 
 - the overage count grew, or appeared, between the two reads;
 - the status read after the run is unavailable, so overage growth cannot be ruled out;
+- the shutdown record carries no readable consumption;
 - the run consumed more than twice its cap;
 - the shutdown record reports zero consumption while the per-model usage reports tokens;
 - the stream reports that the session limit or the credit cap was reached.
+
+A check after the run that does not complete SHALL record a billing stop as well, after the token's value has been scrubbed from the workspace.
 
 A session record that holds no shutdown record leaves the consumption unreadable. Such a run SHALL be a runner failure rather than untested (requirement: Dev-runner cost and helper-agent telemetry), and the runner SHALL record a billing stop for it as well.
 
@@ -619,7 +622,7 @@ After the run, it SHALL count as untested in any of these cases:
 
 - refuse to start on Windows with a usage error, because the sandbox cannot enforce its deny list there;
 - refuse the run as untested when any tool the platform's sandbox needs, as the pinned package names them, is not installed. Remedy: install the named tool;
-- before every run, and without a model call, run a confinement probe in a session that carries the run's sandbox settings. Its commands are fixed in the harness; each discards its own output and reports only whether its target was denied or readable, or its exit code. The run SHALL be refused as untested for isolation when the probe can read the token file, the environment of the client process, the operator's GitHub CLI configuration or SSH directory, or can obtain the GitHub CLI's token through the per-user session bus or git's stored credentials for GitHub. It SHALL be refused as untested for a precondition when the probe cannot run the skills' interpreter in the workspace, because the deny list would then fail the skill rather than confine it;
+- before every run, and without a model call, run a confinement probe in a session that carries the run's sandbox settings. Its commands are fixed in the harness; each discards its own output and reports only whether its target was denied or readable, or its exit code. The run SHALL be refused as untested for isolation when the probe can read the token file, the environment of the client process or of the harness's own process, the operator's GitHub CLI configuration or SSH directory, or can obtain the GitHub CLI's token through the per-user session bus or git's stored credentials for GitHub. It SHALL be refused as untested for a precondition when the probe cannot run the skills' interpreter in the workspace, because the deny list would then fail the skill rather than confine it;
 - count the run as untested for isolation, and record an isolation stop (requirement: Copilot plan billing guard), when its stream or session record carries the client's warning that the sandbox was ignored, or lacks the client's report that the sandbox is active. Until a recorded run confirms which event reports it, the runner uses the event the pinned package's source names.
 
 Limiting the sandboxed shell's network per scenario is not part of this requirement.
@@ -631,7 +634,7 @@ Limiting the sandboxed shell's network per scenario is not part of this requirem
 - The routing rig stays Claude-only.
 - The Codex and Copilot runners SHALL refuse to start on a platform without POSIX file locks.
 - No scenario prompt SHALL contain a slash command naming a skill, because Copilot invokes a skill named that way without a tool call.
-- On Copilot, a preflight-only option SHALL run every check that comes before the run and print each result. It SHALL start no prompt-mode child and make no model call.
+- On Copilot, a preflight-only option SHALL run every check that comes before the run and print each result. A refusal goes on to the later checks, except one that would make starting them unsafe, which ends the option there: the location, the home, its clean state, the token, the client version, a machine-wide managed policy and the workspace's parent folders. It SHALL start no prompt-mode child and make no model call, and it SHALL refuse, with a usage error, any option it would otherwise ignore.
 
 #### Scenario: Claude stays the default host
 - **WHEN** the dev runner is invoked without a host
@@ -753,7 +756,7 @@ Limiting the sandboxed shell's network per scenario is not part of this requirem
 - **THEN** the run is refused as untested before any Copilot child starts, and the remedy is installing the named tool
 
 #### Scenario: Confinement probe reaches a credential
-- **WHEN** the confinement probe before a Copilot run reports the token file, the client process's environment, the operator's GitHub CLI configuration or SSH directory as readable, or obtains the GitHub CLI's token through the session bus or git's stored credentials for GitHub
+- **WHEN** the confinement probe before a Copilot run reports the token file, the client process's or the harness process's environment, the operator's GitHub CLI configuration or SSH directory as readable, or obtains the GitHub CLI's token through the session bus or git's stored credentials for GitHub
 - **THEN** the run is refused as untested for isolation before any prompt-mode child starts, the message names the target, and no output of the probe's commands appears in it
 
 #### Scenario: Copilot on Windows
