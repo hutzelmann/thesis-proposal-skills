@@ -35,7 +35,15 @@ spec: Dev-runner host adapters):
   `uv run poe host-login copilot --clear-stop`. `--preflight-only` prints every
   check before the run and starts no prompt-mode child. Copilot reports AI
   credits, not money: the summary's cost is absent, the credits, the cap and
-  the overage and remaining values before and after are reported.
+  the overage and remaining values before and after are reported. Its
+  workspaces lie in the Copilot work directory, never in the system
+  temporary directory, which its sandbox denies. The pseudo-scenario `canary`
+  (Copilot only, exactly `--max-ai-credits 30`) is the first model call after
+  the operator's approval: an empty workspace, the shell alone and the
+  confinement probe's commands as the whole prompt, passing only when the
+  client reports every shell call sandboxed and every row reads as the probe
+  requires; it is no eval scenario, and a canary that does not pass records a
+  stop.
 
 Dev loop only — not the source of record. Every summary carries its host and
 the label "dev-runner (<host>), not comparable to matrix", and a
@@ -71,6 +79,8 @@ Usage:
       --max-ai-credits 30 --preflight-only
   uv run python harness/claude_runner.py check_report --host copilot --model <id> \
       --max-ai-credits 30 --keep
+  uv run python harness/claude_runner.py canary --host copilot --model <id> \
+      --max-ai-credits 30 [--preflight-only | --keep]
   uv run python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl \
       --expect write_from_seed import_messy customize_override
 
@@ -1371,11 +1381,12 @@ def run_copilot(ws: Path, request: str, args: argparse.Namespace, home: Path) ->
     run's events also show an untested cause; a session without a shutdown
     record stays a runner failure (exit 4) and records a billing stop. Every
     message was scrubbed of the token before it reaches here."""
-    scenario = SCENARIOS[args.scenario]
+    canary = args.scenario == CANARY
+    scenario = {} if canary else SCENARIOS[args.scenario]
     try:
         events = copilot_cli.run_copilot(ws, request, model=args.model, effort=args.effort,
                                          cap=args.max_ai_credits, timeout=args.timeout,
-                                         home=home, scenario=scenario)
+                                         home=home, scenario=scenario, canary=canary)
     except host_login.RunLockRefused as busy:
         raise RunnerFailure(refusal(busy.problem), untested=True) from None
     except copilot_cli.CopilotRefused as refused:
@@ -1387,6 +1398,13 @@ def run_copilot(ws: Path, request: str, args: argparse.Namespace, home: Path) ->
     if problem:
         raise _copilot_failure(problem, events)
     return events
+
+
+# The Copilot canary (add-copilot-dev-runner, the user's decision D-c): a
+# pseudo-scenario the positional accepts, absent from SCENARIOS, so no eval,
+# verdict, judge or support report ever reads it
+CANARY = "canary"
+CANARY_LABEL = "dev-runner (copilot) canary, not an eval"
 
 
 def copilot_work_root() -> Path:
@@ -1489,6 +1507,24 @@ def _host_rules(args: argparse.Namespace, host: str, scenario: dict,
     )
 
 
+def _canary_rules(args: argparse.Namespace, host: str) -> tuple[tuple[bool, str], ...]:
+    """The canary's own usage rules (add-copilot-dev-runner, D-c): Copilot
+    only, exactly the minimum credit cap, and nothing that would grade it or
+    change what it stages."""
+    canary = args.scenario == CANARY
+    return (
+        (canary and host != "copilot", f"{CANARY} runs on --host copilot only: it confirms the "
+         "sandbox Copilot's prompt mode applies"),
+        (canary and args.max_ai_credits is not None
+         and args.max_ai_credits != copilot_cli.MIN_AI_CREDITS,
+         f"{CANARY} takes exactly --max-ai-credits {copilot_cli.MIN_AI_CREDITS}, the smallest cap "
+         "the runner allows"),
+        *((canary and bool(getattr(args, option)),
+           f"{CANARY} takes no --{option.replace('_', '-')}: it is no eval scenario, stages no "
+           "skill and is never graded") for option in ("judge", "rejudge", "no_skill")),
+    )
+
+
 def _copilot_rules(args: argparse.Namespace, host: str,
                    model: str) -> tuple[tuple[bool, str], ...]:
     """Copilot's own usage rules (testing-harness spec: Dev-runner host adapters;
@@ -1530,6 +1566,7 @@ def usage_problem(args: argparse.Namespace) -> str | None:
          "reads its logs; a dev-runner summary is never written there"),
         (host == "claude" and args.effort is not None,
          "--effort applies to --host codex or --host copilot only"),
+        *_canary_rules(args, host),
         *_host_rules(args, host, scenario, model),
         *_copilot_rules(args, host, model),
         # last, so every other usage error reads the same on every platform; a
@@ -1640,15 +1677,18 @@ def copilot_preflight_only(args: argparse.Namespace) -> int:
     workspace. A recorded stop is printed and does not decide the outcome.
     Exit 0 when every other check passes, 3 otherwise (a held run lock and a
     refused child environment included); no prompt-mode child. The
-    workspace is made in the Copilot work directory, as a run's is."""
-    scenario = SCENARIOS[args.scenario]
+    workspace is made in the Copilot work directory, as a run's is; the
+    canary's stays empty, as its run's does."""
+    scenario = SCENARIOS.get(args.scenario, {})
     try:
         ws = new_workspace(HOSTS["copilot"], args.scenario)
     except RunnerFailure as failure:
         print(failure.message, file=sys.stderr)
         return EXIT_UNTESTED
     try:
-        stage(scenario, ws, install_skill=not args.no_skill, skill_dir=HOSTS["copilot"].skill_dir)
+        if args.scenario != CANARY:
+            stage(scenario, ws, install_skill=not args.no_skill,
+                  skill_dir=HOSTS["copilot"].skill_dir)
         try:
             checks, ready = copilot_cli.preflight_report(ws, scenario, model=args.model,
                                                          effort=args.effort)
@@ -1668,6 +1708,59 @@ def copilot_preflight_only(args: argparse.Namespace) -> int:
         return EXIT_PASS if ready else EXIT_UNTESTED
     finally:
         shutil.rmtree(ws, ignore_errors=True)
+
+
+def canary_summary(args: argparse.Namespace, events: list[dict],
+                   failure: RunnerFailure | None, ws: Path) -> dict:
+    """The canary's summary: the run's identity and telemetry (K5's
+    `events_seen` among it), the outcome, every row with its word and sandbox
+    report, the unanswered rows and the extra shell calls."""
+    host = HOSTS["copilot"]
+    view = host.read(events, args)
+    status = failure.status if failure else EXIT_PASS
+    return {**_identity(args, view), "host": host.name, "label": CANARY_LABEL,
+            "outcome": OUTCOMES[status], "exit_status": status,
+            "why": failure.message if failure else copilot_cli.CANARY_PASSED,
+            "billing": failure.billing if failure else None, "config": "isolated",
+            **host.label(None, True), **view.telemetry, **copilot_cli.canary_report(events),
+            "workspace": str(ws) if args.keep else None}
+
+
+def copilot_canary(args: argparse.Namespace) -> int:
+    """`poe dev canary --host copilot --model <id> --max-ai-credits 30` (D-c):
+    an empty workspace in the Copilot work directory, the checks before the
+    lock, then `copilot_cli.run_copilot(…, canary=True)`, whose prompt is the
+    confinement probe's commands and whose assessment passes only on
+    confirmed confinement. Exit 0 when it passed, 3 untested (a stop is then
+    recorded), 4 a runner failure. The summary prints whatever ended it."""
+    try:
+        ws = new_workspace(HOSTS["copilot"], CANARY)
+    except RunnerFailure as failure:
+        emit(failure_summary(args, failure, None), args.summary_log)
+        return failure.status
+    stack = ExitStack()
+    events: list[dict] = []
+    failure: RunnerFailure | None = None
+    try:
+        try:
+            home = HOSTS["copilot"].isolation(stack, args)
+            events = run_copilot(ws, "", args, home)
+        except RunnerFailure as caught:
+            failure, events = caught, caught.events
+        except Exception as exc:  # a crash still leaves its line in the summary log
+            traceback.print_exc()
+            failure = RunnerFailure(f"runner crashed: {exc!r}")
+        if events:
+            save_events(events, ws)
+        out = canary_summary(args, events, failure, ws)
+        emit(out, args.summary_log)
+        return out["exit_status"]
+    finally:
+        stack.close()
+        if args.keep:
+            print(f"\nworkspace kept: {ws}")
+        else:
+            shutil.rmtree(ws, ignore_errors=True)
 
 
 # ---------- re-grade kept workspaces ----------------------------------------------
@@ -1808,7 +1901,10 @@ def summarize(path: Path, expected: tuple[str, ...] | list[str] = ()) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("scenario", nargs="?", choices=sorted(SCENARIOS))
+    parser.add_argument("scenario", nargs="?", choices=sorted([*SCENARIOS, CANARY]),
+                        help=f"the scenario to run; `{CANARY}` (--host copilot only) is the "
+                             "Copilot canary: the confinement probe's commands as the whole "
+                             "prompt, no skill, the shell alone, the minimum credit cap")
     parser.add_argument("--host", choices=sorted(HOSTS), default="claude",
                         help="the host CLI that runs the model under test (default claude); "
                              "codex runs in the Codex harness home on the ChatGPT plan quota, "
@@ -1883,6 +1979,8 @@ def main(argv: list[str] | None = None) -> int:
             return rejudge(args, judge)
         if args.preflight_only:
             return copilot_preflight_only(args)
+        if args.scenario == CANARY:
+            return copilot_canary(args)
         scenario = SCENARIOS[args.scenario]
         if scenario.get("install"):  # no rubric twin, so no judge reaches here
             return run_install_probe(args, scenario)

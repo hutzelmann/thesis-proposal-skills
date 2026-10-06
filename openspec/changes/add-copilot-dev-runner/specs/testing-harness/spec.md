@@ -12,7 +12,7 @@ A Copilot run SHALL draw only on the included AI credits of the operator's Copil
 **Stops.** Some findings are not settled by the next run's checks. For each of them the runner SHALL record a stop in the harness home, naming the cause and the time. A stop is one of three kinds:
 
 - **A billing stop**, for a finding after a run that shows the run may have drawn more than its bound. The cases are listed under "After every run". Its one remedy is checking the account's billing page and then clearing the stop.
-- **An isolation stop**, for a run whose sandbox was ignored or not reported active, a run stopped at a shell call not reported as sandboxed, or a run whose output carried the token's value (requirement: Dev-runner host adapters). Its one remedy is reading the run's findings and then clearing the stop.
+- **An isolation stop**, for a run whose sandbox was ignored or not reported active, a run stopped at a shell call not reported as sandboxed, a run whose output carried the token's value, or a canary that did not confirm the sandbox (requirement: Dev-runner host adapters). Its one remedy is reading the run's findings and then clearing the stop.
 - **The approval stop**, which the login command records whenever it writes a token file, a reset included. It holds back the first model call after every login until the operator approves it. Its one remedy is clearing the stop, which is that approval.
 
 While a stop is recorded, every later Copilot run SHALL be refused before any Copilot process starts. The refusal names the stop's cause and its remedy. A stop record that cannot be read SHALL count as a recorded billing stop. Only the operator clears a stop, with the login command's clear option or a reset; a reset records a new approval stop. Both carry the login command's terminal and agent-marker refusals (requirement: Harness-owned host logins). A stop SHALL NOT refuse the status command or the preflight-only option (requirement: Dev-runner host adapters), which make no model call; both report it.
@@ -664,6 +664,17 @@ After the run, it SHALL count as untested in any of these cases:
 
 Limiting the sandboxed shell's network per scenario is not part of this requirement.
 
+**Canary on Copilot.** The first model call after the operator's approval SHALL be a canary run, which confirms the sandbox the client's prompt mode resolves and applies, and the first skill run SHALL follow only once a canary has passed. The canary is no eval scenario: no verdict, judge or support report reads it. It SHALL:
+
+- run on Copilot only, with a model named on the command line and exactly the minimum credit cap; any other cap, another host, a judge, a re-grade or the no-skill baseline is a usage error;
+- run in an empty workspace in the Copilot work directory, with no skill staged, and offer the shell tool alone;
+- carry every other part of a skill run's invocation, apart from the denial of the GitHub CLI in the shell, which would refuse one of its commands before the sandbox saw it;
+- pass every check before the run that a skill run passes, the confinement probe among them, and run under the same live watch and the same checks after the run;
+- prompt the model with the confinement probe's fixed commands and nothing else, to be run verbatim, one per shell call, in order; a command that needs the client process's identity finds it by the run's session identifier;
+- read each command's result from the client's own shell completions, never from the model's reply, and judge the write into the host's shared temporary directory on the host.
+
+It SHALL pass only when the run has no finding a skill run's checks would make, apart from the loaded-skills report, which it records instead; when every fixed command ran and reads as the probe requires; when every shell completion is reported as sandboxed; when no sandbox warning appeared other than the client's notice that its sandbox flag is ignored; and when the billing guard still passes on the status read after the run. Any other outcome is untested and records a stop (requirement: Copilot plan billing guard): a billing stop for a billing finding, an isolation stop otherwise. A command the model skipped or altered counts as unanswered. The summary SHALL name each row with its result and its sandbox report, the shell calls that matched no fixed command, whether the ignored-flag notice appeared, and, for the client's loaded-skills, loaded-servers, session-start, result, shutdown, skill-invocation and tool-completion events, whether each reached the stream, the session record, both or neither.
+
 **Scope.**
 
 - The install-prompt scenarios SHALL be refused on every host but Claude, with a usage error.
@@ -847,6 +858,26 @@ Limiting the sandboxed shell's network per scenario is not part of this requirem
 #### Scenario: Copilot preflight only
 - **WHEN** a Copilot run is requested with the preflight-only option
 - **THEN** every check that comes before the run runs and is printed, a recorded stop among them, no prompt-mode child starts, and the home holds no new session
+
+#### Scenario: Canary passes on confirmed confinement
+- **WHEN** a canary run's shell completions each report the call as sandboxed, each fixed command ran and reads as the probe requires, the only sandbox notice is the ignored-flag notice, and the billing guard passes on the read after the run
+- **THEN** the canary passes, no stop is recorded, and its summary names every row, the ignored-flag notice and where each listed event type arrived
+
+#### Scenario: Canary reaches a target
+- **WHEN** a canary's shell completion for the token file reads as readable, or one of its shell completions is not reported as sandboxed
+- **THEN** the canary is untested for isolation, the message names the target or the call, and an isolation stop is recorded, so the planned skill run is refused until the operator clears it
+
+#### Scenario: Canary command not run verbatim
+- **WHEN** the model skipped one of the canary's commands or ran it altered
+- **THEN** the canary is untested, the message names the unanswered row, and an isolation stop is recorded
+
+#### Scenario: Canary billing guard after the run
+- **WHEN** the status read after a canary reports overage as permitted
+- **THEN** the canary is untested and a billing stop is recorded
+
+#### Scenario: Canary takes the minimum cap and the shell alone
+- **WHEN** a canary is requested with a credit cap above the minimum, on another host, or with a judge
+- **THEN** the runner exits with a usage error and starts nothing; requested correctly, its invocation offers the shell tool alone, stages no skill, and does not deny the GitHub CLI in the shell
 
 ### Requirement: Isolated child environment
 An isolated Claude host child SHALL receive an environment built from an allowlist. This covers every Claude host child that runs in an isolated configuration:

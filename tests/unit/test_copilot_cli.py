@@ -132,7 +132,8 @@ def send(message):
     sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
     sys.stdout.buffer.flush()
 
-PROBES = ((f"/proc/{os.getpid()}/environ", "client_environ"),  # this server's own pid
+PROBES = (("/cmdline", "client_environ"),  # the canary's row finds the client by its session
+          (f"/proc/{os.getpid()}/environ", "client_environ"),  # this server's own pid
           (f"/proc/{os.getppid()}/environ", "harness_environ"),  # the harness that started it
           # git's row names the operator's GitHub CLI directory too, so it comes first
           ("git credential", "git_credential"), (".ssh", "ssh_dir"), (".config/gh", "gh_config"),
@@ -239,8 +240,36 @@ def serve():
         reply = {k: v for k, v in reply.items() if k in ("result", "error")}
         send({"jsonrpc": "2.0", "id": message["id"], **reply})
 
+def canary_stream(prompt):
+    # the canary (D-c): one bash call per fixed command of the prompt, each
+    # answered from CONFIG["canary"] (name -> [word, sandboxed]), as 1.0.91's
+    # shell completions carry it (`result.content`, `sandboxed`)
+    commands = [block.split("\n```", 1)[0] for block in prompt.split("```sh\n")[1:]]
+    lines = []
+    for i, command in enumerate(commands):
+        name = probe_name(command)
+        if name in CONFIG.get("canary_skip", []):
+            continue
+        if name == "tmp_write" and CONFIG.get("tmp_reaches_host"):
+            target = command.split(": > ", 1)[1].split(" 2>", 1)[0].strip("'")
+            pathlib.Path(target).write_text("", encoding="utf-8")
+        word, sandboxed = CONFIG["canary"][name]
+        ran = command + CONFIG.get("canary_alter", {}).get(name, "")
+        lines.append({"type": "tool.execution_start", "data": {
+            "toolCallId": f"c{i}", "toolName": "bash", "arguments": {"command": ran}}})
+        lines.append({"type": "tool.execution_complete", "data": {
+            "toolCallId": f"c{i}", "success": True, "sandboxed": sandboxed,
+            "result": {"content": f"{word}\n<exited with exit code 0>"}}})
+    lines.append({"type": "assistant.message", "data": {"messageId": "m1", "content": "done",
+                                                        "model": CONFIG["canary_model"]}})
+    lines.append({"type": "result", "sessionId": "11111111-1111-4111-8111-111111111111",
+                  "exitCode": 0})
+    return "".join(json.dumps(line) + "\n" for line in lines)
+
 def run():
     session = next(a.split("=", 1)[1] for a in ARGS if a.startswith("--session-id="))
+    if "canary" in CONFIG:
+        CONFIG["stream"] = canary_stream(ARGS[ARGS.index("-p") + 1])
     folder = pathlib.Path(os.environ["COPILOT_HOME"], "session-state", session)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "events.jsonl").write_text(CONFIG["session"].replace("__WS__", os.getcwd()),
@@ -2591,3 +2620,294 @@ def test_run_env_runs_a_command_without_the_token(home, monkeypatch):
     assert call["env"]["HOME"] == str(call["cwd"])
     with pytest.raises(SystemExit):
         copilot_cli.main(["run-env"])
+
+
+# ---------- 8.0: the canary (the user's decision D-c) ------------------------------------------
+
+SID = "22222222-2222-4222-8222-222222222222"
+PROBE_OK_WORDS = {r["name"]: r["output"] for r in load("probe-ok")["results"]}  # type: ignore[index]
+
+
+def canary_cmds(tmp_path: Path) -> list[tuple[str, str]]:
+    host = copilot_cli.ProbeHost("net:[4026531840]", tmp_path / "devrun-probe-tmp-x",
+                                 tmp_path / "devrun-probe-write-x")
+    return copilot_cli.canary_commands(token_file=tmp_path / "copilot.token", session_id=SID,
+                                       harness_pid=4343, account=tmp_path / "account", uid=1000,
+                                       host=host)
+
+
+def canary_events(tmp_path: Path, *, words: dict | None = None, unsandboxed: tuple = (),
+                  skip: tuple = (), alter: tuple = (), extra: int = 0, tmp_seen: bool = False,
+                  guard: str | None = None, loaded: bool = False) -> list[dict]:
+    """A synthetic canary run, as the runner saves it: the client's bash
+    calls (1.0.91 `tool.execution_start` and `tool.execution_complete` with
+    `result.content` and `sandboxed`), the closing result line, the reduced
+    session records and the runner's own records."""
+    words = {**PROBE_OK_WORDS, "tmp_write": "0", **(words or {})}
+    events: list[dict] = []
+    commands = canary_cmds(tmp_path)
+    calls = [(n, c + (" # altered" if n in alter else "")) for n, c in commands if n not in skip]
+    calls += [("extra", f"echo extra {i}") for i in range(extra)]
+    for i, (name, command) in enumerate(calls):
+        events.append({"type": "tool.execution_start", "data": {
+            "toolCallId": f"c{i}", "toolName": "bash", "arguments": {"command": command}}})
+        events.append({"type": "tool.execution_complete", "data": {
+            "toolCallId": f"c{i}", "success": True, "sandboxed": name not in unsandboxed,
+            "result": {"content": f"{words.get(name, '0')}\n<exited with exit code 0>"}}})
+    if loaded:
+        events.insert(0, {"type": "session.skills_loaded", "data": {"skills": []}})
+    snapshot = {"overage_count": 0, "remaining_pct": 99.7}
+    events += [
+        {"type": "assistant.message", "data": {"content": "done", "model": "copilot-fixture-a"}},
+        {"type": "result", "sessionId": SID, "exitCode": 0},
+        {"type": "copilot.session_start", "copilotVersion": "1.0.91"},
+        {"type": "copilot.shutdown", "shutdownType": "routine", "totalPremiumRequests": 0,
+         "totalNanoAiu": 1_500_000_000, "modelMetrics": {"copilot-fixture-a": {
+             "usage": {"inputTokens": 900, "outputTokens": 90}, "totalNanoAiu": 1_500_000_000}}},
+        {"type": "copilot.session_types", "types": ["session.shutdown", "session.start",
+                                                    "tool.execution_complete"]},
+        {"type": "copilot.canary", "commands": [list(pair) for pair in commands],
+         "tmp_seen": tmp_seen},
+        {"type": "copilot.harness", "duration_ms": 5000, "exit_code": 0, "stderr_tail": "",
+         "timed_out": False, "session_id": SID, "cap": 30, "model": "copilot-fixture-a",
+         "effort": None, "helpers": 0, "network": False, "tools": ["bash"],
+         "roster": ["customize-cloud-agent", "github-pr-media"],
+         "skill_root": str(tmp_path / "ws" / ".agents" / "skills"), "scrub_hit": False,
+         "before": snapshot, "after": snapshot, "after_guard": guard, "first_event_ms": 400,
+         "sandbox_flag_notice": True, "cli_version": "1.0.91"}]
+    return events
+
+
+def test_the_canary_command_offers_the_shell_alone_and_keeps_the_other_denials():
+    """testing-harness spec: Canary takes the minimum cap and the shell alone."""
+    network = claude_runner.SCENARIOS["import_messy"]  # a skill run would approve its URLs
+    assert copilot_cli.url_hosts(network)
+    argv = copilot_cli.command(network, "p", model="m", effort=None, session_id="s",
+                               log_dir=PurePosixPath("/x/logs"), cap=30, canary=True)
+    assert "--available-tools=bash" in argv
+    assert "--deny-tool=shell(gh:*)" not in argv
+    for tool in copilot_cli.CANARY_DENIED:
+        assert f"--deny-tool={tool}" in argv
+    assert not any(a.startswith("--allow-url") for a in argv)
+    assert _contains(argv, ["--max-ai-credits", "30"])
+    for switch in copilot_cli.SWITCHES:
+        assert switch in argv
+    # a skill run keeps every denial and its own tools
+    plain = copilot_cli.command({"skill": "proposal-check"}, "p", model="m", effort=None,
+                                session_id="s", log_dir=PurePosixPath("/x/logs"), cap=30)
+    assert "--deny-tool=shell(gh:*)" in plain
+    assert "--available-tools=bash" not in plain
+
+
+def test_the_canary_commands_are_the_probe_commands_without_the_skill_script(tmp_path):
+    commands = dict(canary_cmds(tmp_path))
+    assert set(commands) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
+                             *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS}
+    client = commands["client_environ"]
+    assert SID not in client  # assembled from two halves: its own command line never matches
+    assert SID[:18] in client
+    assert SID[18:] in client
+    assert ">/dev/null 2>&1" in client
+    assert client.endswith("echo $r")
+    assert "/proc/4343/environ" in commands["harness_environ"]
+    prompt = copilot_cli.canary_prompt(canary_cmds(tmp_path))
+    assert prompt.startswith(copilot_cli.CANARY_PROMPT)
+    for command in commands.values():
+        assert f"```sh\n{command}\n```" in prompt
+    assert "/proposal-" not in prompt
+
+
+def test_a_canary_with_every_row_confirmed_passes_and_records_no_stop(tmp_path):
+    """testing-harness spec: Canary passes on confirmed confinement — the
+    loaded-skills report is recorded, not required."""
+    events = canary_events(tmp_path)
+    assessment = copilot_cli.assess(events)
+    assert assessment.problem is None
+    assert assessment.stops == ()
+    report = copilot_cli.canary_report(events)
+    assert report["canary_unanswered"] == []
+    assert report["canary_extra_shell_calls"] == 0
+    assert report["canary_rows"]["token_file"] == {"output": "denied", "sandboxed": True}
+    assert report["canary_rows"]["tmp_write"]["output"] == "denied"  # judged on the host
+    assert report["canary_rows"]["gh_token"]["output"] == "1"
+    # a skill run without the loaded-skills report stays untested
+    skill_run = [e for e in events if e["type"] != "copilot.canary"]
+    assert "loaded skills could not be confirmed" in copilot_cli.assess(skill_run).problem.message
+
+
+@pytest.mark.parametrize(("change", "kind", "named"), [
+    ({"words": {"token_file": "readable"}}, "isolation", "the token file"),
+    ({"words": {"harness_environ": "readable"}}, "isolation", "the harness process's environment"),
+    ({"words": {"gh_token": "0"}}, "isolation", "the GitHub CLI's token"),
+    ({"words": {"host_tmp": "readable"}}, "isolation", "a file in the host's /tmp"),
+    ({"tmp_seen": True}, "isolation", "a write into the host's /tmp"),
+    ({"words": {"python": "127"}}, "precondition", "the skills' interpreter"),
+    ({"skip": ("ssh_dir",)}, "precondition", "ssh_dir"),
+    ({"alter": ("gh_config",)}, "precondition", "gh_config"),
+])
+def test_a_canary_that_does_not_confirm_the_sandbox_records_a_stop(change, kind, named,
+                                                                   tmp_path):
+    """testing-harness spec: Canary reaches a target; Canary command not run
+    verbatim. Every outcome but a pass records an isolation stop."""
+    assessment = copilot_cli.assess(canary_events(tmp_path, **change))
+    problem = assessment.problem
+    assert problem.untested
+    assert problem.kind == kind
+    assert named in problem.message
+    assert ("isolation", copilot_cli.NOT_CONFIRMED) in assessment.stops
+
+
+def test_an_unsandboxed_canary_completion_is_untested_for_isolation(tmp_path):
+    assessment = copilot_cli.assess(canary_events(tmp_path, unsandboxed=("ssh_dir",)))
+    assert assessment.problem.kind == "isolation"
+    assert "not reported as sandboxed" in assessment.problem.message
+    kinds = {kind for kind, _cause in assessment.stops}
+    assert kinds == {"isolation"}
+
+
+def test_extra_shell_calls_are_counted_not_failed(tmp_path):
+    events = canary_events(tmp_path, extra=2)
+    assert copilot_cli.assess(events).problem is None
+    assert copilot_cli.canary_report(events)["canary_extra_shell_calls"] == 2
+    altered = canary_events(tmp_path, alter=("python",))
+    assert copilot_cli.canary_report(altered)["canary_unanswered"] == ["python"]
+    assert copilot_cli.canary_report(altered)["canary_extra_shell_calls"] == 1
+
+
+def test_the_billing_guard_after_the_canary_records_a_billing_stop(tmp_path):
+    """testing-harness spec: Canary billing guard after the run."""
+    guard = "a Copilot budget is possible: overage is permitted"
+    assessment = copilot_cli.assess(canary_events(tmp_path, guard=guard))
+    assert assessment.problem.kind == "subscription"
+    assert guard in assessment.problem.message
+    assert ("billing", f"the billing guard after the canary: {guard}") in assessment.stops
+    assert ("isolation", copilot_cli.NOT_CONFIRMED) in assessment.stops
+
+
+def test_a_completion_word_is_the_last_probe_word_of_its_result():
+    word = copilot_cli._completion_word
+    assert word({"result": {"content": "denied\n<exited with exit code 0>"}}) == "denied"
+    assert word({"result": {"content": "noise\n128\n"}}) == "128"
+    assert word({"result": {"content": "", "detailedContent": "private\n"}}) == "private"
+    assert word({"result": {"content": "/home/x/.ssh/id_ed25519"}}) is None
+    assert word({}) is None
+
+
+def test_events_seen_tells_stdout_from_the_session_file(tmp_path):
+    """K5's parts in every Copilot run's telemetry: where each listed event
+    type arrived, the first stdout event against the run's duration, and the
+    ignored-flag notice."""
+    seen = copilot_cli.events_seen(canary_events(tmp_path, loaded=True))
+    assert seen["where"]["tool.execution_complete"] == "both"
+    assert seen["where"]["result"] == "stdout"
+    assert seen["where"]["session.skills_loaded"] == "stdout"
+    assert seen["where"]["session.shutdown"] == "session file"
+    assert seen["where"]["session.mcp_servers_loaded"] == "neither"
+    assert "session.start" in seen["session_file_only"]
+    assert (seen["first_event_ms"], seen["duration_ms"]) == (400, 5000)
+    assert seen["sandbox_flag_notice"] is True
+    view = copilot_cli.copilot_read(canary_events(tmp_path), Namespace(model="copilot-fixture-a",
+                                                                       effort=None))
+    assert view.telemetry["events_seen"]["where"]["result"] == "stdout"
+
+
+def test_the_session_types_are_recorded_by_type_alone():
+    lines = ['{"type":"session.start","data":{"prompt":"secret text"}}', "torn",
+             '{"type":"skill.invoked","data":{"content":"SKILL"}}', '[1]']
+    record = copilot_cli.session_types(lines)
+    assert record == {"type": "copilot.session_types", "types": ["session.start", "skill.invoked"]}
+
+
+@pytest.mark.parametrize("extra", [
+    ["--host", "claude"], ["--host", "codex", "--model", "gpt-fixture-a"],
+    ["--max-ai-credits", "31"], ["--max-ai-credits", "40"], ["--judge"], ["--no-skill"],
+])
+def test_canary_usage_errors_make_nothing(extra, monkeypatch, capsys):
+    """testing-harness spec: Canary takes the minimum cap and the shell alone."""
+    monkeypatch.setattr(claude_runner.tempfile, "mkdtemp",
+                        lambda *_a, **_k: pytest.fail("staged before the usage error"))
+    argv = ["canary", "--host", "copilot", "--model", "copilot-fixture-a", "--max-ai-credits",
+            "30"]
+    with pytest.raises(SystemExit) as usage:
+        claude_runner.main([*argv, *extra])
+    assert usage.value.code == claude_runner.EXIT_USAGE
+    assert "canary" in capsys.readouterr().err
+
+
+def _canary_setup(tmp_path: Path, monkeypatch, **extra) -> Path:
+    skip_scan(monkeypatch)
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    monkeypatch.setattr(copilot_cli, "managed_problem", lambda *_a, **_k: None)
+    host_tmp = tmp_path / "host-tmp"
+    host_tmp.mkdir()
+    monkeypatch.setattr(copilot_cli, "PROBE_TMP", host_tmp)
+    session = "".join(json.dumps(line) + "\n" for line in [
+        {"type": "session.start", "data": {"copilotVersion": "1.0.91", "sessionId": "x"}},
+        {"type": "session.shutdown", "data": {
+            "shutdownType": "routine", "totalPremiumRequests": 0, "totalNanoAiu": 1_500_000_000,
+            "modelMetrics": {"copilot-fixture-a": {"usage": {"inputTokens": 900,
+                                                             "outputTokens": 90}}}}}])
+    words = {name: [word, True] for name, word in PROBE_OK_WORDS.items()}
+    words["tmp_write"] = ["0", True]
+    words.update(extra.pop("words", {}))
+    # an empty workspace: the client lists its bundled skills only
+    bundled = [{"name": name, "source": "builtin"} for name in copilot_cli.BUILTIN_SKILLS]
+    return fake_copilot(tmp_path, monkeypatch, skills=bundled, session=session, canary=words,
+                        canary_model="copilot-fixture-a", **extra)
+
+
+CANARY_RUN = ["canary", "--host", "copilot", "--model", "copilot-fixture-a",
+              "--max-ai-credits", "30"]
+
+
+@POSIX
+def test_a_canary_end_to_end_passes_and_records_every_row(home, tmp_path, monkeypatch, capsys):
+    """testing-harness spec: Canary passes on confirmed confinement — end to
+    end through the runner and the fake client: an empty workspace in the
+    work directory, the shell alone, the probe's commands as the prompt, the
+    rows from the client's completions, no stop."""
+    log = _canary_setup(tmp_path, monkeypatch)
+    summary = tmp_path / "canary.jsonl"
+    status = claude_runner.main([*CANARY_RUN, "--summary-log", str(summary)])
+    capsys.readouterr()
+    [line] = [json.loads(text) for text in summary.read_text(encoding="utf-8").splitlines()]
+    assert status == claude_runner.EXIT_PASS, line["why"]
+    assert (line["scenario"], line["label"]) == ("canary", claude_runner.CANARY_LABEL)
+    assert set(line["canary_rows"]) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS,
+                                        "python", *copilot_cli.TMP_TARGETS,
+                                        *copilot_cli.MEASURED_TARGETS}
+    assert all(row["sandboxed"] is True for row in line["canary_rows"].values())
+    assert line["canary_rows"]["tmp_write"]["output"] == "denied"
+    assert line["events_seen"]["sandbox_flag_notice"] is False  # the fake prints no notice
+    assert copilot_cli.read_stop(home) is None
+    [run] = [c for c in calls(log) if c["kind"] == "run"]
+    assert "--available-tools=bash" in run["argv"]
+    assert "--deny-tool=shell(gh:*)" not in run["argv"]
+    assert Path(run["cwd"]).parent == copilot_cli.work_root()
+    prompt = run["argv"][run["argv"].index("-p") + 1]
+    assert prompt.startswith(copilot_cli.CANARY_PROMPT)
+    assert TOKEN not in prompt
+
+
+@POSIX
+def test_a_canary_end_to_end_that_reaches_a_target_records_a_stop(home, tmp_path, monkeypatch,
+                                                                  capsys):
+    """testing-harness spec: Canary reaches a target."""
+    _canary_setup(tmp_path, monkeypatch, words={"token_file": ["readable", True]})
+    status = claude_runner.main(CANARY_RUN)
+    capsys.readouterr()
+    assert status == claude_runner.EXIT_UNTESTED
+    stop = copilot_cli.read_stop(home)
+    assert stop["kind"] == "isolation"
+    assert copilot_cli.NOT_CONFIRMED in stop["cause"]
+
+
+@POSIX
+def test_the_canary_preflight_stages_nothing(home, tmp_path, monkeypatch, capsys):
+    _canary_setup(tmp_path, monkeypatch)
+    status = claude_runner.main([*CANARY_RUN, "--preflight-only"])
+    out = capsys.readouterr().out
+    assert status == claude_runner.EXIT_PASS, out
+    assert "rosters: ok — customize-cloud-agent, github-pr-media" in out
+    assert "skill_script" not in out
+    assert sessions(home) == []
