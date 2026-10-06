@@ -506,16 +506,27 @@ MANAGED_STATE_KEYS = frozenset({"firstLaunchAt"})
 COPILOT_CONFIG_HEADER = ("// User settings belong in settings.json.",
                          "// This file is managed automatically.")
 # the only entries a clean Copilot home holds, besides `session-store.db*`;
-# `session-state/` and `gh/` must also be empty (Decision 6). `logs/` only while
-# it holds nothing but empty process logs (`_empty_process_logs`): every child
-# that writes a process log is pointed at scratch (`--log-dir`), and an empty
-# one, the first login's, holds nothing to keep out.
+# `gh/` and `installed-plugins/` must also be empty, and `session-state/` may
+# hold nothing but empty session locks (Decision 6). `logs/` only while it holds
+# nothing but empty process logs (`_empty_process_logs`): every child that
+# writes a process log is pointed at scratch (`--log-dir`), and an empty one,
+# the first login's, holds nothing to keep out.
 COPILOT_ALLOWED = frozenset({COPILOT_SETTINGS, COPILOT_CONFIG, "session-state", "gh", MARKER,
                              LOCK_NAME, "quota.json"})
 COPILOT_LOGS = "logs"
 # the name the client gives a process log (`app.js`: `process-${t}-${n}.log`)
 PROCESS_LOG = re.compile(r"process-\d+-\d+\.log")
-COPILOT_EMPTY_DIRS = ("session-state", "gh")
+# What a session's creation and deletion leave in the home at 1.0.91 even with
+# no token (K3, 2026-10-06; measured on the probe's session): an empty
+# `installed-plugins/`, and one empty lock file per session, named after its
+# id, under `session-state/.session-operation-locks/`. Accepted only while
+# empty, sized and never read: a plugin directory with an entry, a lock with
+# content, another name or a link refuses the home.
+COPILOT_PLUGINS = "installed-plugins"
+SESSION_STATE = "session-state"
+SESSION_LOCKS = ".session-operation-locks"
+SESSION_LOCK = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.lock")
+COPILOT_EMPTY_DIRS = ("gh", COPILOT_PLUGINS)
 
 
 def token_path(home_dir: Path) -> Path:
@@ -1192,30 +1203,56 @@ def _state_offenders(home_dir: Path) -> list[str]:
     return [f"{COPILOT_CONFIG} ({problem})" for problem in _state_problems(text)]
 
 
-def _empty_process_logs(logs: Path) -> bool:
-    """Whether `logs` is a real directory holding nothing but empty process logs
-    (PROCESS_LOG, regular files of size 0): what a headless child at log level
-    none left there before `--log-dir` pointed it at scratch — the first
-    login's (2026-10-06). Sized, never read; a log with content, another name,
-    a link or a subdirectory refuses the home."""
-    if logs.is_symlink() or not logs.is_dir():
+def _empty_files(folder: Path, name: re.Pattern) -> bool:
+    """Whether `folder` is a real directory holding nothing but empty regular
+    files whose names match `name`. Sized, never read; a file with content,
+    another name, a link or a subdirectory fails."""
+    if folder.is_symlink() or not folder.is_dir():
         return False
-    return all(PROCESS_LOG.fullmatch(log.name) and not log.is_symlink() and log.is_file()
-               and log.stat().st_size == 0 for log in logs.iterdir())
+    return all(name.fullmatch(entry.name) and not entry.is_symlink() and entry.is_file()
+               and entry.stat().st_size == 0 for entry in folder.iterdir())
+
+
+def _empty_process_logs(logs: Path) -> bool:
+    """`logs/` holds nothing but empty process logs (PROCESS_LOG): what a
+    headless child at log level none left there before `--log-dir` pointed it
+    at scratch — the first login's (2026-10-06)."""
+    return _empty_files(logs, PROCESS_LOG)
+
+
+def _empty_dir(folder: Path) -> bool:
+    return folder.is_dir() and not folder.is_symlink() and not any(folder.iterdir())
+
+
+def _no_session(state: Path) -> bool:
+    """`session-state/` holds no session: a real directory, empty but for
+    `.session-operation-locks/`, which holds nothing but empty session locks
+    (SESSION_LOCK) — what `session.delete` leaves behind (K3)."""
+    if state.is_symlink() or not state.is_dir():
+        return False
+    return all(entry.name == SESSION_LOCKS and _empty_files(entry, SESSION_LOCK)
+               for entry in state.iterdir())
+
+
+# the entries allowed only in a state that holds nothing, each with the check
+# and the offender it is named as when it holds more
+COPILOT_HOLDING_NOTHING: dict[str, tuple[Callable[[Path], bool], str]] = {
+    **{name: (_empty_dir, f"{name}/ (not an empty directory)") for name in COPILOT_EMPTY_DIRS},
+    SESSION_STATE: (_no_session, f"{SESSION_STATE}/ (a session, or more than empty session "
+                                 "locks)"),
+    COPILOT_LOGS: (_empty_process_logs, f"{COPILOT_LOGS}/ (client process logs with content or "
+                                        "other entries, which every child writes to scratch)"),
+}
 
 
 def _entry_offenders(home_dir: Path) -> list[str]:
     found = []
     for entry in sorted(home_dir.iterdir()):
         name = entry.name
-        if name in COPILOT_EMPTY_DIRS:
-            if entry.is_dir() and not entry.is_symlink() and not any(entry.iterdir()):
-                continue
-            found.append(f"{name}/ (not an empty directory)")
-        elif name == COPILOT_LOGS:
-            if not _empty_process_logs(entry):
-                found.append(f"{name}/ (client process logs with content or other entries, "
-                             "which every child writes to scratch)")
+        if name in COPILOT_HOLDING_NOTHING:
+            holds_nothing, offender = COPILOT_HOLDING_NOTHING[name]
+            if not holds_nothing(entry):
+                found.append(offender)
         elif name not in COPILOT_ALLOWED and not name.startswith("session-store.db"):
             found.append(name)
     return found
@@ -1230,7 +1267,8 @@ def copilot_offenders(home_dir: Path, account: Path | None = None) -> list[str]:
     this is an allow-list — or a managed key that is no timestamp; and any
     entry outside the allow-list: a custom-instructions file, `skills/`,
     `mcp-config.json`, `pkg/`, a `logs/` with more than empty process logs, a
-    token file, a non-empty `session-state/` or `gh/`."""
+    token file, a non-empty `gh/` or `installed-plugins/`, or a
+    `session-state/` holding a session or more than empty session locks."""
     if not home_dir.is_dir():
         return []
     account = account_home() if account is None else account

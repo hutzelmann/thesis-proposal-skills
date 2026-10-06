@@ -12,7 +12,7 @@ A Copilot run SHALL draw only on the included AI credits of the operator's Copil
 **Stops.** Some findings are not settled by the next run's checks. For each of them the runner SHALL record a stop in the harness home, naming the cause and the time. A stop is one of three kinds:
 
 - **A billing stop**, for a finding after a run that shows the run may have drawn more than its bound. The cases are listed under "After every run". Its one remedy is checking the account's billing page and then clearing the stop.
-- **An isolation stop**, for a run whose sandbox was ignored or not reported active, or whose output carried the token's value (requirement: Dev-runner host adapters). Its one remedy is reading the run's findings and then clearing the stop.
+- **An isolation stop**, for a run whose sandbox was ignored or not reported active, a run stopped at a shell call not reported as sandboxed, or a run whose output carried the token's value (requirement: Dev-runner host adapters). Its one remedy is reading the run's findings and then clearing the stop.
 - **The approval stop**, which the login command records whenever it writes a token file, a reset included. It holds back the first model call after every login until the operator approves it. Its one remedy is clearing the stop, which is that approval.
 
 While a stop is recorded, every later Copilot run SHALL be refused before any Copilot process starts. The refusal names the stop's cause and its remedy. A stop record that cannot be read SHALL count as a recorded billing stop. Only the operator clears a stop, with the login command's clear option or a reset; a reset records a new approval stop. Both carry the login command's terminal and agent-marker refusals (requirement: Harness-owned host logins). A stop SHALL NOT refuse the status command or the preflight-only option (requirement: Dev-runner host adapters), which make no model call; both report it.
@@ -301,13 +301,18 @@ For Copilot:
 - **The token file is missing or empty.** Remedy: `uv run poe host-login copilot`.
 - **The token's prefix is not the fine-grained token's prefix.** Remedy: create a fine-grained token that carries only Copilot Requests, then run `uv run poe host-login copilot --reset`.
 - **The status read reports auth errors, or no login.** The token was rejected, has expired or was revoked. Remedy: the same as for the prefix.
-- **The status read reports an auth type other than the environment token.** The client may report the token it read from the named token variable as an environment token or as an SDK-configured token; both count as the environment token, and any other type does not. Remedy: report it, because another credential reached the client.
+- **The status read reports an auth type other than the token the harness named.** At the pinned version the client reports the token it read from the named token variable as an SDK-configured token, as a live check recorded; that type alone counts. Any other type does not, an environment token found by automatic detection included, which disabling automatic login rules out. Remedy: report it, because another credential reached the client.
 - **The status read reports a host other than GitHub's public host.** Remedy: report it.
 - **A stop is recorded** (requirement: Copilot plan billing guard). Remedy, by its kind: for a billing stop, check the account's billing page, then run `uv run poe host-login copilot --clear-stop`; for an isolation stop, read the run's findings, then run the same command; for the approval stop, run that command to approve the next run.
 - **The home is not clean.** Any of these makes it unclean:
   - its settings differ from the pinned ones in any key;
   - the client's own state file is not what the client writes: it contains a GitHub token prefix anywhere, comments included; it holds a comment other than the client's own two-line header at its top; the rest is not a JSON object; it carries a top-level key outside the managed-state set fixed at the pinned version; or a managed key's value is not a timestamp string. The message names the key or the file's state, never a value;
-  - it holds any entry outside the allow-list. The allow-list is: the settings and state files, the session store, an empty session-state directory, the empty GitHub CLI configuration directory, the marker, the run lock and the status snapshot. The client's process-log directory is on it only while it holds nothing but empty process logs, which are sized and never read; a log with content or any other entry there refuses the home, because every Copilot child that writes a process log writes it to a scratch directory instead.
+  - it holds any entry outside the allow-list. The allow-list is: the settings and state files, the session store, the empty GitHub CLI configuration directory, the marker, the run lock and the status snapshot. Three directories are on it only while they hold nothing, their files sized and never read:
+    - the client's process-log directory, while it holds nothing but empty process logs; a log with content or any other entry there refuses the home, because every Copilot child that writes a process log writes it to a scratch directory instead;
+    - the session-state directory, while it holds no session and nothing but the client's session-lock directory with empty lock files named after sessions, which a session's deletion leaves behind at the pinned version;
+    - the client's plugin directory, while it is empty, as a session's creation leaves it at the pinned version.
+
+    A lock with content, another name or a link, a session folder, or a plugin directory with an entry refuses the home.
 
   The runner SHALL check this once more after the model-free reads that precede a run, under the same hold of the run lock, on the home as those reads left it, so that an entry or a key a read wrote refuses that run before its prompt-mode child starts.
 
@@ -500,7 +505,7 @@ The harness SHALL first send the client's own stop request: a termination reques
 - **THEN** the run is refused as untested. The message names creating a fine-grained token that carries only Copilot Requests and running `uv run poe host-login copilot --reset`, and it closes with the sentence that the operator's own Copilot login is not affected
 
 #### Scenario: Wrong auth source on Copilot
-- **WHEN** the status read reports an auth type other than the environment token or the SDK-configured token the named variable yields, for example a stored login or the GitHub CLI's login
+- **WHEN** the status read reports an auth type other than the SDK-configured token the named variable yields at the pinned version, for example an environment token found by automatic detection, a stored login or the GitHub CLI's login
 - **THEN** the run is refused as untested, the message names the auth type, and no Copilot run starts
 
 #### Scenario: Copilot CLI not the pinned version
@@ -514,6 +519,10 @@ The harness SHALL first send the client's own stop request: a termination reques
 #### Scenario: Copilot state file written by the client
 - **WHEN** the Copilot home's state file holds the client's two-line comment header followed by a JSON object whose only key is the first-launch timestamp, as the client writes it on its first start, and its process-log directory, if any, holds only empty process logs
 - **THEN** the home counts as clean without a reset, and the status command reports it clean after its reads; the same file with any further top-level key, with any other comment line, with a first-launch value that is not a timestamp string, or with a GitHub token prefix anywhere in it, a comment line included, is refused as not clean
+
+#### Scenario: Copilot session leftovers that hold nothing
+- **WHEN** the confinement probe's session, created and deleted without a model call, leaves an empty plugin directory and an empty lock file named after the session in the session-state directory's session-lock directory, as the pinned version does
+- **THEN** the home counts as clean without a reset, and the next run is not refused for them; a plugin directory with an entry, a lock with content, another name or a link, or a session folder left in the session-state directory is refused as not clean, named and never read
 
 #### Scenario: Copilot read that writes into the home
 - **WHEN** a model-free read before a Copilot run — the status read, a listing or the confinement probe — writes an entry or a state-file key into the home that the clean check refuses
@@ -636,11 +645,12 @@ After the run, it SHALL count as untested in any of these cases:
 - its stream shows an MCP tool call, or reports an MCP server as connected;
 - its session record shows a hook event.
 
-**Sandbox on Copilot.** Only the client's OS sandbox confines the model's shell. A Copilot run SHALL therefore run under it, with the home's pinned sandbox settings (requirement: Harness-owned host logins). When the sandbox cannot start, earlier client versions only warned that it was ignored and ran the shell unconfined, and the pinned version warns and fails sandboxed commands; no personal setting turns either into a refusal, so the runner checks confinement before the run as well as after it. The runner SHALL:
+**Sandbox on Copilot.** Only the client's OS sandbox confines the model's shell. A Copilot run SHALL therefore run under it, with the home's pinned sandbox settings (requirement: Harness-owned host logins). When the sandbox cannot start, earlier client versions only warned that it was ignored and ran the shell unconfined, and the pinned version warns and fails sandboxed commands; no personal setting turns either into a refusal, so the runner checks confinement before the run, while it lasts and after it. At the pinned version the client's prompt mode reads the home's sandbox settings and applies them to its session itself, while its headless server applies them to no session it creates. The client also ignores its sandbox flag outside experimental mode, which the pinned settings keep off, so the run's sandbox comes from the home's pinned settings alone; the notice it prints for the ignored flag is not a sandbox warning. The runner SHALL:
 
 - refuse to start on Windows with a usage error, because the sandbox cannot enforce its deny list there;
 - refuse the run as untested when any tool the platform's sandbox needs, as the pinned package names them, is not installed. Remedy: install the named tool;
-- before every run, and without a model call, run a confinement probe in a session that carries the run's sandbox settings. Its commands are fixed in the harness; each discards its own output and reports only whether its target was denied or readable, or its exit code. The run SHALL be refused as untested for isolation when the probe can read the token file, the environment of the client process or of the harness's own process, the operator's GitHub CLI configuration or SSH directory, or can obtain the GitHub CLI's token through the per-user session bus or git's stored credentials for GitHub. It SHALL be refused as untested for a precondition when the probe cannot run the skills' interpreter in the workspace, because the deny list would then fail the skill rather than confine it;
+- before every run, and without a model call, run a confinement probe in a session that carries the run's sandbox settings. The probe SHALL first read the sandbox settings the client reads from the home, and refuse the run as untested for isolation unless they equal the pinned ones; it SHALL then apply them to its session the way the client's prompt mode does, and refuse the run as untested for isolation when that fails or is not confirmed. No probe command runs in a session those settings were not applied to, and the message never echoes the settings. Its commands are fixed in the harness; each discards its own output and reports only whether its target was denied or readable, or its exit code. The run SHALL be refused as untested for isolation when the probe can read the token file, the environment of the client process or of the harness's own process, the operator's GitHub CLI configuration or SSH directory, or can obtain the GitHub CLI's token through the per-user session bus or git's stored credentials for GitHub, or when the client does not report every probe command as sandboxed. It SHALL be refused as untested for a precondition when the probe cannot run the skills' interpreter in the workspace, because the deny list would then fail the skill rather than confine it;
+- while the run lasts, read its event stream and its error output as they arrive, and stop the run at the first shell call the client does not report as sandboxed, or at the client's warning that the sandbox did not engage, so that a run whose shell is not confined does not go on with the skill prompt. The run is then untested for isolation, its message names the stop, and an isolation stop is recorded (requirement: Copilot plan billing guard). Prompt mode applies the sandbox settings itself, so a run is where its confinement is first observed; the probe shows the same settings, applied the same way, confining the shell;
 - count the run as untested for isolation, and record an isolation stop (requirement: Copilot plan billing guard), when its stream or session record carries the client's warning that the sandbox was ignored, or lacks the client's report that the sandbox is active. Until a recorded run confirms which event reports it, the runner uses the event the pinned package's source names.
 
 Limiting the sandboxed shell's network per scenario is not part of this requirement.
@@ -776,6 +786,18 @@ Limiting the sandboxed shell's network per scenario is not part of this requirem
 #### Scenario: Confinement probe reaches a credential
 - **WHEN** the confinement probe before a Copilot run reports the token file, the client process's or the harness process's environment, the operator's GitHub CLI configuration or SSH directory as readable, or obtains the GitHub CLI's token through the session bus or git's stored credentials for GitHub
 - **THEN** the run is refused as untested for isolation before any prompt-mode child starts, the message names the target, and no output of the probe's commands appears in it
+
+#### Scenario: Confinement probe applies the pinned sandbox
+- **WHEN** the confinement probe runs before a Copilot run
+- **THEN** it reads the sandbox settings the client reads from the home and applies them to its session the way the client's prompt mode does before any probe command runs; settings other than the pinned ones refuse the run as untested for isolation before any session is created, and an application that fails or is not confirmed refuses it the same way with no command run and the session deleted; the message never echoes the settings
+
+#### Scenario: Unconfined shell call stops the run
+- **WHEN** a Copilot run, while it lasts, reports a shell call the client does not report as sandboxed, or carries the client's warning that the sandbox did not engage
+- **THEN** the runner stops the run there rather than let it go on with the skill prompt, the run is untested for isolation, the message names the stop, and an isolation stop is recorded, so the next run is refused until the operator clears it
+
+#### Scenario: Ignored sandbox flag is not a sandbox warning
+- **WHEN** the client prints its notice that the sandbox flag is ignored outside experimental mode
+- **THEN** neither the live check nor the check after the run counts it as a sandbox warning, because the run's sandbox comes from the home's pinned settings
 
 #### Scenario: Copilot on Windows
 - **WHEN** a Copilot run is requested on Windows
@@ -1001,7 +1023,7 @@ The runner's exit status SHALL distinguish four outcomes, so that only a failed 
       - a workspace or parent-folder finding, a machine-wide managed settings file, or a skill or MCP listing that differs from what was staged;
       - loaded skills not confirmed, or a foreign skill;
       - an MCP server or tool call, or a hook event;
-      - a confinement probe that reached a credential, or a sandbox that was ignored or not reported active;
+      - a confinement probe that reached a credential or whose session the pinned sandbox settings could not be applied to, a run stopped at a shell call not reported as sandboxed, or a sandbox that was ignored or not reported active;
       - the token's value found in the child's output (requirement: Harness-owned host logins);
       - a recorded isolation stop (requirement: Copilot plan billing guard);
   - a non-Claude run's own preconditions or served settings did not hold. This covers:

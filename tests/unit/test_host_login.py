@@ -1434,6 +1434,102 @@ def test_a_process_log_directory_with_more_than_empty_logs_is_refused(fill, copi
         assert value not in problem.cause
 
 
+SESSION_ID = "0f1e2d3c-4b5a-4968-8776-655443322110"  # a uuid4, as the probe names its session
+
+
+def _session_locks(home: Path) -> Path:
+    locks = home / host_login.SESSION_STATE / host_login.SESSION_LOCKS
+    locks.mkdir(parents=True, exist_ok=True)
+    return locks
+
+
+def _probe_leftovers(home: Path) -> None:
+    """What K3 found after the probe's `session.create` and `session.delete`
+    (2026-10-06): an empty `installed-plugins/` and one empty session lock."""
+    (home / host_login.COPILOT_PLUGINS).mkdir()
+    (_session_locks(home) / f"{SESSION_ID}.lock").write_text("", encoding="utf-8")
+
+
+@pytest.mark.parametrize("fill", [
+    _probe_leftovers,
+    lambda home: (home / host_login.COPILOT_PLUGINS).mkdir(),
+    lambda home: _session_locks(home),
+    lambda home: [(_session_locks(home) / f"{SESSION_ID[:-1]}{n}.lock").write_text(
+        "", encoding="utf-8") for n in range(3)],
+])
+def test_the_empty_entries_a_session_leaves_are_clean(fill, copilot_home):
+    """testing-harness spec: Copilot session leftovers that hold nothing — the
+    entries a model-free session's creation and deletion leave at 1.0.91 (K3)
+    are accepted while they hold nothing, so the probe's reads leave the home
+    clean without a reset."""
+    fill(copilot_home)
+    assert host_login.copilot_offenders(copilot_home) == []
+
+
+def _plugin_entry(home: Path) -> None:
+    (home / host_login.COPILOT_PLUGINS / "fixture-plugin").mkdir(parents=True)
+
+
+def _lock_with_content(home: Path) -> None:
+    (_session_locks(home) / f"{SESSION_ID}.lock").write_text("fixture-lock-body", encoding="utf-8")
+
+
+def _lock_other_name(home: Path) -> None:
+    (_session_locks(home) / "fixture-notes.lock").write_text("", encoding="utf-8")
+
+
+def _lock_subdirectory(home: Path) -> None:
+    (_session_locks(home) / f"{SESSION_ID}.lock").mkdir()
+
+
+def _session_folder(home: Path) -> None:
+    _probe_leftovers(home)
+    (home / host_login.SESSION_STATE / SESSION_ID).mkdir()
+
+
+def _locks_as_a_file(home: Path) -> None:
+    (home / host_login.SESSION_STATE).mkdir(exist_ok=True)
+    (home / host_login.SESSION_STATE / host_login.SESSION_LOCKS).write_text("", encoding="utf-8")
+
+
+def _plugins_as_a_file(home: Path) -> None:
+    (home / host_login.COPILOT_PLUGINS).write_text("", encoding="utf-8")
+
+
+def _linked_lock(home: Path) -> None:
+    (_session_locks(home) / f"{SESSION_ID}.lock").symlink_to(home / "settings.json")
+
+
+def _linked_plugins(home: Path) -> None:
+    elsewhere = home.parent / "fixture-elsewhere-plugins"
+    elsewhere.mkdir()
+    (home / host_login.COPILOT_PLUGINS).symlink_to(elsewhere, target_is_directory=True)
+
+
+@pytest.mark.parametrize(("fill", "named"), [
+    (_plugin_entry, "installed-plugins/ (not an empty directory)"),
+    (_plugins_as_a_file, "installed-plugins/ (not an empty directory)"),
+    pytest.param(_linked_plugins, "installed-plugins/ (not an empty directory)", marks=SYMLINKS),
+    (_lock_with_content, "session-state/ (a session, or more than empty session locks)"),
+    (_lock_other_name, "session-state/ (a session, or more than empty session locks)"),
+    (_lock_subdirectory, "session-state/ (a session, or more than empty session locks)"),
+    (_session_folder, "session-state/ (a session, or more than empty session locks)"),
+    (_locks_as_a_file, "session-state/ (a session, or more than empty session locks)"),
+    pytest.param(_linked_lock, "session-state/ (a session, or more than empty session locks)",
+                 marks=SYMLINKS),
+])
+def test_session_leftovers_that_hold_anything_are_refused(fill, named, copilot_home):
+    """testing-harness spec: Copilot session leftovers that hold nothing — a
+    plugin directory with an entry, a lock with content, another name or a
+    link, or a session folder refuses the home; named, never read."""
+    fill(copilot_home)
+    problem = host_login.check_copilot_home(copilot_home)
+    assert problem is not None
+    assert named in problem.cause
+    for value in ("fixture-", SESSION_ID):
+        assert value not in problem.cause
+
+
 @pytest.mark.parametrize("remedy", ["run `uv run poe host-login copilot`",
                                     "run `uv run poe host-login copilot --reset`",
                                     "check the billing page"])

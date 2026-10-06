@@ -1228,7 +1228,7 @@ def test_the_copilot_status_prints_exactly_its_keys_and_no_account_detail(monkey
     pairs = status_pairs(out)
     assert list(pairs) == COPILOT_STATUS_KEYS
     assert (pairs["marker"], pairs["token_present"], pairs["auth_type"], pairs["host_ok"]) == (
-        "yes", "yes", "env", "yes")
+        "yes", "yes", "token", "yes")
     assert (pairs["overage_permitted"], pairs["overage_count"], pairs["overage_entitlement"],
             pairs["remaining_pct"]) == ("false", "0", "0", "80.0")
     assert pairs["stop"].startswith("approval")

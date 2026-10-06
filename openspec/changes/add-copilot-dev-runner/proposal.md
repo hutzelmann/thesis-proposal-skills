@@ -42,8 +42,9 @@ This change lands after `close-claudeai-surfaces`, `add-harness-claude-login` an
     - a scan of the workspace and every parent folder;
     - `skill list` and `mcp list` roster checks, which make no model call;
     - a refusal on Windows, or when any tool the sandbox needs is missing;
-    - a confinement probe through the headless server's model-free shell call, which refuses the run when the sandboxed shell can reach the token file, the client's or the harness's process environment, `~/.ssh`, `~/.config/gh`, or `gh` or git authentication. That the call runs inside the sandbox is confirmed by the V-pass.
-  - After the run, a sandbox reported ignored or not active, or the token's value in the child's output, marks the run untested and records an isolation stop.
+    - a confinement probe through the headless server's model-free shell call, which refuses the run when the sandboxed shell can reach the token file, the client's or the harness's process environment, `~/.ssh`, `~/.config/gh`, or `gh` or git authentication. The headless server never puts a session it creates in the sandbox (K6, 2026-10-06), so the probe first checks that the client reads the pinned sandbox block from the home and applies it to its session as prompt mode does; only then do its commands run.
+  - During the run, the child is stopped at its first shell call the client does not report as sandboxed, or at a sandbox warning, so a run whose shell is not confined does not go on with the skill prompt. Prompt mode applies the sandbox itself, so that its confinement can only be observed in the run; the probe's evidence covers the same block applied the same way.
+  - After the run, a run so stopped, a sandbox reported ignored or not active, or the token's value in the child's output, marks the run untested and records an isolation stop.
 - **A Copilot plan billing guard.**
   - The operator keeps no Copilot budget at all.
   - Under the run lock, a headless RPC status read, with no model call, reads the raw `quota_snapshots` before and after each run, never the coerced `getQuota` values. Any possible or drawn overage (a missing overage field included), legacy billing, low quota, or an unavailable read refuses the run.
@@ -63,7 +64,7 @@ This change lands after `close-claudeai-surfaces`, `add-harness-claude-login` an
   - `host-login copilot`;
   - the `gh` check of K1.
 
-  K1–K4, K6a and K6, the confinement probe, cost $0. The first live run, one `check_report` on a cheap model, spends credits. It runs only after every $0 check has passed, and only once the user has cleared the approval stop from a terminal, after a go request that names the soft cap and every confinement item still unverified.
+  K1–K4, K6a and K6, the confinement probe, cost $0. The first live run, one `check_report` on a cheap model, spends credits. It runs only after every $0 check has passed, and only once the user has cleared the approval stop from a terminal, after a go request that names the soft cap and every confinement item still unverified, the prompt-mode sandbox among them: that run is the first to observe it, and its live watch stops it at the first shell call not reported sandboxed.
 - **Out of scope:**
   - `smoke-copilot`, because the credit cap is soft;
   - routing on Copilot;

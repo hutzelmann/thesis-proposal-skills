@@ -39,19 +39,28 @@ the backstop, failing closed:
   (`read_status`: raw `quota_snapshots`, never the client's mapped `getQuota`
   values), the billing guard (`status_problem`), the model listing, the skill
   and MCP rosters (`roster_problem`) and the confinement probe
-  (`confinement_probe`, `probe_problem`), which runs fixed commands through
-  `session.shell.executeUserRequested` and refuses unless the sandboxed shell
+  (`confinement_probe`, `probe_problem`). The headless server never puts a
+  session it creates in the sandbox, so the probe reads the sandbox block the
+  client reads from the home (`user.settings.get`), refuses unless it is the
+  pinned one, applies it to its session with `session.options.update` as
+  prompt mode does, and only then runs fixed commands through
+  `session.shell.executeUserRequested`; it refuses unless the sandboxed shell
   is denied the token file, the client's and the harness's own process
   environments, `~/.ssh`, `~/.config/gh`, `gh` and git authentication, still
   runs the skills, and reports every command as sandboxed; last, the
   clean-home check once more, on the home as those reads left it.
+- **During the run** (`ConfinementWatch`): prompt mode applies the home's
+  sandbox itself, which nothing before the run can observe, so the child's
+  output is read as it arrives and the child is stopped at the first shell
+  completion not reported `sandboxed` or the first sandbox warning, rather
+  than left to go on with the skill prompt; the stop names the breach.
 - **After the run** (`assess`): the session file is reduced into `copilot.*`
   records (`reduce_session`) and deleted; the status is read again; overage
   growth, an unavailable read, unreadable consumption, more than twice the
   credit cap, zero nano-AIU with tokens and a reached soft cap or session
-  limit record a billing stop; a sandbox warning, a shell completion not
-  reported `sandboxed`, or no shell completion at all records an isolation
-  stop. The steps after the child's start fail closed (`_execute`): one that
+  limit record a billing stop; a run the watch stopped, a sandbox warning, a
+  shell completion not reported `sandboxed`, or no shell completion at all
+  records an isolation stop. The steps after the child's start fail closed (`_execute`): one that
   raises still scrubs the workspace and records a billing stop. A stop — a
   damaged stop record included — refuses every later run until the operator
   clears it with `uv run poe host-login copilot --clear-stop`; so does the
@@ -123,6 +132,12 @@ MANAGED_SETTINGS = ("/etc/github-copilot/managed-settings.json", "/etc/github-co
 SANDBOX_WARNINGS = ("Sandboxing is enabled but is not supported",
                     "Sandboxing is enabled but not supported on this platform",
                     "sandbox enforcement unavailable", "was ignored")
+# the origin prompt mode records for a sandbox the home's settings enable, with
+# the gated `--sandbox` flag dropped (`m2`, app.js 4735387, called at 4952692);
+# the confinement probe applies the home's block with the same origin
+SANDBOX_SOURCE = "user_enabled"
+# how often the run's watch checks for a breach while the child runs (seconds)
+WATCH_POLL_S = 0.2
 # 1.0.91 runtime.node 7688290
 EFFORT_UNAPPLIED = re.compile(r"does not support reasoning effort configuration")
 EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
@@ -139,10 +154,13 @@ HEADLESS = ("--headless", "--stdio", "--no-auto-login", "--no-auto-update", "--l
 # `--no-auto-login` drops the unnamed environment token too (task 7.4b), so it
 # is named, as the bundled SDK names its own (`startCLIServer`)
 TOKEN_FLAGS = ("--auth-token-env", COPILOT.token_env)
-# the auth types the client may report for the token read from that variable:
-# an environment token (`EnvAuthInfo`) or an SDK-configured one (`TokenAuthInfo`).
-# K1 records which one 1.0.91 reports; the set is then narrowed to it
-TOKEN_AUTH_TYPES = ("env", "token")
+# the auth type the client reports for the token read from that variable: at
+# 1.0.91 an SDK-configured token (`TokenAuthInfo`), as K1 recorded live (task
+# 7.5). `env` (`EnvAuthInfo`, automatic detection of an environment token) is
+# what `--no-auto-login` rules out, so it now refuses like any other source.
+# The schema's other `token` variant, `SettableTokenAuthInfo`, comes only from
+# the RPC `session.gitHubAuth.setCredentials`, which the harness never sends
+TOKEN_AUTH_TYPES = ("token",)
 TASK_KINDS = ["agent", "client", "shell"]
 STOP_KINDS = {"approval": 0, "isolation": 1, "billing": 2}
 
@@ -170,6 +188,12 @@ BASE_TOOLS = ("bash", "read_bash", "write_bash", "stop_bash", "list_bash", "view
 HELPER_TOOLS = ("task", "read_agent", "list_agents", "write_agent")
 NETWORK_TOOLS = ("web_fetch",)
 DENIED_TOOLS = ("memory", "github-mcp-server", "shell(gh:*)", "shell(git push)")
+# `--sandbox` is gated behind experimental mode at 1.0.91, which the pinned
+# settings keep off: the client drops the flag with the notice "--sandbox/
+# --no-sandbox requires the sandbox feature … Ignoring for this session." (app.js
+# 4994855, `cbe`), and the run's sandbox comes from the home's `sandbox.enabled`
+# alone, recorded as source `user_enabled`. The notice is expected; it matches
+# no SANDBOX_WARNINGS phrase (design Decision 13)
 SWITCHES = ("--disable-builtin-mcps", "--no-custom-instructions", "--no-ask-user", "--no-remote",
             "--no-remote-export", "--no-auto-login", *TOKEN_FLAGS, "--no-auto-update",
             "--no-bash-env",
@@ -765,8 +789,8 @@ def _auth_type(status: Status) -> LoginProblem | None:
     if status.auth_type in TOKEN_AUTH_TYPES:
         return None
     return _problem(f"the status read reports auth type {status.auth_type or 'none'!r}, not the "
-                    "environment token", "report it, because another credential reached the "
-                    "client")
+                    "token the harness named", "report it, because another credential reached "
+                    "the client")
 
 
 def _auth_host(status: Status) -> LoginProblem | None:
@@ -1298,11 +1322,26 @@ def _exit_code(output: str | None) -> int | None:
 
 PROBE_REPORT = ("report it, and leave every Copilot run refused: the sandbox's deny list does "
                 "not hold (a deny-list change goes through openspec-update-change)")
+UNAPPLIED_REPORT = ("report it, and leave every Copilot run refused: the client's sandbox for its "
+                    "sessions is not the pinned one (a change goes through openspec-update-change)")
 
 
-def probe_problem(results: Sequence[ProbeResult], supported: object = True) -> LoginProblem | None:
-    """Pure over the probe's results (Decision 13). Any target readable, or
-    `gh`/`git` authentication that exits 0, refuses for isolation; so does a
+@dataclass(frozen=True)
+class Probe:
+    """What the confinement probe found (Decision 13): the host's sandbox
+    support, why the pinned sandbox block was not applied to the probe's
+    session (None when it was), and each command's result."""
+
+    supported: object = None
+    unapplied: str | None = None
+    results: tuple[ProbeResult, ...] = ()
+
+
+def probe_problem(results: Sequence[ProbeResult], supported: object = True,
+                  unapplied: str | None = None) -> LoginProblem | None:
+    """Pure over the probe's results (Decision 13). A session the pinned
+    sandbox block was not applied to refuses for isolation, before any row;
+    so does any target readable, `gh`/`git` authentication that exits 0, or a
     command the client did not report as sandboxed. A probe that could not
     run, or a skill line that fails, refuses as a precondition. The message
     names the targets, never any output."""
@@ -1310,6 +1349,9 @@ def probe_problem(results: Sequence[ProbeResult], supported: object = True) -> L
         return _problem("the client reports that this host cannot run its sandbox",
                         f"install {', '.join(SANDBOX_TOOLS)} and check that `bwrap --ro-bind / "
                         "/ --dev /dev true` works", "precondition")
+    if unapplied:
+        return _problem(f"the confinement probe could not put its session in the pinned sandbox: "
+                        f"{unapplied}", UNAPPLIED_REPORT, "isolation")
     by = {r.name: r for r in results}
     missing = [name for name in REQUIRED_PROBES if by.get(name) is None or by[name].output is None]
     if missing:
@@ -1351,13 +1393,43 @@ def _completions(notes: Iterable[dict]) -> dict[str, dict]:
     return done
 
 
-def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float
-                   ) -> list[ProbeResult]:
-    created = rpc.call("session.create", {"sessionId": session_id,
-                                          "workingDirectory": str(run.ws), "model": run.model},
-                       deadline)
-    if _reply_failure(created, "session.create"):
-        return []
+def _client_sandbox(rpc: Rpc, run: Run, deadline: float) -> tuple[object, str | None]:
+    """The sandbox block the client itself reads from the home
+    (`user.settings.get`: `settings.sandbox.value`, `settings.json` overlaid
+    with `config.json`), and why it cannot be applied: no answer, or a block
+    other than the pinned one. Compared, never printed."""
+    reply = rpc.call("user.settings.get", {}, deadline)
+    failure = _reply_failure(reply, "user.settings.get")
+    if failure:
+        return None, failure
+    found: object = reply.get("result")  # type: ignore[union-attr]
+    for key in ("settings", "sandbox", "value"):
+        found = found.get(key) if isinstance(found, dict) else None
+    pinned = host_login.pinned_settings(run.home, host_login.account_home())["sandbox"]
+    return found, (None if found == pinned else
+                   "the client reads a sandbox block other than the pinned one")
+
+
+def _apply_sandbox(rpc: Rpc, session_id: str, block: object, deadline: float) -> str | None:
+    """Put the session in the sandbox the way prompt mode does: the headless
+    server never applies the home's `sandbox` block to a session it creates,
+    and `--sandbox` on the server changes nothing (K6, 2026-10-06); prompt mode
+    loads the block and sends it with `session.options.update` (`Njt`, app.js
+    4947448). Why it was not applied, or None."""
+    reply = rpc.call("session.options.update",
+                     {"sessionId": session_id, "sandboxConfig": block,
+                      "sandboxConfigSource": SANDBOX_SOURCE}, deadline)
+    failure = _reply_failure(reply, "session.options.update")
+    if failure:
+        return failure
+    result = reply.get("result")  # type: ignore[union-attr]
+    if not isinstance(result, dict) or result.get("success") is not True:
+        return "session.options.update did not report success"
+    return None
+
+
+def _probe_rows(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float
+                ) -> tuple[ProbeResult, ...]:
     uid = os.getuid() if hasattr(os, "getuid") else 0
     calls = []
     for name, command in probe_commands(token_file=host_login.token_path(run.home),
@@ -1372,20 +1444,41 @@ def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: floa
     ids = {str(result.get("toolCallId")) for _, result in calls if result.get("toolCallId")}
     rpc.drain(lambda: ids <= set(_completions(rpc.notes)), min(deadline, time.monotonic() + 5))
     done = _completions(rpc.notes)
-    rpc.call("session.delete", {"sessionId": session_id}, deadline)
-    return [ProbeResult(name, str(result["output"]).strip().splitlines()[-1]
-                        if str(result.get("output") or "").strip() else None,
-                        done.get(str(result.get("toolCallId")), {}).get("sandboxed"))
-            for name, result in calls]
+    return tuple(ProbeResult(name, str(result["output"]).strip().splitlines()[-1]
+                             if str(result.get("output") or "").strip() else None,
+                             done.get(str(result.get("toolCallId")), {}).get("sandboxed"))
+                 for name, result in calls)
 
 
-def confinement_probe(run: Run) -> tuple[object, list[ProbeResult]]:
+def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float) -> Probe:
+    """The block the client reads, which must be the pinned one, before any
+    session exists; then the session, the block applied to it, and the fixed
+    commands. A block that was not applied runs no command; the session is
+    deleted whatever happened after its creation."""
+    block, why = _client_sandbox(rpc, run, deadline)
+    if why:
+        return Probe(True, why)
+    created = rpc.call("session.create", {"sessionId": session_id,
+                                          "workingDirectory": str(run.ws), "model": run.model},
+                       deadline)
+    if _reply_failure(created, "session.create"):
+        return Probe(True)
+    try:
+        why = _apply_sandbox(rpc, session_id, block, deadline)
+        return Probe(True, why) if why else Probe(
+            True, None, _probe_rows(rpc, run, session_id, pid, deadline))
+    finally:
+        rpc.call("session.delete", {"sessionId": session_id}, deadline)
+
+
+def confinement_probe(run: Run) -> Probe:
     """Under the lock and after the rosters: a headless server in the run's
-    environment, `sandbox.getHostSupport`, then a session carrying the home's
-    sandbox settings with the workspace as its working directory, and the
-    fixed commands through `session.shell.executeUserRequested` — model-free.
-    Returns the host support and each command's result; the probe's session
-    folder is deleted afterwards."""
+    environment; `sandbox.getHostSupport`; the sandbox block the client reads
+    from the home, which must equal the pinned one; a session with the
+    workspace as its working directory, put in that sandbox with
+    `session.options.update` as prompt mode does; and the fixed commands
+    through `session.shell.executeUserRequested` — model-free. The probe's
+    session folder is deleted afterwards."""
     session_id = str(uuid.uuid4())
     proc = spawn(headless(run.scratch, run.token), home=run.home,  # type: ignore[arg-type]
                  cwd=run.ws, scratch=run.scratch, token=run.token,  # type: ignore[arg-type]
@@ -1395,13 +1488,13 @@ def confinement_probe(run: Run) -> tuple[object, list[ProbeResult]]:
         rpc = Rpc(proc)
         deadline = time.monotonic() + PROBE_TIMEOUT_S
         if _reply_failure(handshake(rpc, deadline), "connect"):
-            return True, []
+            return Probe(True)
         support = rpc.call("sandbox.getHostSupport", {}, deadline)
         result = support.get("result") if isinstance(support, dict) else None
         supported = result.get("supported") if isinstance(result, dict) else None
         if supported is not True:
-            return supported, []
-        return True, _probe_session(rpc, run, session_id, proc.pid, deadline)
+            return Probe(supported)
+        return _probe_session(rpc, run, session_id, proc.pid, deadline)
     finally:
         _close(proc)
         shutil.rmtree(run.home / SESSION_STATE / session_id, ignore_errors=True)
@@ -1435,10 +1528,11 @@ def _roster_check(run: Run) -> Check:
 
 
 def _probe_check(run: Run) -> Check:
-    supported, results = confinement_probe(run)
+    probe = confinement_probe(run)
     detail = ", ".join(f"{r.name} {r.output}{'' if r.sandboxed else ' (not sandboxed)'}"
-                       for r in results) or "no results"
-    return Check("confinement_probe", probe_problem(results, supported), detail)
+                       for r in probe.results) or probe.unapplied or "no results"
+    return Check("confinement_probe",
+                 probe_problem(probe.results, probe.supported, probe.unapplied), detail)
 
 
 def _reads_clean_check(run: Run) -> Check:
@@ -1743,10 +1837,13 @@ def credits_used(events: list[dict]) -> float | None:
     return round(nano / NANO, 4) if _is_number(nano) else None
 
 
+NOTICE_TYPES = ("session.warning", "session.error", "session.info")
+
+
 def _notices(events: list[dict], kind: str) -> list[str]:
     """The sandbox or effort notices of a run, from stdout and the session file."""
     texts = [str(_data(e).get("message") or "") for e in events
-             if e.get("type") in ("session.warning", "session.error", "session.info")]
+             if e.get("type") in NOTICE_TYPES]
     found = [t for t in texts if _notice_kind(t) == kind]
     return found + [str(r.get("message")) for r in events
                     if r.get("type") == "copilot.notice" and r.get("kind") == kind]
@@ -1966,6 +2063,67 @@ def sandbox_after(events: list[dict], stderr: str = "") -> RunProblem | None:
                       True, "isolation")
 
 
+UNCONFINED_CALL ="a shell call the client did not report as sandboxed"
+SANDBOX_NOTICE = "the client's warning that the sandbox did not engage"
+
+
+def breach_of(event: object, shells: set[str]) -> str | None:
+    """One step of the run's live watch over its stdout events (Decision 13):
+    a shell tool's start is noted in `shells`; the completion of a noted call
+    whose `sandboxed` is not true, or a sandbox warning, is a breach. Pure but
+    for `shells`."""
+    if not isinstance(event, dict):
+        return None
+    kind, data = event.get("type"), _data(event)
+    call = str(data.get("toolCallId"))
+    if kind == "tool.execution_start" and data.get("toolName") in SHELL_TOOLS:
+        shells.add(call)
+    elif kind == "tool.execution_complete" and call in shells and data.get("sandboxed") is not True:
+        return UNCONFINED_CALL
+    elif kind in NOTICE_TYPES and sandbox_warned(str(data.get("message") or "")):
+        return SANDBOX_NOTICE
+    return None
+
+
+class ConfinementWatch:
+    """The run's live confinement check (Decision 13): the prompt-mode path
+    applies the home's sandbox itself, which no check before the run can
+    observe, so the run is watched while it lasts and stopped at the first
+    breach (`breach_of` over stdout, a sandbox warning on stderr) rather than
+    left to go on with the skill prompt. `breach` keeps the first one."""
+
+    def __init__(self) -> None:
+        self.shells: set[str] = set()
+        self.breach: str | None = None
+
+    def _found(self, reason: str | None) -> bool:
+        if reason and self.breach is None:
+            self.breach = reason
+        return reason is not None
+
+    def event_line(self, line: str) -> bool:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return False
+        return self._found(breach_of(event, self.shells))
+
+    def stderr_line(self, line: str) -> bool:
+        return self._found(SANDBOX_NOTICE if sandbox_warned(line) else None)
+
+
+def stopped_after(breach: object) -> RunProblem | None:
+    """A run the live watch stopped: untested for isolation (the caller records
+    an isolation stop), naming the breach."""
+    if not breach:
+        return None
+    return RunProblem(refusal(_problem(f"the run was stopped at {breach}; the sandbox's "
+                                       "confinement is not confirmed",
+                                       f"read the run's findings, then run "
+                                       f"`{host_login.CLEAR_STOP_COMMAND}`", "isolation")),
+                      True, "isolation")
+
+
 def _inside(path: str, root: str) -> bool:
     return bool(root) and (path == root or path.startswith(root.rstrip("/") + "/"))
 
@@ -2110,13 +2268,15 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
                               str(harness.get("stderr_tail") or ""), cap))
     billing, billing_stop = billing_after(harness.get("before"), harness.get("after"), events, cap)
     sandbox = sandbox_after(events, str(harness.get("stderr_tail") or ""))
-    problems = [scrubbed, failure, session_problem(events), billing, sandbox,
+    breach = harness.get("confinement_breach")
+    problems = [scrubbed, stopped_after(breach), failure, session_problem(events), billing, sandbox,
                 isolation_after(events, harness.get("roster") or [],
                                 str(harness.get("skill_root") or "")),
                 model_after(events, model, helpers, effort),
                 unknown_after(events, available_tools(helpers, bool(harness.get("network")))),
                 helper_after(events), version_after(events)]
     stops = ([("isolation", "the token's value appeared in a child's output")] if scrubbed else [])
+    stops += [("isolation", f"the run was stopped at {breach}")] if breach else []
     stops += [("billing", billing.billing or billing.message)] if billing_stop and billing else []
     stops += [("isolation", "the sandbox was ignored or not reported active")] if sandbox else []
     return Assessment(combine(problems), tuple(stops))
@@ -2146,14 +2306,47 @@ def parse_lines(text: str) -> list[dict]:
     return events
 
 
-def _communicate(proc: subprocess.Popen, timeout: float) -> tuple[str, str, bool]:
-    try:
-        out, err = proc.communicate(timeout=timeout)
-        return out or "", err or "", False
-    except subprocess.TimeoutExpired:
+def _pump(stream, sink: list[str], feed: Callable[[str], bool], tripped: threading.Event) -> None:
+    """Collect one output stream line by line as the child writes it (the
+    client writes each event as one line when it happens: `aQt`, app.js
+    4739624), feeding each line to the watch."""
+    with suppress(OSError, ValueError):
+        for line in stream:
+            sink.append(line)
+            if feed(line):
+                tripped.set()
+
+
+def _watch_child(proc: subprocess.Popen, timeout: float) -> tuple[str, str, bool, str | None]:
+    """Wait for the prompt-mode child while `ConfinementWatch` reads its
+    output (Decision 13): the first breach stops the child there, so a run
+    whose shell is not confined does not go on with the skill prompt; the time
+    limit stops it as before. Returns stdout, stderr, whether the limit was
+    reached, and the breach."""
+    watch, tripped = ConfinementWatch(), threading.Event()
+    out: list[str] = []
+    err: list[str] = []
+    pumps = [threading.Thread(target=_pump, args=(proc.stdout, out, watch.event_line, tripped),
+                              daemon=True),
+             threading.Thread(target=_pump, args=(proc.stderr, err, watch.stderr_line, tripped),
+                              daemon=True)]
+    for pump in pumps:
+        pump.start()
+    deadline, timed_out = time.monotonic() + timeout, False
+    while proc.poll() is None and not tripped.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            timed_out = True
+            break
+        tripped.wait(min(WATCH_POLL_S, remaining))
+    if proc.poll() is None:
         host_login.stop_child(proc, signal.SIGTERM)
-        out, err = proc.communicate()
-        return out or "", err or "", True
+    for pump in pumps:
+        pump.join(timeout=host_login.TERM_GRACE_S)
+    for stream in (proc.stdout, proc.stderr):
+        with suppress(OSError, AttributeError):
+            stream.close()  # type: ignore[union-attr]
+    return "".join(out), "".join(err), timed_out, watch.breach
 
 
 def _after_status(run: Run) -> Status | None:
@@ -2168,9 +2361,10 @@ def _after_status(run: Run) -> Status | None:
 
 
 def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun: float,
-             after: Status | None, hit: bool, timed_out: bool) -> dict:
+             after: Status | None, hit: bool, timed_out: bool, breach: str | None) -> dict:
     return {"type": "copilot.harness", "duration_ms": int((time.monotonic() - begun) * 1000),
             "exit_code": code, "stderr_tail": stderr.strip()[-800:], "timed_out": timed_out,
+            "confinement_breach": breach,
             "session_id": session_id, "cap": run.cap, "model": run.model, "effort": run.effort,
             "helpers": int(run.scenario.get("helpers") or 0),
             "network": needs_network(run.scenario), "roster": run.roster,
@@ -2186,9 +2380,10 @@ AFTER_INCOMPLETE = ("the checks after the run did not complete, so its draw on t
 
 def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
             timeout: float) -> tuple[list[dict], str | None]:
-    """Wait for the child, then the session file, the read after, the scrub,
-    the snapshot and the stops; the events and the time-limit message."""
-    out, err, timed_out = _communicate(proc, timeout)
+    """Wait for the child under the live watch, then the session file, the
+    read after, the scrub, the snapshot and the stops; the events and the
+    time-limit message."""
+    out, err, timed_out, breach = _watch_child(proc, timeout)
     records, file_hit = capture_session(run.home, session_id, run.token)
     after = _after_status(run)
     out, out_hit = scrub(out, run.token)
@@ -2197,7 +2392,7 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
     hit = file_hit or out_hit or err_hit or bool(tree_hits)
     events = [*parse_lines(out), *records,
               _harness(run, session_id, code=proc.returncode, stderr=err, begun=begun,
-                       after=after, hit=hit, timed_out=timed_out)]
+                       after=after, hit=hit, timed_out=timed_out, breach=breach)]
     write_snapshot(run.home, after)
     limit = f"copilot did not finish within {timeout:g}s" if timed_out else None
     for kind, cause in assess(events, timed_out=limit).stops:

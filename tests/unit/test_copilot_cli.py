@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
@@ -138,8 +139,49 @@ PROBES = ((f"/proc/{os.getpid()}/environ", "client_environ"),  # this server's o
 def probe_name(command):
     return next(name for needle, name in PROBES if needle in command)
 
+HOME = pathlib.Path(os.environ.get("COPILOT_HOME", "."))
+SANDBOXED = set()  # the sessions `session.options.update` put in the home's sandbox block
+UNCONFINED = {"gh_token": "0", "git_credential": "128", "python": "0", "skill_script": "0"}
+
+def home_sandbox():
+    return json.loads((HOME / "settings.json").read_text(encoding="utf-8")).get("sandbox")
+
+def note_rpc(method, params):
+    with open(CONFIG["log"] + ".rpc", "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"method": method, "params": params}) + "\n")
+
+def options_update(params):
+    mode = CONFIG.get("options_update", "ok")
+    if mode == "error":
+        return {"error": {"code": -32000, "message": "managed_sandbox_policy_conflict"}}
+    if mode == "no-result":
+        return {}
+    if params.get("sandboxConfig") == home_sandbox():
+        SANDBOXED.add(params["sessionId"])
+    return {"result": {"success": mode == "ok"}}
+
+def shell(params, calls):
+    # 1.0.91 (K6, 2026-10-06): a session the server created runs its shell
+    # unconfined and reports no `sandboxed`, until `session.options.update`
+    # gives it the home's sandbox block
+    name = probe_name(params["command"])
+    ident = f"probe-{len(calls)}"
+    calls.append(name)
+    if params["sessionId"] in SANDBOXED:
+        found = next(r for r in CONFIG["probe"]["results"] if r["name"] == name)
+        data = {"toolCallId": ident, "success": True, "sandboxed": found["sandboxed"]}
+        output = found["output"]
+    else:
+        data, output = {"toolCallId": ident, "success": True}, UNCONFINED.get(name, "readable")
+    send({"jsonrpc": "2.0", "method": "session.event", "params": {
+        "sessionId": params["sessionId"], "event": {"type": "tool.execution_complete",
+                                                    "data": data}}})
+    return {"result": {"toolCallId": ident, "success": True, "output": output + "\n",
+                       "exitCode": 0}}
+
 def answer(message, calls):
     method, params = message.get("method"), message.get("params") or {}
+    note_rpc(method, params)
     if method == "connect":
         return {"result": CONFIG["status"].get("connect", {}).get("result", {"protocolVersion": 3})}
     if method == "account.getCurrentAuth":
@@ -154,21 +196,25 @@ def answer(message, calls):
         return CONFIG["models"]
     if method == "sandbox.getHostSupport":
         return {"result": CONFIG["probe"]["host_support"]}
+    if method == "user.settings.get":
+        block = CONFIG["client_sandbox"] if "client_sandbox" in CONFIG else home_sandbox()
+        return {"result": {"settings": {"sandbox": {"value": block, "default": None,
+                                                    "isDefault": False}}}}
     if method == "session.create":
-        state = pathlib.Path(os.environ["COPILOT_HOME"], "session-state")
-        (state / params["sessionId"]).mkdir(parents=True)
+        # 1.0.91 (K3, 2026-10-06): creating a session also makes an empty
+        # `installed-plugins/` in the home
+        (HOME / "session-state" / params["sessionId"]).mkdir(parents=True)
+        (HOME / "installed-plugins").mkdir(exist_ok=True)
         return {"result": {"sessionId": params["sessionId"]}}
+    if method == "session.options.update":
+        return options_update(params)
     if method == "session.shell.executeUserRequested":
-        name = probe_name(params["command"])
-        found = next(r for r in CONFIG["probe"]["results"] if r["name"] == name)
-        ident = f"probe-{len(calls)}"
-        calls.append(name)
-        send({"jsonrpc": "2.0", "method": "session.event", "params": {
-            "sessionId": params["sessionId"], "event": {"type": "tool.execution_complete",
-            "data": {"toolCallId": ident, "success": True, "sandboxed": found["sandboxed"]}}}})
-        return {"result": {"toolCallId": ident, "success": True, "output": found["output"] + "\n",
-                           "exitCode": 0}}
+        return shell(params, calls)
     if method == "session.delete":
+        # 1.0.91 (K3): deleting it leaves an empty lock file named after it
+        locks = HOME / "session-state" / ".session-operation-locks"
+        locks.mkdir(parents=True, exist_ok=True)
+        (locks / (params["sessionId"] + ".lock")).write_text("", encoding="utf-8")
         return {"result": {"success": True}}
     return {"error": {"code": -32601, "message": "unknown"}}
 
@@ -266,6 +312,19 @@ def calls(log: Path) -> list[dict]:
     if not log.exists():
         return []
     return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+
+
+def rpc_calls(log: Path) -> list[dict]:
+    """Every JSON-RPC request the fake server answered, in order: method and params."""
+    return calls(Path(f"{log}.rpc"))
+
+
+def sessions(home: Path) -> list[str]:
+    """The session folders in the home: `session-state/` minus the empty
+    session locks 1.0.91 leaves behind (K3)."""
+    state = home / copilot_cli.SESSION_STATE
+    return sorted(p.name for p in state.iterdir()
+                  if p.name != host_login.SESSION_LOCKS) if state.is_dir() else []
 
 
 @pytest.fixture
@@ -485,7 +544,8 @@ def test_parse_status_keeps_exactly_the_listed_values():
     """testing-harness spec: Copilot status reveals no account details."""
     status = status_of("status-ok")
     assert set(status.__dataclass_fields__) == KEPT
-    assert (status.auth_type, status.host, status.auth_errors) == ("env", "https://github.com", 0)
+    assert (status.auth_type, status.host, status.auth_errors) == ("token", "https://github.com",
+                                                                   0)
     assert status.token_based_billing is True
     snap = status.snapshot
     assert (snap.name, snap.overage_permitted, snap.overage_count, snap.overage_entitlement,
@@ -545,15 +605,18 @@ def _with_auth_type(kind: str) -> copilot_cli.Status:
     return copilot_cli.parse_status({**replies, "models": load("models")})
 
 
-@pytest.mark.parametrize("kind", copilot_cli.TOKEN_AUTH_TYPES)
-def test_the_named_token_passes_as_an_environment_or_sdk_token(kind):
+def test_the_named_token_passes_as_the_sdk_token_k1_recorded():
     """testing-harness spec: Wrong auth source on Copilot — the token read from
-    the named variable may come back as `env` or `token` (task 7.4b)."""
-    assert copilot_cli.status_problem(_with_auth_type(kind)) is None
+    the named variable comes back as `token` at 1.0.91 (K1, task 7.5), and the
+    set holds that type alone."""
+    assert copilot_cli.TOKEN_AUTH_TYPES == ("token",)
+    assert copilot_cli.status_problem(_with_auth_type("token")) is None
 
 
-@pytest.mark.parametrize("kind", ["user", "gh-cli", "token-provider", "copilot-api-token"])
+@pytest.mark.parametrize("kind", ["env", "user", "gh-cli", "token-provider", "copilot-api-token"])
 def test_any_other_auth_type_is_another_credential(kind):
+    """`env` included: automatic detection of an environment token, which
+    `--no-auto-login` rules out (task 7.5's narrowing)."""
     problem = copilot_cli.status_problem(_with_auth_type(kind))
     assert problem is not None
     assert repr(kind) in problem.cause
@@ -569,7 +632,7 @@ def test_the_auth_type_line_tells_no_read_a_failed_read_and_no_login_apart(statu
     """The first login's `-` stood for both a failed read and a read without a
     login (2026-10-06); the line now names which."""
     assert copilot_cli._auth_line(status) == line
-    assert copilot_cli._auth_line(status_of("status-ok")) == "env"
+    assert copilot_cli._auth_line(status_of("status-ok")) == "token"
 
 
 @pytest.mark.parametrize(("model", "effort", "named"), [
@@ -1102,6 +1165,72 @@ def test_probe_problem_passes_a_clean_probe_and_refuses_unsandboxed_or_missing()
         loose).cause
     assert copilot_cli.probe_problem(results[:2]).kind == "precondition"
     assert copilot_cli.probe_problem(results, False).kind == "precondition"
+    # a sandbox not applied refuses for isolation, whatever rows came back
+    unapplied = copilot_cli.probe_problem(results, True, "session.options.update gave no answer")
+    assert unapplied.kind == "isolation"
+    assert "session.options.update gave no answer" in unapplied.cause
+
+
+GATED = ("--sandbox/--no-sandbox requires the sandbox feature, available in experimental mode "
+         "(run with --experimental or enable /experimental). Ignoring for this session.")
+
+
+def _start(call: str, tool: str = "bash") -> dict:
+    return {"type": "tool.execution_start", "data": {"toolCallId": call, "toolName": tool}}
+
+
+def _complete(call: str, **data) -> dict:
+    return {"type": "tool.execution_complete", "data": {"toolCallId": call, **data}}
+
+
+@pytest.mark.parametrize(("events", "breach"), [
+    ([_start("t1"), _complete("t1", sandboxed=True)], None),
+    ([_start("t1", "view"), _complete("t1")], None),  # file tools are not watched
+    ([_start("t1"), _complete("t1")], copilot_cli.UNCONFINED_CALL),
+    ([_start("t1"), _complete("t1", sandboxed=False)], copilot_cli.UNCONFINED_CALL),
+    ([_start("t1", "local_shell"), _complete("t1", sandboxed="true")],
+     copilot_cli.UNCONFINED_CALL),
+    ([{"type": "session.warning", "data": {"message": "Sandboxing is enabled but is not "
+                                                      "supported on this host"}}],
+     copilot_cli.SANDBOX_NOTICE),
+    ([{"type": "session.warning", "data": {"message": GATED}}], None),
+])
+def test_the_live_watch_names_the_first_unconfined_shell_call(events, breach):
+    """testing-harness spec: Unconfined shell call stops the run — pure over the
+    stdout events: a shell completion not reported sandboxed, or a sandbox
+    warning, is a breach; a sandboxed one, a file tool and the expected notice
+    that the gated `--sandbox` flag was dropped are not."""
+    watch = copilot_cli.ConfinementWatch()
+    found = [watch.event_line(json.dumps(e)) for e in events]
+    assert watch.breach == breach
+    assert any(found) is (breach is not None)
+    assert watch.event_line("not json\n") is False
+
+
+def test_the_live_watch_reads_stderr_and_keeps_the_first_breach():
+    watch = copilot_cli.ConfinementWatch()
+    assert watch.stderr_line(GATED + "\n") is False
+    assert watch.breach is None
+    assert watch.stderr_line("Sandboxing is enabled but not supported on this platform: x\n")
+    assert watch.breach == copilot_cli.SANDBOX_NOTICE
+    watch.event_line(json.dumps(_start("t9")))
+    assert watch.event_line(json.dumps(_complete("t9")))
+    assert watch.breach == copilot_cli.SANDBOX_NOTICE  # the first one kept
+    assert not copilot_cli.sandbox_warned(GATED)
+
+
+def test_a_run_the_watch_stopped_is_untested_for_isolation_and_stops():
+    """testing-harness spec: Unconfined shell call stops the run — pure over the
+    saved events: the harness record names the breach."""
+    events = stream("success")
+    harness = copilot_cli.harness_record(events)
+    harness["confinement_breach"] = copilot_cli.UNCONFINED_CALL
+    assessment = copilot_cli.assess(events)
+    assert assessment.problem.untested
+    assert assessment.problem.kind == "isolation"
+    assert f"stopped at {copilot_cli.UNCONFINED_CALL}" in assessment.problem.message
+    assert ("isolation", f"the run was stopped at {copilot_cli.UNCONFINED_CALL}") in (
+        assessment.stops)
 
 
 def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
@@ -1382,8 +1511,13 @@ def test_a_run_holds_the_lock_reads_around_it_and_records_nothing_on_success(hom
     run = next(c for c in calls(log) if c["kind"] == "run")
     assert TOKEN not in json.dumps(run["argv"])
     assert copilot_cli.run_problem(events) is None
-    assert not list((home / copilot_cli.SESSION_STATE).iterdir())  # pruned
+    assert copilot_cli.harness_record(events)["confinement_breach"] is None
+    assert sessions(home) == []  # pruned
     assert copilot_cli.read_stop(home) is None
+    # the probe's session left an empty `installed-plugins/` and an empty
+    # session lock, as 1.0.91 does (K3); both hold nothing, so the home is clean
+    assert (home / host_login.COPILOT_PLUGINS).is_dir()
+    assert list((home / copilot_cli.SESSION_STATE / host_login.SESSION_LOCKS).iterdir())
     assert host_login.check_copilot_home(home) is None
 
 
@@ -1414,7 +1548,7 @@ def test_an_unavailable_read_after_the_run_records_a_billing_stop(home, tmp_path
     monkeypatch.setattr(host_login, "TERM_GRACE_S", 2)
     log = fake_copilot(tmp_path, monkeypatch, mode="once")
     monkeypatch.setattr(copilot_cli, "confinement_probe",
-                        lambda _run: (True, probe("probe-ok")[1]))
+                        lambda _run: copilot_cli.Probe(True, None, tuple(probe("probe-ok")[1])))
     ws = staged_ws(tmp_path)
     events = copilot_cli.run_copilot(ws, "check", model="copilot-fixture-a", effort=None,
                                      cap=30, timeout=30, home=home,
@@ -1499,8 +1633,36 @@ def test_a_timed_out_run_is_stopped_and_its_session_still_read(home, tmp_path, m
                                 scenario=claude_runner.SCENARIOS["check_report"])
     assert "did not finish within 1.5s" in failed.value.message
     assert copilot_cli.harness_record(failed.value.events)["timed_out"] is True
+    # its shell call was reported sandboxed, so the watch did not stop it
+    assert copilot_cli.harness_record(failed.value.events)["confinement_breach"] is None
     assert copilot_cli.read_stop(home)["kind"] == "billing"
-    assert not list((home / copilot_cli.SESSION_STATE).iterdir())
+    assert sessions(home) == []
+
+
+@POSIX
+def test_the_watch_stops_a_run_at_its_first_unconfined_shell_call(home, tmp_path, monkeypatch):
+    """testing-harness spec: Unconfined shell call stops the run — end to end:
+    the child reports a shell completion without `sandboxed` and would then run
+    on; the watch stops it there, long before the time limit, and the run is
+    untested for isolation with an isolation stop recorded."""
+    skip_scan(monkeypatch)
+    monkeypatch.setattr(host_login, "TERM_GRACE_S", 5)
+    fake_copilot(tmp_path, monkeypatch, run="sandbox-unreported", hang=True)
+    begun = time.monotonic()
+    events = copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                     effort=None, cap=30, timeout=60, home=home,
+                                     scenario=claude_runner.SCENARIOS["check_report"])
+    assert time.monotonic() - begun < 30
+    harness = copilot_cli.harness_record(events)
+    assert harness["confinement_breach"] == copilot_cli.UNCONFINED_CALL
+    assert harness["timed_out"] is False
+    problem = copilot_cli.run_problem(events)
+    assert problem.untested
+    assert problem.kind == "isolation"
+    assert "stopped at" in problem.message
+    stop = copilot_cli.read_stop(home)
+    assert stop["kind"] == "isolation"
+    assert "stopped at" in stop["cause"]
 
 
 @POSIX
@@ -1510,13 +1672,13 @@ def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home,
     ws = staged_ws(tmp_path)
     run = copilot_cli.new_run(ws=ws, model="copilot-fixture-a")
     run.token, run.scratch = TOKEN, copilot_cli.make_scratch("devrun-test-")
-    supported, results = copilot_cli.confinement_probe(run)
-    assert supported is True
-    assert {r.name for r in results} == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS,
-                                         "python", "skill_script"}
-    assert all(r.sandboxed is True for r in results)
-    assert copilot_cli.probe_problem(results, supported) is None
-    assert not list((home / copilot_cli.SESSION_STATE).iterdir())
+    found = copilot_cli.confinement_probe(run)
+    assert (found.supported, found.unapplied) == (True, None)
+    assert {r.name for r in found.results} == {*copilot_cli.READ_TARGETS,
+                                               *copilot_cli.AUTH_TARGETS, "python", "skill_script"}
+    assert all(r.sandboxed is True for r in found.results)
+    assert copilot_cli.probe_problem(found.results, found.supported, found.unapplied) is None
+    assert sessions(home) == []
     assert calls(log)[0]["cwd"] == str(ws)
     argv = calls(log)[0]["argv"]
     assert argv[argv.index("--log-dir") + 1] == str(run.scratch / "logs")
@@ -1525,6 +1687,88 @@ def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home,
     assert "--no-auto-login" in argv
     assert _contains(argv, list(copilot_cli.TOKEN_FLAGS))
     assert TOKEN not in json.dumps(argv)
+    assert "--sandbox" not in argv  # changes nothing on the server (K6 diagnosis)
+
+
+def probe_run(tmp_path: Path) -> copilot_cli.Run:
+    run = copilot_cli.new_run(ws=staged_ws(tmp_path), model="copilot-fixture-a")
+    run.token, run.scratch = TOKEN, copilot_cli.make_scratch("devrun-test-")
+    return run
+
+
+SHELL = "session.shell.executeUserRequested"
+
+
+@POSIX
+def test_the_probe_applies_the_pinned_sandbox_before_any_command(home, tmp_path, monkeypatch):
+    """testing-harness spec: Confinement probe applies the pinned sandbox — the
+    1.0.91 headless server never puts a session it creates in the sandbox (K6,
+    2026-10-06), so the probe reads the block the client reads, refuses unless
+    it is the pinned one, applies it with `session.options.update` as prompt
+    mode does (origin `user_enabled`), and only then runs its commands."""
+    log = fake_copilot(tmp_path, monkeypatch)
+    found = copilot_cli.confinement_probe(probe_run(tmp_path))
+    assert copilot_cli.probe_problem(found.results, found.supported, found.unapplied) is None
+    methods = [c["method"] for c in rpc_calls(log)]
+    commands = len(found.results)
+    assert methods == ["connect", "sandbox.getHostSupport", "user.settings.get", "session.create",
+                       "session.options.update", *[SHELL] * commands, "session.delete"]
+    [update] = [c["params"] for c in rpc_calls(log) if c["method"] == "session.options.update"]
+    pinned = host_login.pinned_settings(home, host_login.account_home())["sandbox"]
+    assert update["sandboxConfig"] == pinned
+    assert update["sandboxConfigSource"] == copilot_cli.SANDBOX_SOURCE == "user_enabled"
+    created = next(c["params"] for c in rpc_calls(log) if c["method"] == "session.create")
+    assert update["sessionId"] == created["sessionId"]
+
+
+@POSIX
+@pytest.mark.usefixtures("home")
+def test_a_probe_session_without_the_sandbox_reproduces_k6_and_refuses(tmp_path, monkeypatch):
+    """K6 (2026-10-06) on the fake server: a session the server created, with
+    no options update, runs the probe's commands unconfined — every target
+    readable, `gh` 0, nothing reported sandboxed — and the probe refuses for
+    isolation, naming targets and never output."""
+    fake_copilot(tmp_path, monkeypatch)
+    monkeypatch.setattr(copilot_cli, "_apply_sandbox", lambda *_a: None)
+    found = copilot_cli.confinement_probe(probe_run(tmp_path))
+    by = {r.name: r for r in found.results}
+    assert [by[n].output for n in copilot_cli.READ_TARGETS] == ["readable"] * 5
+    assert by["gh_token"].output == "0"
+    assert all(r.sandboxed is None for r in found.results)
+    problem = copilot_cli.probe_problem(found.results, found.supported, found.unapplied)
+    assert problem.kind == "isolation"
+    assert "the token file" in problem.cause
+    assert not re.search(r"\breadable\b", refusal(problem))
+
+
+@POSIX
+@pytest.mark.parametrize(("extra", "named", "created"), [
+    ({"client_sandbox": {"enabled": False}}, "a sandbox block other than the pinned one", False),
+    ({"client_sandbox": None}, "a sandbox block other than the pinned one", False),
+    ({"options_update": "error"}, "session.options.update failed (JSON-RPC error -32000)", True),
+    ({"options_update": "unsuccessful"}, "did not report success", True),
+    ({"options_update": "no-result"}, "did not report success", True),
+])
+def test_a_sandbox_not_applied_refuses_for_isolation_and_runs_no_command(
+        extra, named, created, home, tmp_path, monkeypatch):
+    """testing-harness spec: Confinement probe applies the pinned sandbox — a
+    block other than the pinned one refuses before any session exists; an
+    options update that fails or reports no success refuses, runs no command
+    and still deletes the session. The message never echoes the block."""
+    log = fake_copilot(tmp_path, monkeypatch, **extra)
+    found = copilot_cli.confinement_probe(probe_run(tmp_path))
+    assert found.results == ()
+    assert named in found.unapplied
+    problem = copilot_cli.probe_problem(found.results, found.supported, found.unapplied)
+    assert problem.kind == "isolation"
+    assert "could not put its session in the pinned sandbox" in problem.cause
+    assert "deniedPaths" not in refusal(problem)
+    assert str(host_login.account_home()) not in refusal(problem)
+    methods = [c["method"] for c in rpc_calls(log)]
+    assert SHELL not in methods
+    assert ("session.create" in methods) is created
+    assert ("session.delete" in methods) is created
+    assert sessions(home) == []
 
 
 @POSIX
@@ -1624,7 +1868,7 @@ def test_preflight_only_starts_no_prompt_child_and_reports_the_stop(home, tmp_pa
     assert stop.problem is not None
     assert "approval" in stop.detail
     assert "run" not in [c["kind"] for c in calls(log)]
-    assert not list((home / copilot_cli.SESSION_STATE).iterdir())
+    assert sessions(home) == []
     roster = names.index("rosters")
     assert names.index("confinement_probe") > roster
 
