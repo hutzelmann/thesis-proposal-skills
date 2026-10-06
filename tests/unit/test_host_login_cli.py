@@ -21,7 +21,7 @@ import copilot_cli
 import host_login
 import pytest
 from account_surfaces import CONNECTORS_OFF, PINNED_SETTINGS, PROFILE_DIR
-from helpers import COPILOT_TOKEN, copilot_reply
+from helpers import COPILOT_STREAMS, COPILOT_TOKEN, copilot_reply
 from host_login import (
     AGENT_MARKERS,
     CLAIM_NAME,
@@ -1017,10 +1017,14 @@ class FakeStatusRead:
     def __init__(self, home: Path, fixture: str = "status-ok"):
         self.home, self.fixture = home, fixture
         self.calls: list[dict] = []
+        self.writes: dict[str, str] = {}  # what the client writes into the home, by path
 
     def __call__(self, home, _environ=None, *, token, models=False):
         import fcntl
 
+        for rel, text in self.writes.items():
+            (home / rel).parent.mkdir(parents=True, exist_ok=True)
+            (home / rel).write_text(text, encoding="utf-8")
         with (home / host_login.LOCK_NAME).open("ab") as handle:
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1265,6 +1269,38 @@ def test_a_missing_sandbox_tool_makes_the_copilot_login_not_ready(monkeypatch, c
     assert "slirp4netns" in status_pairs(out)["sandbox"]
     assert "needs slirp4netns on PATH" in err
     assert "install slirp4netns" in err.lower()
+
+
+@POSIX_LOCKS
+@pytest.mark.usefixtures("copilot_state")
+def test_the_state_file_the_status_read_writes_keeps_the_login_ready(monkeypatch, capsys):
+    """testing-harness spec: Copilot state file written by the client — the first
+    login's own read wrote it and an empty process log (2026-10-06), and the
+    home stays clean without a reset."""
+    copilot_cli.read_status.writes = {
+        "config.json": (COPILOT_STREAMS / "client-config.jsonc").read_text(encoding="utf-8"),
+        "logs/process-1791308979893-4242.log": ""}
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 0
+    out, err = capsys.readouterr()
+    assert status_pairs(out)["clean"] == "yes"
+    assert "not clean" not in err
+
+
+@POSIX_LOCKS
+@pytest.mark.usefixtures("copilot_state")
+def test_a_log_the_status_read_left_in_the_home_is_reported_on_the_clean_line(monkeypatch,
+                                                                              capsys):
+    """The `clean` line names the home as the reads left it, the same entry the
+    refusal names — not the state before the reads."""
+    copilot_cli.read_status.writes = {"logs/process-1791308979893-4242.log": "fixture-log-line\n"}
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == host_login.EXIT_NOT_READY
+    out, err = capsys.readouterr()
+    assert status_pairs(out)["clean"].startswith("logs/ (client process logs")
+    assert "is not clean: it holds logs/" in err
+    for value in ("process-1791308979893", "fixture-log-line"):
+        assert value not in out + err
 
 
 @pytest.mark.usefixtures("copilot_state")

@@ -90,6 +90,7 @@ needs no exemption for them. Every fake token is short and obviously synthetic
 | `probe-gh-token.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | `gh auth token` over the session bus exits 0: refused for isolation |
 | `probe-git-credential.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | `git credential fill` for github.com exits 0: refused for isolation |
 | `probe-skill-fails.json` | synthetic, from @github/copilot 1.0.91 `api.schema.json` (`session.shell.executeUserRequested`) | the skill script fails: refused as a precondition |
+| `client-config.jsonc` | synthetic, from @github/copilot 1.0.91 `runtime.node` strings (the two header lines) and `app.js` (`globalStateWriteKeyForContext(…, "firstLaunchAt", …)`), shaped as an offline headless start wrote it into a scratch `COPILOT_HOME` (no token, no network); the timestamp is invented | the client's own `config.json`: the two-line `//` header and `firstLaunchAt` only, which the clean-home rule accepts; the tests derive the refused variants from it (an extra key, a token-shaped value, a block comment) |
 
 Replaced by reduced recordings in the follow-up change `record-copilot-streams`,
 after the first approved run.

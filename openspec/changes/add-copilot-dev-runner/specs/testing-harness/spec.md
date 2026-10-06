@@ -47,6 +47,9 @@ The refusal names the variable, never its value. The reason: an environment toke
   - the chosen snapshot's overage permission, overage count, overage entitlement, remaining percentage, and has-quota and unlimited flags;
   - each listed model's identifier, policy state and supported efforts.
 - The raw reply SHALL never be stored or logged, a refusal for a runner bug included, because it carries the token, the login and the organization list.
+- The reader's child SHALL write its process log to a scratch directory of the call, which is deleted with it, never into the home. The confinement probe's child does the same.
+- The reader's child SHALL carry the run's credential flags: automatic login off, and the token variable named as the one credential the client reads. At the pinned version, automatic login off also leaves an unnamed environment token unread, so a read without the name reports no login. The read thereby validates the token exactly as the run will use it. The on-request read without the token names no variable.
+- Every other Copilot child, the version check and the skill and MCP listings included, SHALL carry automatic login off as well, and, when it carries the token, the token variable named; a command with a subcommand takes both before it.
 
 Before the run, the runner SHALL refuse in any of these cases:
 
@@ -298,13 +301,15 @@ For Copilot:
 - **The token file is missing or empty.** Remedy: `uv run poe host-login copilot`.
 - **The token's prefix is not the fine-grained token's prefix.** Remedy: create a fine-grained token that carries only Copilot Requests, then run `uv run poe host-login copilot --reset`.
 - **The status read reports auth errors, or no login.** The token was rejected, has expired or was revoked. Remedy: the same as for the prefix.
-- **The status read reports an auth type other than the environment token.** Remedy: report it, because another credential reached the client.
+- **The status read reports an auth type other than the environment token.** The client may report the token it read from the named token variable as an environment token or as an SDK-configured token; both count as the environment token, and any other type does not. Remedy: report it, because another credential reached the client.
 - **The status read reports a host other than GitHub's public host.** Remedy: report it.
 - **A stop is recorded** (requirement: Copilot plan billing guard). Remedy, by its kind: for a billing stop, check the account's billing page, then run `uv run poe host-login copilot --clear-stop`; for an isolation stop, read the run's findings, then run the same command; for the approval stop, run that command to approve the next run.
 - **The home is not clean.** Any of these makes it unclean:
   - its settings differ from the pinned ones in any key;
-  - the client's own state file carries a top-level key outside the managed-state set fixed at the pinned version;
-  - it holds any entry outside the allow-list. The allow-list is: the settings and state files, the session store, an empty session-state directory, the empty GitHub CLI configuration directory, the marker, the run lock and the status snapshot.
+  - the client's own state file is not what the client writes: it contains a GitHub token prefix anywhere, comments included; it holds a comment other than the client's own two-line header at its top; the rest is not a JSON object; it carries a top-level key outside the managed-state set fixed at the pinned version; or a managed key's value is not a timestamp string. The message names the key or the file's state, never a value;
+  - it holds any entry outside the allow-list. The allow-list is: the settings and state files, the session store, an empty session-state directory, the empty GitHub CLI configuration directory, the marker, the run lock and the status snapshot. The client's process-log directory is on it only while it holds nothing but empty process logs, which are sized and never read; a log with content or any other entry there refuses the home, because every Copilot child that writes a process log writes it to a scratch directory instead.
+
+  The runner SHALL check this once more after the model-free reads that precede a run, under the same hold of the run lock, on the home as those reads left it, so that an entry or a key a read wrote refuses that run before its prompt-mode child starts.
 
   Remedy: remove the named entry, or run `uv run poe host-login copilot --reset`.
 
@@ -495,7 +500,7 @@ The harness SHALL first send the client's own stop request: a termination reques
 - **THEN** the run is refused as untested. The message names creating a fine-grained token that carries only Copilot Requests and running `uv run poe host-login copilot --reset`, and it closes with the sentence that the operator's own Copilot login is not affected
 
 #### Scenario: Wrong auth source on Copilot
-- **WHEN** the status read reports an auth type other than the environment token, for example a stored login or the GitHub CLI's login
+- **WHEN** the status read reports an auth type other than the environment token or the SDK-configured token the named variable yields, for example a stored login or the GitHub CLI's login
 - **THEN** the run is refused as untested, the message names the auth type, and no Copilot run starts
 
 #### Scenario: Copilot CLI not the pinned version
@@ -503,8 +508,20 @@ The harness SHALL first send the client's own stop request: a termination reques
 - **THEN** the run is refused as untested, and the message names both versions
 
 #### Scenario: Copilot home not clean
-- **WHEN** a Copilot run starts while the home's settings differ from the pinned ones in a key, the client's state file carries a key outside the managed-state set, or the home holds a custom-instructions file
-- **THEN** the run is refused as untested, and the message names the key or the entry and the reset remedy
+- **WHEN** a Copilot run starts while the home's settings differ from the pinned ones in a key, the client's state file carries a key outside the managed-state set or a GitHub token prefix, or the home holds a custom-instructions file or a process-log directory with a log that has content
+- **THEN** the run is refused as untested, and the message names the key or the entry and the reset remedy, and never the value
+
+#### Scenario: Copilot state file written by the client
+- **WHEN** the Copilot home's state file holds the client's two-line comment header followed by a JSON object whose only key is the first-launch timestamp, as the client writes it on its first start, and its process-log directory, if any, holds only empty process logs
+- **THEN** the home counts as clean without a reset, and the status command reports it clean after its reads; the same file with any further top-level key, with any other comment line, with a first-launch value that is not a timestamp string, or with a GitHub token prefix anywhere in it, a comment line included, is refused as not clean
+
+#### Scenario: Copilot read that writes into the home
+- **WHEN** a model-free read before a Copilot run — the status read, a listing or the confinement probe — writes an entry or a state-file key into the home that the clean check refuses
+- **THEN** that run is refused as untested before its prompt-mode child starts, naming the entry or key, and the preflight-only option prints the check on the home as the reads left it
+
+#### Scenario: Copilot children name the token variable
+- **WHEN** the version check, a listing, the status read, the confinement probe or a run starts a Copilot child that carries the token
+- **THEN** the child runs with automatic login off and the token variable named as its credential, before the subcommand where it has one; the status read, the probe and the run write their process log under their scratch directory; the status command's read without the token names no variable
 
 #### Scenario: Copilot reads and run under one hold
 - **WHEN** a Copilot run starts
@@ -594,6 +611,7 @@ The client's internal bookkeeping tools are not tool calls. A tool name that is 
   - remote sessions and their export;
   - login from stored or GitHub CLI credentials;
   - auto-update, the shell's start-up file and the temporary-directory grant;
+- name the token variable as the one credential the client reads, since disabling automatic login also leaves an unnamed environment token unread at the pinned version;
 - mark the token variable as a secret, and write its logs to a scratch directory that is never saved;
 - never pass an extra directory, a plugin directory, approval of every path, memory, sharing, a custom agent, or a resume or continue option;
 - after the run, read the session's event file in the home, and then delete the session's folder.

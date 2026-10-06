@@ -20,7 +20,14 @@ the backstop, failing closed:
   everything a child produced — stderr, the stdout events, the session
   records, the workspace files — before anything is saved, printed or judged;
   a hit makes the run untested for isolation and records an isolation stop.
-  Every child carries `--no-auto-login`, so no stored or `gh` login is used.
+  Every child carries `--no-auto-login`, so no stored or `gh` login is used,
+  and every child that carries the token names it (`TOKEN_FLAGS`), because at
+  1.0.91 that flag leaves an unnamed environment token unread too; the short
+  commands (`--version`, the two listings) take both before the subcommand
+  (`login_flags`), where the client parses them as global options.
+  Every child that writes a process log (the run, the status read, the
+  probe) writes it under its scratch directory (`--log-dir`), never into the
+  home, and the scratch is deleted with the call.
 - **Before the run** (`preflight_checks`, then `LOCKED` and `gate_checks`
   under the run lock): the location, the home's marker and mode, the
   clean-home allow-list, the token's prefix, a recorded stop (before the
@@ -36,7 +43,8 @@ the backstop, failing closed:
   `session.shell.executeUserRequested` and refuses unless the sandboxed shell
   is denied the token file, the client's and the harness's own process
   environments, `~/.ssh`, `~/.config/gh`, `gh` and git authentication, still
-  runs the skills, and reports every command as sandboxed.
+  runs the skills, and reports every command as sandboxed; last, the
+  clean-home check once more, on the home as those reads left it.
 - **After the run** (`assess`): the session file is reduced into `copilot.*`
   records (`reduce_session`) and deleted; the status is read again; overage
   growth, an unavailable read, unreadable consumption, more than twice the
@@ -122,11 +130,19 @@ MIN_AI_CREDITS = 30
 LOW_QUOTA_PERCENT = 10
 NOTIONAL_USD_PER_CREDIT = 0.01
 NANO = 1_000_000_000
-GITHUB_TOKEN_PREFIXES = ("github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_")
+GITHUB_TOKEN_PREFIXES = host_login.GITHUB_TOKEN_PREFIXES
 SCRUBBED = "[copilot-token]"
 QUOTA_FILE = "quota.json"
 SESSION_STATE = "session-state"
 HEADLESS = ("--headless", "--stdio", "--no-auto-login", "--no-auto-update", "--log-level", "none")
+# the one credential a child that carries the token may read: at 1.0.91
+# `--no-auto-login` drops the unnamed environment token too (task 7.4b), so it
+# is named, as the bundled SDK names its own (`startCLIServer`)
+TOKEN_FLAGS = ("--auth-token-env", COPILOT.token_env)
+# the auth types the client may report for the token read from that variable:
+# an environment token (`EnvAuthInfo`) or an SDK-configured one (`TokenAuthInfo`).
+# K1 records which one 1.0.91 reports; the set is then narrowed to it
+TOKEN_AUTH_TYPES = ("env", "token")
 TASK_KINDS = ["agent", "client", "shell"]
 STOP_KINDS = {"approval": 0, "isolation": 1, "billing": 2}
 
@@ -155,7 +171,8 @@ HELPER_TOOLS = ("task", "read_agent", "list_agents", "write_agent")
 NETWORK_TOOLS = ("web_fetch",)
 DENIED_TOOLS = ("memory", "github-mcp-server", "shell(gh:*)", "shell(git push)")
 SWITCHES = ("--disable-builtin-mcps", "--no-custom-instructions", "--no-ask-user", "--no-remote",
-            "--no-remote-export", "--no-auto-login", "--no-auto-update", "--no-bash-env",
+            "--no-remote-export", "--no-auto-login", *TOKEN_FLAGS, "--no-auto-update",
+            "--no-bash-env",
             "--disallow-temp-dir", f"--secret-env-vars={COPILOT.token_env}", "--sandbox")
 
 
@@ -391,15 +408,26 @@ def spawn(argv: Sequence[str], *, home: Path, cwd: Path, scratch: Path | None,
                  stdin=stdin, pass_fds=pass_fds, text=text)
 
 
+def login_flags(token: str | None) -> tuple[str, ...]:
+    """The credential flags of a child: automatic login off, and the token
+    variable named exactly when the child carries the token. A short command
+    takes them before its subcommand: at 1.0.91 they are global options there,
+    and after `skill list` or `mcp list` a usage error (measured offline
+    2026-10-06; `--version` accepts them too)."""
+    return ("--no-auto-login", *(TOKEN_FLAGS if token else ()))
+
+
 def short(args: Sequence[str], *, home: Path, scratch: Path, token: str | None,
           environ: Mapping[str, str] | None = None, cwd: Path | None = None
           ) -> tuple[int, str, str]:
     """A short, model-free Copilot command (`--version`, `skill list --json`,
-    `mcp list --json`) to completion, stopped at CLIENT_TIMEOUT_S. A binary
-    that cannot start answers 127, a hung one 124."""
+    `mcp list --json`) to completion, behind the credential flags
+    (`login_flags`), stopped at CLIENT_TIMEOUT_S. A binary that cannot start
+    answers 127, a hung one 124."""
     env = child_env(home, environ, scratch, token)
+    argv = [COPILOT.binary, *login_flags(token), *args]
     try:
-        return host_login.run_host(COPILOT, [COPILOT.binary, *args], cwd=cwd or scratch, env=env,
+        return host_login.run_host(COPILOT, argv, cwd=cwd or scratch, env=env,
                                    timeout=host_login.CLIENT_TIMEOUT_S,
                                    start=partial(start, home=home))
     except OSError:
@@ -671,6 +699,19 @@ def _close(proc: subprocess.Popen) -> None:
             stream.close()  # type: ignore[union-attr]
 
 
+def headless(scratch: Path, token: str | None) -> list[str]:
+    """The headless server's argv: HEADLESS; the token variable named
+    (TOKEN_FLAGS) exactly when the child carries the token — under
+    `--no-auto-login` the 1.0.91 server reads no unnamed environment token, and
+    `account.getCurrentAuth` answers `{}` (task 7.4b, measured); and the
+    process log under the call's or the run's scratch directory — the server
+    writes `process-<ms>-<pid>.log` into `<COPILOT_HOME>/logs` otherwise, even
+    at log level none (task 7.4a, measured), and that scratch is deleted with
+    the call."""
+    return [COPILOT.binary, *HEADLESS, *(TOKEN_FLAGS if token else ()),
+            "--log-dir", str(scratch / "logs")]
+
+
 def read_status(home: Path, environ: Mapping[str, str] | None = None, *, token: str | None,
                 models: bool = False) -> Status:
     """The account's state through the client's headless server: `connect`,
@@ -681,7 +722,7 @@ def read_status(home: Path, environ: Mapping[str, str] | None = None, *, token: 
     Callers hold the run lock."""
     with call_scratch() as scratch:
         try:
-            proc = spawn([COPILOT.binary, *HEADLESS], home=home, cwd=scratch, scratch=scratch,
+            proc = spawn(headless(scratch, token), home=home, cwd=scratch, scratch=scratch,
                          token=token, environ=environ, stdin=subprocess.PIPE, text=False)
         except OSError as exc:
             why = exc.strerror or type(exc).__name__
@@ -721,7 +762,7 @@ def _no_login(status: Status) -> LoginProblem | None:
 
 
 def _auth_type(status: Status) -> LoginProblem | None:
-    if status.auth_type == "env":
+    if status.auth_type in TOKEN_AUTH_TYPES:
         return None
     return _problem(f"the status read reports auth type {status.auth_type or 'none'!r}, not the "
                     "environment token", "report it, because another credential reached the "
@@ -1346,8 +1387,9 @@ def confinement_probe(run: Run) -> tuple[object, list[ProbeResult]]:
     Returns the host support and each command's result; the probe's session
     folder is deleted afterwards."""
     session_id = str(uuid.uuid4())
-    proc = spawn([COPILOT.binary, *HEADLESS], home=run.home, cwd=run.ws,  # type: ignore[arg-type]
-                 scratch=run.scratch, token=run.token, environ=run.environ,
+    proc = spawn(headless(run.scratch, run.token), home=run.home,  # type: ignore[arg-type]
+                 cwd=run.ws, scratch=run.scratch, token=run.token,  # type: ignore[arg-type]
+                 environ=run.environ,
                  stdin=subprocess.PIPE, text=False)
     try:
         rpc = Rpc(proc)
@@ -1399,6 +1441,15 @@ def _probe_check(run: Run) -> Check:
     return Check("confinement_probe", probe_problem(results, supported), detail)
 
 
+def _reads_clean_check(run: Run) -> Check:
+    """The clean-home check on the home as the gate's reads left it: the status
+    read, the listings and the probe now run authenticated, and where the
+    client's caches land is not derivable from the package (design, facts
+    measured after the first login), so an entry or a state key one of them
+    wrote refuses this run, not only the next one."""
+    return Check("clean_after_reads", host_login.check_copilot_home(run.home))
+
+
 GATE: tuple[Callable[[Run], Check], ...] = (_status_check, _model_check, _roster_check,
                                            _probe_check)
 # what a run reads again once it holds the lock, before any child: the rows the
@@ -1410,13 +1461,17 @@ LOCKED: tuple[Callable[[Run], Check], ...] = (_stop_check, _token_check)
 def gate_checks(run: Run) -> Iterator[Check]:
     """Under one hold of the run lock: the status read and its billing guard,
     the model listing, the rosters, then the confinement probe (Decision 6).
-    A refusal ends the sequence unless `--preflight-only` prints and passes
-    it (REPORTED): each of these is model-free."""
+    A refusal ends those reads unless `--preflight-only` prints and passes it
+    (REPORTED): each of these is model-free. Whatever ended them, the last row
+    is the clean-home check on the home as they left it (`_reads_clean_check`),
+    which starts nothing and is never passed over: a run stops at it before
+    its prompt-mode child, and `--preflight-only` prints it for K3."""
     for step in GATE:
         check = step(run)
         yield check
         if check.problem and check.name not in REPORTED:
-            return
+            break
+    yield _reads_clean_check(run)
 
 
 def _require(checks: Iterable[Check]) -> None:
@@ -2259,6 +2314,18 @@ def _sandbox_line(environ: Mapping[str, str]) -> str:
                      for tool in SANDBOX_TOOLS)
 
 
+def _auth_line(st: Status | None) -> str:
+    """The `auth_type` line (task 7.4b): no read, a failed read, a read that
+    found no login, and the reported type are told apart."""
+    if st is None:
+        return "unknown"
+    if st.error:
+        return "unavailable"
+    if not st.logged_in:
+        return "none"
+    return st.auth_type or "unreported"
+
+
 def _status_lines(home: Path, environ: Mapping[str, str], st: Status | None, *,
                   token_line: str, version: tuple[int, int, int] | None,
                   offenders: list[str]) -> dict[str, str]:
@@ -2268,7 +2335,7 @@ def _status_lines(home: Path, environ: Mapping[str, str], st: Status | None, *,
         "home": str(home),
         "marker": _yes((home / MARKER).is_file()),
         "token_present": token_line,
-        "auth_type": (st.auth_type or "-") if st else "unknown",
+        "auth_type": _auth_line(st),
         "host_ok": _yes(st.host == "https://github.com") if st else "unknown",
         "plan_class": f"{st.plan or 'unknown'} ({st.sku or 'unknown'})" if st else "unknown",
         "token_based_billing": _show(st.token_based_billing) if st else "unknown",
@@ -2302,12 +2369,13 @@ def status(home: Path, environ: Mapping[str, str], *, models: bool = False,
     settings and sandbox tools (`machine_problem`), then the status read's
     auth and billing rows. A recorded stop is reported, never a refusal here.
     The reads run only when the location was not refused (`run_probes`) and
-    the home is present, marked, owner-only and clean, under the run lock."""
+    the home is present, marked, owner-only and clean, under the run lock.
+    The `clean` line and the refusal both name the home as the reads left it:
+    a read whose child wrote into the home is reported, not hidden."""
     token, token_gap, token_line = _token_state(home)
     version = installed_version(home, environ, token) if run_probes else None
     presence = host_login.check_presence(home, COPILOT)
-    offenders = host_login.copilot_offenders(home) if home.is_dir() else []
-    adopted = run_probes and presence is None and not offenders
+    adopted = run_probes and presence is None and not host_login.copilot_offenders(home)
     st = bare = None
     if adopted:
         with host_login.run_lock(home, record=COPILOT):
@@ -2315,13 +2383,14 @@ def status(home: Path, environ: Mapping[str, str], *, models: bool = False,
             bare = read_status(home, environ, token=None) if no_token else None
             if st is not None:
                 write_snapshot(home, st)
+    offenders = host_login.copilot_offenders(home)  # after the reads
     lines = _status_lines(home, environ, st, token_line=token_line, version=version,
                           offenders=offenders)
     lines.update(_model_lines(st) if models else {})
     lines.update({"logged_in": "unknown" if bare is None else _yes(bare.logged_in)}
                  if no_token else {})
     problem = ((check_copilot_version(version) if run_probes else None) or presence
-               or (host_login.check_copilot_home(home) if home.is_dir() else None))
+               or host_login.check_copilot_home(home, offenders=offenders))
     return lines, (problem or token_gap or machine_problem(environ)
                    or (status_problem(st) if st else None))
 

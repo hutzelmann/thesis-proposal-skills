@@ -143,6 +143,7 @@ import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager, nullcontext, suppress
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePath
 
@@ -483,6 +484,9 @@ COPILOT_CONFIG = "config.json"
 TOKEN_FILE = "copilot.token"
 TOKEN_PREFIX = "github_pat_"
 CLASSIC_PREFIX = "ghp_"
+# every GitHub token prefix: a value containing one is token-shaped wherever it
+# appears — a child's environment (copilot_cli) or the client's state file
+GITHUB_TOKEN_PREFIXES = (TOKEN_PREFIX, CLASSIC_PREFIX, "gho_", "ghu_", "ghs_", "ghr_")
 TOKEN_PROMPT = "Fine-grained token (Copilot Requests only): "
 TOKEN_PAGE = "github.com/settings/personal-access-tokens"
 # the one remedy for a token Copilot rejects, a missing or classic one included
@@ -490,14 +494,27 @@ COPILOT_TOKEN_REMEDY = (f"create a fine-grained token that carries only Copilot 
                         f"({TOKEN_PAGE}/new), then run `uv run poe host-login copilot --reset`")
 CLEAR_STOP_COMMAND = "uv run poe host-login copilot --clear-stop"
 # The top-level keys of the client's own state file a token-mode home may
-# develop. Starts from the operator's home; live check K3 fixes it at the pin,
-# and widening it is a reviewed change (design Decision 6).
-MANAGED_STATE_KEYS = frozenset({"expAssignmentsCache", "firstLaunchAt", "lastLoggedInUser",
-                                "loggedInUsers"})
+# develop: at 1.0.91 every child that writes the file writes `firstLaunchAt`
+# alone (task 7.4a, measured; every other key the package writes is the terminal
+# UI's or a client login's). Each holds an ISO timestamp string, which is all
+# the check accepts as its value; a key of another shape needs a check of its
+# own. Live check K3 confirms the set for a run; widening it is a reviewed
+# change (design Decision 6).
+MANAGED_STATE_KEYS = frozenset({"firstLaunchAt"})
+# the two whole-line comments the 1.0.91 client writes at the top of its state
+# file (`runtime.node` strings); any other comment in the file is refused
+COPILOT_CONFIG_HEADER = ("// User settings belong in settings.json.",
+                         "// This file is managed automatically.")
 # the only entries a clean Copilot home holds, besides `session-store.db*`;
-# `session-state/` and `gh/` must also be empty (Decision 6)
+# `session-state/` and `gh/` must also be empty (Decision 6). `logs/` only while
+# it holds nothing but empty process logs (`_empty_process_logs`): every child
+# that writes a process log is pointed at scratch (`--log-dir`), and an empty
+# one, the first login's, holds nothing to keep out.
 COPILOT_ALLOWED = frozenset({COPILOT_SETTINGS, COPILOT_CONFIG, "session-state", "gh", MARKER,
                              LOCK_NAME, "quota.json"})
+COPILOT_LOGS = "logs"
+# the name the client gives a process log (`app.js`: `process-${t}-${n}.log`)
+PROCESS_LOG = re.compile(r"process-\d+-\d+\.log")
 COPILOT_EMPTY_DIRS = ("session-state", "gh")
 
 
@@ -1083,16 +1100,53 @@ def check_codex_home(home_dir: Path) -> LoginProblem | None:
     return check_home(CODEX, home_dir)
 
 
+def _parse_object(text: str) -> dict | str:
+    """A JSON object parsed from `text`, or why it is none: `unreadable` (a
+    nesting too deep to parse included) or `not an object`."""
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError):
+        return "unreadable"
+    return data if isinstance(data, dict) else "not an object"
+
+
 def _json_object(path: Path) -> dict | str:
     """A JSON object read from `path`, or why it is none: `missing`,
     `unreadable` or `not an object`."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return "missing"
     except (OSError, ValueError):
         return "unreadable"
-    return data if isinstance(data, dict) else "not an object"
+    return _parse_object(text)
+
+
+def token_shaped(text: str) -> bool:
+    """Whether `text` contains a GitHub token prefix anywhere."""
+    return any(prefix in text for prefix in GITHUB_TOKEN_PREFIXES)
+
+
+def _without_header(text: str) -> str | None:
+    """The state file's text with the client's comment header dropped from its
+    top (COPILOT_CONFIG_HEADER, exactly), or None when any other whole-line
+    `//` comment remains — in any number or position."""
+    lines = text.splitlines()
+    if tuple(lines[:len(COPILOT_CONFIG_HEADER)]) == COPILOT_CONFIG_HEADER:
+        lines = lines[len(COPILOT_CONFIG_HEADER):]
+    if any(line.lstrip().startswith("//") for line in lines):
+        return None
+    return "\n".join(lines)
+
+
+def _timestamp(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _settings_offender(home_dir: Path, account: Path) -> list[str]:
@@ -1102,14 +1156,52 @@ def _settings_offender(home_dir: Path, account: Path) -> list[str]:
     return [f"{COPILOT_SETTINGS} ({difference})"] if difference else []
 
 
-def _state_offenders(home_dir: Path) -> list[str]:
-    state = _json_object(home_dir / COPILOT_CONFIG)
-    if state == "missing":
-        return []
+def _state_problems(text: str) -> list[str]:
+    """Why the state file's text is not what the client writes, failing closed
+    and never echoing a value: a GitHub token prefix anywhere in the raw text,
+    comments included; a comment other than the client's header; no JSON
+    object; then per top-level key, a key outside MANAGED_STATE_KEYS, or a
+    managed key whose value is not a timestamp string. The parsed key is
+    checked again, for a token prefix written with JSON escapes; a
+    token-shaped key is not named at all."""
+    if token_shaped(text):
+        return ["a token-shaped string"]
+    body = _without_header(text)
+    state = "unexpected comment" if body is None else _parse_object(body)
     if isinstance(state, str):
-        return [f"{COPILOT_CONFIG} ({state})"]
-    return [f"{COPILOT_CONFIG} (key {key} outside the managed-state set)"
-            for key in sorted(set(state) - MANAGED_STATE_KEYS)]
+        return [state]
+    found = []
+    for key in sorted(state):
+        name = "a token-shaped key" if token_shaped(key) else f"key {key}"
+        if key not in MANAGED_STATE_KEYS:
+            found.append(f"{name} outside the managed-state set")
+        elif not _timestamp(state[key]):
+            found.append(f"{name} is not a timestamp string")
+    return found
+
+
+def _state_offenders(home_dir: Path) -> list[str]:
+    """The client's state file, read as the client writes it (`_state_problems`);
+    a missing file is clean."""
+    try:
+        text = (home_dir / COPILOT_CONFIG).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError):
+        return [f"{COPILOT_CONFIG} (unreadable)"]
+    return [f"{COPILOT_CONFIG} ({problem})" for problem in _state_problems(text)]
+
+
+def _empty_process_logs(logs: Path) -> bool:
+    """Whether `logs` is a real directory holding nothing but empty process logs
+    (PROCESS_LOG, regular files of size 0): what a headless child at log level
+    none left there before `--log-dir` pointed it at scratch — the first
+    login's (2026-10-06). Sized, never read; a log with content, another name,
+    a link or a subdirectory refuses the home."""
+    if logs.is_symlink() or not logs.is_dir():
+        return False
+    return all(PROCESS_LOG.fullmatch(log.name) and not log.is_symlink() and log.is_file()
+               and log.stat().st_size == 0 for log in logs.iterdir())
 
 
 def _entry_offenders(home_dir: Path) -> list[str]:
@@ -1120,6 +1212,10 @@ def _entry_offenders(home_dir: Path) -> list[str]:
             if entry.is_dir() and not entry.is_symlink() and not any(entry.iterdir()):
                 continue
             found.append(f"{name}/ (not an empty directory)")
+        elif name == COPILOT_LOGS:
+            if not _empty_process_logs(entry):
+                found.append(f"{name}/ (client process logs with content or other entries, "
+                             "which every child writes to scratch)")
         elif name not in COPILOT_ALLOWED and not name.startswith("session-store.db"):
             found.append(name)
     return found
@@ -1127,12 +1223,14 @@ def _entry_offenders(home_dir: Path) -> list[str]:
 
 def copilot_offenders(home_dir: Path, account: Path | None = None) -> list[str]:
     """What makes the Copilot home unclean, by key path or entry (Decision 6):
-    settings that differ from `pinned_settings` in any key, a key of the
-    client's state file outside MANAGED_STATE_KEYS — `config.json` overrides
-    `settings.json` key by key, so this is an allow-list — and any entry
-    outside the allow-list: a custom-instructions file, `skills/`,
-    `mcp-config.json`, `pkg/`, a token file, a non-empty `session-state/` or
-    `gh/`."""
+    settings that differ from `pinned_settings` in any key; a state file
+    (`config.json`, the client's comment header allowed) that holds a token
+    prefix anywhere or another comment, is no JSON object, carries a key
+    outside MANAGED_STATE_KEYS — it overrides `settings.json` key by key, so
+    this is an allow-list — or a managed key that is no timestamp; and any
+    entry outside the allow-list: a custom-instructions file, `skills/`,
+    `mcp-config.json`, `pkg/`, a `logs/` with more than empty process logs, a
+    token file, a non-empty `session-state/` or `gh/`."""
     if not home_dir.is_dir():
         return []
     account = account_home() if account is None else account
@@ -1140,10 +1238,12 @@ def copilot_offenders(home_dir: Path, account: Path | None = None) -> list[str]:
             + _entry_offenders(home_dir))
 
 
-def check_copilot_home(home_dir: Path, account: Path | None = None) -> LoginProblem | None:
-    """The Copilot home is clean (`copilot_offenders`); refused naming the first
-    offending key path or entry, with the reset remedy."""
-    offenders = copilot_offenders(home_dir, account)
+def check_copilot_home(home_dir: Path, account: Path | None = None,
+                       offenders: list[str] | None = None) -> LoginProblem | None:
+    """The Copilot home is clean (`copilot_offenders`, or the list a caller
+    already read); refused naming the offending key paths or entries, with the
+    reset remedy."""
+    offenders = copilot_offenders(home_dir, account) if offenders is None else offenders
     if not offenders:
         return None
     return LoginProblem(f"the harness login home {home_dir} is not clean: it holds "

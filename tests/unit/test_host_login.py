@@ -30,6 +30,7 @@ import host_login
 import pytest
 import routing
 from account_surfaces import PINNED_SETTINGS, PROFILE_DIR, isolation_problem
+from helpers import COPILOT_STREAMS
 from host_login import (
     CLAIM_NAME,
     CLAUDE,
@@ -1264,9 +1265,12 @@ def test_check_copilot_home_names_a_differing_settings_key(change, named, copilo
     assert "uv run poe host-login copilot --reset" in problem.remedy
 
 
+LAUNCHED = "2026-01-01T00:00:00.000Z"  # the shape of the client's `firstLaunchAt`
+
+
 def test_check_copilot_home_names_a_state_key_outside_the_managed_set(copilot_home):
     (copilot_home / "config.json").write_text(json.dumps(
-        {"firstLaunchAt": "x", "loggedInUsers": [], "model": "copilot-fixture-a"}),
+        {"firstLaunchAt": LAUNCHED, "loggedInUsers": [], "model": "copilot-fixture-a"}),
         encoding="utf-8")
     problem = host_login.check_copilot_home(copilot_home)
     assert "key model outside the managed-state set" in problem.cause
@@ -1290,12 +1294,144 @@ def test_check_copilot_home_names_each_entry_outside_the_allow_list(entry, copil
 
 def test_check_copilot_home_allows_every_allow_listed_entry(copilot_home):
     (copilot_home / "config.json").write_text(json.dumps(
-        dict.fromkeys(host_login.MANAGED_STATE_KEYS)), encoding="utf-8")
+        dict.fromkeys(host_login.MANAGED_STATE_KEYS, LAUNCHED)), encoding="utf-8")
     for name in ("session-store.db", "session-store.db-wal", "quota.json",
                  host_login.LOCK_NAME):
         (copilot_home / name).write_text("", encoding="utf-8")
     (copilot_home / "session-state").mkdir()
     assert host_login.check_copilot_home(copilot_home) is None
+
+
+CLIENT_CONFIG = (COPILOT_STREAMS / "client-config.jsonc").read_text(encoding="utf-8")
+SYNTHETIC_PAT = "github_pat_SYNTHETIC_STATE_VALUE"
+
+
+HEADER, _, CLIENT_BODY = CLIENT_CONFIG.partition("{")
+CLIENT_BODY = "{" + CLIENT_BODY
+
+
+@pytest.mark.parametrize("text", [CLIENT_CONFIG, CLIENT_BODY])
+def test_the_state_file_the_client_writes_is_clean(text, copilot_home):
+    """testing-harness spec: Copilot state file written by the client — the
+    two-line comment header and `firstLaunchAt` (1.0.91, task 7.4a); the same
+    object without the header too."""
+    assert HEADER.splitlines() == list(host_login.COPILOT_CONFIG_HEADER)
+    (copilot_home / "config.json").write_text(text, encoding="utf-8")
+    assert host_login.copilot_offenders(copilot_home) == []
+    assert {"firstLaunchAt"} == host_login.MANAGED_STATE_KEYS
+
+
+def _client_config(**extra: object) -> str:
+    return HEADER + json.dumps({**json.loads(CLIENT_BODY), **extra}, indent=2)
+
+
+TOKEN_STRING = "config.json (a token-shaped string)"
+UNEXPECTED_COMMENT = "config.json (unexpected comment)"
+NOT_A_TIMESTAMP = "key firstLaunchAt is not a timestamp string"
+NESTED = 200_000  # deeper than the parser's recursion limit
+
+
+@pytest.mark.parametrize(("text", "named"), [
+    (_client_config(loggedInUsers=[]), "key loggedInUsers outside the managed-state set"),
+    (_client_config(lastLoggedInUser="fixture-login-octocat"),
+     "key lastLoggedInUser outside the managed-state set"),
+    # a token prefix anywhere in the raw text, comments included (review follow-up)
+    (_client_config(firstLaunchAt=SYNTHETIC_PAT), TOKEN_STRING),
+    (_client_config(firstLaunchAt={"nested": [f"Bearer {SYNTHETIC_PAT}"]}), TOKEN_STRING),
+    (_client_config(**{SYNTHETIC_PAT: 1}), TOKEN_STRING),
+    (HEADER + f"// {SYNTHETIC_PAT}\n" + CLIENT_BODY, TOKEN_STRING),
+    (CLIENT_CONFIG + "\n// gho_SYNTHETIC_TRAILING\n", TOKEN_STRING),
+    # a prefix written with JSON escapes, found after the parse
+    (HEADER + '{"firstLaunchAt": "\\u0067ithub_pat_SYNTHETIC"}', NOT_A_TIMESTAMP),
+    (HEADER + f'{{"\\u0067ithub_pat_SYNTHETIC": 1, "firstLaunchAt": "{LAUNCHED}"}}',
+     "a token-shaped key outside the managed-state set"),
+    # the managed key holds a timestamp string, nothing else
+    (_client_config(firstLaunchAt={"mcpServers": {"fixture": {}}}), NOT_A_TIMESTAMP),
+    (_client_config(firstLaunchAt="Bearer fixture"), NOT_A_TIMESTAMP),
+    (_client_config(firstLaunchAt=None), NOT_A_TIMESTAMP),
+    pytest.param(HEADER + '{"firstLaunchAt": ' + "[" * NESTED + "]" * NESTED + "}",
+                 "config.json (unreadable)", id="nested-too-deep"),
+    # only the client's own header, exactly, at the top
+    (CLIENT_CONFIG.replace("// This", "/* This") + "*/", UNEXPECTED_COMMENT),
+    (HEADER + f'{{\n// fixture-comment-a\n"firstLaunchAt": "{LAUNCHED}"\n// fixture-comment-b\n}}',
+     UNEXPECTED_COMMENT),
+    ("\n".join(reversed(HEADER.splitlines())) + "\n" + CLIENT_BODY, UNEXPECTED_COMMENT),
+    (HEADER.splitlines()[0] + "\n" + CLIENT_BODY, UNEXPECTED_COMMENT),
+    (CLIENT_CONFIG.replace('Z"', 'Z" // an inline comment'), "config.json (unreadable)"),
+    (HEADER + "[]\n", "config.json (not an object)"),
+])
+def test_a_client_state_file_with_more_than_the_header_and_the_key_is_refused(
+        text, named, copilot_home):
+    """testing-harness spec: Copilot home not clean — an extra key, another
+    comment, a token prefix anywhere or a managed key that is no timestamp is
+    named by its key or the file's state, never echoed."""
+    (copilot_home / "config.json").write_text(text, encoding="utf-8")
+    problem = host_login.check_copilot_home(copilot_home)
+    assert problem is not None
+    assert named in problem.cause
+    for value in (SYNTHETIC_PAT, "SYNTHETIC", "fixture-login-octocat", "Bearer", "mcpServers",
+                  "github_pat_", "gho_", "fixture-comment"):
+        assert value not in problem.cause
+    assert "uv run poe host-login copilot --reset" in problem.remedy
+
+
+PROCESS_LOG = "process-1791308979893-4242.log"  # the client's naming, `process-<ms>-<pid>.log`
+
+
+@pytest.mark.parametrize("names", [[], [PROCESS_LOG],
+                                   [PROCESS_LOG, "process-1791308980001-4243.log"]])
+def test_empty_process_logs_in_the_home_are_clean(names, copilot_home):
+    """testing-harness spec: Copilot state file written by the client — the first
+    login's headless read left one empty process log in `<home>/logs` before
+    `--log-dir` (2026-10-06); an empty log holds nothing, so no reset is needed."""
+    logs = copilot_home / "logs"
+    logs.mkdir(mode=0o700)
+    for name in names:
+        (logs / name).write_text("", encoding="utf-8")
+    assert host_login.copilot_offenders(copilot_home) == []
+
+
+def _log_with_content(logs: Path) -> None:
+    (logs / PROCESS_LOG).write_text("fixture-log-line\n", encoding="utf-8")
+
+
+def _other_name(logs: Path) -> None:
+    (logs / "fixture-notes.txt").write_text("", encoding="utf-8")
+
+
+def _subdirectory(logs: Path) -> None:
+    (logs / "process-1-2.log").mkdir()
+
+
+def _linked_log(logs: Path) -> None:
+    (logs / PROCESS_LOG).symlink_to(logs.parent / "settings.json")
+
+
+def _linked_directory(logs: Path) -> None:
+    logs.rmdir()
+    elsewhere = logs.parent.parent / "fixture-elsewhere-logs"
+    elsewhere.mkdir()
+    logs.symlink_to(elsewhere, target_is_directory=True)
+
+
+SYMLINKS = pytest.mark.skipif(os.name != "posix", reason="symlinks need privileges on Windows")
+
+
+@pytest.mark.parametrize("fill", [_log_with_content, _other_name, _subdirectory,
+                                  pytest.param(_linked_log, marks=SYMLINKS),
+                                  pytest.param(_linked_directory, marks=SYMLINKS)])
+def test_a_process_log_directory_with_more_than_empty_logs_is_refused(fill, copilot_home):
+    """testing-harness spec: Copilot home not clean — every child logs to scratch,
+    so a log with content, another entry, a subdirectory or a link in or as
+    `<home>/logs` is refused; never read, only named."""
+    logs = copilot_home / "logs"
+    logs.mkdir(mode=0o700)
+    fill(logs)
+    problem = host_login.check_copilot_home(copilot_home)
+    assert problem is not None
+    assert "logs/ (client process logs with content or other entries" in problem.cause
+    for value in ("process-", "fixture-log-line", "fixture-notes", "fixture-elsewhere"):
+        assert value not in problem.cause
 
 
 @pytest.mark.parametrize("remedy", ["run `uv run poe host-login copilot`",

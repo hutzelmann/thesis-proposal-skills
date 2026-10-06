@@ -77,6 +77,31 @@ CONFIG = json.loads(pathlib.Path(__file__).with_suffix(".json").read_text(encodi
 ARGS = sys.argv[1:]
 LOG = pathlib.Path(CONFIG["log"])
 
+def subcommand(args):
+    # a short command takes the credential flags before its subcommand, where
+    # 1.0.91 parses them as global options
+    while args[:1] in (["--no-auto-login"], ["--auth-token-env"]):
+        args = args[2:] if args[0] == "--auth-token-env" else args[1:]
+    return args
+
+CMD = subcommand(ARGS)
+HEADER = "// User settings belong in settings.json.\n// This file is managed automatically.\n"
+
+def start_writes():
+    # what the 1.0.91 client writes when it starts (task 7.4a, measured): its
+    # state file with the comment header and `firstLaunchAt`, and an empty
+    # process log under `--log-dir`, or under `<COPILOT_HOME>/logs` without it
+    home = pathlib.Path(os.environ["COPILOT_HOME"])
+    if not (home / "config.json").exists():
+        (home / "config.json").write_text(
+            HEADER + json.dumps({"firstLaunchAt": "2026-01-01T00:00:00.000Z"}), encoding="utf-8")
+    logs = pathlib.Path(ARGS[ARGS.index("--log-dir") + 1]) if "--log-dir" in ARGS else home / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / f"process-{int(time.time() * 1000)}-{os.getpid()}.log").write_text(
+        "", encoding="utf-8")
+    for name, text in CONFIG.get("home_writes", {}).items():  # e.g. a cache file
+        (home / name).write_text(text, encoding="utf-8")
+
 def record(kind):
     names = sorted(n for n, v in os.environ.items()
                    if n.endswith(("_TOKEN", "_API_KEY")) or v.startswith("github_pat_"))
@@ -118,7 +143,12 @@ def answer(message, calls):
     if method == "connect":
         return {"result": CONFIG["status"].get("connect", {}).get("result", {"protocolVersion": 3})}
     if method == "account.getCurrentAuth":
-        token = os.environ.get("COPILOT_GITHUB_TOKEN")
+        # 1.0.91, measured (task 7.4b): under `--no-auto-login` the server reads
+        # only the variable `--auth-token-env` names, and answers `{}` without it
+        named = ARGS[ARGS.index("--auth-token-env") + 1] if "--auth-token-env" in ARGS else None
+        if "--no-auto-login" in ARGS and named is None:
+            return {"result": {}}
+        token = os.environ.get(named or "COPILOT_GITHUB_TOKEN")
         return (CONFIG["status"] if token else CONFIG["status_no_token"])["auth"]
     if method == "models.list":
         return CONFIG["models"]
@@ -173,20 +203,22 @@ def run():
         time.sleep(60)
     sys.exit(CONFIG.get("exit", 0))
 
-if ARGS[:1] == ["--version"]:
+if CMD[:1] == ["--version"]:
     record("version")
     print(CONFIG.get("version", "GitHub Copilot CLI 1.0.91."))
-elif ARGS[:2] == ["skill", "list"]:
+elif CMD[:2] == ["skill", "list"]:
     record("skills")
     print(json.dumps(CONFIG["skills"]).replace("__WS__", os.getcwd()))
-elif ARGS[:2] == ["mcp", "list"]:
+elif CMD[:2] == ["mcp", "list"]:
     record("mcp")
     print(json.dumps(CONFIG["mcp"]))
 elif "--headless" in ARGS:
     record("headless")
+    start_writes()
     serve()
 elif "-p" in ARGS:
     record("run")
+    start_writes()
     run()
 '''
 
@@ -507,6 +539,39 @@ def test_status_problem_refuses_with_the_spec_remedy(fixture, named, remedy, bil
         assert secret not in message
 
 
+def _with_auth_type(kind: str) -> copilot_cli.Status:
+    replies = json.loads(json.dumps(load("status-ok")))
+    replies["auth"]["result"]["authInfo"]["type"] = kind
+    return copilot_cli.parse_status({**replies, "models": load("models")})
+
+
+@pytest.mark.parametrize("kind", copilot_cli.TOKEN_AUTH_TYPES)
+def test_the_named_token_passes_as_an_environment_or_sdk_token(kind):
+    """testing-harness spec: Wrong auth source on Copilot — the token read from
+    the named variable may come back as `env` or `token` (task 7.4b)."""
+    assert copilot_cli.status_problem(_with_auth_type(kind)) is None
+
+
+@pytest.mark.parametrize("kind", ["user", "gh-cli", "token-provider", "copilot-api-token"])
+def test_any_other_auth_type_is_another_credential(kind):
+    problem = copilot_cli.status_problem(_with_auth_type(kind))
+    assert problem is not None
+    assert repr(kind) in problem.cause
+    assert "another credential" in problem.remedy
+
+
+@pytest.mark.parametrize(("status", "line"), [
+    (None, "unknown"),
+    (copilot_cli.Status(error="connect gave no answer in time"), "unavailable"),
+    (copilot_cli.parse_status({"connect": {"result": {}}, "auth": {"result": {}}}), "none"),
+])
+def test_the_auth_type_line_tells_no_read_a_failed_read_and_no_login_apart(status, line):
+    """The first login's `-` stood for both a failed read and a read without a
+    login (2026-10-06); the line now names which."""
+    assert copilot_cli._auth_line(status) == line
+    assert copilot_cli._auth_line(status_of("status-ok")) == "env"
+
+
 @pytest.mark.parametrize(("model", "effort", "named"), [
     ("copilot-fixture-x", None, "does not offer"),
     ("copilot-fixture-c", None, "'disabled'"),
@@ -549,9 +614,48 @@ def test_read_status_speaks_the_headless_protocol(home, tmp_path, monkeypatch):
     assert [m.id for m in status.models][:2] == ["copilot-fixture-a", "copilot-fixture-b"]
     bare = copilot_cli.read_status(home, token=None)
     assert not bare.logged_in
-    no_token_call = calls(log)[-1]
+    token_call, no_token_call = calls(log)
     assert no_token_call["token_names"] == []
     assert not no_token_call["token_ok"]
+    flags = list(copilot_cli.TOKEN_FLAGS)
+    assert flags == ["--auth-token-env", COPILOT.token_env]
+    assert "--no-auto-login" in token_call["argv"]
+    assert _contains(token_call["argv"], flags)
+    assert "--auth-token-env" not in no_token_call["argv"]
+
+
+def _contains(argv: list[str], part: list[str]) -> bool:
+    return any(argv[i:i + len(part)] == part for i in range(len(argv)))
+
+
+@POSIX
+def test_a_read_that_does_not_name_the_token_reports_no_login(home, tmp_path, monkeypatch):
+    """The first login (2026-10-06): under `--no-auto-login` the 1.0.91 server
+    leaves an unnamed COPILOT_GITHUB_TOKEN unread, the read reports no login,
+    and the line read `-`; the fake answers as the client was measured to."""
+    fake_copilot(tmp_path, monkeypatch)
+    monkeypatch.setattr(copilot_cli, "TOKEN_FLAGS", ())
+    status = copilot_cli.read_status(home, token=TOKEN)
+    assert (status.error, status.logged_in, status.auth_type) == (None, False, None)
+    assert copilot_cli._auth_line(status) == "none"
+    assert "no login" in copilot_cli.status_problem(status).cause
+
+
+@POSIX
+def test_the_status_read_logs_to_its_scratch_and_leaves_the_home_clean(home, tmp_path,
+                                                                       monkeypatch):
+    """testing-harness spec: Copilot state file written by the client — the
+    server's process log goes under the call's scratch, deleted with it; the
+    state file it writes on start (header, `firstLaunchAt`) keeps the home clean."""
+    log = fake_copilot(tmp_path, monkeypatch)
+    copilot_cli.read_status(home, token=TOKEN)
+    [call] = calls(log)
+    scratch = Path(call["home"])
+    assert call["argv"][call["argv"].index("--log-dir") + 1] == str(scratch / "logs")
+    assert not scratch.exists()  # the log went with the call's scratch
+    assert not (home / "logs").exists()
+    assert (home / "config.json").read_text(encoding="utf-8").startswith("//")
+    assert host_login.copilot_offenders(home) == []
 
 
 def test_the_status_snapshot_holds_no_secret(home):
@@ -830,6 +934,7 @@ def test_the_command_matches_decision_8_for_every_scenario(name):
                  "--disable-builtin-mcps", "--no-custom-instructions", "--no-remote",
                  "--no-remote-export", "--no-auto-update"):
         assert flag in argv
+    assert argv[argv.index("--auth-token-env") + 1] == COPILOT.token_env  # task 7.4b
     assert argv[argv.index("--max-ai-credits") + 1] == "30"
     assert flag_values(argv, "--deny-tool") == list(copilot_cli.DENIED_TOOLS)
     assert "--reasoning-effort" not in argv
@@ -1413,6 +1518,74 @@ def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home,
     assert copilot_cli.probe_problem(results, supported) is None
     assert not list((home / copilot_cli.SESSION_STATE).iterdir())
     assert calls(log)[0]["cwd"] == str(ws)
+    argv = calls(log)[0]["argv"]
+    assert argv[argv.index("--log-dir") + 1] == str(run.scratch / "logs")
+    assert not (home / "logs").exists()
+    # testing-harness spec: Copilot children name the token variable
+    assert "--no-auto-login" in argv
+    assert _contains(argv, list(copilot_cli.TOKEN_FLAGS))
+    assert TOKEN not in json.dumps(argv)
+
+
+@POSIX
+@pytest.mark.parametrize("token", [TOKEN, None])
+def test_the_short_children_take_the_credential_flags_before_the_subcommand(token, home,
+                                                                            tmp_path, monkeypatch):
+    """testing-harness spec: Copilot children name the token variable — the
+    version check and the two listings carry automatic login off, and the token
+    variable named when they carry the token, before the subcommand: 1.0.91
+    parses them as global options there and refuses them after `skill list` or
+    `mcp list` (measured offline, 2026-10-06)."""
+    log = fake_copilot(tmp_path, monkeypatch)
+    ws = staged_ws(tmp_path)
+    assert copilot_cli.installed_version(home, None, token) == (1, 0, 91)
+    run = copilot_cli.new_run(ws=ws, token=token, scratch=copilot_cli.make_scratch("devrun-test-"))
+    copilot_cli._roster_check(run)
+    flags = ["--no-auto-login", *(copilot_cli.TOKEN_FLAGS if token else ())]
+    by_kind = {c["kind"]: c for c in calls(log)}
+    assert set(by_kind) == {"version", "skills", "mcp"}
+    assert by_kind["version"]["argv"] == [*flags, "--version"]
+    assert by_kind["skills"]["argv"] == [*flags, "skill", "list", "--json"]
+    assert by_kind["mcp"]["argv"] == [*flags, "mcp", "list", "--json"]
+    assert all(c["token_ok"] is bool(token) for c in by_kind.values())
+
+
+@POSIX
+def test_a_read_that_writes_into_the_home_refuses_its_own_run(home, tmp_path, monkeypatch):
+    """testing-harness spec: Copilot read that writes into the home — the gate's
+    last row checks the home as the reads left it, so the run stops before its
+    prompt-mode child, not only the next run."""
+    skip_scan(monkeypatch)
+    log = fake_copilot(tmp_path, monkeypatch, home_writes={"copilot-user-cache": "fixture"})
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                effort=None, cap=30, timeout=30, home=home,
+                                scenario=claude_runner.SCENARIOS["check_report"])
+    assert "is not clean: it holds copilot-user-cache" in refused.value.message
+    assert "fixture" not in refused.value.message.replace("copilot-fixture-a", "")
+    kinds = [c["kind"] for c in calls(log)]
+    assert "headless" in kinds
+    assert "run" not in kinds
+
+
+@POSIX
+@pytest.mark.usefixtures("home")
+def test_preflight_only_prints_the_clean_row_after_the_reads(tmp_path, monkeypatch):
+    """K3 reads it: the home as the status read, the listings and the probe
+    left it, printed even when an earlier gate row ended the reads."""
+    skip_scan(monkeypatch)
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    fake_copilot(tmp_path, monkeypatch, probe="probe-gh-token",
+                 home_writes={"exp-cache": "fixture"})
+    checks, ready = copilot_cli.preflight_report(staged_ws(tmp_path),
+                                                 claude_runner.SCENARIOS["check_report"],
+                                                 model="copilot-fixture-a", effort=None)
+    by = {c.name: c for c in checks}
+    assert ready is False
+    assert list(by)[-2:] == ["confinement_probe", "clean_after_reads"]
+    assert by["confinement_probe"].problem is not None
+    assert by["clean"].problem is None
+    assert "it holds exp-cache" in by["clean_after_reads"].problem.cause
 
 
 @POSIX
@@ -1444,8 +1617,9 @@ def test_preflight_only_starts_no_prompt_child_and_reports_the_stop(home, tmp_pa
     names = [c.name for c in checks]
     assert names == ["location", "home", "clean", "token", "stop", "version", "managed_settings",
                      "sandbox_tools", "workspace", "status", "model", "rosters",
-                     "confinement_probe"]
+                     "confinement_probe", "clean_after_reads"]
     assert ready is True
+    assert next(c for c in checks if c.name == "clean_after_reads").problem is None
     stop = next(c for c in checks if c.name == "stop")
     assert stop.problem is not None
     assert "approval" in stop.detail
@@ -1472,7 +1646,8 @@ def test_preflight_only_goes_on_past_rows_that_leave_the_later_reads_safe(tmp_pa
                                                  model="copilot-fixture-x", effort=None)
     by = {c.name: c for c in checks}
     assert ready is False
-    assert list(by)[-4:] == ["status", "model", "rosters", "confinement_probe"]
+    assert list(by)[-5:] == ["status", "model", "rosters", "confinement_probe",
+                             "clean_after_reads"]
     assert by["sandbox_tools"].problem is not None
     assert by["status"].problem is not None
     assert by["model"].problem is not None
