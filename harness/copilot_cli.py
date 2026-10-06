@@ -103,8 +103,9 @@ the shared verdicts and the route reader work unchanged. Copilot reports AI
 credits, not money: the summary's cost is absent, with the credits at one cent
 each as a notional figure labelled as not billed (`copilot_read`).
 
-Imports `host_login` and the shape module `hosts` only — never `routing` or
-`claude_cli` — so `routing.tool_calls` can use it without a cycle. Facts are
+Imports `host_login`, `workspace_guard` and the shape module `hosts` only —
+never `routing` or `claude_cli` — so `routing.tool_calls` can use it without a
+cycle. Facts are
 pinned to CLI 1.0.91 by the V-pass (change design, "Facts at 1.0.91"). The L0
 tests run every pure part over the synthetic fixtures in
 `tests/unit/data/copilot_streams/` and never start the real `copilot`: an
@@ -140,8 +141,11 @@ from functools import partial
 from pathlib import Path, PurePath
 
 import host_login
+import workspace_guard
 from host_login import COPILOT, MARKER, LoginProblem, refusal
 from hosts import RunView, needs_network
+from workspace_guard import unsafe_entry as _unsafe_entry
+from workspace_guard import workspace_entries, workspace_identity
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -484,41 +488,6 @@ def scrub_events(events: list[dict], token: str | None) -> tuple[list[dict], boo
         cleaned.append(json.loads(text) if found else event)
         hit = hit or found
     return cleaned, hit
-
-
-def _unsafe_entry(mode: int, links: int) -> str | None:
-    """Why the harness must not follow, read or write a workspace entry: a
-    link (it would act on the link's target), a FIFO, socket or device, or a
-    regular file with another name elsewhere (a hard link, whose content is
-    another file's). A directory or a singly linked regular file is safe."""
-    if stat.S_ISDIR(mode):
-        return None
-    if stat.S_ISLNK(mode):
-        return "a link"
-    if not stat.S_ISREG(mode):
-        return "not a regular file"
-    return "a hard link" if links > 1 else None
-
-
-def workspace_entries(root: Path) -> Iterator[tuple[Path, os.stat_result]]:
-    """Every entry under `root`, by `lstat`, without following a link: a link
-    to a directory is listed, never descended into."""
-    for top, dirs, files in os.walk(root, followlinks=False):
-        for name in sorted((*dirs, *files)):
-            path = Path(top, name)
-            with suppress(OSError):
-                yield path, os.lstat(path)
-
-
-def unsafe_entries(root: Path) -> list[tuple[Path, str]]:
-    """The entries under `root` the harness must not follow (`_unsafe_entry`),
-    each with why; nothing is read."""
-    found = []
-    for path, info in workspace_entries(root):
-        why = _unsafe_entry(info.st_mode, info.st_nlink)
-        if why:
-            found.append((path, why))
-    return found
 
 
 def _scrub_file(path: Path, needle: bytes) -> bool:
@@ -2999,57 +2968,18 @@ def canary_record(run: Run) -> dict:
 
 AFTER_INCOMPLETE = ("the checks after the run did not complete, so its draw on the plan and its "
                     "output were not checked")
-WORKSPACE_REPLACED = ("the workspace itself was replaced (by a link or another directory), so "
-                      "the harness read nothing in it")
-SHOWN_ENTRIES = 5
-
-
-def workspace_identity(ws: Path) -> tuple[int, int]:
-    """The workspace directory's device and inode, taken before any Copilot
-    child starts in it."""
-    info = os.lstat(ws)
-    return info.st_dev, info.st_ino
-
-
-def _replaced(ws: Path, identity: tuple[int, int] | None) -> bool:
-    """Whether `ws` is no longer the directory the run started in; a link left
-    in its place is removed, never followed."""
-    try:
-        info = os.lstat(ws)
-    except OSError:
-        return True
-    if stat.S_ISDIR(info.st_mode) and (info.st_dev, info.st_ino) == identity:
-        return False
-    if stat.S_ISLNK(info.st_mode):
-        with suppress(OSError):
-            ws.unlink()  # the link itself, never its target
-    return True
 
 
 def workspace_breach(ws: Path, identity: tuple[int, int] | None,
                      token: str | None) -> str | None:
     """The workspace after the run (Decision 13), before the harness reads,
-    scrubs or writes anything in it. The sandboxed shell may write the
-    workspace, and making a link never touches its target, so a run whose
-    every shell call was sandboxed can still leave a link that the harness —
-    unsandboxed — would follow: into the judge's prompt, the event file, the
-    scrub. Why it cannot be read, or None: the workspace replaced (`_replaced`),
-    or entries `_unsafe_entry` names, each unlinked without being followed
-    (the link goes, its target stays untouched). Names at most SHOWN_ENTRIES
-    entries, scrubbed; never reads one."""
-    if _replaced(ws, identity):
-        return WORKSPACE_REPLACED
-    found = unsafe_entries(ws)
-    for path, _why in found:
-        with suppress(OSError):
-            path.unlink()  # the entry itself, never a link's target
-    if not found:
-        return None
-    named = ", ".join(f"{path.relative_to(ws).as_posix()} ({why})"
-                      for path, why in found[:SHOWN_ENTRIES])
-    more = f" and {len(found) - SHOWN_ENTRIES} more" if len(found) > SHOWN_ENTRIES else ""
-    return scrub(f"the workspace held entries the harness must not follow, removed unread: "
-                 f"{named}{more}", token)[0]
+    scrubs or writes anything in it (`workspace_guard.breach`, shared with
+    the Codex host): the workspace replaced, or a link, FIFO, socket, device
+    or hard link the sandboxed shell left there, each unlinked without being
+    followed. Its message names at most SHOWN_ENTRIES entries, scrubbed of
+    the token; nothing is read."""
+    found = workspace_guard.breach(ws, identity)
+    return None if found is None else scrub(found, token)[0]
 
 
 def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,

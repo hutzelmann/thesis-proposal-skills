@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -30,6 +31,7 @@ import codex_cli
 import host_login
 import pytest
 import routing
+import workspace_guard
 from helpers import REGISTRY_PATH
 from host_login import CODEX, LoginProblem, refusal
 from l1_checks import verdict_single_context, verdict_supervise_verifier
@@ -964,7 +966,24 @@ elif verb == "exec":
     day.mkdir(parents=True, exist_ok=True)
     thread = "0199a0f0-0000-7000-8000-000000000001"
     (day / f"rollout-2026-10-06T10-00-00-{thread}.jsonl").write_text(
-        (here / "rollout.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
+        (here / "rollout.jsonl").read_text(encoding="utf-8").replace("__WS__", os.getcwd()),
+        encoding="utf-8")
+    # what the sandboxed shell may leave in the workspace (design Decision 16)
+    plant = here / "plant.json"
+    for name, (kind, target) in (json.loads(plant.read_text(encoding="utf-8")).items()
+                                 if plant.exists() else []):
+        path = pathlib.Path(name)
+        path.unlink(missing_ok=True)
+        if kind == "link":
+            path.symlink_to(target)
+        elif kind == "fifo":
+            os.mkfifo(path)
+        else:
+            os.link(target, path)
+    if (here / "replace").exists():  # the workspace itself swapped for a link
+        cwd = pathlib.Path.cwd()
+        cwd.rename(cwd.with_name(cwd.name + "-moved"))
+        cwd.symlink_to(here)
     for line in (here / "events.jsonl").read_text(encoding="utf-8").splitlines():
         print(line, flush=True)
     if (here / "hang").exists():  # a run that outlives its time limit
@@ -1078,3 +1097,193 @@ def test_run_codex_refuses_before_any_exec(answer_name, features, kind, named, t
     assert refused.value.kind == kind
     assert named in refused.value.message
     assert not (bindir / "exec.json").exists()
+
+
+# ---------- 5.5: the workspace after the run and the isolation stop (D-d) -----------------------
+
+
+def test_the_stop_store_records_appends_reads_damage_and_clears(tmp_path):
+    """Design Decision 16: one kind, isolation; a second cause is appended; a
+    damaged record reads as a stop; clearing removes it and nothing else."""
+    home = tmp_path / "codex-home"
+    host_login.seed(CODEX, home)
+    assert codex_cli.read_stop(home) is None
+    codex_cli.record_stop(home, "first")
+    codex_cli.record_stop(home, "second")
+    stop = codex_cli.read_stop(home)
+    assert (stop["kind"], stop["cause"]) == ("isolation", "first; second")
+    before = sorted(p.name for p in home.iterdir())
+    assert codex_cli.clear_stop(home)["cause"] == "first; second"
+    assert codex_cli.read_stop(home) is None
+    assert sorted(p.name for p in home.iterdir()) == sorted(set(before) - {"stop.json"})
+    assert codex_cli.clear_stop(home) is None
+    for damaged in ("not json", "[]", '{"stop": {}}', '{"other": 1}'):
+        (home / "stop.json").write_text(damaged, encoding="utf-8")
+        assert "cannot be read" in codex_cli.read_stop(home)["cause"]
+    problem = codex_cli.stop_problem(codex_cli.read_stop(home))
+    assert problem.kind == "isolation"
+    assert "uv run poe host-login codex --clear-stop" in problem.remedy
+    assert host_login.check_codex_home(home) is None  # the stop file keeps the home clean
+
+
+def test_a_recorded_stop_refuses_before_any_codex_process(tmp_path, monkeypatch):
+    """testing-harness spec: Recorded Codex stop refuses later runs — the
+    preflight reads it right after the location, before `codex --version`."""
+    monkeypatch.setenv(host_login.STATE_VAR, str(tmp_path / "state"))
+    monkeypatch.setattr(host_login, "system_tempdir", lambda: str(tmp_path / "system-tmp"))
+    home = host_login.home(CODEX)
+    host_login.seed(CODEX, home)
+    codex_cli.record_stop(home, "the workspace held entries the harness must not follow")
+
+    def no_probe(*_args, **_kwargs):
+        raise AssertionError("a Codex process started")
+
+    monkeypatch.setattr(codex_cli, "probe", no_probe)
+    problem = codex_cli.preflight()
+    assert problem.kind == "isolation"
+    assert "must not follow" in problem.cause
+    with pytest.raises(codex_cli.CodexRefused) as refused:
+        codex_cli.isolated_home(ExitStack(), Namespace())
+    assert refused.value.kind == "isolation"
+
+
+@POSIX
+def test_a_stop_recorded_while_the_run_waited_refuses_it_under_the_lock(tmp_path, monkeypatch):
+    environ, bindir, home, ws = fake_run(tmp_path)
+    codex_cli.record_stop(home, "recorded by another run")
+
+    def no_read(*_args, **_kwargs):
+        raise AssertionError("the quota was read")
+
+    monkeypatch.setattr(codex_cli, "read_quota", no_read)
+    with pytest.raises(codex_cli.CodexRefused) as refused:
+        codex_cli.run_codex(ws, "request", model="gpt-fixture-a", effort=None, timeout=60,
+                            home=home, scenario=claude_runner.SCENARIOS["check_report"],
+                            environ=environ)
+    assert refused.value.kind == "isolation"
+    assert "recorded by another run" in refused.value.message
+    assert not (bindir / "exec.json").exists()
+
+
+def plant(bindir: Path, entries: dict[str, list[str]]) -> None:
+    (bindir / "plant.json").write_text(json.dumps(entries), encoding="utf-8")
+
+
+@POSIX
+def test_a_codex_run_that_plants_entries_is_untested_with_a_stop(tmp_path):
+    """testing-harness spec: Codex workspace entry the runner must not follow
+    — a link to a file outside, the event file's name as a link to another, a
+    FIFO and a hard link: each removed unfollowed, the targets untouched, the
+    run untested for isolation before any other finding, an isolation stop
+    recorded."""
+    environ, bindir, home, ws = fake_run(tmp_path, cloud_tool=False)
+    secret, victim = tmp_path / "secret", tmp_path / "victim"
+    secret.write_text("SYNTHETIC-SECRET-CONTENT", encoding="utf-8")
+    victim.write_text("SYNTHETIC-VICTIM-CONTENT", encoding="utf-8")
+    plant(bindir, {"broken-format.md": ["link", str(secret)],
+                   claude_runner.EVENTS_FILE: ["link", str(victim)],
+                   "pipe": ["fifo", ""], "hard": ["hard", str(secret)]})
+    events = codex_cli.run_codex(ws, "request", model="gpt-fixture-a", effort=None, timeout=60,
+                                 home=home, scenario=claude_runner.SCENARIOS["check_report"],
+                                 environ=environ)
+    planted = events[-1]["workspace_breach"]
+    for named in ("broken-format.md (a link)", f"{claude_runner.EVENTS_FILE} (a link)",
+                  "pipe (not a regular file)", "hard (a hard link)"):
+        assert named in planted
+    assert not any(p.is_symlink() for p in ws.rglob("*"))
+    assert not (ws / "pipe").exists()
+    assert not (ws / "hard").exists()
+    assert secret.read_text(encoding="utf-8") == "SYNTHETIC-SECRET-CONTENT"
+    assert victim.read_text(encoding="utf-8") == "SYNTHETIC-VICTIM-CONTENT"
+    assert "SYNTHETIC" not in planted
+    stop = codex_cli.read_stop(home)
+    assert stop["kind"] == "isolation"
+    assert "must not follow" in stop["cause"]
+    problem = codex_cli.run_problem(events, skill_root=ws / ".agents" / "skills", effort=None)
+    assert (problem.untested, problem.kind) == (True, "isolation")
+    assert "no verdict read the run's files" in problem.message
+    assert "--clear-stop" in problem.message
+    assert not lock_held(home)
+
+
+@POSIX
+def test_a_codex_run_that_replaces_its_workspace_reads_nothing_in_it(tmp_path):
+    environ, bindir, home, ws = fake_run(tmp_path, cloud_tool=False)
+    (bindir / "replace").write_text("", encoding="utf-8")
+    events = codex_cli.run_codex(ws, "request", model="gpt-fixture-a", effort=None, timeout=60,
+                                 home=home, scenario=claude_runner.SCENARIOS["check_report"],
+                                 environ=environ)
+    assert events[-1]["workspace_breach"] == workspace_guard.WORKSPACE_REPLACED
+    assert not ws.exists()  # the link in its place removed, never followed
+    assert bindir.is_dir()
+    assert (bindir / "events.jsonl").is_file()  # the link's target untouched
+    assert codex_cli.read_stop(home)["cause"] == workspace_guard.WORKSPACE_REPLACED
+    problem = codex_cli.run_problem(events, skill_root=ws / ".agents" / "skills", effort=None)
+    assert problem.kind == "isolation"
+
+
+@POSIX
+def test_a_codex_run_at_its_limit_is_still_checked_for_planted_entries(tmp_path, monkeypatch):
+    monkeypatch.setattr(host_login, "TERM_GRACE_S", 5)
+    environ, bindir, home, ws = fake_run(tmp_path, cloud_tool=False)
+    plant(bindir, {"broken-format.md": ["link", str(tmp_path / "secret")]})
+    (bindir / "hang").write_text("", encoding="utf-8")
+    with pytest.raises(codex_cli.CodexRunFailed) as failed:
+        codex_cli.run_codex(ws, "request", model="gpt-fixture-a", effort=None, timeout=2,
+                            home=home, scenario=claude_runner.SCENARIOS["check_report"],
+                            environ=environ)
+    assert "broken-format.md (a link)" in failed.value.events[-1]["workspace_breach"]
+    late = codex_cli.timeout_problem(failed.value, skill_root=ws / ".agents" / "skills")
+    assert (late.untested, late.kind) == (True, "isolation")
+    assert codex_cli.read_stop(home)["kind"] == "isolation"
+
+
+def test_a_clean_workspace_is_no_finding():
+    events = [*stream("success"), {"type": "codex.harness", "exit_code": 0,
+                                    "workspace_breach": None}]
+    assert codex_cli.planted_problem(events) is None
+
+
+@POSIX
+def test_a_planted_codex_run_end_to_end_saves_events_afresh_and_records_a_stop(
+        tmp_path, monkeypatch, capsys):
+    """Through the runner: untested (exit 3), no verdict, the event file
+    created afresh beside the removed link, the victim unchanged, the secret
+    in no output, and the next run refused by the stop."""
+    environ, bindir, _home, _ws = fake_run(tmp_path, cloud_tool=False)
+    monkeypatch.setenv("PATH", environ["PATH"])
+    monkeypatch.setenv(host_login.STATE_VAR, str(tmp_path / "state"))
+    monkeypatch.setattr(host_login, "system_tempdir", lambda: str(tmp_path / "system-tmp"))
+    home = host_login.home(CODEX)
+    host_login.seed(CODEX, home)
+    monkeypatch.setattr(codex_cli, "preflight", lambda _environ=None: None)
+    (bindir / "rollout.jsonl").write_text("", encoding="utf-8")
+    secret, victim = tmp_path / "secret", tmp_path / "victim"
+    secret.write_text("SYNTHETIC-SECRET-CONTENT", encoding="utf-8")
+    victim.write_text("SYNTHETIC-VICTIM-CONTENT", encoding="utf-8")
+    plant(bindir, {"broken-format.md": ["link", str(secret)],
+                   claude_runner.EVENTS_FILE: ["link", str(victim)]})
+
+    def no_verdict(*_args, **_kwargs):
+        raise AssertionError("a verdict read the run's files")
+
+    monkeypatch.setattr(claude_runner, "verdict", no_verdict)
+    log = tmp_path / "run.jsonl"
+    argv = ["check_report", "--host", "codex", "--model", "gpt-fixture-a", "--keep",
+            "--summary-log", str(log)]
+    status = claude_runner.main(argv)
+    out, err = capsys.readouterr()
+    ws = Path(next(line.split(": ", 1)[1] for line in out.splitlines()
+                   if line.startswith("workspace kept: ")))
+    try:
+        assert status == claude_runner.EXIT_UNTESTED
+        [line] = [json.loads(text) for text in log.read_text(encoding="utf-8").splitlines()]
+        assert "must not follow" in line["why"]
+        assert victim.read_text(encoding="utf-8") == "SYNTHETIC-VICTIM-CONTENT"
+        assert "SYNTHETIC-SECRET-CONTENT" not in out + err + log.read_text(encoding="utf-8")
+        events_file = ws / claude_runner.EVENTS_FILE
+        assert events_file.is_file()
+        assert not events_file.is_symlink()
+        assert codex_cli.read_stop(home)["kind"] == "isolation"
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)

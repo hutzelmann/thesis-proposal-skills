@@ -34,7 +34,14 @@ backstop, failing closed:
   reroutes are checked (`billing_problem`), with the refresh failures and the
   login restriction (`failure_reason`), the isolation (`isolation_problem`:
   a skill outside the workspace, a cloud-skill tool, any MCP call) and the
-  served effort (`effort_problem`).
+  served effort (`effort_problem`). Before any of that, right after the
+  child, the workspace is checked (`workspace_breach`, design Decision 16,
+  shared with Copilot through `workspace_guard`): the sandbox lets the run
+  write it, so a link, FIFO, socket, device or hard link left there, or the
+  workspace replaced, is removed unfollowed, makes the run untested for
+  isolation (`planted_problem`) and records an isolation stop in the home
+  (`stop.json`), which refuses every later run before any Codex process
+  starts until the operator runs `uv run poe host-login codex --clear-stop`.
 
 Every refusal is untested and uses the one refusal template
 (`host_login.refusal`). Codex items map to the canonical tool names
@@ -44,8 +51,9 @@ shared verdicts and the route reader work unchanged. Codex reports no cost:
 the summary's cost is absent, with a notional figure only where the roster
 prices the same name under OpenAI's provider (`codex_read`).
 
-Imports `host_login` and the shape module `hosts` only — never `routing` or
-`claude_cli` — so `routing.tool_calls` can use it without a cycle. The L0
+Imports `host_login`, the shape module `hosts` and `workspace_guard` only —
+never `routing` or `claude_cli` — so `routing.tool_calls` can use it without a
+cycle. The L0
 tests run every pure part over the synthetic streams in
 `tests/unit/data/codex_streams/` (derived from the 0.160 sources) and never
 start the real `codex`. Verified on Linux only; on macOS there is no
@@ -72,6 +80,7 @@ from functools import partial
 from pathlib import Path, PurePath
 
 import host_login
+import workspace_guard
 from host_login import CODEX, MARKER, LoginProblem, LoginSource, login_remedy, refusal
 from hosts import RunView, needs_network
 
@@ -1059,10 +1068,28 @@ def _untested_failure(failure: RunProblem, events: list[dict], skill_root: Path)
     return failure
 
 
+def planted_problem(events: list[dict]) -> RunProblem | None:
+    """A run that left the workspace replaced, or holding a link, FIFO,
+    socket, device or hard link (`workspace_breach` in the runner's record;
+    Decision 16): untested for isolation, before anything else, since no
+    verdict may read the run's files. The stop it recorded holds every later
+    run."""
+    planted = harness_record(events).get("workspace_breach")
+    if not planted:
+        return None
+    return RunProblem(refusal(LoginProblem(
+        f"{planted}; no verdict read the run's files", STOP_REMEDY, CODEX.name, "isolation")),
+        True, "isolation")
+
+
 def run_problem(events: list[dict], *, skill_root: Path, effort: str | None) -> RunProblem | None:
     """Everything a finished run's saved events say against a verdict, in
-    order: a failure (with any explicit billing signal or broken isolation),
-    the billing guard, the isolation, the served effort."""
+    order: a workspace the run left unsafe to read, a failure (with any
+    explicit billing signal or broken isolation), the billing guard, the
+    isolation, the served effort."""
+    planted = planted_problem(events)
+    if planted:
+        return planted
     harness = harness_record(events)
     failure = failure_reason(events, int(harness.get("exit_code") or 0),
                              str(harness.get("stderr_tail") or ""))
@@ -1076,9 +1103,81 @@ def run_problem(events: list[dict], *, skill_root: Path, effort: str | None) -> 
 
 def timeout_problem(failed: CodexRunFailed, *, skill_root: Path) -> RunProblem:
     """A run stopped at its time limit: a runner failure naming the limit,
-    unless the session record captured before the raise shows an explicit
-    billing signal or a broken isolation."""
-    return _untested_failure(RunProblem(failed.message, False), failed.events, skill_root)
+    unless its workspace was left unsafe to read, or the session record
+    captured before the raise shows an explicit billing signal or a broken
+    isolation."""
+    return planted_problem(failed.events) or _untested_failure(
+        RunProblem(failed.message, False), failed.events, skill_root)
+
+
+# ---------- the isolation stop (Decision 16, the user's decision D-d) ---------------------------
+
+STOP_FILE = "stop.json"
+CLEAR_STOP_COMMAND = "uv run poe host-login codex --clear-stop"
+STOP_REMEDY = f"read the run's findings, then run `{CLEAR_STOP_COMMAND}`"
+
+
+def read_stop(home: Path) -> dict | None:
+    """The isolation stop recorded in the Codex home, or None without one. A
+    stop file that cannot be read, is no JSON object or holds no non-empty
+    `stop` object reads as a recorded stop saying so: the stop is the
+    fail-closed backstop, so damage refuses rather than reads as none."""
+    try:
+        text = (home / STOP_FILE).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError:
+        text = ""
+    with suppress(ValueError):
+        data = json.loads(text)
+        stop = data.get("stop") if isinstance(data, dict) else None
+        if isinstance(stop, dict) and stop:
+            return stop
+    return {"kind": "isolation", "cause": f"the stop record in {STOP_FILE} cannot be read",
+            "at": "unknown"}
+
+
+def record_stop(home: Path, cause: str) -> None:
+    """Record an isolation stop with its cause and time; a second cause is
+    appended to the first, which keeps its time."""
+    old = read_stop(home)
+    at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    stop = ({"kind": "isolation", "cause": f"{old.get('cause')}; {cause}",
+             "at": old.get("at", at)} if old else {"kind": "isolation", "cause": cause, "at": at})
+    target = home / STOP_FILE
+    temporary = target.with_name(f".{STOP_FILE}.tmp")
+    temporary.write_text(json.dumps({"stop": stop}, indent=2), encoding="utf-8")
+    temporary.replace(target)  # os.replace: atomic
+
+
+def clear_stop(home: Path) -> dict | None:
+    """Remove a recorded stop, a damaged record included, and nothing else;
+    the removed stop."""
+    stop = read_stop(home)
+    if stop is not None:
+        (home / STOP_FILE).unlink(missing_ok=True)
+    return stop
+
+
+def stop_problem(stop: Mapping | None) -> LoginProblem | None:
+    """A recorded stop as a refusal: its cause, and its one remedy."""
+    if not stop:
+        return None
+    return LoginProblem(f"an isolation stop is recorded in the Codex harness home "
+                        f"({stop.get('cause')}, {stop.get('at')})", STOP_REMEDY, CODEX.name,
+                        "isolation")
+
+
+def workspace_breach(ws: Path, identity: tuple[int, int] | None, home: Path) -> str | None:
+    """The workspace right after the Codex child (Decision 16), before the
+    session capture, the event file and any verdict: `workspace_guard.breach`
+    (the workspace replaced, or a link, FIFO, socket, device or hard link,
+    each unlinked without being followed). A breach records an isolation
+    stop at once."""
+    planted = workspace_guard.breach(ws, identity)
+    if planted:
+        record_stop(home, planted)
+    return planted
 
 
 # ---------- the run ---------------------------------------------------------------------------
@@ -1094,14 +1193,17 @@ def login_method(home: Path, environ: Mapping[str, str]) -> str:
 
 def preflight(environ: Mapping[str, str] | None = None) -> LoginProblem | None:
     """The harness home's conditions, without a model call and before any run,
-    in the order of the requirement: its location, the CLI version, the home
-    and its marker, the ChatGPT login, and its cleanliness. The feature
-    allowlist is checked under the run lock, just before the run."""
+    in the order of the requirement: its location, a recorded isolation stop
+    (a file read, so it refuses before the first Codex child; Decision 16),
+    the CLI version, the home and its marker, the ChatGPT login, and its
+    cleanliness. The feature allowlist and the stop once more are checked
+    under the run lock, just before the run."""
     environ = os.environ if environ is None else environ
     root = host_login.state_root(environ)
     home = root / "hosts" / CODEX.name
     return (host_login.check_location(root, environ, record=CODEX,
                                       tempdir=host_login.system_tempdir())
+            or stop_problem(read_stop(home))  # a file read, before the first Codex child
             or host_login.check_codex_version(host_login.codex_version(
                 probe(["--version"], home, environ)[1]))
             or host_login.check_presence(home, CODEX)
@@ -1134,18 +1236,21 @@ def thread_id(events: list[dict]) -> str | None:
 
 
 def _closing(home: Path, events: list[dict], quota: Quota, begun: float, code: int | None,
-             stderr: str) -> list[dict]:
+             stderr: str, planted: str | None = None) -> list[dict]:
     records = capture_rollout(home, thread_id(events))
     return [*events, *records, {
         "type": "codex.harness", "duration_ms": int((time.monotonic() - begun) * 1000),
         "exit_code": code, "stderr_tail": stderr.strip()[-800:],
-        "quota_before": quota.snapshot()}]
+        "quota_before": quota.snapshot(), "workspace_breach": planted}]
 
 
 def _exec(ws: Path, request: str, argv: list[str], *, home: Path, timeout: float,
-          environ: Mapping[str, str], fd: int, quota: Quota) -> list[dict]:
+          environ: Mapping[str, str], fd: int, quota: Quota,
+          ws_id: tuple[int, int] | None = None) -> list[dict]:
     """The run itself, holding the lock through `pass_fds`, with a scratch
-    HOME; the session record is captured and deleted whatever happens."""
+    HOME; then, first, the workspace check (`workspace_breach`, Decision 16,
+    against the identity taken before the child), and the session record,
+    captured and deleted whatever happens."""
     shutil.rmtree(home / SESSIONS, ignore_errors=True)  # a crashed run's record is not this one
     scratch = Path(tempfile.mkdtemp(prefix="devrun-codex-home-"))
     try:
@@ -1156,10 +1261,12 @@ def _exec(ws: Path, request: str, argv: list[str], *, home: Path, timeout: float
             code, out, err = run(argv, home=home, cwd=ws, timeout=timeout, environ=environ,
                                  scratch=scratch, input=request, pass_fds=(fd,))
         except subprocess.TimeoutExpired as late:
+            planted = workspace_breach(ws, ws_id, home)
             events = _closing(home, parse_lines(str(late.output or "")), quota, begun, None,
-                              str(late.stderr or ""))
+                              str(late.stderr or ""), planted)
             raise CodexRunFailed(f"codex did not finish within {timeout:g}s", events) from None
-        return _closing(home, parse_lines(out), quota, begun, code, err)
+        planted = workspace_breach(ws, ws_id, home)
+        return _closing(home, parse_lines(out), quota, begun, code, err, planted)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -1167,13 +1274,20 @@ def _exec(ws: Path, request: str, argv: list[str], *, home: Path, timeout: float
 def run_codex(ws: Path, request: str, *, model: str, effort: str | None, timeout: float,
               home: Path, scenario: Mapping, environ: Mapping[str, str] | None = None
               ) -> list[dict]:
-    """One Codex run under a single hold of the run lock: the quota read, the
-    feature allowlist, the run (whose child holds the lock too), the capture.
-    Raises `host_login.RunLockRefused`, `CodexRefused` (untested) or
-    `CodexRunFailed` (checked by `timeout_problem`); the events it returns are
-    checked afterwards by `run_problem`."""
+    """One Codex run under a single hold of the run lock: a recorded stop read
+    again (another run may have recorded one while this one waited), the
+    quota read, the feature allowlist, the run (whose child holds the lock
+    too), the workspace check, the capture. The workspace's identity is taken
+    before any Codex child starts in it. Raises `host_login.RunLockRefused`,
+    `CodexRefused` (untested) or `CodexRunFailed` (checked by
+    `timeout_problem`); the events it returns are checked afterwards by
+    `run_problem`."""
     environ = os.environ if environ is None else environ
+    ws_id = workspace_guard.workspace_identity(ws)
     with host_login.run_lock(home) as fd:
+        stopped = stop_problem(read_stop(home))
+        if stopped:
+            raise CodexRefused.of(stopped)
         quota = read_quota(home, environ)
         problem = quota_problem(quota)
         if problem:
@@ -1183,7 +1297,7 @@ def run_codex(ws: Path, request: str, *, model: str, effort: str | None, timeout
         if problem:
             raise CodexRefused.of(problem)
         return _exec(ws, request, command(scenario, ws, model, effort), home=home,
-                     timeout=timeout, environ=environ, fd=fd, quota=quota)
+                     timeout=timeout, environ=environ, fd=fd, quota=quota, ws_id=ws_id)
 
 
 # ---------- `host-status codex` ---------------------------------------------------------------
@@ -1191,6 +1305,13 @@ def run_codex(ws: Path, request: str, *, model: str, effort: str | None, timeout
 
 def _yes(flag: bool) -> str:
     return "yes" if flag else "no"
+
+
+def _stop_line(home: Path) -> str:
+    """The `stop` line: none, or the recorded isolation stop and its cause
+    (reported, never a refusal of the status command)."""
+    stop = read_stop(home) if home.is_dir() else None
+    return f"{stop.get('kind')} ({stop.get('cause')})" if stop else "none"
 
 
 def _logged_in(home: Path, method: str | None) -> str:
@@ -1232,6 +1353,7 @@ def status(home: Path, environ: Mapping[str, str], *, live_quota: bool = False,
         "min_version": host_login.version_text(host_login.CODEX_MIN_VERSION),
         "features_ok": "unknown" if listing is None else _yes(features is None),
         "last_quota": last_quota(home),
+        "stop": _stop_line(home),
         "runs_use": "harness",
     }
     problem = ((host_login.check_codex_version(version) if run_probes else None) or presence

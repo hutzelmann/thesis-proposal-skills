@@ -534,7 +534,7 @@ def test_an_unknown_client_is_a_usage_error(state, capsys):
 CODEX_STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
 CODEX_STATUS_KEYS = ["home", "marker", "logged_in", "auth_method", "config_pinned", "clean",
                      "last_written", "cli_version", "min_version", "features_ok", "last_quota",
-                     "runs_use"]
+                     "stop", "runs_use"]
 X8_NOTE = "whether this logs out your other ChatGPT sessions is unverified (X8)"
 POSIX_LOCKS = pytest.mark.skipif(host_login.fcntl is None,
                                  reason="the run lock is a POSIX file lock")
@@ -782,6 +782,41 @@ def test_codex_status_of_a_ready_home(codex_state, capsys):
     assert pairs["runs_use"] == "harness"
     assert pairs["last_written"].endswith(" ago")
     assert err == ""
+
+
+@POSIX_LOCKS
+def test_codex_clear_stop_removes_the_isolation_stop_and_nothing_else(codex_client, codex_state,
+                                                                     monkeypatch, capsys):
+    """add-codex-dev-runner Decision 16 (D-d): the same terminal and
+    agent-marker refusals as the login, the run lock, the stop removed and
+    nothing else touched; no client login runs."""
+    import codex_cli
+
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    codex_cli.record_stop(codex_state, "the workspace held entries the harness must not follow")
+    assert main(["status", "codex"]) == 0  # reported, never a refusal of the status command
+    assert codex_status_lines(capsys.readouterr().out)["stop"].startswith("isolation (the "
+                                                                         "workspace held")
+    before = {p.name: p.read_bytes() for p in codex_state.iterdir()
+              if p.is_file() and p.name != "stop.json"}
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: False)
+    assert main(["login", "codex", "--clear-stop"]) == host_login.EXIT_USAGE
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: True)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert main(["login", "codex", "--clear-stop"]) == host_login.EXIT_USAGE
+    monkeypatch.delenv("CLAUDECODE")
+    assert codex_cli.read_stop(codex_state) is not None
+    capsys.readouterr()
+    assert main(["login", "codex", "--clear-stop"]) == 0
+    assert "cleared the isolation stop" in capsys.readouterr().out
+    assert codex_cli.read_stop(codex_state) is None
+    after = {p.name: p.read_bytes() for p in codex_state.iterdir()
+             if p.is_file() and p.name != host_login.LOCK_NAME}  # the lock it took
+    assert after == {name: data for name, data in before.items() if name != host_login.LOCK_NAME}
+    assert codex_client.calls == []  # no client login or logout ran
+    assert main(["status", "codex"]) == 0
+    assert codex_status_lines(capsys.readouterr().out)["stop"] == "none"
 
 
 @pytest.mark.usefixtures("codex_client")
@@ -1191,9 +1226,12 @@ def test_clear_stop_removes_any_stop_and_nothing_else(kind, copilot_state, monke
     assert host_login.token_path(copilot_state).read_text(encoding="utf-8") == token
 
 
-def test_clear_stop_and_reset_are_separate_and_copilot_only(capsys):
+def test_clear_stop_and_reset_are_separate_and_copilot_or_codex_only(capsys):
+    """`--clear-stop` serves the clients that record stops: Copilot, and Codex
+    since add-codex-dev-runner Decision 16 (D-d)."""
     for argv in (["login", "copilot", "--clear-stop", "--reset"],
-                 ["login", "codex", "--clear-stop"], ["status", "claude", "--models"],
+                 ["login", "codex", "--clear-stop", "--reset"],
+                 ["login", "claude", "--clear-stop"], ["status", "claude", "--models"],
                  ["status", "codex", "--no-token"]):
         with pytest.raises(SystemExit):
             main(argv)

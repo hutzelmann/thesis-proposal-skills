@@ -79,7 +79,7 @@ uv run poe host-login claude [--reset]  # the user only, interactive: the harnes
 uv run poe host-status             # harness login state; no model call, no account details (agents may run it)
 uv run poe host-logout claude      # the user only: log the harness login out
 uv run poe dev <scenario> --host codex --model <slug>   # subscription: the real Codex CLI on the ChatGPT plan quota, in the harness's own Codex home; never a matrix input
-uv run poe host-login codex [--reset] [--device-auth]   # the user only, interactive: the harness's own Codex (ChatGPT) login
+uv run poe host-login codex [--reset | --clear-stop] [--device-auth]   # the user only, interactive: the harness's own Codex (ChatGPT) login; --clear-stop lifts a recorded isolation stop
 uv run poe host-status codex [--quota]  # Codex login, CLI version, feature allowlist, quota; no model call (agents may run it)
 uv run poe host-logout codex       # the user only: log the harness's Codex login out
 uv run poe dev <scenario> --host copilot --model <id> --max-ai-credits <N>   # the real Copilot CLI on the plan's included AI credits, in the harness's own Copilot home; never a matrix input

@@ -33,6 +33,7 @@ import copilot_cli
 import host_login
 import pytest
 import routing
+import workspace_guard
 from claude_cli import Grade, JudgeCall, JudgeRun, RateLimit
 from copilot_cli import Check, ProbeResult, RunProblem
 from helpers import CLEAN_DRAFT, COPILOT_STREAMS, REPO, copilot_stream
@@ -588,7 +589,7 @@ def test_the_workspace_check_removes_what_the_harness_must_not_follow(tmp_path):
 def test_the_workspace_check_names_at_most_a_few_entries_and_scrubs_them(tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()
-    for index in range(copilot_cli.SHOWN_ENTRIES + 2):
+    for index in range(workspace_guard.SHOWN_ENTRIES + 2):
         (ws / f"{TOKEN}-{index}").symlink_to(tmp_path)
     found = copilot_cli.workspace_breach(ws, copilot_cli.workspace_identity(ws), TOKEN)
     assert found.endswith(" and 2 more")
@@ -609,25 +610,25 @@ def test_a_replaced_workspace_is_read_by_nothing(tmp_path):
     identity = copilot_cli.workspace_identity(ws)
     ws.rmdir()
     ws.symlink_to(outside)
-    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == copilot_cli.WORKSPACE_REPLACED
+    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == workspace_guard.WORKSPACE_REPLACED
     assert not ws.is_symlink()
     assert not ws.exists()
     assert (outside / "keep.md").read_text(encoding="utf-8") == f"keep {TOKEN}"
     ws.mkdir()  # another directory under the same name
-    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == copilot_cli.WORKSPACE_REPLACED
+    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == workspace_guard.WORKSPACE_REPLACED
     assert ws.is_dir()
     ws.rmdir()
-    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == copilot_cli.WORKSPACE_REPLACED
+    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == workspace_guard.WORKSPACE_REPLACED
 
 
 def test_a_workspace_breach_is_untested_for_isolation_and_stops():
     events = stream("success")
-    copilot_cli.harness_record(events)["workspace_breach"] = copilot_cli.WORKSPACE_REPLACED
+    copilot_cli.harness_record(events)["workspace_breach"] = workspace_guard.WORKSPACE_REPLACED
     assessment = copilot_cli.assess(events)
     assert assessment.problem.untested
     assert assessment.problem.kind == "isolation"
-    assert copilot_cli.WORKSPACE_REPLACED in assessment.problem.message
-    assert ("isolation", copilot_cli.WORKSPACE_REPLACED) in assessment.stops
+    assert workspace_guard.WORKSPACE_REPLACED in assessment.problem.message
+    assert ("isolation", workspace_guard.WORKSPACE_REPLACED) in assessment.stops
 
 
 @POSIX

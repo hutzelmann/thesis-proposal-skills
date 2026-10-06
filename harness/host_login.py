@@ -1880,6 +1880,8 @@ def cmd_login(record: HostLogin, args: argparse.Namespace, environ: Mapping[str,
     if isinstance(home_dir, LoginProblem):
         print(refusal(home_dir), file=sys.stderr)
         return EXIT_NOT_READY
+    if getattr(args, "clear_stop", False):  # Codex: remove the isolation stop, log nothing in
+        return _clear_stop(record, home_dir)
     existed = home_dir.exists() or home_dir.is_symlink()
     foreign = not_harness_made(home_dir, record) if existed else None
     if foreign:
@@ -2071,22 +2073,35 @@ def _take_token(home_dir: Path) -> LoginProblem | None:
     return None
 
 
+def _stop_clearer(record: HostLogin) -> Callable[[Path], dict | None]:
+    """The client's own stop store: Copilot's stop in its status snapshot
+    (billing, isolation or approval), Codex's isolation stop (add-codex-dev-
+    runner Decision 16). Deferred imports: both modules import this one."""
+    if record.credential == "token-file":
+        import copilot_cli
+
+        return copilot_cli.clear_stop
+    import codex_cli
+
+    return codex_cli.clear_stop
+
+
 def _clear_stop(record: HostLogin, home_dir: Path) -> int:
     """`--clear-stop`: under the run lock, remove a recorded stop of any kind
-    from the status snapshot, and change nothing else in the home."""
-    import copilot_cli  # deferred: copilot_cli imports this module
-
+    (Copilot) or the isolation stop (Codex), and change nothing else in the
+    home. No client login runs."""
     absent = check_presence(home_dir, record)
     if absent:
         print(refusal(absent), file=sys.stderr)
         return EXIT_NOT_READY
+    title = record.name.capitalize()
     with run_lock(home_dir, record=record):
-        removed = copilot_cli.clear_stop(home_dir)
+        removed = _stop_clearer(record)(home_dir)
     if removed is None:
-        print("host-login: no stop is recorded in the Copilot harness home")
+        print(f"host-login: no stop is recorded in the {title} harness home")
     else:
         print(f"host-login: cleared the {removed.get('kind')} stop ({removed.get('cause')}); "
-              "the next Copilot run may start")
+              f"the next {title} run may start")
     return EXIT_READY
 
 
@@ -2182,8 +2197,9 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("--device-auth", action="store_true",
                        help="codex only: the client's device-code login instead of a browser")
     login.add_argument("--clear-stop", action="store_true",
-                       help="copilot only: remove a recorded stop (billing, isolation or "
-                            "approval); clearing the approval stop approves the next run")
+                       help="copilot and codex only: remove a recorded stop (copilot: billing, "
+                            "isolation or approval, and clearing the approval stop approves "
+                            "the next run; codex: isolation); no client login runs")
     status = sub.add_parser("status", help="report the harness home; no model call")
     status.add_argument("client", nargs="?", default="claude", choices=sorted(RECORDS))
     status.add_argument("--quota", action="store_true",
@@ -2205,14 +2221,15 @@ def main(argv: list[str] | None = None) -> int:
     included."""
     parser = build_parser()
     args = parser.parse_args(argv)
-    for option, given, client in (
-            ("--device-auth", getattr(args, "device_auth", False), CODEX.name),
-            ("--quota", getattr(args, "quota", False), CODEX.name),
-            ("--clear-stop", getattr(args, "clear_stop", False), COPILOT.name),
-            ("--models", getattr(args, "models", False), COPILOT.name),
-            ("--no-token", getattr(args, "no_token", False), COPILOT.name)):
-        if given and args.client != client:
-            parser.error(f"{option} applies to the {client} client only")
+    for option, given, clients in (
+            ("--device-auth", getattr(args, "device_auth", False), (CODEX.name,)),
+            ("--quota", getattr(args, "quota", False), (CODEX.name,)),
+            ("--clear-stop", getattr(args, "clear_stop", False), (COPILOT.name, CODEX.name)),
+            ("--models", getattr(args, "models", False), (COPILOT.name,)),
+            ("--no-token", getattr(args, "no_token", False), (COPILOT.name,))):
+        if given and args.client not in clients:
+            parser.error(f"{option} applies to the {' and '.join(clients)} client"
+                         f"{'s' if len(clients) > 1 else ''} only")
     if getattr(args, "clear_stop", False) and args.reset:
         parser.error("--clear-stop and --reset are separate commands: pass one")
     try:

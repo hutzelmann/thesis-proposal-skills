@@ -236,6 +236,7 @@ For a token-file record, the harness SHALL:
   - If that logout fails, the login SHALL stop, naming the logout's exit status, and neither log in nor wipe: replacing a login whose logout did not go through could orphan a live grant.
   - For Copilot, a clear option SHALL instead remove a recorded stop of any kind (requirement: Copilot plan billing guard), holding the run lock, and change nothing else. It carries the same terminal and agent-marker refusals. Clearing the approval stop is the operator's approval of the next model call.
 - **Reset.** A reset option SHALL log out, wipe the marked home, seed it again and log in. A failed logout stops a reset as it stops a login.
+- **Clear (Codex).** A clear option of the login command SHALL instead remove a recorded Codex isolation stop (requirement: Dev-runner host adapters), holding the run lock, and change nothing else in the home. It carries the login's terminal and agent-marker refusals, and runs no client login.
 - **Logout.**
   - A logout command SHALL run the client's own logout in the home and nowhere else.
   - For the token-file record, the logout SHALL instead delete the token file and nothing else, run no client logout, and name the page where the operator revokes the token.
@@ -255,6 +256,7 @@ For a token-file record, the harness SHALL:
     - for Copilot, the installed CLI version against the pinned version, and whether the OS sandbox is available;
     - for Codex, the last quota snapshot the home keeps and, only on request, a fresh plan quota from the client's rate-limit read;
     - for Copilot, from the status read: the plan class, whether billing is token based, the chosen snapshot's overage permission, overage count, overage entitlement and remaining percentage, and the reset date;
+    - for Codex, whether an isolation stop is recorded, and its cause;
     - for Copilot, whether a stop is recorded, and its kind and cause;
     - for Copilot, only on request, either of two more reads:
       - the model listing, giving each model's identifier, policy state and supported efforts;
@@ -270,7 +272,7 @@ For a token-file record, the harness SHALL:
   - Each of these SHALL hold an exclusive lock on a file in the home:
     - each run;
     - the reads around it: Codex's quota read before the run, and Copilot's status reads before and after it, which one hold covers together with the run;
-    - every login, logout and reset;
+    - every login, logout and reset, and every clear;
     - every status command that reads the account: for Codex, a status command asked for a fresh plan quota; for Copilot, every status command, because each one runs the status read.
   - The running child SHALL hold that lock for as long as it lives, even when the harness process is killed. On Linux, the child SHALL also be signalled when the harness process dies.
   - A run that cannot take the lock within a bounded wait SHALL be refused as untested.
@@ -634,6 +636,8 @@ The client's internal bookkeeping tools are not tool calls. A tool name that is 
 - its session record lists a skill outside the workspace's skill directory, or shows a call of the host's cloud-skill tools;
 - its stream shows an MCP tool call. The home configures no MCP server, so any call is foreign.
 
+After the run, before the runner reads or writes anything in the workspace, it SHALL check that the workspace is still the directory the run started in and holds no link, no FIFO, socket or device, and no file with a second name elsewhere: the sandbox lets the run write the workspace, and a link it makes there never touches its target, so the runner, which is not sandboxed, would otherwise act on the target. Each such entry SHALL be removed without being followed, and the run SHALL be untested for isolation with an isolation stop recorded in the Codex home; no verdict reads its files. While that stop is recorded, every later Codex run SHALL be refused as untested for isolation before any Codex process starts, naming the stop's cause and its one remedy: reading the run's findings, then clearing the stop with the login command's clear option (requirement: Harness-owned host logins). A stop record that cannot be read SHALL count as a recorded stop. The status command reports the stop and is not refused by it.
+
 **Isolation on Copilot.** A Copilot run SHALL see only the skills under test, installed under `<ws>/.agents/skills/`. That is the project skill directory a student's folder install writes, where the client lists the skills as project skills. Its home directory and XDG base directories SHALL be scratch directories belonging to the run.
 
 The workspace, the run's scratch directories and every scratch directory of a Copilot call SHALL lie in the Copilot work directory, never in the system temporary directory, because the sandbox denies that directory and the operator's other processes keep their files there. The work directory is under the harness state directory where that lies outside the operator's home directory, the repository and every temporary directory; otherwise under the per-user runtime directory, where that is a directory only the user may enter. With neither, every Copilot run SHALL be refused as untested for a precondition, naming both, and nothing is created. The state directory's location check comes first. Each of these directories is owner-only, and each is deleted after its run or call unless the workspace is kept.
@@ -727,6 +731,14 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 #### Scenario: Install scenario on Codex
 - **WHEN** an install-prompt scenario is requested on Codex
 - **THEN** the runner exits with a usage error and starts nothing
+
+#### Scenario: Codex workspace entry the runner must not follow
+- **WHEN** a Codex run leaves the proposal in its workspace as a link to a file outside it and the event stream file's name as a link to another, or replaces the workspace itself
+- **THEN** each link is removed without being followed, the run is untested for isolation, no verdict reads its files, an isolation stop is recorded in the Codex home, the event stream is saved to a new file, neither target is read or changed, and the message names the entries
+
+#### Scenario: Recorded Codex stop refuses later runs
+- **WHEN** a Codex run starts while an isolation stop is recorded in the Codex home, or while its stop record cannot be read
+- **THEN** the run is refused as untested for isolation before any Codex process starts, naming the stop's cause and the login command's clear option; the status command reports the stop and is not refused by it; the clear option, run from a terminal outside an agent session, removes the stop and changes nothing else in the home
 
 #### Scenario: Copilot run without a pinned model
 - **WHEN** a Copilot run is requested without a model, or with the client's automatic model selection
