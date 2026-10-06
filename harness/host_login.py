@@ -72,13 +72,15 @@ no Copilot client login ever runs, and the operator's keyring, `~/.copilot`,
 `~/.config/github-copilot` and `~/.config/gh` are never read. Every login
 records an approval stop (`copilot_cli.record_stop`), and only `host-login
 copilot --clear-stop`, run by the operator in a terminal, clears it: that is
-the go for the next model call. Before the token prompt the home is seeded
-with `pinned_settings` — auto-update, auto-model switching, hooks, memory,
-editor auto-connect and experimental features off, custom agents local, and
-the OS sandbox pinned (no bypass, no git or gh credentials, no developer-tool
-grants) with a deny list built by construction from the password database:
-the operator's whole real home, `/run/user/<uid>`, the state root where it
-lies outside that home, and the token file. `check_copilot_home` holds the
+the go, which the clear records (`copilot_cli.clear_stop`) and which covers one
+canary and, only once it passed, one skill run. Before the token prompt the
+home is seeded with `pinned_settings` — auto-update, auto-model switching,
+hooks, memory, editor auto-connect and experimental features off, custom
+agents local, and the OS sandbox pinned (no bypass, no git or gh
+credentials, no developer-tool grants) with a deny list built by construction
+from the password database: the operator's whole real home,
+`/run/user/<uid>`, the shared temporary directories (`temp_dirs`), the state
+root where it lies outside that home, and the token file. `check_copilot_home` holds the
 home to an allow-list, because the client's `config.json` overrides
 `settings.json` key by key. The child environment adds `TERM=dumb`,
 `NO_COLOR=1`, `DBUS_SESSION_BUS_ADDRESS=disabled:`, `COPILOT_AUTO_UPDATE=false`,
@@ -557,7 +559,8 @@ def deny_list(home_dir: Path, account: Path, uid: int | None = None) -> list[str
     account home, the per-user runtime directory (the session bus and the
     agent sockets), the temporary directories (`temp_dirs`: the shared `/tmp`,
     which holds every other process's temporary files and the operator's
-    Claude session scratchpads, and this process's own), the state root
+    Claude session scratchpads, the shared `/var/tmp`, and this process's
+    own), the state root
     where it lies outside the account home, and the token file — absolute
     paths, so no `~` resolves under scratch."""
     uid = (os.getuid() if hasattr(os, "getuid") else 0) if uid is None else uid
@@ -900,19 +903,27 @@ def system_tempdir() -> str:
 
 # the system's shared temporary directory, whatever TMPDIR says
 SHARED_TMP = "/tmp"
+# the second world-writable shared one, which outlives a reboot; denied where
+# it exists (add-copilot-dev-runner design Decision 3, revised 2026-10-07)
+SHARED_VAR_TMP = "/var/tmp"
 
 
 def temp_dirs() -> tuple[str, ...]:
     """The temporary directories the Copilot sandbox denies and no Copilot
     workspace or scratch directory may lie in (add-copilot-dev-runner, the
-    user's decision D-b): the shared `/tmp`, and this process's own
-    temporary directory (`tempfile.gettempdir()`, which `TMPDIR` moves) where
-    it lies outside it — both by their real paths, `/tmp` first. Read when the
-    home is seeded and whenever its settings are compared. The seam L0 tests
-    replace, since their own `tmp_path` lies inside it."""
-    shared = Path(os.path.realpath(SHARED_TMP))
+    user's decision D-b): the shared `/tmp`, the shared `/var/tmp` where it
+    exists (revised 2026-10-07), and this process's own temporary directory
+    (`tempfile.gettempdir()`, which `TMPDIR` moves) where it lies outside
+    both — each by its real path, `/tmp` first. Read when the home is seeded
+    and whenever its settings are compared. The seam L0 tests replace, since
+    their own `tmp_path` lies inside it."""
+    shared = [Path(os.path.realpath(SHARED_TMP))]
+    if Path(SHARED_VAR_TMP).is_dir():
+        var = Path(os.path.realpath(SHARED_VAR_TMP))
+        shared += [] if any(_within(var, s) for s in shared) else [var]
     own = Path(os.path.realpath(tempfile.gettempdir()))
-    return (str(shared),) if _within(own, shared) else (str(shared), str(own))
+    extra = [] if any(_within(own, s) for s in shared) else [own]
+    return tuple(str(path) for path in (*shared, *extra))
 
 
 def check_location(root: Path, environ: Mapping[str, str], repo: Path = REPO,
@@ -1829,10 +1840,27 @@ def _start_over(record: HostLogin, home_dir: Path, environ: Mapping[str, str], *
                                 "login there was neither replaced nor wiped",
                                 f"rerun `{again}` once the client can log out", record.name)
         if reset:
-            problem = wipe(home_dir, record)
-            if problem:
-                return problem
-            seed(record, home_dir)
+            return _reseed(record, home_dir)
+    return None
+
+
+def _reseed(record: HostLogin, home_dir: Path) -> LoginProblem | None:
+    """Wipe the marked home and seed it again. A recorded Codex isolation stop
+    survives (add-codex-dev-runner Decision 16, revised 2026-10-07): it is
+    read before the wipe and recorded again, cause and time unchanged, since
+    a reset replaces the login, not the run's findings, and Codex has no
+    approval stop that would hold the next run back in its place."""
+    kept = None
+    if record is CODEX:
+        import codex_cli  # deferred: codex_cli imports this module
+
+        kept = codex_cli.read_stop(home_dir)
+    problem = wipe(home_dir, record)
+    if problem:
+        return problem
+    seed(record, home_dir)
+    if kept:
+        codex_cli.restore_stop(home_dir, kept)
     return None
 
 
@@ -2086,10 +2114,17 @@ def _stop_clearer(record: HostLogin) -> Callable[[Path], dict | None]:
     return codex_cli.clear_stop
 
 
+# what `--clear-stop` gives on Copilot (add-copilot-dev-runner design Decision 9, the go)
+COPILOT_GO = ("recorded the go: it covers one canary (`uv run poe dev canary --host copilot "
+              "--model <id> --max-ai-credits 30`) and, only once that canary passed, one skill "
+              "run; the approval stop returns as that run starts")
+
+
 def _clear_stop(record: HostLogin, home_dir: Path) -> int:
     """`--clear-stop`: under the run lock, remove a recorded stop of any kind
-    (Copilot) or the isolation stop (Codex), and change nothing else in the
-    home. No client login runs."""
+    and record the operator's go (Copilot, also with no stop recorded), or
+    remove the isolation stop (Codex), and change nothing else in the home.
+    No client login runs."""
     absent = check_presence(home_dir, record)
     if absent:
         print(refusal(absent), file=sys.stderr)
@@ -2097,11 +2132,14 @@ def _clear_stop(record: HostLogin, home_dir: Path) -> int:
     title = record.name.capitalize()
     with run_lock(home_dir, record=record):
         removed = _stop_clearer(record)(home_dir)
-    if removed is None:
-        print(f"host-login: no stop is recorded in the {title} harness home")
+    gone = (f"no stop is recorded in the {title} harness home" if removed is None else
+            f"cleared the {removed.get('kind')} stop ({removed.get('cause')})")
+    if record.credential == "token-file":
+        print(f"host-login: {gone}; {COPILOT_GO}")
+    elif removed is None:
+        print(f"host-login: {gone}")
     else:
-        print(f"host-login: cleared the {removed.get('kind')} stop ({removed.get('cause')}); "
-              f"the next {title} run may start")
+        print(f"host-login: {gone}; the next {title} run may start")
     return EXIT_READY
 
 
@@ -2198,8 +2236,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="codex only: the client's device-code login instead of a browser")
     login.add_argument("--clear-stop", action="store_true",
                        help="copilot and codex only: remove a recorded stop (copilot: billing, "
-                            "isolation or approval, and clearing the approval stop approves "
-                            "the next run; codex: isolation); no client login runs")
+                            "isolation or approval, and the clear is the go, which covers one "
+                            "canary and, only once it passed, one skill run; codex: isolation); "
+                            "no client login runs")
     status = sub.add_parser("status", help="report the harness home; no model call")
     status.add_argument("client", nargs="?", default="claude", choices=sorted(RECORDS))
     status.add_argument("--quota", action="store_true",

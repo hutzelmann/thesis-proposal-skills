@@ -41,7 +41,10 @@ WS = Path(tempfile.gettempdir()) / "devrun-check_report-fixture"  # never create
 SKILL_ROOT = WS / ".agents" / "skills"
 POSIX = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None,
                            reason="POSIX signals and file locks")
-LINUX = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="prctl is Linux-only")
+# a directory's mode keeps its owner out only when the owner is not root
+ROOTLESS = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None
+                              or os.geteuid() == 0, reason="POSIX modes, a non-root owner")
+LINUX =pytest.mark.skipif(not sys.platform.startswith("linux"), reason="prctl is Linux-only")
 X8_NOTE = "Whether this logs out your other ChatGPT sessions is unverified (X8)"
 CODEX_NOTE = "Your own Codex login is not affected"
 
@@ -973,6 +976,9 @@ elif verb == "exec":
     for name, (kind, target) in (json.loads(plant.read_text(encoding="utf-8")).items()
                                  if plant.exists() else []):
         path = pathlib.Path(name)
+        if kind == "dir":
+            path.mkdir(exist_ok=True)
+            continue
         path.unlink(missing_ok=True)
         if kind == "link":
             path.symlink_to(target)
@@ -980,6 +986,9 @@ elif verb == "exec":
             os.mkfifo(path)
         else:
             os.link(target, path)
+    close = here / "close.json"  # directories the shell left write-and-search only
+    for name in json.loads(close.read_text(encoding="utf-8")) if close.exists() else []:
+        os.chmod(name, 0o300)
     if (here / "replace").exists():  # the workspace itself swapped for a link
         cwd = pathlib.Path.cwd()
         cwd.rename(cwd.with_name(cwd.name + "-moved"))
@@ -1238,6 +1247,43 @@ def test_a_codex_run_at_its_limit_is_still_checked_for_planted_entries(tmp_path,
     assert codex_cli.read_stop(home)["kind"] == "isolation"
 
 
+@ROOTLESS
+@pytest.mark.parametrize(("where", "named"), [
+    (".", "the workspace itself is a directory closed to its owner (mode 0300)"),
+    ("sub", "sub (a directory closed to its owner (mode 0300))"),
+], ids=["root", "sub"])
+def test_a_codex_run_that_closes_a_workspace_directory_is_untested_with_a_stop(where, named,
+                                                                             tmp_path):
+    """testing-harness spec: Codex workspace directory the runner cannot list
+    (Decision 16, revised 2026-10-07) — a link behind a directory the run
+    left write-and-search only, at the top or below it: the check fails
+    closed, the run is untested for isolation with a stop, the directory is
+    never reopened and the link never followed."""
+    environ, bindir, home, ws = fake_run(tmp_path, cloud_tool=False)
+    secret = tmp_path / "secret"
+    secret.write_text("SYNTHETIC-SECRET-CONTENT", encoding="utf-8")
+    link = "broken-format.md" if where == "." else "sub/broken-format.md"
+    plant(bindir, {"sub": ["dir", ""], link: ["link", str(secret)]})
+    (bindir / "close.json").write_text(json.dumps([where]), encoding="utf-8")
+    closed = ws if where == "." else ws / "sub"
+    try:
+        events = codex_cli.run_codex(ws, "request", model="gpt-fixture-a", effort=None,
+                                     timeout=60, home=home,
+                                     scenario=claude_runner.SCENARIOS["check_report"],
+                                     environ=environ)
+        assert named in events[-1]["workspace_breach"]
+        assert closed.stat().st_mode & 0o777 == 0o300  # never reopened
+        problem = codex_cli.run_problem(events, skill_root=ws / ".agents" / "skills",
+                                        effort=None)
+        assert (problem.untested, problem.kind) == (True, "isolation")
+        assert "closed to its owner" in codex_cli.read_stop(home)["cause"]
+        assert "SYNTHETIC" not in events[-1]["workspace_breach"]
+    finally:
+        closed.chmod(0o700)
+    assert (ws / link).is_symlink()  # behind the closed directory: left, unread
+    assert secret.read_text(encoding="utf-8") == "SYNTHETIC-SECRET-CONTENT"
+
+
 def test_a_clean_workspace_is_no_finding():
     events = [*stream("success"), {"type": "codex.harness", "exit_code": 0,
                                     "workspace_breach": None}]
@@ -1285,5 +1331,15 @@ def test_a_planted_codex_run_end_to_end_saves_events_afresh_and_records_a_stop(
         assert events_file.is_file()
         assert not events_file.is_symlink()
         assert codex_cli.read_stop(home)["kind"] == "isolation"
+        # the next run is refused by the stop: read again under the run lock
+        # (the preflight is stubbed here), before any Codex exec
+        (bindir / "exec.json").unlink()
+        assert claude_runner.main([*argv[:-3], "--summary-log", str(log)]) == (
+            claude_runner.EXIT_UNTESTED)
+        capsys.readouterr()
+        second = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
+        assert "an isolation stop is recorded in the Codex harness home" in second["why"]
+        assert "--clear-stop" in second["why"]
+        assert not (bindir / "exec.json").exists()
     finally:
         shutil.rmtree(ws, ignore_errors=True)

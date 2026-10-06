@@ -1038,8 +1038,8 @@ def test_without_posix_file_locks_the_codex_commands_refuse_cleanly(argv, codex_
 
 COPILOT_STATUS_KEYS = ["home", "marker", "token_present", "auth_type", "host_ok", "plan_class",
                        "token_based_billing", "overage_permitted", "overage_count",
-                       "overage_entitlement", "remaining_pct", "reset_date", "stop", "clean",
-                       "cli_version", "pinned_version", "sandbox", "runs_use"]
+                       "overage_entitlement", "remaining_pct", "reset_date", "stop", "go",
+                       "clean", "cli_version", "pinned_version", "sandbox", "runs_use"]
 SANDBOX_PROBLEM = copilot_cli.sandbox_problem  # the real one, before a fixture stubs it
 VERSION_READ = copilot_cli.installed_version  # the real one: it starts `copilot --version`
 POSIX_LOCKS = pytest.mark.skipif(host_login.fcntl is None, reason="the run lock needs fcntl")
@@ -1187,6 +1187,30 @@ def test_after_a_login_a_live_run_waits_for_the_approval(monkeypatch):
 
 
 @POSIX_LOCKS
+@pytest.mark.usefixtures("codex_client")
+def test_a_codex_reset_keeps_the_isolation_stop(codex_state):
+    """testing-harness spec: Codex reset keeps the isolation stop — read
+    before the wipe, recorded again in the reseeded home with its cause and
+    time, so the next Codex run is still refused until a clear."""
+    import codex_cli
+
+    host_login.seed(host_login.CODEX, codex_state)
+    codex_logged_in(codex_state)
+    codex_cli.record_stop(codex_state, "the workspace held entries the harness must not follow")
+    before = codex_cli.read_stop(codex_state)
+    (codex_state / "AGENTS.md").write_text("synthetic\n", encoding="utf-8")
+    assert main(["login", "codex", "--reset"]) == 0
+    assert not (codex_state / "AGENTS.md").exists()  # wiped and seeded again
+    assert codex_cli.read_stop(codex_state) == before
+    assert codex_cli.stop_problem(codex_cli.read_stop(codex_state)).kind == "isolation"
+    assert host_login.check_codex_home(codex_state) is None
+    # a reset with no stop recorded leaves none
+    codex_cli.clear_stop(codex_state)
+    assert main(["login", "codex", "--reset"]) == 0
+    assert codex_cli.read_stop(codex_state) is None
+
+
+@POSIX_LOCKS
 def test_a_copilot_reset_deletes_the_token_wipes_and_asks_again(copilot_state, monkeypatch):
     enter_token(monkeypatch)
     assert main(["login", "copilot"]) == 0
@@ -1218,12 +1242,33 @@ def test_clear_stop_removes_any_stop_and_nothing_else(kind, copilot_state, monke
     monkeypatch.setenv("CODEX_SANDBOX", "seatbelt")
     assert main(["login", "copilot", "--clear-stop"]) == host_login.EXIT_USAGE
     monkeypatch.delenv("CODEX_SANDBOX")
+    assert copilot_cli.read_go(copilot_state) is None  # the stop ended the go
     capsys.readouterr()
     assert main(["login", "copilot", "--clear-stop"]) == 0
-    assert f"cleared the {kind} stop" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert f"cleared the {kind} stop" in out
+    assert "recorded the go: it covers one canary" in out
     assert copilot_cli.read_stop(copilot_state) is None
+    assert copilot_cli.read_go(copilot_state)["canary"] is None  # the canary comes first
     assert (copilot_state / "settings.json").read_text(encoding="utf-8") == settings
     assert host_login.token_path(copilot_state).read_text(encoding="utf-8") == token
+
+
+@POSIX_LOCKS
+def test_clear_stop_without_a_stop_records_the_go_alone(copilot_state, monkeypatch, capsys):
+    """testing-harness spec: the clear option records the go with no stop
+    recorded too, and the status command prints what it covers."""
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 0
+    copilot_cli.clear_stop(copilot_state)
+    copilot_cli.record_canary_pass(copilot_state, "00000000-0000-4000-8000-000000000000")
+    capsys.readouterr()
+    assert main(["login", "copilot", "--clear-stop"]) == 0
+    out = capsys.readouterr().out
+    assert "no stop is recorded in the Copilot harness home; recorded the go" in out
+    assert copilot_cli.read_go(copilot_state)["canary"] is None  # a new go: a canary first
+    main(["status", "copilot"])
+    assert "go: canary (go given " in capsys.readouterr().out
 
 
 def test_clear_stop_and_reset_are_separate_and_copilot_or_codex_only(capsys):

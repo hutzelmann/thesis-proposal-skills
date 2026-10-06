@@ -49,9 +49,10 @@ and every check here is the backstop, failing closed:
   prompt mode does, and only then runs fixed commands through
   `session.shell.executeUserRequested`; it refuses unless the sandboxed shell
   is denied the token file, the client's and the harness's own process
-  environments, `~/.ssh`, `~/.config/gh`, `gh` and git authentication and the
-  host's shared /tmp (reading it, or writing a file the host then sees),
-  still runs the skills, and reports every command as sandboxed; last, the
+  environments, `~/.ssh`, `~/.config/gh`, `gh` and git authentication, the
+  host's shared /tmp (reading it, or writing a file the host then sees) and
+  /var/tmp, and has no token variable in its own environment, still runs the
+  skills, and reports every command as sandboxed; last, the
   clean-home check once more, on the home as those reads left it.
 - **The work directory** (`work_root`): the workspace and every scratch home
   are made owner-only under the harness state directory where it lies
@@ -71,7 +72,8 @@ and every check here is the backstop, failing closed:
   reads, scrubs or writes anything in it: the sandboxed shell may write the
   workspace, so a link, a FIFO, socket or device, or a hard link it left
   there, or the workspace itself replaced, would make the unsandboxed harness
-  act on another file; each such entry is unlinked unread, and the run is
+  act on another file, and a directory closed to its owner would hide one;
+  each such entry is unlinked unread (a closed directory left as it is), and the run is
   untested for isolation with an isolation stop. The event file is created
   afresh without following a link (`claude_runner.save_events`).
 - **After the run** (`assess`): the session file is reduced into `copilot.*`
@@ -87,16 +89,26 @@ and every check here is the backstop, failing closed:
   clears it with `uv run poe host-login copilot --clear-stop`; so does the
   approval stop every login records, which makes the first model call after
   a login the operator's explicit go.
+- **The go** (Decision 9, the go; the user's decision D-c made enforceable,
+  2026-10-07): the clear records the operator's go in the snapshot file
+  (`clear_stop`, `read_go`), which covers one canary and, only once that
+  canary passed (`record_canary_pass`), one skill run. `_go_check`, before
+  the first child and again under the lock, refuses any model call without a
+  go, a skill run before the go's canary passed and a second canary after it
+  (`go_problem`); a skill run's start records the approval stop again
+  (`GO_USED`), and every recorded stop ends the go.
 
 The canary (`run_copilot(…, canary=True)`, the user's decision D-c) is the
-first model call after the operator's approval: an empty workspace, the shell
+first model call after the operator's go: an empty workspace, the shell
 alone, the confinement probe's commands as the whole prompt (`canary_commands`,
 `canary_prompt`); its rows come from the client's own shell completions
-(`canary_rows`), and it passes only when every row reads as the probe requires,
-every shell completion is reported sandboxed and the billing guard passes after
-it (`canary_after` in `assess`); anything else records a stop. Every run's
-telemetry carries K5's parts (`events_seen`): where each listed event type
-arrived, stdout or the session file.
+(`canary_rows`), and it passes only when every fixed command ran once and
+nothing else, every row reads as the probe requires, its network namespace
+is its own, every shell completion is reported sandboxed and the billing
+guard passes after it (`canary_after` in `assess`); anything else found after
+its child records a stop, and a canary that does not pass leaves the go's
+skill run refused. Every run's telemetry carries K5's parts (`events_seen`):
+where each listed event type arrived, stdout or the session file.
 
 Copilot tool events map to the canonical tool names (`copilot_tool_calls`), so
 the shared verdicts and the route reader work unchanged. Copilot reports AI
@@ -245,6 +257,8 @@ SANDBOX_FLAG_NOTICE = "requires the sandbox feature"
 # watch reads as unconfined
 CANARY_TOOLS = ("bash",)
 CANARY_DENIED = tuple(tool for tool in DENIED_TOOLS if tool != "shell(gh:*)")
+# the pseudo-scenario name the runner accepts for the canary (claude_runner.CANARY)
+CANARY_SCENARIO = "canary"
 
 
 def binary() -> str:
@@ -1114,13 +1128,14 @@ def _write_quota(home: Path, data: dict) -> None:
 
 
 def write_snapshot(home: Path, status: Status | None) -> None:
-    """Keep the last status snapshot, and any recorded stop with it — a
+    """Keep the last status snapshot, and any recorded stop and go with it — a
     damaged stop record among them, which is kept as the stop it reads as."""
     record = snapshot_record(status)
     if record is None:
         return
-    stop = read_stop(home)
-    _write_quota(home, {**record, **({"stop": stop} if stop else {})})
+    stop, go = read_stop(home), read_go(home)
+    _write_quota(home, {**record, **({"stop": stop} if stop else {}),
+                        **({GO_KEY: go} if go else {})})
 
 
 def read_stop(home: Path) -> dict | None:
@@ -1138,13 +1153,18 @@ def read_stop(home: Path) -> dict | None:
             "at": "unknown"}
 
 
+def _now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
 def record_stop(home: Path, kind: str, cause: str) -> None:
     """Record a stop (billing, isolation or approval) with its cause and time.
     A second cause is appended; the stronger kind stays (an approval stop
-    gives way to an isolation or a billing stop)."""
+    gives way to an isolation or a billing stop). Every stop ends the
+    operator's go (`read_go`): only a clear gives a new one."""
     data = _quota_data(home)
     old = read_stop(home)
-    at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    at = _now()
     if old:
         stronger = kind if STOP_KINDS.get(kind, 0) > STOP_KINDS.get(old.get("kind"), 0) else (
             old.get("kind"))
@@ -1152,19 +1172,86 @@ def record_stop(home: Path, kind: str, cause: str) -> None:
                         "at": old.get("at", at)}
     else:
         data["stop"] = {"kind": kind, "cause": cause, "at": at}
+    data.pop(GO_KEY, None)
     _write_quota(home, data)
 
 
 def clear_stop(home: Path) -> dict | None:
     """Remove a recorded stop of any kind, a damaged record included, and
-    change nothing else readable; the removed stop."""
+    record the operator's go (`record_go`), also when no stop was recorded:
+    the clear is the go. Nothing else readable changes; the removed stop."""
     stop = read_stop(home)
-    if stop is None:
-        return None
     data = _quota_data(home)
     data.pop("stop", None)
+    data[GO_KEY] = {"at": _now(), "canary": None}
     _write_quota(home, data)
     return stop
+
+
+# ---------- the operator's go (design Decision 9, the go; the user's decision D-c) -----------
+
+GO_KEY = "go"
+# the cause of the approval stop a skill run's start records, which ends its go
+GO_USED = ("the go covered one canary and one skill run, which has started; the next model call "
+           "needs a new go")
+CANARY_COMMAND = ("uv run poe dev canary --host copilot --model <id> "
+                  f"--max-ai-credits {MIN_AI_CREDITS}")
+
+
+def read_go(home: Path) -> dict | None:
+    """The operator's go (`{"at", "canary"}`, `canary` null until a canary
+    passed under it, then `{"passed_at", "session_id"}`), or None: none
+    recorded, or a record that cannot be read, which no model call may take
+    for a go (fail-closed)."""
+    data = _quota_file(home)
+    go = data.get(GO_KEY) if isinstance(data, dict) else None
+    if not isinstance(go, dict) or not go.get("at"):
+        return None
+    canary = go.get("canary")
+    return {"at": str(go["at"]),
+            "canary": canary if isinstance(canary, dict) and canary.get("passed_at") else None}
+
+
+def record_canary_pass(home: Path, session_id: str) -> None:
+    """Record in the go that its canary passed; nothing without a go (a stop
+    the run recorded has ended it)."""
+    go = read_go(home)
+    if go is None:
+        return
+    data = _quota_data(home)
+    data[GO_KEY] = {**go, "canary": {"passed_at": _now(), "session_id": session_id}}
+    _write_quota(home, data)
+
+
+def go_problem(go: Mapping | None, canary: bool) -> LoginProblem | None:
+    """Why the go does not cover this model call (pure): none recorded; a
+    skill run before the go's canary passed; a second canary once it has."""
+    clear = f"run `{host_login.CLEAR_STOP_COMMAND}` in a terminal outside any agent session"
+    if go is None:
+        return _problem("no go is recorded in the Copilot harness home: every Copilot model "
+                        "call needs the operator's go, which covers one canary and, once it "
+                        "passed, one skill run", clear, "precondition")
+    passed = go.get("canary")
+    if canary and passed:
+        return _problem(f"the canary already passed under the go of {go.get('at')} "
+                        f"(at {passed.get('passed_at')}), which now covers one skill run only",
+                        f"run the skill run the go request named, or give a new go: {clear}",
+                        "precondition")
+    if not canary and not passed:
+        return _problem(f"no canary has passed under the go of {go.get('at')}: the first model "
+                        "call after a go is the canary", f"run `{CANARY_COMMAND}` first",
+                        "precondition")
+    return None
+
+
+def go_text(go: Mapping | None) -> str:
+    """The status line's account of what the go still covers."""
+    if go is None:
+        return "none"
+    passed = go.get("canary")
+    if passed:
+        return f"skill run (the canary passed {passed.get('passed_at')}; go given {go.get('at')})"
+    return f"canary (go given {go.get('at')})"
 
 
 STOP_REMEDIES = {
@@ -1174,7 +1261,8 @@ STOP_REMEDIES = {
                   f"read the run's findings, then run `{host_login.CLEAR_STOP_COMMAND}`"),
     "approval": ("precondition",
                  f"run `{host_login.CLEAR_STOP_COMMAND}` in a terminal outside any agent "
-                 "session to approve the next run"),
+                 "session: that is the go, which covers one canary and, only once it passed, "
+                 "one skill run"),
 }
 
 
@@ -1226,6 +1314,9 @@ class Run:
     # the canary's fixed commands and their host side (D-c), None for a skill run
     canary: list[tuple[str, str]] | None = None
     host: ProbeHost | None = None
+    # whether this run is the canary, which the go check reads before the
+    # commands exist (Decision 9, the go)
+    is_canary: bool = False
 
 
 def new_run(environ: Mapping[str, str] | None = None, **fields) -> Run:
@@ -1267,6 +1358,15 @@ def _stop_check(run: Run) -> Check:
     problem = stop_problem(stop)
     return Check("stop", problem, f"{stop.get('kind')} ({stop.get('cause')})" if stop else "none",
                  billing=bool(stop) and stop.get("kind") == "billing")
+
+
+def _go_check(run: Run) -> Check:
+    """Whether the operator's go covers this model call (Decision 9, the go):
+    reads only the status snapshot file, so it comes before the first
+    Copilot child, and runs again under the run lock (`LOCKED`), since a
+    login, a clear or another run may have changed the go meanwhile."""
+    go = read_go(run.home)
+    return Check("go", go_problem(go, run.is_canary), go_text(go))
 
 
 def managed_problem(paths: Sequence[str | Path] = MANAGED_SETTINGS) -> LoginProblem | None:
@@ -1312,15 +1412,18 @@ def machine_problem(environ: Mapping[str, str]) -> LoginProblem | None:
 
 
 PREFLIGHT: tuple[Callable[[Run], Check], ...] = (
-    _location_check, _presence_check, _clean_check, _token_check, _stop_check, _version_check,
-    _managed_check, _sandbox_check)
+    _location_check, _presence_check, _clean_check, _token_check, _stop_check, _go_check,
+    _version_check, _managed_check, _sandbox_check)
 # The rows whose refusal leaves every later read safe to start: `--preflight-only`
 # prints them and goes on, so every check that can run does (spec: Copilot
 # preflight only). Any other refusal makes a later start unsafe — a child under
 # a refused location or in an unclean home, without the token, on another CLI
 # version, under a managed policy or beside the parent folders' files — and
 # ends the report. A run (`_require`) stops at the first refusal of any row.
-REPORTED = frozenset({"stop", "sandbox_tools", "status", "model", "rosters"})
+REPORTED = frozenset({"stop", "go", "sandbox_tools", "status", "model", "rosters"})
+# the rows `--preflight-only` prints and that never decide its outcome: a
+# recorded stop and the go hold a model call back, and the option makes none
+NOT_DECIDING = frozenset({"stop", "go"})
 
 
 def preflight_checks(run: Run) -> Iterator[Check]:
@@ -1452,10 +1555,16 @@ def staged_names(ws: Path) -> list[str]:
 # variable the child builder drops (GH_TOKEN and the like, if exported): denied
 # only when the sandbox hides the host's processes, whatever the client
 # process's own dumpability says about `client_environ`
+# `token_env` (added 2026-10-07, review of task 8.0) reads the shell's own
+# environment: set, even empty, any of the token variables reads `readable`.
+# In the canary it is the one reading of the shell prompt mode's `bash` tool
+# gets under `--secret-env-vars` and `--no-bash-env`
 READ_TARGETS = {"token_file": "the token file",
                 "client_environ": "the client process's environment",
                 "harness_environ": "the harness process's environment",
-                "ssh_dir": "the operator's ~/.ssh", "gh_config": "the operator's ~/.config/gh"}
+                "ssh_dir": "the operator's ~/.ssh", "gh_config": "the operator's ~/.config/gh",
+                "token_env": "the token variables in the shell's own environment"}
+TOKEN_ENV_VARS = (COPILOT.token_env, "GH_TOKEN", "GITHUB_TOKEN")
 AUTH_TARGETS = {"gh_token": "the GitHub CLI's token over the session bus",
                 "git_credential": "git's stored credential for github.com"}
 RUN_TARGETS = {"python": "the skills' interpreter (python3)",
@@ -1466,16 +1575,23 @@ RUN_TARGETS = {"python": "the skills' interpreter (python3)",
 # host — `tmp_write` is judged on the host after the probe (`_row_output`),
 # because a write into a denied directory lands in the sandbox's own throwaway
 # layer and exits 0 (measured), so only the host can tell.
+# `var_tmp` (added 2026-10-07, review of task 7.15): a file the harness put in
+# the host's /var/tmp, the second shared temporary directory, denied by
+# Decision 3 although the 1.0.91 sandbox does not bind it (measured)
 TMP_TARGETS = {"host_tmp": "a file in the host's /tmp",
-               "tmp_write": "a write into the host's /tmp"}
+               "tmp_write": "a write into the host's /tmp",
+               "var_tmp": "a file in the host's /var/tmp"}
 REQUIRED_PROBES = (*READ_TARGETS, *AUTH_TARGETS, "python", *TMP_TARGETS)
-# Measured and printed, not yet refused (Decision 13, network): whether the
-# sandboxed shell shares the harness's network namespace (`shared` or
-# `private`). K6 read `private`; a rule on it is a change of its own.
+# Measured and printed, not refused by the probe (Decision 13, network):
+# whether the sandboxed shell shares the harness's network namespace (`shared`
+# or `private`). K6 read `private`. The canary, the one reading of the
+# namespace prompt mode applies, refuses anything but `private` (2026-10-07).
 MEASURED_TARGETS = {"net_ns": "the harness's network namespace"}
-# the host's own /tmp and the harness's network namespace (Linux paths, read on
-# the host; the probe runs only where the client's sandbox does)
+PRIVATE_NET = "private"
+# the host's own /tmp and /var/tmp and the harness's network namespace (Linux
+# paths, read on the host; the probe runs only where the client's sandbox does)
 PROBE_TMP = "/tmp"
+PROBE_VAR_TMP = "/var/tmp"
 NET_NS = "/proc/self/ns/net"
 
 
@@ -1491,14 +1607,20 @@ class ProbeResult:
 
 @dataclass(frozen=True)
 class ProbeHost:
-    """What the probe's measured rows compare against on the host: the
-    harness's own network namespace (`/proc/self/ns/net`), a file the harness
-    wrote into the host's /tmp, and the name the `tmp_write` row writes to.
-    Each is None where it cannot be had, and its row is then left out."""
+    """What the probe's host rows compare against on the host: the harness's
+    own network namespace (`/proc/self/ns/net`), a file the harness wrote
+    into the host's /tmp, the name the `tmp_write` row writes to, and a file
+    the harness wrote into the host's /var/tmp. Each is None where it cannot
+    be had, and its row is then left out."""
 
     net_ns: str | None = None
     sentinel: Path | None = None
     marker: Path | None = None
+    var_sentinel: Path | None = None
+
+
+def _read_row(path: Path) -> str:
+    return f"cat {shlex.quote(str(path))} >/dev/null 2>&1 && echo readable || echo denied"
 
 
 def _measured_commands(host: ProbeHost) -> list[tuple[str, str]]:
@@ -1509,10 +1631,11 @@ def _measured_commands(host: ProbeHost) -> list[tuple[str, str]]:
                                    f"if [ -z \"$n\" ]; then echo unknown; elif [ \"$n\" = "
                                    f"{q(host.net_ns)} ]; then echo shared; else echo private; fi"))
     if host.sentinel:
-        commands.append(("host_tmp", f"cat {q(str(host.sentinel))} >/dev/null 2>&1 && echo "
-                                     "readable || echo denied"))
+        commands.append(("host_tmp", _read_row(host.sentinel)))
     if host.marker:
         commands.append(("tmp_write", f": > {q(str(host.marker))} 2>/dev/null; echo $?"))
+    if host.var_sentinel:
+        commands.append(("var_tmp", _read_row(host.var_sentinel)))
     return commands
 
 
@@ -1542,6 +1665,8 @@ def probe_commands(*, token_file: Path, server_pid: int, harness_pid: int, accou
                            f"{operator} GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false "
                            "GCM_INTERACTIVE=never git credential fill >/dev/null 2>&1; echo $?"),
         ("python", "python3 -c 'print(1)' >/dev/null 2>&1; echo $?"),
+        ("token_env", f"[ -n \"{''.join(f'${{{name}+x}}' for name in TOKEN_ENV_VARS)}\" ] "
+                      "&& echo readable || echo denied"),
     ]
     if script is not None:
         commands.append(("skill_script", f"python3 {q(str(script))} --help >/dev/null 2>&1; "
@@ -1673,25 +1798,38 @@ def _own_net_ns() -> str | None:
     return None
 
 
+def _sentinel(folder: Path, prefix: str) -> Path | None:
+    """A fresh empty file the harness writes into a host directory for a read
+    row, or None without that directory."""
+    if not folder.is_dir():
+        return None
+    fd, name = tempfile.mkstemp(prefix=prefix, dir=folder)
+    os.close(fd)
+    return Path(name)
+
+
 @contextmanager
-def probe_host(tmp: Path | str | None = None) -> Iterator[ProbeHost]:
+def probe_host(tmp: Path | str | None = None,
+               var_tmp: Path | str | None = None) -> Iterator[ProbeHost]:
     """The host side of the probe's host rows: the harness's own network
     namespace (`net_ns`, measured), a file written into the host's /tmp
-    (PROBE_TMP) for `host_tmp`, and a free name beside it for `tmp_write`
-    (both refusing since D-b); both files removed afterwards. Without a /tmp
-    the two rows are left out, which `probe_problem` reads as no answer."""
-    tmp = Path(PROBE_TMP if tmp is None else tmp)
-    if not tmp.is_dir():
-        yield ProbeHost(_own_net_ns())
-        return
-    fd, name = tempfile.mkstemp(prefix="devrun-probe-tmp-", dir=tmp)
-    os.close(fd)
-    sentinel = Path(name)
-    marker = sentinel.with_name(sentinel.name.replace("devrun-probe-tmp-", "devrun-probe-write-"))
+    (PROBE_TMP) for `host_tmp`, a free name beside it for `tmp_write` (both
+    refusing since D-b), and a file written into the host's /var/tmp
+    (PROBE_VAR_TMP) for `var_tmp` (refusing since 2026-10-07); every file
+    removed afterwards. Without a directory its rows are left out, which
+    `probe_problem` reads as no answer."""
+    made: list[Path] = []
     try:
-        yield ProbeHost(_own_net_ns(), sentinel, marker)
+        sentinel = _sentinel(Path(PROBE_TMP if tmp is None else tmp), "devrun-probe-tmp-")
+        marker = None if sentinel is None else sentinel.with_name(
+            sentinel.name.replace("devrun-probe-tmp-", "devrun-probe-write-"))
+        made += [path for path in (sentinel, marker) if path is not None]
+        var_sentinel = _sentinel(Path(PROBE_VAR_TMP if var_tmp is None else var_tmp),
+                                 "devrun-probe-var-")
+        made += [var_sentinel] if var_sentinel is not None else []
+        yield ProbeHost(_own_net_ns(), sentinel, marker, var_sentinel)
     finally:
-        for path in (sentinel, marker):
+        for path in made:
             with suppress(OSError):
                 path.unlink()
 
@@ -1829,8 +1967,8 @@ GATE: tuple[Callable[[Run], Check], ...] = (_status_check, _model_check, _roster
                                            _probe_check)
 # what a run reads again once it holds the lock, before any child: the rows the
 # lock's other holders change (a stop recorded by another run or a login, the
-# token a login replaced)
-LOCKED: tuple[Callable[[Run], Check], ...] = (_stop_check, _token_check)
+# go a clear gave or another run used, the token a login replaced)
+LOCKED: tuple[Callable[[Run], Check], ...] = (_stop_check, _go_check, _token_check)
 
 
 def gate_checks(run: Run) -> Iterator[Check]:
@@ -1856,11 +1994,12 @@ def _require(checks: Iterable[Check]) -> None:
                                     billing=check.problem.cause if check.billing else None)
 
 
-def isolated_home(_stack, _args: argparse.Namespace,
+def isolated_home(_stack, args: argparse.Namespace,
                   environ: Mapping[str, str] | None = None) -> Path:
-    """The Copilot home a run executes in, after the checks before the lock;
-    refused as untested otherwise. Every Copilot run is isolated."""
-    run = new_run(environ)
+    """The Copilot home a run executes in, after the checks before the lock
+    (the go among them, read for the canary or a skill run as `args` names
+    it); refused as untested otherwise. Every Copilot run is isolated."""
+    run = new_run(environ, is_canary=getattr(args, "scenario", None) == CANARY_SCENARIO)
     _require(preflight_checks(run))
     return run.home
 
@@ -2610,10 +2749,20 @@ CANARY_PROMPT = (
 # what a probe command prints: one word of the probe's vocabulary, or an exit code
 PROBE_WORD = re.compile(r"^(?:denied|readable|shared|private|unknown|\d+)$")
 NOT_CONFIRMED = "the canary did not confirm prompt mode's sandbox"
-CANARY_PASSED = ("the canary confirmed prompt mode's sandbox: every probe row as required, every "
-                 "shell completion reported sandboxed, the billing guard passing after the run")
+CANARY_PASSED = ("the canary confirmed prompt mode's sandbox: every fixed command run once and "
+                 "nothing else, every probe row as required, a network namespace of its own, "
+                 "every shell completion reported sandboxed, the billing guard passing after the "
+                 "run; the go now covers one skill run")
 MISSING_REMEDY = ("rerun the canary, or name a model that runs the given commands verbatim: a "
                   "command it skipped, combined or altered measures nothing")
+EXTRA_REMEDY = ("read the commands the summary names, then rerun the canary, or name a model that "
+                "runs exactly the given commands: one it added could change what the host judges")
+NET_REMEDY = ("read the run's findings; decide whether to pin sandbox.userPolicy.network through "
+              "openspec-update-change before any skill run, then run "
+              f"`{host_login.CLEAR_STOP_COMMAND}`")
+# how much of a shell call that matched no fixed command the summary keeps
+UNMATCHED_CHARS = 200
+SHOWN_UNMATCHED = 10
 
 
 def _client_row(session_id: str) -> str:
@@ -2663,33 +2812,64 @@ def _canary_row(name: str, completion: Mapping, record: Mapping) -> ProbeResult:
     return ProbeResult(name, word, completion.get("sandboxed"))
 
 
-def canary_rows(events: list[dict]) -> tuple[list[ProbeResult], int]:
+def canary_rows(events: list[dict]) -> tuple[list[ProbeResult], list[str]]:
     """The canary's rows, from the client's own shell completions and never
     from the model's reply: each fixed command (the `copilot.canary` record)
     paired with the shell start whose command equals it, stripped; its word
     from the completion, `tmp_write`'s judged on the host; its `sandboxed`
-    the completion's. Also the count of shell calls that matched no fixed
-    command, or repeated one. Pure."""
+    the completion's. Also every shell call that matched no fixed command or
+    repeated one, as its command cut to UNMATCHED_CHARS characters. Pure."""
     record = _last(events, "copilot.canary")
     commands = [(str(pair[0]), str(pair[1])) for pair in record.get("commands") or []]
     wanted = {command.strip(): name for name, command in commands}
     done = _done(events)
     found: dict[str, ProbeResult] = {}
-    extra = 0
+    unmatched: list[str] = []
     for start in _starts(events, top_level=False):
         if start.get("toolName") not in SHELL_TOOLS:
             continue
         args = start.get("arguments") if isinstance(start.get("arguments"), dict) else {}
-        name = wanted.get(str(args.get("command") or "").strip())
+        command = str(args.get("command") or "").strip()
+        name = wanted.get(command)
         if name is None or name in found:
-            extra += 1
+            unmatched.append(command[:UNMATCHED_CHARS])
             continue
         found[name] = _canary_row(name, done.get(str(start.get("toolCallId")), {}), record)
-    return [found[name] for name, _ in commands if name in found], extra
+    return [found[name] for name, _ in commands if name in found], unmatched
+
+
+def net_reading(rows: Sequence[ProbeResult]) -> str:
+    """The canary's network-namespace reading: the `net_ns` row's word, or
+    `unknown` without one (the host could not read its own namespace)."""
+    by = {r.name: r for r in rows}
+    return str(by["net_ns"].output) if "net_ns" in by and by["net_ns"].output else "unknown"
+
+
+def _unmatched_problem(unmatched: Sequence[str]) -> RunProblem | None:
+    if not unmatched:
+        return None
+    return RunProblem(refusal(_problem(
+        f"the model ran {len(unmatched)} shell call{'s' if len(unmatched) > 1 else ''} beyond "
+        "the canary's fixed commands, one each (the summary names them), so the canary measured "
+        "something else", EXTRA_REMEDY, "precondition")), True, "precondition")
+
+
+def _net_problem(rows: Sequence[ProbeResult]) -> RunProblem | None:
+    reading = net_reading(rows)
+    if reading == PRIVATE_NET:
+        return None
+    return RunProblem(refusal(_problem(
+        f"the canary's shell did not read a network namespace of its own (net_ns {reading}): "
+        "prompt mode's shell would reach the host's abstract unix sockets and loopback services",
+        NET_REMEDY, "isolation")), True, "isolation")
 
 
 def _rows_problem(events: list[dict], names: Sequence[str]) -> RunProblem | None:
-    rows, _extra = canary_rows(events)
+    """The canary's rows against the probe's rules (`probe_problem`), then
+    its network namespace (`_net_problem`), then the shell calls it ran
+    beyond the fixed commands (`_unmatched_problem`). A fixed command the
+    model skipped or altered leaves its row unanswered, which comes first."""
+    rows, unmatched = canary_rows(events)
     missing = [name for name in names if name not in {r.name for r in rows}]
     if missing:
         return RunProblem(refusal(_problem(
@@ -2697,15 +2877,25 @@ def _rows_problem(events: list[dict], names: Sequence[str]) -> RunProblem | None
             f"{'s' if len(missing) > 1 else ''} verbatim, one per shell call", MISSING_REMEDY,
             "precondition")), True, "precondition")
     problem = probe_problem(rows, what="the canary")
-    return None if problem is None else RunProblem(refusal(problem), True, problem.kind)
+    if problem is not None:
+        return RunProblem(refusal(problem), True, problem.kind)
+    return _net_problem(rows) or _unmatched_problem(unmatched)
+
+
+def canary_stop_cause(events: list[dict]) -> str:
+    """The isolation stop a canary that did not pass records: NOT_CONFIRMED,
+    naming the network-namespace reading where it was not `private`."""
+    reading = net_reading(canary_rows(events)[0])
+    return NOT_CONFIRMED if reading == PRIVATE_NET else f"{NOT_CONFIRMED} (net_ns {reading})"
 
 
 def canary_after(events: list[dict]) -> list[RunProblem | None]:
     """The canary's own findings (D-c), none for a skill run: its rows read as
     the confinement probe's are (`probe_problem`; a fixed command the model
-    skipped or altered is unanswered, a precondition), and the billing guard
-    over the status read after the run (`after_guard` in the runner's
-    record). Pure."""
+    skipped or altered is unanswered, a precondition), its network namespace
+    must read `private`, no shell call beyond the fixed commands may have run
+    (`_rows_problem`), and the billing guard over the status read after the
+    run (`after_guard` in the runner's record). Pure."""
     record = _last(events, "copilot.canary")
     if not record:
         return []
@@ -2721,15 +2911,18 @@ def canary_after(events: list[dict]) -> list[RunProblem | None]:
 def canary_report(events: list[dict]) -> dict:
     """What the canary's summary records beside the run's telemetry: every row
     with its word and sandbox report, the unanswered rows, and the shell calls
-    that matched no fixed command. Pure."""
+    that matched no fixed command or repeated one: their count, and the first
+    SHOWN_UNMATCHED of them, each cut to UNMATCHED_CHARS characters (from the
+    scrubbed events). Pure."""
     record = _last(events, "copilot.canary")
     if not record:
         return {}
-    rows, extra = canary_rows(events)
+    rows, unmatched = canary_rows(events)
     names = [str(pair[0]) for pair in record.get("commands") or []]
     return {"canary_rows": {r.name: {"output": r.output, "sandboxed": r.sandboxed} for r in rows},
             "canary_unanswered": [n for n in names if n not in {r.name for r in rows}],
-            "canary_extra_shell_calls": extra}
+            "canary_extra_shell_calls": len(unmatched),
+            "canary_unmatched": unmatched[:SHOWN_UNMATCHED]}
 
 
 # K5's parts (task 8.0 and 8.1): where each of these event types arrives
@@ -2847,7 +3040,7 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
     problem = combine(problems)
     stops = _stops(harness, scrubbed, billing if billing_stop else None, sandbox)
     stops += [("billing", p.billing) for p in own if p is not None and p.billing]
-    stops += [("isolation", NOT_CONFIRMED)] if canary and problem is not None else []
+    stops += [("isolation", canary_stop_cause(events))] if canary and problem is not None else []
     return Assessment(problem, tuple(stops))
 
 
@@ -3004,14 +3197,19 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
                        planted=planted, first_event=watch.first_event_at)]
     write_snapshot(run.home, after)
     limit = f"copilot did not finish within {timeout:g}s" if timed_out else None
-    for kind, cause in assess(events, timed_out=limit).stops:
+    assessment = assess(events, timed_out=limit)
+    for kind, cause in assessment.stops:
         record_stop(run.home, kind, cause)
+    if run.canary is not None and assessment.problem is None and not assessment.stops:
+        record_canary_pass(run.home, session_id)  # the go now covers one skill run
     return events, limit
 
 
 def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
     """The prompt-mode child, holding the lock through `pass_fds`, then
-    `_settle`. The steps after the start fail closed: whatever raises among
+    `_settle`. A skill run's start ends its go (Decision 9, the go): the
+    approval stop is recorded as soon as the child has started, whatever
+    follows. The steps after the start fail closed: whatever raises among
     them, the child and its process group are stopped, the workspace checked
     and scrubbed, and a billing stop recorded (an isolation stop too, for a
     workspace breach) before the exception goes on."""
@@ -3024,6 +3222,8 @@ def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
     proc = spawn(argv, home=run.home, cwd=run.ws, scratch=run.scratch, token=run.token,  # type: ignore[arg-type]
                  environ=run.environ, pass_fds=(fd,))
     try:
+        if run.canary is None:
+            record_stop(run.home, "approval", GO_USED)
         events, limit = _settle(run, proc, session_id, begun=begun, timeout=timeout)
     except BaseException:
         stop_group(proc, signal.SIGTERM)
@@ -3066,7 +3266,7 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
     if problem:
         raise CopilotRefused.of(problem)
     run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort, cap=cap,
-                  ws_id=workspace_identity(ws))
+                  ws_id=workspace_identity(ws), is_canary=canary)
     run.home = home
     run.scratch = make_scratch("devrun-copilot-home-", run.environ)
     try:
@@ -3083,15 +3283,18 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
 
 
 def preflight_report(ws: Path, scenario: Mapping, *, model: str, effort: str | None,
-                     environ: Mapping[str, str] | None = None) -> tuple[list[Check], bool]:
+                     environ: Mapping[str, str] | None = None,
+                     canary: bool = False) -> tuple[list[Check], bool]:
     """`--preflight-only` (Decision 7): every check that comes before the run,
     staging, the rosters and the confinement probe included, each recorded.
-    A refused row in REPORTED (the stop, the sandbox tools, the status, the
-    model, the rosters) is printed and the report goes on; any other refusal
-    makes a later start unsafe and ends it. A recorded stop does not decide
-    the outcome. No prompt-mode child starts, and the probe's session folder
-    is deleted."""
-    run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort)
+    A refused row in REPORTED (the stop, the go, the sandbox tools, the
+    status, the model, the rosters) is printed and the report goes on; any
+    other refusal makes a later start unsafe and ends it. A recorded stop and
+    the go (read for the canary or a skill run, as `canary` says) do not
+    decide the outcome (NOT_DECIDING). No prompt-mode child starts, and the
+    probe's session folder is deleted."""
+    run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort,
+                  is_canary=canary)
     checks = list(preflight_checks(run))
     if any(c.problem and c.name not in REPORTED for c in checks):
         return checks, False
@@ -3104,7 +3307,7 @@ def preflight_report(ws: Path, scenario: Mapping, *, model: str, effort: str | N
             checks += list(gate_checks(run))
     finally:
         shutil.rmtree(run.scratch, ignore_errors=True)
-    return checks, not any(c.problem and c.name != "stop" for c in checks)
+    return checks, not any(c.problem and c.name not in NOT_DECIDING for c in checks)
 
 
 # ---------- `host-status copilot` -----------------------------------------------------------
@@ -3155,6 +3358,7 @@ def _status_lines(home: Path, environ: Mapping[str, str], st: Status | None, *,
                   offenders: list[str]) -> dict[str, str]:
     snap = st.snapshot if st else None
     stop = read_stop(home) if home.is_dir() else None
+    go = read_go(home) if home.is_dir() else None
     return {
         "home": str(home),
         "marker": _yes((home / MARKER).is_file()),
@@ -3169,6 +3373,7 @@ def _status_lines(home: Path, environ: Mapping[str, str], st: Status | None, *,
         "remaining_pct": _show(snap.percent_remaining) if snap else "unknown",
         "reset_date": (st.reset_date or "unknown") if st else "unknown",
         "stop": f"{stop.get('kind')} ({stop.get('cause')})" if stop else "none",
+        "go": go_text(go),
         "clean": ", ".join(offenders) if offenders else _yes(home.is_dir()),
         "cli_version": host_login.version_text(version),
         "pinned_version": host_login.version_text(COPILOT_PINNED_VERSION),

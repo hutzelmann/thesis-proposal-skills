@@ -1137,17 +1137,23 @@ def read_stop(home: Path) -> dict | None:
             "at": "unknown"}
 
 
+def restore_stop(home: Path, stop: Mapping) -> None:
+    """Write a stop as it was read (`read_stop`), its cause and time unchanged:
+    a reset keeps a recorded stop (Decision 16, revised 2026-10-07)."""
+    target = home / STOP_FILE
+    temporary = target.with_name(f".{STOP_FILE}.tmp")
+    temporary.write_text(json.dumps({"stop": dict(stop)}, indent=2), encoding="utf-8")
+    temporary.replace(target)  # os.replace: atomic
+
+
 def record_stop(home: Path, cause: str) -> None:
     """Record an isolation stop with its cause and time; a second cause is
     appended to the first, which keeps its time."""
     old = read_stop(home)
     at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    stop = ({"kind": "isolation", "cause": f"{old.get('cause')}; {cause}",
-             "at": old.get("at", at)} if old else {"kind": "isolation", "cause": cause, "at": at})
-    target = home / STOP_FILE
-    temporary = target.with_name(f".{STOP_FILE}.tmp")
-    temporary.write_text(json.dumps({"stop": stop}, indent=2), encoding="utf-8")
-    temporary.replace(target)  # os.replace: atomic
+    restore_stop(home, {"kind": "isolation", "cause": f"{old.get('cause')}; {cause}",
+                        "at": old.get("at", at)} if old else
+                 {"kind": "isolation", "cause": cause, "at": at})
 
 
 def clear_stop(home: Path) -> dict | None:

@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -48,6 +49,9 @@ SKILL_ROOT = WS / ".agents" / "skills"
 NOTE = "Your own Copilot login is not affected"
 POSIX = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None,
                            reason="POSIX file locks and signals")
+# a directory's mode keeps its owner out only when the owner is not root
+ROOTLESS = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None
+                              or os.geteuid() == 0, reason="POSIX modes, a non-root owner")
 # taken at import, before the conftest replaces the seam (no test writes under /run/user)
 REAL_RUNTIME_DIR = copilot_cli.runtime_dir
 
@@ -134,6 +138,7 @@ def send(message):
     sys.stdout.buffer.flush()
 
 PROBES = (("/cmdline", "client_environ"),  # the canary's row finds the client by its session
+          ("GITHUB_TOKEN+x", "token_env"), ("devrun-probe-var-", "var_tmp"),
           (f"/proc/{os.getpid()}/environ", "client_environ"),  # this server's own pid
           (f"/proc/{os.getppid()}/environ", "harness_environ"),  # the harness that started it
           # git's row names the operator's GitHub CLI directory too, so it comes first
@@ -278,9 +283,13 @@ def run():
     for name in CONFIG.get("write", []):  # a relative name lands in the workspace
         pathlib.Path(name).write_text(CONFIG.get("write_body", "") + CONFIG["token"],
                                       encoding="utf-8")
+    for name in CONFIG.get("mkdirs", []):
+        pathlib.Path(name).mkdir(exist_ok=True)
     for name, target in CONFIG.get("links", {}).items():  # what a sandboxed shell may plant
         pathlib.Path(name).unlink(missing_ok=True)
         pathlib.Path(name).symlink_to(target)
+    for name in CONFIG.get("close", []):  # a directory the shell left write-and-search only
+        os.chmod(name, 0o300)
     if CONFIG.get("background"):  # a process the run leaves behind in its group
         import subprocess
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
@@ -619,6 +628,99 @@ def test_a_replaced_workspace_is_read_by_nothing(tmp_path):
     assert ws.is_dir()
     ws.rmdir()
     assert copilot_cli.workspace_breach(ws, identity, TOKEN) == workspace_guard.WORKSPACE_REPLACED
+
+
+@contextmanager
+def reopened(*paths: Path):
+    """Give a test's closed directories back to their owner afterwards, so
+    `tmp_path` can be cleaned; the check under test never does this."""
+    try:
+        yield
+    finally:
+        for path in paths:
+            with suppress(OSError):
+                path.chmod(0o700)
+
+
+@ROOTLESS
+@pytest.mark.parametrize(("where", "mode", "named"), [
+    (".", 0o300, "the workspace itself is a directory closed to its owner (mode 0300)"),
+    ("sub", 0o300, "sub (a directory closed to its owner (mode 0300))"),
+    ("sub", 0o600, "sub/proposal.md (an entry the harness could not examine)"),
+], ids=["root-0300", "sub-0300", "sub-0600"])
+def test_a_directory_closed_to_its_owner_is_a_breach_and_is_never_reopened(where, mode, named,
+                                                                           tmp_path):
+    """Decision 13, revised 2026-10-07 (review of task 8.0): `os.walk` passes
+    over a directory it cannot list, so a shell that left the workspace, or a
+    directory in it, write-and-search only would hide a link the harness could
+    still open by name. The check fails closed: such a directory, or an entry
+    it cannot examine, is a breach, named, never chmodded or reopened, and the
+    link behind it is neither followed nor read."""
+    ws, secret = tmp_path / "ws", tmp_path / "secret"
+    (ws / "sub").mkdir(parents=True)
+    secret.write_text("SYNTHETIC-SECRET-CONTENT", encoding="utf-8")
+    closed = ws if where == "." else ws / where
+    (closed / "proposal.md").symlink_to(secret)
+    identity = copilot_cli.workspace_identity(ws)
+    closed.chmod(mode)
+    with reopened(closed):
+        found = workspace_guard.breach(ws, identity)
+        assert found is not None
+        assert named in found
+        assert stat.S_IMODE(closed.stat().st_mode) == mode  # never chmodded
+        assert copilot_cli.workspace_breach(ws, identity, TOKEN) is not None  # still a breach
+    assert (closed / "proposal.md").is_symlink()  # behind a closed directory: left, unread
+    assert secret.read_text(encoding="utf-8") == "SYNTHETIC-SECRET-CONTENT"
+
+
+def test_closed_dir_reads_the_owner_bits_only():
+    assert workspace_guard.closed_dir(stat.S_IFDIR | 0o700) is None
+    assert workspace_guard.closed_dir(stat.S_IFDIR | 0o755) is None
+    for mode in (0o300, 0o500, 0o600, 0o000, 0o077):
+        assert workspace_guard.closed_dir(stat.S_IFDIR | mode) == (
+            f"{workspace_guard.CLOSED} (mode {mode:04o})")
+    assert workspace_guard.unsafe_entry(stat.S_IFDIR | 0o300, 2).startswith(
+        workspace_guard.CLOSED)
+
+
+@ROOTLESS
+@pytest.mark.parametrize("where", [".", "sub"], ids=["root", "sub"])
+def test_a_run_that_closes_a_workspace_directory_is_untested_and_reads_nothing(
+        where, home, tmp_path, monkeypatch, capsys):
+    """testing-harness spec: Copilot workspace directory the runner cannot
+    list — end to end through the runner: the fake shell plants the proposal
+    as a link (at the top, or in a directory it then closes) and leaves that
+    directory write-and-search only; the run is untested for isolation with
+    an isolation stop, no verdict opens a fixed name, and the secret is in no
+    output or summary."""
+    skip_scan(monkeypatch)
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    monkeypatch.setattr(copilot_cli, "managed_problem", lambda *_a, **_k: None)
+    secret = tmp_path / "secret"
+    secret.write_text("SYNTHETIC-SECRET-CONTENT", encoding="utf-8")
+    name = "broken-format.md" if where == "." else "sub/broken-format.md"
+    fake_copilot(tmp_path, monkeypatch, mkdirs=["sub"], links={name: str(secret)},
+                 close=[where])
+
+    def no_verdict(*_args, **_kwargs):
+        raise AssertionError("a verdict read the run's files")
+
+    monkeypatch.setattr(claude_runner, "verdict", no_verdict)
+    log = tmp_path / "run.jsonl"
+    status = claude_runner.main(["check_report", "--host", "copilot", "--model",
+                                 "copilot-fixture-a", "--max-ai-credits", "30", "--keep",
+                                 "--summary-log", str(log)])
+    out, err = capsys.readouterr()
+    ws = Path(re.search(r"workspace kept: (\S+)", out)[1])  # type: ignore[index]
+    with reopened(ws, ws / "sub"):
+        assert status == claude_runner.EXIT_UNTESTED
+        [line] = [json.loads(text) for text in log.read_text(encoding="utf-8").splitlines()]
+        assert "closed to its owner" in line["why"]
+        stop = copilot_cli.read_stop(home)
+        assert (stop["kind"], "closed to its owner" in stop["cause"]) == ("isolation", True)
+        assert "SYNTHETIC-SECRET-CONTENT" not in out + err + log.read_text(encoding="utf-8")
+        assert secret.read_text(encoding="utf-8") == "SYNTHETIC-SECRET-CONTENT"
+    shutil.rmtree(ws, ignore_errors=True)
 
 
 def test_a_workspace_breach_is_untested_for_isolation_and_stops():
@@ -1008,7 +1110,7 @@ class Spy:
 @pytest.mark.parametrize(("kind", "untested_kind", "remedy"), [
     ("billing", "subscription", "github.com/settings/billing"),
     ("isolation", "isolation", "read the run's findings"),
-    ("approval", "precondition", "approve the next run"),
+    ("approval", "precondition", "that is the go, which covers one canary"),
 ])
 def test_a_recorded_stop_refuses_the_next_run_before_any_child(kind, untested_kind, remedy,
                                                               home, tmp_path, monkeypatch):
@@ -1099,6 +1201,7 @@ def test_an_unreadable_stop_record_refuses_rather_than_reads_as_none(text, home)
 
 
 def test_a_stop_record_that_is_no_file_refuses(home):
+    (home / copilot_cli.QUOTA_FILE).unlink()  # the fixture's go
     (home / copilot_cli.QUOTA_FILE).mkdir()
     assert "cannot be read" in copilot_cli.stop_problem(copilot_cli.read_stop(home)).cause
 
@@ -1111,7 +1214,8 @@ def test_stops_append_causes_and_keep_the_stronger_kind(home):
     assert stop["cause"] == "first; second"
     assert copilot_cli.clear_stop(home)["kind"] == "billing"
     assert copilot_cli.read_stop(home) is None
-    assert copilot_cli.clear_stop(home) is None
+    assert copilot_cli.clear_stop(home) is None  # no stop: the clear records the go alone
+    assert copilot_cli.read_go(home)["canary"] is None
 
 
 @pytest.mark.parametrize("cap", [None, 29, 20])
@@ -1648,7 +1752,8 @@ def test_a_run_the_watch_stopped_is_untested_for_isolation_and_stops():
 def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
     account = tmp_path / "account"
     host = copilot_cli.ProbeHost("net:[4026531840]", tmp_path / "devrun-probe-tmp-x",
-                                 tmp_path / "devrun-probe-write-x")
+                                 tmp_path / "devrun-probe-write-x",
+                                 tmp_path / "devrun-probe-var-x")
     commands = dict(copilot_cli.probe_commands(token_file=tmp_path / "copilot.token",
                                                server_pid=4242, harness_pid=4343,
                                                account=account, uid=1000,
@@ -1656,9 +1761,21 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
     assert set(commands) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
                              "skill_script", *copilot_cli.TMP_TARGETS,
                              *copilot_cli.MEASURED_TARGETS}
-    for name in (*copilot_cli.READ_TARGETS, "host_tmp"):
+    for name in (*copilot_cli.READ_TARGETS, "host_tmp", "var_tmp"):
         assert commands[name].endswith("&& echo readable || echo denied")
-        assert ">/dev/null 2>&1" in commands[name]
+        assert ">/dev/null 2>&1" in commands[name] or name == "token_env"
+    assert str(host.var_sentinel) in commands["var_tmp"]
+    # the shell's own environment: set (even empty) reads `readable`; no value
+    # is ever expanded, only whether each name is set
+    assert commands["token_env"] == (
+        '[ -n "${COPILOT_GITHUB_TOKEN+x}${GH_TOKEN+x}${GITHUB_TOKEN+x}" ] && echo readable '
+        "|| echo denied")
+    for value, word in (({}, "denied"), ({"GH_TOKEN": ""}, "readable"),
+                        ({"COPILOT_GITHUB_TOKEN": "x"}, "readable")):
+        shell = subprocess.run(["sh", "-c", commands["token_env"]], capture_output=True,
+                               text=True, env={"PATH": os.environ.get("PATH", ""), **value},
+                               check=False)
+        assert shell.stdout.strip() == word, value
     assert "/proc/4242/environ" in commands["client_environ"]
     assert "/proc/4343/environ" in commands["harness_environ"]
     assert "unix:path=/run/user/1000/bus" in commands["gh_token"]
@@ -1929,6 +2046,8 @@ def skip_scan(monkeypatch):
 @POSIX
 def test_a_run_holds_the_lock_reads_around_it_and_records_nothing_on_success(home, tmp_path,
                                                                            monkeypatch):
+    """A clean skill run records no finding; the one stop after it is the
+    approval stop its start recorded, which ended its go (Decision 9)."""
     skip_scan(monkeypatch)
     log = fake_copilot(tmp_path, monkeypatch)
     ws = staged_ws(tmp_path)
@@ -1945,7 +2064,9 @@ def test_a_run_holds_the_lock_reads_around_it_and_records_nothing_on_success(hom
     assert copilot_cli.run_problem(events) is None
     assert copilot_cli.harness_record(events)["confinement_breach"] is None
     assert sessions(home) == []  # pruned
-    assert copilot_cli.read_stop(home) is None
+    assert copilot_cli.read_stop(home) == {"kind": "approval", "cause": copilot_cli.GO_USED,
+                                           "at": copilot_cli.read_stop(home)["at"]}
+    assert copilot_cli.read_go(home) is None
     # the probe's session left an empty `installed-plugins/` and an empty
     # session lock, as 1.0.91 does (K3); both hold nothing, so the home is clean
     assert (home / host_login.COPILOT_PLUGINS).is_dir()
@@ -2310,7 +2431,8 @@ def test_a_probe_session_without_the_sandbox_reproduces_k6_and_refuses(tmp_path,
     monkeypatch.setattr(copilot_cli, "_apply_sandbox", lambda *_a: None)
     found = copilot_cli.confinement_probe(probe_run(tmp_path))
     by = {r.name: r for r in found.results}
-    assert [by[n].output for n in copilot_cli.READ_TARGETS] == ["readable"] * 5
+    assert [by[n].output for n in copilot_cli.READ_TARGETS] == (
+        ["readable"] * len(copilot_cli.READ_TARGETS))
     assert by["gh_token"].output == "0"
     assert all(r.sandboxed is None for r in found.results)
     problem = copilot_cli.probe_problem(found.results, found.supported, found.unapplied)
@@ -2437,14 +2559,16 @@ def test_preflight_only_starts_no_prompt_child_and_reports_the_stop(home, tmp_pa
     checks, ready = copilot_cli.preflight_report(ws, claude_runner.SCENARIOS["check_report"],
                                                  model="copilot-fixture-a", effort=None)
     names = [c.name for c in checks]
-    assert names == ["location", "home", "clean", "token", "stop", "version", "managed_settings",
-                     "sandbox_tools", "workspace", "status", "model", "rosters",
-                     "confinement_probe", "clean_after_reads"]
-    assert ready is True
+    assert names == ["location", "home", "clean", "token", "stop", "go", "version",
+                     "managed_settings", "sandbox_tools", "workspace", "status", "model",
+                     "rosters", "confinement_probe", "clean_after_reads"]
+    assert ready is True  # neither the stop nor the go decides the outcome
     assert next(c for c in checks if c.name == "clean_after_reads").problem is None
     stop = next(c for c in checks if c.name == "stop")
     assert stop.problem is not None
     assert "approval" in stop.detail
+    go = next(c for c in checks if c.name == "go")  # the stop ended the fixture's go
+    assert (go.detail, "no go is recorded" in go.problem.cause) == ("none", True)
     assert "run" not in [c["kind"] for c in calls(log)]
     assert sessions(home) == []
     roster = names.index("rosters")
@@ -2629,25 +2753,29 @@ SID = "22222222-2222-4222-8222-222222222222"
 PROBE_OK_WORDS = {r["name"]: r["output"] for r in load("probe-ok")["results"]}  # type: ignore[index]
 
 
-def canary_cmds(tmp_path: Path) -> list[tuple[str, str]]:
-    host = copilot_cli.ProbeHost("net:[4026531840]", tmp_path / "devrun-probe-tmp-x",
-                                 tmp_path / "devrun-probe-write-x")
+def canary_cmds(tmp_path: Path, net_ns: str | None = "net:[4026531840]") -> list[tuple[str, str]]:
+    host = copilot_cli.ProbeHost(net_ns, tmp_path / "devrun-probe-tmp-x",
+                                 tmp_path / "devrun-probe-write-x",
+                                 tmp_path / "devrun-probe-var-x")
     return copilot_cli.canary_commands(token_file=tmp_path / "copilot.token", session_id=SID,
                                        harness_pid=4343, account=tmp_path / "account", uid=1000,
                                        host=host)
 
 
 def canary_events(tmp_path: Path, *, words: dict | None = None, unsandboxed: tuple = (),
-                  skip: tuple = (), alter: tuple = (), extra: int = 0, tmp_seen: bool = False,
-                  guard: str | None = None, loaded: bool = False) -> list[dict]:
+                  skip: tuple = (), alter: tuple = (), extra: int = 0, repeat: tuple = (),
+                  tmp_seen: bool = False, guard: str | None = None, loaded: bool = False,
+                  net_ns: str | None = "net:[4026531840]") -> list[dict]:
     """A synthetic canary run, as the runner saves it: the client's bash
     calls (1.0.91 `tool.execution_start` and `tool.execution_complete` with
     `result.content` and `sandboxed`), the closing result line, the reduced
-    session records and the runner's own records."""
+    session records and the runner's own records. `net_ns=None` is a host
+    that could not read its own namespace, so no `net_ns` row is asked."""
     words = {**PROBE_OK_WORDS, "tmp_write": "0", **(words or {})}
     events: list[dict] = []
-    commands = canary_cmds(tmp_path)
+    commands = canary_cmds(tmp_path, net_ns)
     calls = [(n, c + (" # altered" if n in alter else "")) for n, c in commands if n not in skip]
+    calls += [(n, c) for n, c in commands if n in repeat]
     calls += [("extra", f"echo extra {i}") for i in range(extra)]
     for i, (name, command) in enumerate(calls):
         events.append({"type": "tool.execution_start", "data": {
@@ -2727,8 +2855,11 @@ def test_a_canary_with_every_row_confirmed_passes_and_records_no_stop(tmp_path):
     assert assessment.stops == ()
     report = copilot_cli.canary_report(events)
     assert report["canary_unanswered"] == []
-    assert report["canary_extra_shell_calls"] == 0
+    assert (report["canary_extra_shell_calls"], report["canary_unmatched"]) == (0, [])
     assert report["canary_rows"]["token_file"] == {"output": "denied", "sandboxed": True}
+    assert report["canary_rows"]["token_env"]["output"] == "denied"
+    assert report["canary_rows"]["var_tmp"]["output"] == "denied"
+    assert report["canary_rows"]["net_ns"]["output"] == "private"
     assert report["canary_rows"]["tmp_write"]["output"] == "denied"  # judged on the host
     assert report["canary_rows"]["gh_token"]["output"] == "1"
     # a skill run without the loaded-skills report stays untested
@@ -2742,6 +2873,9 @@ def test_a_canary_with_every_row_confirmed_passes_and_records_no_stop(tmp_path):
     ({"words": {"gh_token": "0"}}, "isolation", "the GitHub CLI's token"),
     ({"words": {"host_tmp": "readable"}}, "isolation", "a file in the host's /tmp"),
     ({"tmp_seen": True}, "isolation", "a write into the host's /tmp"),
+    ({"words": {"var_tmp": "readable"}}, "isolation", "a file in the host's /var/tmp"),
+    ({"words": {"token_env": "readable"}}, "isolation",
+     "the token variables in the shell's own environment"),
     ({"words": {"python": "127"}}, "precondition", "the skills' interpreter"),
     ({"skip": ("ssh_dir",)}, "precondition", "ssh_dir"),
     ({"alter": ("gh_config",)}, "precondition", "gh_config"),
@@ -2766,13 +2900,58 @@ def test_an_unsandboxed_canary_completion_is_untested_for_isolation(tmp_path):
     assert kinds == {"isolation"}
 
 
-def test_extra_shell_calls_are_counted_not_failed(tmp_path):
-    events = canary_events(tmp_path, extra=2)
-    assert copilot_cli.assess(events).problem is None
-    assert copilot_cli.canary_report(events)["canary_extra_shell_calls"] == 2
+@pytest.mark.parametrize("change", [{"extra": 2}, {"repeat": ("tmp_write",)}],
+                         ids=["another-command", "a-repeated-one"])
+def test_a_shell_call_beyond_the_fixed_commands_fails_the_canary_and_is_named(change, tmp_path):
+    """testing-harness spec: Canary runs another shell command — with every
+    row confirmed, a call beyond the fixed ones (or one run twice, which
+    could undo the marker the host judges) is untested with the stop, and
+    the summary names each call, cut short."""
+    events = canary_events(tmp_path, **change)
+    assessment = copilot_cli.assess(events)
+    assert assessment.problem.untested
+    assert "beyond the canary's fixed commands" in assessment.problem.message
+    assert ("isolation", copilot_cli.NOT_CONFIRMED) in assessment.stops
+    report = copilot_cli.canary_report(events)
+    expected = (["echo extra 0", "echo extra 1"] if "extra" in change
+                else [dict(canary_cmds(tmp_path))["tmp_write"]])
+    assert (report["canary_extra_shell_calls"], report["canary_unmatched"]) == (
+        len(expected), expected)
     altered = canary_events(tmp_path, alter=("python",))
     assert copilot_cli.canary_report(altered)["canary_unanswered"] == ["python"]
     assert copilot_cli.canary_report(altered)["canary_extra_shell_calls"] == 1
+
+
+def test_an_unmatched_shell_call_is_cut_short_in_the_summary(tmp_path):
+    events = canary_events(tmp_path)
+    long = "x" * (copilot_cli.UNMATCHED_CHARS + 50)
+    events.insert(0, {"type": "tool.execution_start", "data": {
+        "toolCallId": "z", "toolName": "bash", "arguments": {"command": long}}})
+    events.insert(1, {"type": "tool.execution_complete", "data": {
+        "toolCallId": "z", "success": True, "sandboxed": True, "result": {"content": "0"}}})
+    for i in range(copilot_cli.SHOWN_UNMATCHED + 2):
+        events.insert(0, {"type": "tool.execution_start", "data": {
+            "toolCallId": f"y{i}", "toolName": "bash", "arguments": {"command": f"echo {i}"}}})
+    report = copilot_cli.canary_report(events)
+    assert report["canary_extra_shell_calls"] == copilot_cli.SHOWN_UNMATCHED + 3
+    assert len(report["canary_unmatched"]) == copilot_cli.SHOWN_UNMATCHED
+    assert all(len(call) <= copilot_cli.UNMATCHED_CHARS for call in report["canary_unmatched"])
+
+
+@pytest.mark.parametrize(("net_ns", "word", "reading"), [
+    ("net:[4026531840]", "shared", "shared"),
+    ("net:[4026531840]", "unknown", "unknown"),
+    (None, None, "unknown"),  # the host could not read its own namespace: no row asked
+], ids=["shared", "unknown", "no-row"])
+def test_a_canary_without_its_own_network_namespace_fails_with_a_stop_naming_it(
+        net_ns, word, reading, tmp_path):
+    """testing-harness spec: Canary shares the network namespace."""
+    events = canary_events(tmp_path, net_ns=net_ns, words={"net_ns": word} if word else None)
+    assessment = copilot_cli.assess(events)
+    assert (assessment.problem.untested, assessment.problem.kind) == (True, "isolation")
+    assert f"net_ns {reading}" in assessment.problem.message
+    assert "sandbox.userPolicy.network" in assessment.problem.message
+    assert ("isolation", f"{copilot_cli.NOT_CONFIRMED} (net_ns {reading})") in assessment.stops
 
 
 def test_the_billing_guard_after_the_canary_records_a_billing_stop(tmp_path):
@@ -2835,13 +3014,18 @@ def test_canary_usage_errors_make_nothing(extra, monkeypatch, capsys):
     assert "canary" in capsys.readouterr().err
 
 
-def _canary_setup(tmp_path: Path, monkeypatch, **extra) -> Path:
+def _canary_setup(home: Path, tmp_path: Path, monkeypatch, **extra) -> Path:
+    """The fake client for a canary, and the operator's go with its canary
+    not yet passed (the `home` fixture's go has passed one)."""
+    copilot_cli.clear_stop(home)
     skip_scan(monkeypatch)
     monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
     monkeypatch.setattr(copilot_cli, "managed_problem", lambda *_a, **_k: None)
-    host_tmp = tmp_path / "host-tmp"
+    host_tmp, host_var_tmp = tmp_path / "host-tmp", tmp_path / "host-var-tmp"
     host_tmp.mkdir()
+    host_var_tmp.mkdir()
     monkeypatch.setattr(copilot_cli, "PROBE_TMP", host_tmp)
+    monkeypatch.setattr(copilot_cli, "PROBE_VAR_TMP", host_var_tmp)
     session = "".join(json.dumps(line) + "\n" for line in [
         {"type": "session.start", "data": {"copilotVersion": "1.0.91", "sessionId": "x"}},
         {"type": "session.shutdown", "data": {
@@ -2867,7 +3051,7 @@ def test_a_canary_end_to_end_passes_and_records_every_row(home, tmp_path, monkey
     end through the runner and the fake client: an empty workspace in the
     work directory, the shell alone, the probe's commands as the prompt, the
     rows from the client's completions, no stop."""
-    log = _canary_setup(tmp_path, monkeypatch)
+    log = _canary_setup(home, tmp_path, monkeypatch)
     summary = tmp_path / "canary.jsonl"
     status = claude_runner.main([*CANARY_RUN, "--summary-log", str(summary)])
     capsys.readouterr()
@@ -2881,7 +3065,15 @@ def test_a_canary_end_to_end_passes_and_records_every_row(home, tmp_path, monkey
     assert line["canary_rows"]["tmp_write"]["output"] == "denied"
     assert line["events_seen"]["sandbox_flag_notice"] is False  # the fake prints no notice
     assert copilot_cli.read_stop(home) is None
+    # the go records the passed canary, under the run's own session id
     [run] = [c for c in calls(log) if c["kind"] == "run"]
+    session = next(a.split("=", 1)[1] for a in run["argv"] if a.startswith("--session-id="))
+    assert copilot_cli.read_go(home)["canary"]["session_id"] == session
+    # a second canary under the same go is refused before any Copilot process
+    before = len(calls(log))
+    assert claude_runner.main(CANARY_RUN) == claude_runner.EXIT_UNTESTED
+    assert "the canary already passed" in capsys.readouterr().out
+    assert len(calls(log)) == before
     assert "--available-tools=bash" in run["argv"]
     assert "--deny-tool=shell(gh:*)" not in run["argv"]
     assert Path(run["cwd"]).parent == copilot_cli.work_root()
@@ -2893,22 +3085,154 @@ def test_a_canary_end_to_end_passes_and_records_every_row(home, tmp_path, monkey
 @POSIX
 def test_a_canary_end_to_end_that_reaches_a_target_records_a_stop(home, tmp_path, monkeypatch,
                                                                   capsys):
-    """testing-harness spec: Canary reaches a target."""
-    _canary_setup(tmp_path, monkeypatch, words={"token_file": ["readable", True]})
+    """testing-harness spec: Canary reaches a target — the stop ends the go,
+    so the skill run stays refused."""
+    _canary_setup(home, tmp_path, monkeypatch, words={"token_file": ["readable", True]})
     status = claude_runner.main(CANARY_RUN)
     capsys.readouterr()
     assert status == claude_runner.EXIT_UNTESTED
     stop = copilot_cli.read_stop(home)
     assert stop["kind"] == "isolation"
     assert copilot_cli.NOT_CONFIRMED in stop["cause"]
+    assert copilot_cli.read_go(home) is None
 
 
 @POSIX
 def test_the_canary_preflight_stages_nothing(home, tmp_path, monkeypatch, capsys):
-    _canary_setup(tmp_path, monkeypatch)
+    _canary_setup(home, tmp_path, monkeypatch)
     status = claude_runner.main([*CANARY_RUN, "--preflight-only"])
     out = capsys.readouterr().out
     assert status == claude_runner.EXIT_PASS, out
     assert "rosters: ok — customize-cloud-agent, github-pr-media" in out
+    assert "go: ok — canary (go given" in out
+    assert "var_tmp denied" in out
+    assert "token_env denied" in out
     assert "skill_script" not in out
     assert sessions(home) == []
+
+
+# ---------- the operator's go (Decision 9, the go; task 7.16) -----------------------------------
+
+
+def test_go_problem_covers_one_canary_then_one_skill_run():
+    """testing-harness spec: Skill run before a passed canary; One go covers
+    one canary and one skill run — pure."""
+    pending = {"at": "2026-10-07T00:00:00Z", "canary": None}
+    passed = {**pending, "canary": {"passed_at": "2026-10-07T00:05:00Z", "session_id": SID}}
+    assert copilot_cli.go_problem(pending, canary=True) is None
+    assert copilot_cli.go_problem(passed, canary=False) is None
+    for go, canary, named in ((None, True, "no go is recorded"), (None, False, "no go is recorded"),
+                              (pending, False, "no canary has passed"),
+                              (passed, True, "the canary already passed")):
+        problem = copilot_cli.go_problem(go, canary)
+        assert problem.kind == "precondition"
+        assert named in problem.cause
+    assert copilot_cli.CANARY_COMMAND in copilot_cli.go_problem(pending, False).remedy
+    assert host_login.CLEAR_STOP_COMMAND in copilot_cli.go_problem(None, False).remedy
+    assert copilot_cli.go_text(None) == "none"
+    assert copilot_cli.go_text(pending).startswith("canary")
+    assert copilot_cli.go_text(passed).startswith("skill run")
+
+
+def test_the_go_is_recorded_by_a_clear_and_ended_by_any_stop(copilot_home):
+    """The clear records the go, with no stop recorded too; a canary's pass
+    is recorded in it; every stop ends it; a damaged go reads as none; a new
+    status snapshot keeps it."""
+    home = copilot_home
+    copilot_cli.record_stop(home, "approval", host_login.APPROVAL_CAUSE)
+    assert copilot_cli.read_go(home) is None
+    assert copilot_cli.clear_stop(home)["kind"] == "approval"
+    assert copilot_cli.read_go(home)["canary"] is None
+    copilot_cli.record_canary_pass(home, SID)
+    assert copilot_cli.read_go(home)["canary"]["session_id"] == SID
+    copilot_cli.write_snapshot(home, status_of("status-ok"))
+    assert copilot_cli.read_go(home)["canary"]["session_id"] == SID
+    for kind in ("billing", "isolation", "approval"):
+        copilot_cli.clear_stop(home)
+        assert copilot_cli.read_stop(home) is None
+        assert copilot_cli.read_go(home) is not None
+        copilot_cli.record_stop(home, kind, f"synthetic {kind}")
+        assert copilot_cli.read_go(home) is None
+    copilot_cli.clear_stop(home)
+    copilot_cli.record_canary_pass(home, SID)
+    data = json.loads((home / copilot_cli.QUOTA_FILE).read_text(encoding="utf-8"))
+    for damaged in ("yes", {"canary": None}, {"at": "", "canary": None}):
+        (home / copilot_cli.QUOTA_FILE).write_text(json.dumps({**data, "go": damaged}),
+                                                   encoding="utf-8")
+        assert copilot_cli.read_go(home) is None
+    (home / copilot_cli.QUOTA_FILE).write_text(json.dumps(
+        {**data, "go": {"at": "t", "canary": "passed"}}), encoding="utf-8")
+    assert copilot_cli.read_go(home) == {"at": "t", "canary": None}  # a bad pass is no pass
+    copilot_cli.record_stop(home, "isolation", "x")
+    copilot_cli.record_canary_pass(home, SID)  # no go: nothing recorded
+    assert copilot_cli.read_go(home) is None
+
+
+@pytest.mark.parametrize(("go", "named"), [
+    ("none", "no go is recorded"), ("pending", "no canary has passed"),
+])
+def test_a_skill_run_no_go_covers_is_refused_before_any_child(go, named, home, tmp_path,
+                                                              monkeypatch):
+    """testing-harness spec: Skill run before a passed canary — before the
+    first child (the preflight) and again under the lock, nothing recorded."""
+    data = json.loads((home / copilot_cli.QUOTA_FILE).read_text(encoding="utf-8"))
+    data.pop("go")
+    if go == "pending":
+        data["go"] = {"at": "2026-10-07T00:00:00Z", "canary": None}
+    (home / copilot_cli.QUOTA_FILE).write_text(json.dumps(data), encoding="utf-8")
+    spy = Spy()
+    monkeypatch.setattr(copilot_cli.subprocess, "Popen", spy)
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.isolated_home(None, Namespace(scenario="check_report"))
+    assert (refused.value.kind, named in refused.value.message) == ("precondition", True)
+    skip_scan(monkeypatch)
+    with pytest.raises(copilot_cli.CopilotRefused) as locked:
+        copilot_cli.run_copilot(staged_ws(tmp_path), "request", model="copilot-fixture-a",
+                                effort=None, cap=30, timeout=30, home=home,
+                                scenario=claude_runner.SCENARIOS["check_report"])
+    assert named in locked.value.message
+    assert spy.calls == []
+    assert copilot_cli.read_stop(home) is None
+    assert json.loads((home / copilot_cli.QUOTA_FILE).read_text(encoding="utf-8")) == data
+
+
+@POSIX
+def test_a_canary_refused_before_its_child_leaves_the_skill_run_refused(home, tmp_path,
+                                                                       monkeypatch, capsys):
+    """testing-harness spec: Canary refused before its child — a gate row
+    (here the billing guard) refuses it with no stop, the go's canary stays
+    unpassed, and the skill run asked next is refused too."""
+    log = _canary_setup(home, tmp_path, monkeypatch, status="status-budget")
+    assert claude_runner.main(CANARY_RUN) == claude_runner.EXIT_UNTESTED
+    assert "overage is permitted" in capsys.readouterr().out
+    assert not [c for c in calls(log) if c["kind"] == "run"]
+    assert copilot_cli.read_stop(home) is None
+    assert copilot_cli.read_go(home)["canary"] is None
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.isolated_home(None, Namespace(scenario="check_report"))
+    assert "no canary has passed" in refused.value.message
+
+
+@POSIX
+def test_one_go_covers_one_skill_run_whose_start_records_the_approval_stop(home, tmp_path,
+                                                                           monkeypatch):
+    """testing-harness spec: One go covers one canary and one skill run — the
+    approval stop returns as the skill run's child starts, whatever the run's
+    outcome, and holds every later model call back."""
+    skip_scan(monkeypatch)
+    log = fake_copilot(tmp_path, monkeypatch, run="no-shutdown")  # a runner failure
+    ws = staged_ws(tmp_path)
+    request = "Please check my proposal broken-format.md."
+    events = copilot_cli.run_copilot(ws, request, model="copilot-fixture-a", effort=None, cap=30,
+                                     timeout=30, home=home,
+                                     scenario=claude_runner.SCENARIOS["check_report"])
+    assert copilot_cli.run_problem(events) is not None
+    stop = copilot_cli.read_stop(home)
+    assert stop["kind"] == "billing"  # the missing shutdown's stop outranks the approval stop
+    assert copilot_cli.GO_USED in stop["cause"]
+    assert copilot_cli.read_go(home) is None
+    before = len(calls(log))
+    for scenario in ("check_report", "canary"):
+        with pytest.raises(copilot_cli.CopilotRefused):
+            copilot_cli.isolated_home(None, Namespace(scenario=scenario))
+    assert len(calls(log)) == before

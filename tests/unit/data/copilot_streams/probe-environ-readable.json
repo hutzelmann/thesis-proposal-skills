@@ -63,6 +63,16 @@
       "name": "tmp_write",
       "output": "denied",
       "sandboxed": true
+    },
+    {
+      "name": "var_tmp",
+      "output": "denied",
+      "sandboxed": true
+    },
+    {
+      "name": "token_env",
+      "output": "denied",
+      "sandboxed": true
     }
   ]
 }

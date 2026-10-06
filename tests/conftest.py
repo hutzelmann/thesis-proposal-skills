@@ -98,13 +98,18 @@ def copilot_account(tmp_path, monkeypatch) -> Path:
 def copilot_home(tmp_path, monkeypatch, copilot_account) -> Path:
     """A seeded Copilot harness home under a state root in `tmp_path`, beside an
     account home of the test's own (`copilot_account`), with the synthetic
-    token in the token file beside it (owner-only)."""
+    token in the token file beside it (owner-only), and the operator's go
+    with its canary passed (add-copilot-dev-runner design Decision 9), so a
+    skill run's go check passes; tests of the go or of the canary set the go
+    themselves."""
     monkeypatch.setenv(host_login.STATE_VAR, str(tmp_path / "state"))
     path = host_login.home(host_login.COPILOT)
     assert not path.is_relative_to(copilot_account)
     host_login.seed(host_login.COPILOT, path)
     host_login.token_path(path).write_text(COPILOT_TOKEN + "\n", encoding="utf-8")
     host_login.token_path(path).chmod(0o600)
+    copilot_cli.clear_stop(path)  # the go
+    copilot_cli.record_canary_pass(path, "00000000-0000-4000-8000-000000000000")
     return path
 
 

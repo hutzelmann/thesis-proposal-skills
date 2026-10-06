@@ -13,9 +13,11 @@ A Copilot run SHALL draw only on the included AI credits of the operator's Copil
 
 - **A billing stop**, for a finding after a run that shows the run may have drawn more than its bound. The cases are listed under "After every run". Its one remedy is checking the account's billing page and then clearing the stop.
 - **An isolation stop**, for a run whose sandbox was ignored or not reported active, a run stopped at a shell call not reported as sandboxed, a run whose output carried the token's value, or a canary that did not confirm the sandbox (requirement: Dev-runner host adapters). Its one remedy is reading the run's findings and then clearing the stop.
-- **The approval stop**, which the login command records whenever it writes a token file, a reset included. It holds back the first model call after every login until the operator approves it. Its one remedy is clearing the stop, which is that approval.
+- **The approval stop**, which the login command records whenever it writes a token file, a reset included, and which the runner records again once the skill run a go covers has started (below). It holds back the next model call until the operator gives the go. Its one remedy is clearing the stop, which is that go.
 
 While a stop is recorded, every later Copilot run SHALL be refused before any Copilot process starts. The refusal names the stop's cause and its remedy. A stop record that cannot be read SHALL count as a recorded billing stop. Only the operator clears a stop, with the login command's clear option or a reset; a reset records a new approval stop. Both carry the login command's terminal and agent-marker refusals (requirement: Harness-owned host logins). A stop SHALL NOT refuse the status command or the preflight-only option (requirement: Dev-runner host adapters), which make no model call; both report it.
+
+**The go.** Clearing a stop with the login command's clear option is the operator's go, and the clear option SHALL record it in the harness home, with no stop recorded too. A go covers one canary (requirement: Dev-runner host adapters) and, only once that canary has passed, one skill run, in that order. The runner SHALL refuse as untested for a precondition, before any Copilot process starts and again once it holds the run lock: any Copilot model call while no go is recorded; a skill run while the go's canary has not passed; and a second canary once it has. A canary that passes SHALL be recorded in the go, with its time and session identifier. A canary that does not pass leaves the go's canary unpassed, whether it was refused before its child started or found wanting after it, so the skill run stays refused. Recording a stop of any kind ends the go. Once a skill run's prompt-mode child has started, the runner SHALL record the approval stop again, which ends the go, so every later model call needs a new go and, after it, a canary that passes first. The status command and the preflight-only option report what the go still covers and are not refused by it.
 
 **Environment.** These Copilot children are covered: the run, the version check, the status read, the confinement probe, and the skill and MCP listings. Each SHALL receive one final environment. The same function that builds the isolated Claude child's environment builds it from the Copilot record (requirement: Isolated child environment), and the token is added after that function. That requirement's allowlist, configuration-directory variable and account-surface variables govern Claude children only; this requirement prescribes the Copilot child's environment. The one exception is the status command's on-request read without the token (requirement: Harness-owned host logins), whose child receives the same environment less the token variable. It holds:
 
@@ -219,7 +221,7 @@ For a token-file record, the harness SHALL:
   - The settings turn off auto-update, the switch to automatic model selection, hooks, memory, editor auto-connect and experimental features, and they keep custom agents local.
   - They keep any token the client stores in a file in the home rather than in the OS keyring.
   - They pin the OS sandbox: enabled, no bypass, no git or GitHub CLI credentials inside it, and no developer-tool grants.
-  - Its deny list is built by construction, not picked entry by entry. It names, by their real paths, the operator's whole home directory, the per-user runtime directory that holds the session bus and the agent sockets, the system's shared temporary directory and the harness process's own temporary directory where that lies outside it, the harness state directory where it lies outside that home, and the token file. Those paths are resolved from the account's entry in the password database and the harness process, never from a child's scratch home. The workspace and the scratch homes lie in the Copilot work directory, outside every temporary directory; the sandbox grants the workspace as the working directory and nothing around it (requirement: Dev-runner host adapters).
+  - Its deny list is built by construction, not picked entry by entry. It names, by their real paths, the operator's whole home directory, the per-user runtime directory that holds the session bus and the agent sockets, the system's shared temporary directories (`/tmp`, and `/var/tmp` where it exists) and the harness process's own temporary directory where that lies outside them, the harness state directory where it lies outside that home, and the token file. Those paths are resolved from the account's entry in the password database and the harness process, never from a child's scratch home. The workspace and the scratch homes lie in the Copilot work directory, outside every temporary directory; the sandbox grants the workspace as the working directory and nothing around it (requirement: Dev-runner host adapters).
 
 **Commands.**
 
@@ -234,9 +236,9 @@ For a token-file record, the harness SHALL:
   - For a client-login record, its environment, the login environment, is the operator's own, so that a browser can open. Every billing variable and every host-session variable of that client is removed, and the configuration directory is set to the home. For Claude, the profile directory is also set to the home's empty one. A token-file login opens no browser. Its status read runs in that client's child environment (requirement: Copilot plan billing guard).
   - On a home that already holds a login, it SHALL first log out of that login in the home. Where the login is no file in the home, the host's own status decides whether the home holds one. For a token file, logging out means deleting the file.
   - If that logout fails, the login SHALL stop, naming the logout's exit status, and neither log in nor wipe: replacing a login whose logout did not go through could orphan a live grant.
-  - For Copilot, a clear option SHALL instead remove a recorded stop of any kind (requirement: Copilot plan billing guard), holding the run lock, and change nothing else. It carries the same terminal and agent-marker refusals. Clearing the approval stop is the operator's approval of the next model call.
+  - For Copilot, a clear option SHALL instead remove a recorded stop of any kind (requirement: Copilot plan billing guard), holding the run lock, record the operator's go, and change nothing else. It carries the same terminal and agent-marker refusals. Clearing is the operator's go: it covers one canary and, only once that canary has passed, one skill run (requirement: Copilot plan billing guard, the go). With no stop recorded, the clear option records the go alone.
 - **Reset.** A reset option SHALL log out, wipe the marked home, seed it again and log in. A failed logout stops a reset as it stops a login.
-- **Clear (Codex).** A clear option of the login command SHALL instead remove a recorded Codex isolation stop (requirement: Dev-runner host adapters), holding the run lock, and change nothing else in the home. It carries the login's terminal and agent-marker refusals, and runs no client login.
+- **Clear (Codex).** A clear option of the login command SHALL instead remove a recorded Codex isolation stop (requirement: Dev-runner host adapters), holding the run lock, and change nothing else in the home. It carries the login's terminal and agent-marker refusals, and runs no client login. A Codex reset SHALL keep a recorded isolation stop, recording it again in the reseeded home with its cause and time: a reset replaces the login, not the run's findings, so the clear option stays the stop's one remedy.
 - **Logout.**
   - A logout command SHALL run the client's own logout in the home and nowhere else.
   - For the token-file record, the logout SHALL instead delete the token file and nothing else, run no client logout, and name the page where the operator revokes the token.
@@ -258,6 +260,7 @@ For a token-file record, the harness SHALL:
     - for Copilot, from the status read: the plan class, whether billing is token based, the chosen snapshot's overage permission, overage count, overage entitlement and remaining percentage, and the reset date;
     - for Codex, whether an isolation stop is recorded, and its cause;
     - for Copilot, whether a stop is recorded, and its kind and cause;
+    - for Copilot, what the operator's go still covers: nothing, the canary, or one skill run, and when it was given;
     - for Copilot, only on request, either of two more reads:
       - the model listing, giving each model's identifier, policy state and supported efforts;
       - whether the client reports a login when the token is withheld;
@@ -309,7 +312,8 @@ For Copilot:
 - **The status read reports auth errors, or no login.** The token was rejected, has expired or was revoked. Remedy: the same as for the prefix.
 - **The status read reports an auth type other than the token the harness named.** At the pinned version the client reports the token it read from the named token variable as an SDK-configured token, as a live check recorded; that type alone counts. Any other type does not, an environment token found by automatic detection included, which disabling automatic login rules out. Remedy: report it, because another credential reached the client.
 - **The status read reports a host other than GitHub's public host.** Remedy: report it.
-- **A stop is recorded** (requirement: Copilot plan billing guard). Remedy, by its kind: for a billing stop, check the account's billing page, then run `uv run poe host-login copilot --clear-stop`; for an isolation stop, read the run's findings, then run the same command; for the approval stop, run that command to approve the next run.
+- **A stop is recorded** (requirement: Copilot plan billing guard). Remedy, by its kind: for a billing stop, check the account's billing page, then run `uv run poe host-login copilot --clear-stop`; for an isolation stop, read the run's findings, then run the same command; for the approval stop, run that command to give the go, which covers one canary and, only once it has passed, one skill run.
+- **No go covers the run** (requirement: Copilot plan billing guard, the go). Remedy: with no go recorded, run `uv run poe host-login copilot --clear-stop`; for a skill run whose go's canary has not passed, run the canary first; for a canary once the go's canary has passed, run the skill run the go covers, or give a new go with the same command.
 - **The home is not clean.** Any of these makes it unclean:
   - its settings differ from the pinned ones in any key;
   - the client's own state file is not what the client writes: it contains a GitHub token prefix anywhere, comments included; it holds a comment other than the client's own two-line header at its top; the rest is not a JSON object; it carries a top-level key outside the managed-state set fixed at the pinned version; or a managed key's value is not a timestamp string. The message names the key or the file's state, never a value;
@@ -484,7 +488,7 @@ The harness SHALL first send the client's own stop request: a termination reques
 
 #### Scenario: Copilot settings seeded before the token is read
 - **WHEN** the login command creates a Copilot home
-- **THEN** the home's settings equal the pinned ones before the token prompt appears. That includes the sandbox block, whose deny list names the operator's real home directory, per-user runtime directory and the system's shared temporary directory rather than paths under a scratch home. The home's GitHub CLI configuration directory exists and is empty
+- **THEN** the home's settings equal the pinned ones before the token prompt appears. That includes the sandbox block, whose deny list names the operator's real home directory, per-user runtime directory and the system's shared temporary directories rather than paths under a scratch home. The home's GitHub CLI configuration directory exists and is empty
 
 #### Scenario: Token stored only in the token file
 - **WHEN** the operator enters a fine-grained token at the Copilot login's prompt
@@ -636,7 +640,7 @@ The client's internal bookkeeping tools are not tool calls. A tool name that is 
 - its session record lists a skill outside the workspace's skill directory, or shows a call of the host's cloud-skill tools;
 - its stream shows an MCP tool call. The home configures no MCP server, so any call is foreign.
 
-After the run, before the runner reads or writes anything in the workspace, it SHALL check that the workspace is still the directory the run started in and holds no link, no FIFO, socket or device, and no file with a second name elsewhere: the sandbox lets the run write the workspace, and a link it makes there never touches its target, so the runner, which is not sandboxed, would otherwise act on the target. Each such entry SHALL be removed without being followed, and the run SHALL be untested for isolation with an isolation stop recorded in the Codex home; no verdict reads its files. While that stop is recorded, every later Codex run SHALL be refused as untested for isolation before any Codex process starts, naming the stop's cause and its one remedy: reading the run's findings, then clearing the stop with the login command's clear option (requirement: Harness-owned host logins). A stop record that cannot be read SHALL count as a recorded stop. The status command reports the stop and is not refused by it.
+After the run, before the runner reads or writes anything in the workspace, it SHALL check that the workspace is still the directory the run started in and holds no link, no FIFO, socket or device, and no file with a second name elsewhere: the sandbox lets the run write the workspace, and a link it makes there never touches its target, so the runner, which is not sandboxed, would otherwise act on the target. The check SHALL fail closed: the workspace and every directory in it must still be open to their owner for reading, writing and search, and every entry must be examinable, because a directory the runner cannot list would hide a link from the check while the runner could still open a fixed name in it. Each such entry SHALL be removed without being followed, a directory closed to its owner is left as it is and never reopened, and the run SHALL be untested for isolation with an isolation stop recorded in the Codex home; no verdict reads its files. While that stop is recorded, every later Codex run SHALL be refused as untested for isolation before any Codex process starts, naming the stop's cause and its one remedy: reading the run's findings, then clearing the stop with the login command's clear option (requirement: Harness-owned host logins). A stop record that cannot be read SHALL count as a recorded stop. The status command reports the stop and is not refused by it.
 
 **Isolation on Copilot.** A Copilot run SHALL see only the skills under test, installed under `<ws>/.agents/skills/`. That is the project skill directory a student's folder install writes, where the client lists the skills as project skills. Its home directory and XDG base directories SHALL be scratch directories belonging to the run.
 
@@ -661,14 +665,14 @@ After the run, it SHALL count as untested in any of these cases:
 
 - refuse to start on Windows with a usage error, because the sandbox cannot enforce its deny list there;
 - refuse the run as untested when any tool the platform's sandbox needs, as the pinned package names them, is not installed. Remedy: install the named tool;
-- before every run, and without a model call, run a confinement probe in a session that carries the run's sandbox settings. The probe SHALL first read the sandbox settings the client reads from the home, and refuse the run as untested for isolation unless they equal the pinned ones; it SHALL then apply them to its session the way the client's prompt mode does, and refuse the run as untested for isolation when that fails or is not confirmed. No probe command runs in a session those settings were not applied to, and the message never echoes the settings. Its commands are fixed in the harness; each discards its own output and reports only whether its target was denied or readable, or its exit code. The run SHALL be refused as untested for isolation when the probe can read the token file, the environment of the client process or of the harness's own process, the operator's GitHub CLI configuration or SSH directory, or can obtain the GitHub CLI's token through the per-user session bus or a credential for GitHub from git run with the operator's own home and configuration, or when the client does not report every probe command as sandboxed. The run SHALL also be refused as untested for isolation when the probe's shell can read a file the harness put in the host's shared temporary directory, or can write one there that the host then sees; a write the shell reports as done but the host never sees, because it landed in the sandbox's own throwaway layer, is denied, so the harness judges that row on the host. It SHALL be refused as untested for a precondition when the probe cannot run the skills' interpreter in the workspace, because the deny list would then fail the skill rather than confine it. The probe SHALL also report, without refusing, whether its shell shares the harness's network namespace;
+- before every run, and without a model call, run a confinement probe in a session that carries the run's sandbox settings. The probe SHALL first read the sandbox settings the client reads from the home, and refuse the run as untested for isolation unless they equal the pinned ones; it SHALL then apply them to its session the way the client's prompt mode does, and refuse the run as untested for isolation when that fails or is not confirmed. No probe command runs in a session those settings were not applied to, and the message never echoes the settings. Its commands are fixed in the harness; each discards its own output and reports only whether its target was denied or readable, or its exit code. The run SHALL be refused as untested for isolation when the probe can read the token file, the environment of the client process or of the harness's own process, the operator's GitHub CLI configuration or SSH directory, or can obtain the GitHub CLI's token through the per-user session bus or a credential for GitHub from git run with the operator's own home and configuration, or when its shell's own environment carries the token variable or a GitHub CLI token variable, or when the client does not report every probe command as sandboxed. The run SHALL also be refused as untested for isolation when the probe's shell can read a file the harness put in either of the host's shared temporary directories, `/tmp` and `/var/tmp`, or can write one into `/tmp` that the host then sees; a write the shell reports as done but the host never sees, because it landed in the sandbox's own throwaway layer, is denied, so the harness judges that row on the host. It SHALL be refused as untested for a precondition when the probe cannot run the skills' interpreter in the workspace, because the deny list would then fail the skill rather than confine it. The probe SHALL also report, without refusing, whether its shell shares the harness's network namespace;
 - while the run lasts, read its event stream and its error output as they arrive, and stop the run at the first shell call the client does not report as sandboxed, at the client's warning that the sandbox did not engage, or at the first call of the client's file tools whose path, with links resolved, leaves the workspace, so that a run whose shell is not confined does not go on with the skill prompt. The run is then untested for isolation, its message names the stop, and an isolation stop is recorded (requirement: Copilot plan billing guard). Prompt mode applies the sandbox settings itself, so a run is where its confinement is first observed; the probe shows the same settings, applied the same way but before the client's own resolution of them, confining the shell. Whatever ends a Copilot child, the runner SHALL stop every process left in the child's process group;
-- after the run, before it reads, scrubs or writes anything in the workspace, check that the workspace is still the directory the run started in and holds no link, no FIFO, socket or device, and no file with a second name elsewhere: the sandboxed shell may write the workspace, and a link it makes there never touches its target, so the runner, which is not sandboxed, would otherwise act on the target. Each such entry SHALL be removed without being followed, and the run SHALL be untested for isolation with an isolation stop recorded; no verdict reads its files. The event stream file SHALL be created afresh on every host, never written through an entry the run left at its name;
+- after the run, before it reads, scrubs or writes anything in the workspace, check that the workspace is still the directory the run started in and holds no link, no FIFO, socket or device, and no file with a second name elsewhere: the sandboxed shell may write the workspace, and a link it makes there never touches its target, so the runner, which is not sandboxed, would otherwise act on the target. The check SHALL fail closed: the workspace and every directory in it must still be open to their owner for reading, writing and search, and every entry must be examinable, because a directory the runner cannot list would hide a link from the check while the runner could still open a fixed name in it. Each such entry SHALL be removed without being followed, a directory closed to its owner is left as it is and never reopened, and the run SHALL be untested for isolation with an isolation stop recorded; no verdict reads its files. The event stream file SHALL be created afresh on every host, never written through an entry the run left at its name;
 - count the run as untested for isolation, and record an isolation stop (requirement: Copilot plan billing guard), when its stream or session record carries the client's warning that the sandbox was ignored, or lacks the client's report that the sandbox is active. Until a recorded run confirms which event reports it, the runner uses the event the pinned package's source names.
 
 Limiting the sandboxed shell's network per scenario is not part of this requirement.
 
-**Canary on Copilot.** The first model call after the operator's approval SHALL be a canary run, which confirms the sandbox the client's prompt mode resolves and applies, and the first skill run SHALL follow only once a canary has passed. The canary is no eval scenario: no verdict, judge or support report reads it. It SHALL:
+**Canary on Copilot.** The first model call after the operator's go SHALL be a canary run, which confirms the sandbox the client's prompt mode resolves and applies, and the skill run the go covers SHALL follow only once that canary has passed; the runner enforces the order through the go it records (requirement: Copilot plan billing guard, the go). The canary is no eval scenario: no verdict, judge or support report reads it. It SHALL:
 
 - run on Copilot only, with a model named on the command line and exactly the minimum credit cap; any other cap, another host, a judge, a re-grade or the no-skill baseline is a usage error;
 - run in an empty workspace in the Copilot work directory, with no skill staged, and offer the shell tool alone;
@@ -677,7 +681,7 @@ Limiting the sandboxed shell's network per scenario is not part of this requirem
 - prompt the model with the confinement probe's fixed commands and nothing else, to be run verbatim, one per shell call, in order; a command that needs the client process's identity finds it by the run's session identifier;
 - read each command's result from the client's own shell completions, never from the model's reply, and judge the write into the host's shared temporary directory on the host.
 
-It SHALL pass only when the run has no finding a skill run's checks would make, apart from the loaded-skills report, which it records instead; when every fixed command ran and reads as the probe requires; when every shell completion is reported as sandboxed; when no sandbox warning appeared other than the client's notice that its sandbox flag is ignored; and when the billing guard still passes on the status read after the run. Any other outcome is untested and records a stop (requirement: Copilot plan billing guard): a billing stop for a billing finding, an isolation stop otherwise. A command the model skipped or altered counts as unanswered. The summary SHALL name each row with its result and its sandbox report, the shell calls that matched no fixed command, whether the ignored-flag notice appeared, and, for the client's loaded-skills, loaded-servers, session-start, result, shutdown, skill-invocation and tool-completion events, whether each reached the stream, the session record, both or neither.
+It SHALL pass only when the run has no finding a skill run's checks would make, apart from the loaded-skills report, which it records instead; when every fixed command ran exactly once, verbatim, and no other shell call ran, because a canary that ran anything else measured something else; when every row reads as the probe requires; when its shell's network namespace reads as its own, not the harness's, a shared or unknown namespace failing it until a network rule has been decided through a reviewed change; when every shell completion is reported as sandboxed; when no sandbox warning appeared other than the client's notice that its sandbox flag is ignored; and when the billing guard still passes on the status read after the run. Any outcome after its child started other than a pass is untested and records a stop (requirement: Copilot plan billing guard) naming the finding: a billing stop for a billing finding, an isolation stop otherwise. A canary refused before its child starts records no stop, and its go's canary stays unpassed. A command the model skipped or altered counts as unanswered. The summary SHALL name each row with its result and its sandbox report, each shell call that matched no fixed command or repeated one (its command, cut short), whether the ignored-flag notice appeared, and, for the client's loaded-skills, loaded-servers, session-start, result, shutdown, skill-invocation and tool-completion events, whether each reached the stream, the session record, both or neither.
 
 **Scope.**
 
@@ -739,6 +743,14 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 #### Scenario: Recorded Codex stop refuses later runs
 - **WHEN** a Codex run starts while an isolation stop is recorded in the Codex home, or while its stop record cannot be read
 - **THEN** the run is refused as untested for isolation before any Codex process starts, naming the stop's cause and the login command's clear option; the status command reports the stop and is not refused by it; the clear option, run from a terminal outside an agent session, removes the stop and changes nothing else in the home
+
+#### Scenario: Codex workspace directory the runner cannot list
+- **WHEN** a Codex run leaves its workspace, or a directory in it, open for writing and search but not for listing, with a link inside it
+- **THEN** the run is untested for isolation, an isolation stop is recorded in the Codex home, no verdict reads its files and no fixed name in the workspace is opened, the directory is not reopened, and the message names it
+
+#### Scenario: Codex reset keeps the isolation stop
+- **WHEN** the operator resets the Codex harness home while an isolation stop is recorded in it
+- **THEN** the reset logs out, wipes and seeds the home and logs in, and the stop is recorded again in the reseeded home with its cause and time, so the next Codex run is still refused until the operator clears it
 
 #### Scenario: Copilot run without a pinned model
 - **WHEN** a Copilot run is requested without a model, or with the client's automatic model selection
@@ -820,8 +832,12 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 - **THEN** the run is refused as untested for isolation before any prompt-mode child starts, the message names the target, and no output of the probe's commands appears in it
 
 #### Scenario: Host temporary directory denied to the sandboxed shell
-- **WHEN** the confinement probe's shell reads a file the harness put in the host's shared temporary directory, or writes a file there that the host then sees
+- **WHEN** the confinement probe's shell reads a file the harness put in the host's `/tmp` or `/var/tmp`, or writes a file into `/tmp` that the host then sees
 - **THEN** the run is refused as untested for isolation before any prompt-mode child starts, and the message names the temporary directory; a write that exits 0 inside the sandbox but never reaches the host reads as denied
+
+#### Scenario: Token variable in the sandboxed shell's environment
+- **WHEN** the confinement probe's shell, or a canary's, finds the token variable or a GitHub CLI token variable set in its own environment
+- **THEN** the run is refused as untested for isolation, or the canary is untested for isolation with an isolation stop, and the message names the shell's environment and never a value
 
 #### Scenario: Copilot workspace outside the system temporary directory
 - **WHEN** a Copilot run, its preflight-only option or the status command prepares a workspace or a scratch directory
@@ -842,6 +858,10 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 #### Scenario: Workspace entry the runner must not follow
 - **WHEN** a Copilot run, every shell call of it reported as sandboxed, leaves the proposal in its workspace as a link to a file outside it and the event stream file's name as a link to another
 - **THEN** both links are removed without being followed, the run is untested for isolation, no verdict reads its files, an isolation stop is recorded, the event stream is saved to a new file in the workspace, neither target is read or changed, and the message names the entries
+
+#### Scenario: Copilot workspace directory the runner cannot list
+- **WHEN** a Copilot run leaves its workspace, or a directory in it, open for writing and search but not for listing, with a link inside it
+- **THEN** the run is untested for isolation, an isolation stop is recorded, no verdict reads its files and no fixed name in the workspace is opened, the directory is not reopened, and the message names it
 
 #### Scenario: File tool outside the workspace stops the run
 - **WHEN** a Copilot run, while it lasts, calls one of the client's file tools on a path that, with links resolved, lies outside the workspace
@@ -873,7 +893,7 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 
 #### Scenario: Canary passes on confirmed confinement
 - **WHEN** a canary run's shell completions each report the call as sandboxed, each fixed command ran and reads as the probe requires, the only sandbox notice is the ignored-flag notice, and the billing guard passes on the read after the run
-- **THEN** the canary passes, no stop is recorded, and its summary names every row, the ignored-flag notice and where each listed event type arrived
+- **THEN** the canary passes, no stop is recorded, the go records the passed canary, and its summary names every row, the ignored-flag notice and where each listed event type arrived
 
 #### Scenario: Canary reaches a target
 - **WHEN** a canary's shell completion for the token file reads as readable, or one of its shell completions is not reported as sandboxed
@@ -890,6 +910,26 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 #### Scenario: Canary takes the minimum cap and the shell alone
 - **WHEN** a canary is requested with a credit cap above the minimum, on another host, or with a judge
 - **THEN** the runner exits with a usage error and starts nothing; requested correctly, its invocation offers the shell tool alone, stages no skill, and does not deny the GitHub CLI in the shell
+
+#### Scenario: Canary shares the network namespace
+- **WHEN** a canary's network-namespace row reads as the harness's own namespace, or cannot be read
+- **THEN** the canary is untested for isolation, the message and the isolation stop name the reading, and the skill run stays refused until a network rule has been decided and the operator gives a new go
+
+#### Scenario: Canary runs another shell command
+- **WHEN** a canary's model runs a shell command that matches none of the fixed commands, or runs one of them twice
+- **THEN** the canary is untested, an isolation stop is recorded, and its summary names each such command, cut short
+
+#### Scenario: Skill run before a passed canary
+- **WHEN** a Copilot skill run is requested while no go is recorded, or while the go's canary has not passed
+- **THEN** the run is refused as untested for a precondition before any Copilot process starts, naming the go's state and its remedy, and nothing is recorded
+
+#### Scenario: Canary refused before its child
+- **WHEN** a canary is refused before its prompt-mode child starts, by a check before the run or under the run lock
+- **THEN** no stop is recorded, the go's canary stays unpassed, and a skill run requested next is refused as untested for a precondition
+
+#### Scenario: One go covers one canary and one skill run
+- **WHEN** the operator clears the approval stop, a canary passes, and a skill run's prompt-mode child starts
+- **THEN** the runner records the approval stop again as that child starts, whatever the run's outcome, so a second skill run, a second canary or any other model call is refused until the operator gives a new go, after which a canary must pass first again; a canary requested once the go's canary has passed is refused as untested for a precondition
 
 ### Requirement: Isolated child environment
 An isolated Claude host child SHALL receive an environment built from an allowlist. This covers every Claude host child that runs in an isolated configuration:
@@ -1111,7 +1151,8 @@ The runner's exit status SHALL distinguish four outcomes, so that only a failed 
       - a model the listing does not offer, or offers under a policy other than enabled;
       - a served model other than the requested one, or a model switched because of a rate limit;
       - an effort reported as left unapplied, or an unknown tool name;
-      - the approval stop a login records, until the operator clears it (requirement: Copilot plan billing guard);
+      - the approval stop a login records, or the runner records once a skill run's child started, until the operator clears it (requirement: Copilot plan billing guard);
+      - a model call no go covers: none recorded, a skill run before the go's canary passed, or a second canary under one go (requirement: Copilot plan billing guard, the go);
 - any other runner failure.
 
 A run that is untested because its isolation did not hold SHALL also name in its message any API-key source, overage use, or refused or unknown rate-limit status that its stream shows, so that a surface never hides a billing problem.

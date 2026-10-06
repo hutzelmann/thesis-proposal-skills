@@ -50,7 +50,7 @@ Five parts SHALL differ per host, each behind one adapter per host: the host's c
 - its session record lists a skill outside the workspace's skill directory, or shows a call of the host's cloud-skill tools;
 - its stream shows an MCP tool call. The home configures no MCP server, so any call is foreign.
 
-After the run, before the runner reads or writes anything in the workspace, it SHALL check that the workspace is still the directory the run started in and holds no link, no FIFO, socket or device, and no file with a second name elsewhere: the sandbox lets the run write the workspace, and a link it makes there never touches its target, so the runner, which is not sandboxed, would otherwise act on the target. Each such entry SHALL be removed without being followed, and the run SHALL be untested for isolation with an isolation stop recorded in the Codex home; no verdict reads its files. While that stop is recorded, every later Codex run SHALL be refused as untested for isolation before any Codex process starts, naming the stop's cause and its one remedy: reading the run's findings, then clearing the stop with the login command's clear option (requirement: Harness-owned host logins). A stop record that cannot be read SHALL count as a recorded stop. The status command reports the stop and is not refused by it.
+After the run, before the runner reads or writes anything in the workspace, it SHALL check that the workspace is still the directory the run started in and holds no link, no FIFO, socket or device, and no file with a second name elsewhere: the sandbox lets the run write the workspace, and a link it makes there never touches its target, so the runner, which is not sandboxed, would otherwise act on the target. The check SHALL fail closed: the workspace and every directory in it must still be open to their owner for reading, writing and search, and every entry must be examinable, because a directory the runner cannot list would hide a link from the check while the runner could still open a fixed name in it. Each such entry SHALL be removed without being followed, a directory closed to its owner is left as it is and never reopened, and the run SHALL be untested for isolation with an isolation stop recorded in the Codex home; no verdict reads its files. While that stop is recorded, every later Codex run SHALL be refused as untested for isolation before any Codex process starts, naming the stop's cause and its one remedy: reading the run's findings, then clearing the stop with the login command's clear option (requirement: Harness-owned host logins). A stop record that cannot be read SHALL count as a recorded stop. The status command reports the stop and is not refused by it.
 
 **Scope.**
 
@@ -110,6 +110,14 @@ After the run, before the runner reads or writes anything in the workspace, it S
 #### Scenario: Recorded Codex stop refuses later runs
 - **WHEN** a Codex run starts while an isolation stop is recorded in the Codex home, or while its stop record cannot be read
 - **THEN** the run is refused as untested for isolation before any Codex process starts, naming the stop's cause and the login command's clear option; the status command reports the stop and is not refused by it; the clear option, run from a terminal outside an agent session, removes the stop and changes nothing else in the home
+
+#### Scenario: Codex workspace directory the runner cannot list
+- **WHEN** a Codex run leaves its workspace, or a directory in it, open for writing and search but not for listing, with a link inside it
+- **THEN** the run is untested for isolation, an isolation stop is recorded in the Codex home, no verdict reads its files and no fixed name in the workspace is opened, the directory is not reopened, and the message names it
+
+#### Scenario: Codex reset keeps the isolation stop
+- **WHEN** the operator resets the Codex harness home while an isolation stop is recorded in it
+- **THEN** the reset logs out, wipes and seeds the home and logs in, and the stop is recorded again in the reseeded home with its cause and time, so the next Codex run is still refused until the operator clears it
 
 ### Requirement: Codex plan billing guard
 A Codex run SHALL bill the operator's ChatGPT plan quota and nothing else. The account keeps money out: the operator holds the plan's credit balance at zero, with automatic reload off. The checks below are the backstop, and each one fails closed. A run that any of them refuses:
@@ -262,7 +270,7 @@ The harness SHALL keep its own login for each host client it drives, in a login 
   - On a home that already holds a login, it SHALL first log out of that login in the home. Where the login is no file in the home, the host's own status decides whether the home holds one.
   - If that logout fails, the login SHALL stop, naming the logout's exit status, and neither log in nor wipe: replacing a login whose logout did not go through could orphan a live grant.
 - **Reset.** A reset option SHALL log out, wipe the marked home, seed it again and log in. A failed logout stops a reset as it stops a login.
-- **Clear (Codex).** A clear option of the login command SHALL instead remove a recorded Codex isolation stop (requirement: Dev-runner host adapters), holding the run lock, and change nothing else in the home. It carries the login's terminal and agent-marker refusals, and runs no client login.
+- **Clear (Codex).** A clear option of the login command SHALL instead remove a recorded Codex isolation stop (requirement: Dev-runner host adapters), holding the run lock, and change nothing else in the home. It carries the login's terminal and agent-marker refusals, and runs no client login. A Codex reset SHALL keep a recorded isolation stop, recording it again in the reseeded home with its cause and time: a reset replaces the login, not the run's findings, so the clear option stays the stop's one remedy.
 - **Logout.**
   - A logout command SHALL run the client's own logout in the home and nowhere else.
   - Every logout SHALL run in the login environment: the logout command's own, the one before a login, and the one in a reset. No inherited token, profile directory or configuration directory can then steer it at another login.

@@ -1255,18 +1255,24 @@ def test_a_state_root_inside_the_account_home_is_covered_by_the_home(tmp_path, m
                     str(home.parent / "copilot.token")]
 
 
-@pytest.mark.parametrize(("own", "expected"), [
-    ("/tmp", ("/tmp",)),
-    ("/tmp/claude-1000", ("/tmp",)),  # inside /tmp: covered by it
-    ("/var/tmp/elsewhere", ("/tmp", "/var/tmp/elsewhere")),
+@pytest.mark.parametrize(("own", "var_tmp", "expected"), [
+    ("/tmp", True, ("/tmp", "/var/tmp")),
+    ("/tmp/claude-1000", True, ("/tmp", "/var/tmp")),  # inside /tmp: covered by it
+    ("/var/tmp/elsewhere", True, ("/tmp", "/var/tmp")),  # inside /var/tmp: covered by it
+    ("/srv/own-tmp", True, ("/tmp", "/var/tmp", "/srv/own-tmp")),
+    ("/var/tmp/elsewhere", False, ("/tmp", "/var/tmp/elsewhere")),  # a host without /var/tmp
 ])
-def test_the_temporary_directories_are_the_shared_one_and_the_process_own(own, expected,
-                                                                          monkeypatch):
-    """The user's decision D-b: the deny list and the Copilot work directory
-    keep out the shared `/tmp`, whatever TMPDIR says, and the process's own
-    temporary directory where TMPDIR moves it outside `/tmp`."""
+def test_the_temporary_directories_are_the_shared_ones_and_the_process_own(own, var_tmp,
+                                                                           expected, monkeypatch):
+    """The user's decision D-b, and the review of task 7.15: the deny list and
+    the Copilot work directory keep out the shared `/tmp`, whatever TMPDIR
+    says, the shared `/var/tmp` where the host has one, and the process's own
+    temporary directory where TMPDIR moves it outside both."""
     monkeypatch.setattr(host_login.tempfile, "gettempdir", lambda: own)
     monkeypatch.setattr(host_login.os.path, "realpath", lambda path: str(path))
+    real_is_dir = Path.is_dir
+    monkeypatch.setattr(host_login.Path, "is_dir", lambda path: var_tmp if str(path) == (
+        host_login.SHARED_VAR_TMP) else real_is_dir(path))
     assert REAL_TEMP_DIRS() == expected
 
 

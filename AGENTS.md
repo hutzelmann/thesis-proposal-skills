@@ -84,14 +84,14 @@ uv run poe host-status codex [--quota]  # Codex login, CLI version, feature allo
 uv run poe host-logout codex       # the user only: log the harness's Codex login out
 uv run poe dev <scenario> --host copilot --model <id> --max-ai-credits <N>   # the real Copilot CLI on the plan's included AI credits, in the harness's own Copilot home; never a matrix input
 uv run poe dev canary --host copilot --model <id> --max-ai-credits 30   # the Copilot canary: the first model call after the user's go, the probe's commands as the prompt; no eval
-uv run poe host-login copilot [--reset | --clear-stop]   # the user only, interactive: the harness's Copilot token file; --clear-stop lifts a recorded stop
-uv run poe host-status copilot [--models | --no-token]   # Copilot token, CLI version, sandbox tools, raw quota snapshot, stop; no model call (agents may run it)
+uv run poe host-login copilot [--reset | --clear-stop]   # the user only, interactive: the harness's Copilot token file; --clear-stop lifts a recorded stop and gives the go (one canary, then one skill run)
+uv run poe host-status copilot [--models | --no-token]   # Copilot token, CLI version, sandbox tools, raw quota snapshot, stop, go; no model call (agents may run it)
 uv run poe host-logout copilot     # the user only: delete the harness's Copilot token file
 ```
 
 The first Codex model call after any `host-login codex` needs the user's explicit go, like a metered run: it draws the plan quota the operator shares with their own ChatGPT use.
 
-Every Copilot login records an approval stop, and only the user clears it, with `uv run poe host-login copilot --clear-stop` from a terminal outside any agent session, which is the explicit go for the next model call (after a login: the canary, and only once it passed, the skill run the go request named); agents never read the Copilot token file (`<state>/hosts/copilot.token`), `/proc/<pid>/environ` of a Copilot child, or `ps e` output while one runs.
+Every Copilot login records an approval stop, and only the user clears it, with `uv run poe host-login copilot --clear-stop` from a terminal outside any agent session, which is the explicit go: it covers the canary and, only once that canary passed, one skill run, the one the go request named (the runner enforces the order and records the approval stop again as that skill run starts); agents never read the Copilot token file (`<state>/hosts/copilot.token`), `/proc/<pid>/environ` of a Copilot child, or `ps e` output while one runs.
 
 Agents never run `host-login` or `host-logout` — not through Bash, not through a terminal tool, and not through a TTY wrapper such as `script` — and relay a refusal that names either one to the user as a USER ACTION. The commands' own terminal and agent-session refusals are speed bumps; this rule is the guard.
 

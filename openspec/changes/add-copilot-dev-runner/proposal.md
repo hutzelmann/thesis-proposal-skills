@@ -28,7 +28,7 @@ This change lands after `close-claudeai-surfaces`, `add-harness-claude-login` an
   - Dev loop only, labelled "dev-runner (copilot), not comparable to matrix". It never writes to `logs/evals`, has no registry role and no currency alert. `--model` is required and `auto` is refused. Install scenarios are refused, `--max-budget-usd` is refused, and `--max-ai-credits N` (N ≥ 30, a soft cap) is required.
 - **A third `HostLogin` record with a new credential kind.**
   - `credential: "client-login" | "token-file"` and `token_env`; Claude and Codex keep `client-login`.
-  - `uv run poe host-login copilot [--reset | --clear-stop]` is for the user only. It seeds the home, reads the PAT with `getpass`, refuses anything but a `github_pat_` prefix, writes `<state>/hosts/copilot.token` at 0600 beside the home, and records an approval stop. Clearing that stop from a terminal is the user's go for the first model call after every login.
+  - `uv run poe host-login copilot [--reset | --clear-stop]` is for the user only. It seeds the home, reads the PAT with `getpass`, refuses anything but a `github_pat_` prefix, writes `<state>/hosts/copilot.token` at 0600 beside the home, and records an approval stop. Clearing that stop from a terminal is the user's go, which the runner records: it covers one canary and, only once that canary passed, one skill run, whose start records the approval stop again (the user's decision D-c, enforced since 2026-10-07).
   - `host-logout copilot` deletes that file and says where to revoke the token.
   - `host-status copilot [--models] [--no-token]` makes no model call, and agents may run it.
   - The harness reads exactly one token file, hands its value only to Copilot children as `COPILOT_GITHUB_TOKEN`, inspects only its prefix, scrubs the value from everything a child produced before saving or forwarding it, and never prints or logs it. Every child gets `--no-auto-login`, and every child that carries the token names it with `--auth-token-env`, because at 1.0.91 `--no-auto-login` leaves an unnamed environment token unread (measured after the first login, task 7.4b).
@@ -65,7 +65,7 @@ This change lands after `close-claudeai-surfaces`, `add-harness-claude-login` an
   - `host-login copilot`;
   - the `gh` check of K1.
 
-  K1–K4, K6a and K6, the confinement probe, cost $0. The first live run, one `check_report` on a cheap model, spends credits. It runs only after every $0 check has passed, and only once the user has cleared the approval stop from a terminal, after a go request that names the soft cap and every confinement item still unverified, the prompt-mode sandbox among them: that run is the first to observe it, and its live watch stops it at the first shell call not reported sandboxed.
+  K1–K4, K6a and K6, the confinement probe, cost $0. The first live run, one `check_report` on a cheap model, spends credits. It runs only after every $0 check has passed and a canary (the probe's fixed commands as the whole prompt, the shell alone, the minimum cap) has passed under the same go, and only once the user has cleared the approval stop from a terminal, after a go request that names the soft cap and every confinement item still unverified, the prompt-mode sandbox among them: that run is the first to observe it, and its live watch stops it at the first shell call not reported sandboxed.
 - **Out of scope:**
   - `smoke-copilot`, because the credit cap is soft;
   - routing on Copilot;

@@ -32,18 +32,21 @@ spec: Dev-runner host adapters):
   confinement probe; after it, a second read, the session's consumption and
   the sandbox reports may record a billing or isolation stop, and every login
   records an approval stop, each refusing later runs until the operator runs
-  `uv run poe host-login copilot --clear-stop`. `--preflight-only` prints every
+  `uv run poe host-login copilot --clear-stop`, which is the operator's go: it
+  covers one canary and, only once that canary passed, one skill run, whose
+  start records the approval stop again. `--preflight-only` prints every
   check before the run and starts no prompt-mode child. Copilot reports AI
   credits, not money: the summary's cost is absent, the credits, the cap and
   the overage and remaining values before and after are reported. Its
   workspaces lie in the Copilot work directory, never in the system
   temporary directory, which its sandbox denies. The pseudo-scenario `canary`
   (Copilot only, exactly `--max-ai-credits 30`) is the first model call after
-  the operator's approval: an empty workspace, the shell alone and the
-  confinement probe's commands as the whole prompt, passing only when the
-  client reports every shell call sandboxed and every row reads as the probe
-  requires; it is no eval scenario, and a canary that does not pass records a
-  stop.
+  the operator's go: an empty workspace, the shell alone and the confinement
+  probe's commands as the whole prompt, passing only when the client reports
+  every shell call sandboxed, every row reads as the probe requires, its
+  network namespace is its own and nothing else ran; it is no eval scenario,
+  and a canary that does not pass leaves the skill run refused (and, after
+  its child, records a stop).
 
 Dev loop only — not the source of record. Every summary carries its host and
 the label "dev-runner (<host>), not comparable to matrix", and a
@@ -1403,7 +1406,7 @@ def run_copilot(ws: Path, request: str, args: argparse.Namespace, home: Path) ->
 # The Copilot canary (add-copilot-dev-runner, the user's decision D-c): a
 # pseudo-scenario the positional accepts, absent from SCENARIOS, so no eval,
 # verdict, judge or support report ever reads it
-CANARY = "canary"
+CANARY = copilot_cli.CANARY_SCENARIO
 CANARY_LABEL = "dev-runner (copilot) canary, not an eval"
 
 
@@ -1674,7 +1677,8 @@ def dev_run(args: argparse.Namespace, judge: Judge | None) -> int:
 def copilot_preflight_only(args: argparse.Namespace) -> int:
     """`--preflight-only` on Copilot: stage the scenario, run and print every
     check before the run (`copilot_cli.preflight_report`), delete the
-    workspace. A recorded stop is printed and does not decide the outcome.
+    workspace. A recorded stop and the operator's go (read for the canary or
+    a skill run) are printed and do not decide the outcome.
     Exit 0 when every other check passes, 3 otherwise (a held run lock and a
     refused child environment included); no prompt-mode child. The
     workspace is made in the Copilot work directory, as a run's is; the
@@ -1691,7 +1695,8 @@ def copilot_preflight_only(args: argparse.Namespace) -> int:
                   skill_dir=HOSTS["copilot"].skill_dir)
         try:
             checks, ready = copilot_cli.preflight_report(ws, scenario, model=args.model,
-                                                         effort=args.effort)
+                                                         effort=args.effort,
+                                                         canary=args.scenario == CANARY)
         except host_login.RunLockRefused as busy:
             print(refusal(busy.problem), file=sys.stderr)
             return EXIT_UNTESTED
@@ -1700,7 +1705,7 @@ def copilot_preflight_only(args: argparse.Namespace) -> int:
             return EXIT_UNTESTED
         for check in checks:
             verdict = "ok" if check.problem is None else (
-                "recorded" if check.name == "stop" else "REFUSED")
+                "recorded" if check.name in copilot_cli.NOT_DECIDING else "REFUSED")
             print(f"{check.name}: {verdict} — {check.detail}")
             if check.problem is not None:
                 print(f"  {refusal(check.problem)}")
