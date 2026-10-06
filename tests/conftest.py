@@ -16,10 +16,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import copilot_cli
 import host_login
 import model_currency
 import pytest
 from helpers import FIXTURES, MODEL_CATALOG, REPO, failing_fetch, fixture_proposal
+
+
+class RealCopilotStarted(AssertionError):
+    """Raised by the Copilot binary seam in every L0 test that did not patch it."""
+
+
+def _no_real_copilot() -> str:
+    raise RealCopilotStarted("L0 never starts the real copilot: patch copilot_cli.binary "
+                             "with a fake script")
 
 
 @pytest.fixture(scope="session")
@@ -40,6 +50,17 @@ def _harness_login_offline(monkeypatch, _absent_state_root):
     monkeypatch.setenv(host_login.STATE_VAR, str(_absent_state_root))
     for name in (host_login.OPT_IN_VAR, host_login.LONG_LIVED_TOKEN, "ROUTING_CONFIG_DIR"):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _copilot_offline(monkeypatch):
+    """No test can start the real `copilot` (add-copilot-dev-runner design
+    Decision 14): the binary seam raises unless a test points it at a fake
+    script, before any `Popen`. The full suite also reruns after a real token
+    exists in the default state root, so a test that missed a seam would
+    otherwise spend credits without a go; `_harness_login_offline` above
+    keeps every test's state root in a temporary directory as well."""
+    monkeypatch.setattr(copilot_cli, "binary", _no_real_copilot)
 
 
 @pytest.fixture(autouse=True)

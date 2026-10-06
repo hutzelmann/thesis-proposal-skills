@@ -52,7 +52,7 @@ from claude_runner import (
     telemetry,
     verdict,
 )
-from helpers import FIXTURES, REPO, followed, shipped_registry
+from helpers import CLEAN_DRAFT, FIXTURES, REPO, followed, shipped_registry
 from host_login import CLAUDE, LOGIN_COMMAND, LoginSource, allowlisted_env, login_note
 from l1_checks import HELPER_TOOLS, load_closing_note, verdict_l2_grades, verdict_single_context
 from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, tool_calls
@@ -689,9 +689,6 @@ def judge(monkeypatch):
     monkeypatch.setattr(claude_cli, "call", fake)
     monkeypatch.setattr(claude_cli, "preflight", _no_preflight)
     return fake
-
-
-CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
 
 
 def write_draft(ws: Path) -> None:

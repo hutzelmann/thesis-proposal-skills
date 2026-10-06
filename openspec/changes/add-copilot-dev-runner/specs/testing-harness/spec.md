@@ -193,6 +193,7 @@ For a token-file record, the harness SHALL:
 - It SHALL never equal, contain, or lie inside the operator's own configuration directory of any client. For Copilot, those are `~/.copilot`, the directory an inherited `COPILOT_HOME` names, and `~/.config/github-copilot`.
 - The Codex home SHALL also lie outside the system temporary directory, because Codex refuses to place its helper binaries there.
 - A test override of the state directory SHALL be refused in any of these cases:
+  - it is not an absolute path;
   - it equals or contains the user's home directory;
   - it equals, contains or lies inside a client's own configuration directory;
   - it lies inside the repository.
@@ -201,6 +202,7 @@ For a token-file record, the harness SHALL:
 
 - When the harness creates a home, it SHALL write a marker into it.
 - It SHALL delete a home only when the home carries that marker and is not a symbolic link.
+- It SHALL seed only a home that does not exist yet. A login SHALL never adopt a directory at the home's path that lacks the marker, or a symbolic link there: it refuses, naming the directory, and writes, logs out and deletes nothing in it.
 - Before the first login, the Claude home SHALL be seeded with two things: the account-surface opt-out settings that every isolated configuration carries (requirement: Isolated measurement environment), and an empty profile directory. The seeding comes first because account content synced once stays on disk.
 - Before the first login, the Codex home SHALL be seeded with a pinned configuration. That configuration selects OpenAI's own provider, requires the ChatGPT login, and keeps the credentials in a file in the home. It also turns off web search, the update check, history, analytics, feedback and the bundled skills.
 - Before the first login, the Copilot home SHALL be seeded with a pinned settings file and an empty GitHub CLI configuration directory.
@@ -220,9 +222,10 @@ For a token-file record, the harness SHALL:
     4. run the status read (requirement: Copilot plan billing guard). The login reports ready only when that read passes the preflight, the approval stop it has just recorded apart.
   - Only the operator runs it, never an agent. It SHALL refuse when its standard input is not a terminal. It SHALL also refuse when its environment carries a marker of an agent session: a variable that a Claude Code session, or a Codex or Copilot shell, exports to the commands it runs. The refusal names the marker variables, never their values. Both refusals are speed bumps, not guards: an agent with a terminal tool has a terminal, and a marker can be unset. The rule that agents never log in is the guard.
   - For a client-login record, its environment, the login environment, is the operator's own, so that a browser can open. Every billing variable and every host-session variable of that client is removed, and the configuration directory is set to the home. For Claude, the profile directory is also set to the home's empty one. A token-file login opens no browser. Its status read runs in that client's child environment (requirement: Copilot plan billing guard).
-  - On a home that already holds a login, it SHALL first log out of that login in the home. For a token file, logging out means deleting the file.
+  - On a home that already holds a login, it SHALL first log out of that login in the home. Where the login is no file in the home, the host's own status decides whether the home holds one. For a token file, logging out means deleting the file.
+  - If that logout fails, the login SHALL stop, naming the logout's exit status, and neither log in nor wipe: replacing a login whose logout did not go through could orphan a live grant.
   - For Copilot, a clear option SHALL instead remove a recorded stop of any kind (requirement: Copilot plan billing guard), holding the run lock, and change nothing else. It carries the same terminal and agent-marker refusals. Clearing the approval stop is the operator's approval of the next model call.
-- **Reset.** A reset option SHALL log out, wipe the marked home, seed it again and log in.
+- **Reset.** A reset option SHALL log out, wipe the marked home, seed it again and log in. A failed logout stops a reset as it stops a login.
 - **Logout.**
   - A logout command SHALL run the client's own logout in the home and nowhere else.
   - For the token-file record, the logout SHALL instead delete the token file and nothing else, run no client logout, and name the page where the operator revokes the token.
@@ -248,8 +251,10 @@ For a token-file record, the harness SHALL:
       - whether the client reports a login when the token is withheld;
     - which login runs would use.
   - It SHALL never print a credential value, any part of an API key or token, an email address, a login name or an organization.
+  - The Claude status check SHALL run without the long-lived token, so that it reports the home's own login even when a token is exported.
   - Agents MAY run it.
-- **Locking.** Logout, reset, and a login over an existing login SHALL hold, while they log out and wipe, the lock the client's runs take: for Claude, the refresh claim that isolated runs take; for Codex and Copilot, the run lock. None of them may then interleave with a run that is writing a refreshed login back or running in the home.
+- **Default profile directory.** Whether the Claude host ignores the default Anthropic profile directory when the profile directory is set to the home's empty one is unverified. No Claude login, logout or status check SHALL therefore start a client while the default profile directory holds an entry or cannot be listed, whether or not a long-lived token is exported: none of them carries the token. The refusal names that directory, never its contents, and its remedy is to move the profiles aside. A Codex or Copilot client reads no Anthropic profile, so its commands are not held to this rule.
+- **Locking.** Logout, reset, and a login over an existing login SHALL hold, while they log out and wipe, the lock the client's runs take: for Claude, the same refresh claim that isolated runs take; for Codex and Copilot, the run lock. None of them may then interleave with a run that is writing a refreshed login back or running in the home.
 - **Run lock (Codex and Copilot).**
   - Runs of each of these clients SHALL execute one at a time per home.
   - Each of these SHALL hold an exclusive lock on a file in the home:
@@ -264,7 +269,9 @@ For a token-file record, the harness SHALL:
 
 For Claude:
 
-- **The home is missing, has wider permissions than owner-only, or lacks its marker.** Remedy: `uv run poe host-login claude`.
+- **The home is missing, or has wider permissions than owner-only.** Remedy: `uv run poe host-login claude`.
+- **A directory at the home's path lacks the marker.** The harness did not create it and does not adopt it. Remedy: move it aside, then run `uv run poe host-login claude`.
+- **The default Anthropic profile directory holds an entry or cannot be listed.** Remedy: move the profiles aside.
 - **The host reports no login, or the status check yields no login state.** Remedy: `uv run poe host-login claude`.
 - **The home is not clean.** Its settings differ from the pinned opt-outs, or it holds any of these: skills, agents, commands, output styles, a user memory file, or an installed plugin. Marketplace caches are allowed. Remedy: remove the named entry, or run `uv run poe host-login claude --reset`.
 - **The auth method is not the subscription login, or the API provider is not Anthropic's own API.** Remedy: `uv run poe host-login claude --reset`.
@@ -274,7 +281,8 @@ For Claude:
 For Codex:
 
 - **The installed CLI is older than the pinned minimum version.** Remedy: update the Codex CLI through the package manager.
-- **The home is missing, has wider permissions than owner-only, or lacks its marker.** Remedy: `uv run poe host-login codex`.
+- **The home is missing, or has wider permissions than owner-only.** Remedy: `uv run poe host-login codex`.
+- **A directory at the home's path lacks the marker.** The harness did not create it and does not adopt it. Remedy: move it aside, then run `uv run poe host-login codex`.
 - **The client reports no login, or a login other than the ChatGPT login.** Because the home's configuration requires the ChatGPT login, an API-key login reads as no login. Remedy: `uv run poe host-login codex`.
 - **The home is not clean.** Its configuration differs from the pinned one in any key, or it holds any of these: an agents instruction file or its override, an environment file the client loads at start-up, a hooks file, skills other than the client's bundled system skills, or memories. Remedy: remove the named entry, or run `uv run poe host-login codex --reset`.
 - **A feature outside the allowlist reads enabled.** Remedy: report it, because the pinned feature list does not match this CLI.
@@ -282,7 +290,8 @@ For Codex:
 For Copilot:
 
 - **The installed CLI is not the pinned version.** The version is read with auto-update off. Remedy: install the pinned version through the package manager, or bump the pin in a change of its own.
-- **The home is missing, has wider permissions than owner-only, or lacks its marker.** Remedy: `uv run poe host-login copilot`.
+- **The home is missing, or has wider permissions than owner-only.** Remedy: `uv run poe host-login copilot`.
+- **A directory at the home's path lacks the marker.** The harness did not create it and does not adopt it. Remedy: move it aside, then run `uv run poe host-login copilot`.
 - **The token file is missing or empty.** Remedy: `uv run poe host-login copilot`.
 - **The token's prefix is not the fine-grained token's prefix.** Remedy: create a fine-grained token that carries only Copilot Requests, then run `uv run poe host-login copilot --reset`.
 - **The status read reports auth errors, or no login.** The token was rejected, has expired or was revoked. Remedy: the same as for the prefix.
@@ -323,6 +332,8 @@ A long-lived Claude token in the environment SHALL bypass the Claude harness log
 - a dev run at its time limit;
 - a judge call at its time limit;
 - a routing case after its route, or at its limit;
+- the harness login's status check and logout at their limit;
+- the advisory audit pre-flight's call at its limit, which runs on the operator's own login;
 - a Codex run at its time limit, and a Codex quota read at its limit;
 - a Copilot run at its time limit, and a Copilot status read or listing at its limit.
 
@@ -356,9 +367,25 @@ The harness SHALL first send the client's own stop request: a termination reques
 - **WHEN** the status command runs against a logged-in home whose host status reports an email address and an organization
 - **THEN** its output carries neither, and no model call is made
 
+#### Scenario: Relative override refused
+- **WHEN** the state-directory override is a relative path
+- **THEN** every host-login command and every isolated, Codex or Copilot run refuses, naming the override, and nothing is created
+
 #### Scenario: Reset deletes only a marked home
 - **WHEN** a reset finds the home without its marker, or finds the home path to be a symbolic link
 - **THEN** it deletes nothing and refuses, naming the directory
+
+#### Scenario: Unmarked directory never adopted
+- **WHEN** the login command, without the reset option, finds a directory at the home's path that carries no marker, whether or not it holds a login
+- **THEN** it refuses, naming the directory and the remedy of moving it aside, starts no client, and writes no marker or settings into it
+
+#### Scenario: Failed logout stops a re-login
+- **WHEN** the logout that a login over an existing login, or a reset, runs first exits with a failure
+- **THEN** no login starts, nothing in the home is wiped, and the refusal names the logout's exit status
+
+#### Scenario: Profile directory bars the login commands
+- **WHEN** the Claude login, logout or status command runs while the default Anthropic profile directory holds an entry, with or without a long-lived token exported
+- **THEN** it refuses, naming that directory and not its entries, and starts no client
 
 #### Scenario: Logout stays in the home
 - **WHEN** the Claude logout command runs, or a Claude reset or a login over an existing Claude login logs out, from an environment carrying a long-lived token, an API key, a profile-directory variable and another configuration directory
@@ -578,17 +605,17 @@ The client's internal bookkeeping tools are not tool calls. A tool name that is 
 - the workspace lies inside the operator's home directory or inside the repository;
 - the workspace, or any of its parent directories up to the filesystem root, holds a skill directory other than the staged one, or an instruction, agent, rule, hook, MCP or client settings file that the client reads;
 - a machine-wide managed settings file of the client exists;
-- the client's skill listing, taken in the run's environment and working directory, names anything other than the staged skills and the client's bundled skill;
+- the client's skill listing, taken in the run's environment and working directory, names anything other than the staged skills and the client's bundled skills;
 - the client's MCP listing names a server outside the built-in names pinned for the CLI version, or one whose source is not built-in.
 
 After the run, it SHALL count as untested in any of these cases:
 
 - its stream carries no loaded-skills report, or a report that differs from the listing. Until a recorded stream shows whether that report reaches the stream, its absence counts;
-- a skill invocation in its session record names a source other than the workspace's project skills or the client's bundled skill, or a file outside the workspace's skill directory;
+- a skill invocation in its session record names a source other than the workspace's project skills or the client's bundled skills, or a file outside the workspace's skill directory;
 - its stream shows an MCP tool call, or reports an MCP server as connected;
 - its session record shows a hook event.
 
-**Sandbox on Copilot.** Only the client's OS sandbox confines the model's shell. A Copilot run SHALL therefore run under it, with the home's pinned sandbox settings (requirement: Harness-owned host logins). When the sandbox cannot start, the client only warns that it was ignored and runs the shell unconfined, so the runner checks confinement before the run as well as after it. The runner SHALL:
+**Sandbox on Copilot.** Only the client's OS sandbox confines the model's shell. A Copilot run SHALL therefore run under it, with the home's pinned sandbox settings (requirement: Harness-owned host logins). When the sandbox cannot start, earlier client versions only warned that it was ignored and ran the shell unconfined, and the pinned version warns and fails sandboxed commands; no personal setting turns either into a refusal, so the runner checks confinement before the run as well as after it. The runner SHALL:
 
 - refuse to start on Windows with a usage error, because the sandbox cannot enforce its deny list there;
 - refuse the run as untested when any tool the platform's sandbox needs, as the pinned package names them, is not installed. Remedy: install the named tool;
@@ -686,7 +713,7 @@ Limiting the sandboxed shell's network per scenario is not part of this requirem
 - **THEN** the run is refused as untested before any Copilot child starts, and the message names the path
 
 #### Scenario: Skill roster off
-- **WHEN** the client's skill listing, in the run's environment and working directory, names a skill beyond the staged skills and the bundled one
+- **WHEN** the client's skill listing, in the run's environment and working directory, names a skill beyond the staged skills and the bundled ones
 - **THEN** the run is refused as untested, the message names the skill, and no prompt-mode child starts
 
 #### Scenario: Loaded skills unreported
@@ -752,7 +779,7 @@ An isolated Claude host child SHALL receive an environment built from an allowli
 - the model-under-test child of every Claude dev-runner run in isolated mode;
 - the dev judge's child, together with its login check.
 
-It also covers the Claude harness login's status checks (requirement: Harness-owned host logins). Such a child SHALL NOT receive the launching process's environment with only the configuration directory overridden. One function SHALL build that environment for all of them, so that no second allowlist can drift from the first.
+It also covers the Claude harness login's status checks (requirement: Harness-owned host logins). Such a child SHALL NOT receive the launching process's environment with only the configuration directory overridden. One function SHALL build that environment for all of them, so that no second allowlist can drift from the first. The status check alone then drops the long-lived token from it, so that it reports the home's own login rather than the token's.
 
 A host child of a client added later is outside the allowlist, the configuration-directory variable and the account-surface variables of this requirement. The requirement that adds the client prescribes that child's environment, and the same function SHALL build it from that client's own description. That function SHALL read no credential.
 
@@ -807,7 +834,11 @@ Building the isolated environment SHALL print nothing. No runner output SHALL ca
 
 #### Scenario: Long-lived token kept
 - **WHEN** `CLAUDE_CODE_OAUTH_TOKEN` is set in the launching environment
-- **THEN** the isolated child receives it unchanged, together with `PATH` and `HOME`
+- **THEN** the isolated child receives it unchanged, together with `PATH` and `HOME`. The harness login's status check is the one exception: it receives the same environment without the token
+
+#### Scenario: Status check reports the home's own login
+- **WHEN** the harness login's status check runs from an environment that exports a long-lived token
+- **THEN** its child's environment is the allowlisted one for the home without the token, so the host reports the home's own login
 
 #### Scenario: Machine plumbing kept
 - **WHEN** the launching environment sets locale, temporary-directory, proxy, or certificate-trust variables
@@ -907,7 +938,7 @@ The runner SHALL accept a hard budget cap and pass it through to the host, where
 
 The runner SHALL label each run with its host, and as measuring either the ambient host configuration or an isolated one prepared for the run.
 
-- For an isolated Claude run, the label SHALL name the isolated directory and the login it links: the harness login, the operator's login under the explicit opt-in, or a long-lived token. For a linked login, the label SHALL also name that login's directory, which is the one place a refresh is written back.
+- For an isolated Claude run, the label SHALL name the isolated directory and the login it links: the harness login, the operator's login under the explicit opt-in, or a long-lived token. For a linked login, the label SHALL also name that login's directory, which is the one place a refresh is written back. The label SHALL follow how the configuration was prepared, never the link's state after the run: while the host refreshes, its own file stands where the link was until the harness restores it. A run that always isolates, such as the install probe, SHALL be labelled with the login it would have linked when its configuration could not be prepared.
 - Every run on a non-Claude host, Codex among them, is isolated. Its label SHALL name that host's harness home and the harness login.
 
 The runner SHALL remove from the Claude model-under-test child's environment every inherited variable that can route the host's billing away from the subscription login, in ambient and isolated mode alike. That means every inherited `ANTHROPIC_`-prefixed variable, which covers the API key, the gateway base URL and its auth token, and every `CLAUDE_CODE_USE_` cloud-provider switch. The child environment of every non-Claude host follows that host's billing-guard requirement: for Codex, the requirement "Codex plan billing guard", and for Copilot, the requirement "Copilot plan billing guard".
@@ -1006,7 +1037,7 @@ The telemetry and final-text readers SHALL be pinned against a recorded result e
 
 #### Scenario: Connector in an ambient run
 - **WHEN** an ambient run's stream lists an MCP server sourced from claude.ai
-- **THEN** the host is stopped at the event that lists it, the run exits with the untested status and names the server, and an MCP server the operator configured outside claude.ai is not reported and does not stop the run
+- **THEN** the host is stopped at the event that lists it, the run exits with the untested status and names the server and the connector switch as the opt-out that did not hold, and an MCP server the operator configured outside claude.ai is not reported and does not stop the run
 
 #### Scenario: A surface does not hide overage
 - **WHEN** an isolated run's stream shows an account surface and a rate-limit report with overage in use
@@ -1074,7 +1105,7 @@ The telemetry and final-text readers SHALL be pinned against a recorded result e
 
 #### Scenario: Write-back target labelled
 - **WHEN** an isolated run on the harness login refreshes its login
-- **THEN** the summary names the harness home as the linked login's directory, and the refreshed credentials are written there and nowhere else
+- **THEN** the summary names the harness home as the linked login's directory, and the refreshed credentials are written there and nowhere else. The label is the same when the run ends while the host's refreshed file still stands in place of the link
 
 #### Scenario: Codex run reports no cost
 - **WHEN** a Codex run completes on a model name the roster does not price under OpenAI's provider

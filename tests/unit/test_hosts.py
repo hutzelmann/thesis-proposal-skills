@@ -18,6 +18,7 @@ from pathlib import Path
 import claude_cli
 import claude_runner
 import codex_cli
+import copilot_cli
 import host_login
 import pytest
 from claude_cli import Grade, JudgeCall, JudgeRun, RateLimit
@@ -33,12 +34,11 @@ from claude_runner import (
     stage,
     summary,
 )
-from helpers import FIXTURES, REPO
+from helpers import CLEAN_DRAFT, REPO
 from host_login import CLAUDE, CODEX, CREDENTIALS, STATE_VAR, LoginProblem, refusal
 
 STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
 CLAUDE_STREAMS = Path(__file__).resolve().parent / "data" / "routing_streams"
-CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
 LABEL = "dev-runner (codex), not comparable to matrix"
 LOCKS = pytest.mark.skipif(host_login.fcntl is None,
                            reason="a --host codex run needs POSIX file locks")
@@ -105,12 +105,16 @@ def write_draft(ws: Path) -> None:
 # ---------- the default host -----------------------------------------------------------
 
 
-def test_the_hosts_are_claude_and_codex():
-    assert set(HOSTS) == {"claude", "codex"}
+def test_the_hosts_are_claude_codex_and_copilot():
+    assert set(HOSTS) == {"claude", "codex", "copilot"}
     assert HOSTS["claude"].skill_dir == (".claude", "skills")
     assert HOSTS["codex"].skill_dir == (".agents", "skills")
+    assert HOSTS["copilot"].skill_dir == (".agents", "skills")
     assert HOSTS["claude"].login is CLAUDE
     assert HOSTS["codex"].login is CODEX
+    assert HOSTS["copilot"].login is host_login.COPILOT
+    assert HOSTS["copilot"].always_isolated
+    assert HOSTS["copilot"].run_label == "dev-runner (copilot), not comparable to matrix"
     assert claude_runner.host_for(argparse.Namespace()) is HOSTS["claude"]
 
 
@@ -436,3 +440,292 @@ def test_rejudging_a_codex_workspace_reads_it_with_the_codex_reader(locks, tmp_p
     assert (line["host"], line["label"]) == ("codex", LABEL)
     assert line["l2_label"] == claude_runner.JUDGE_LABEL
     assert configs == [isolated]
+
+
+# ---------- the Copilot host (add-copilot-dev-runner) ------------------------------------
+
+COPILOT_STREAMS = Path(__file__).resolve().parent / "data" / "copilot_streams"
+COPILOT_LABEL = "dev-runner (copilot), not comparable to matrix"
+COPILOT_RUN = ["check_report", "--host", "copilot", "--model", "copilot-fixture-a",
+               "--max-ai-credits", "30"]
+COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
+
+
+def copilot_stream(name: str, ws: Path) -> list[dict]:
+    text = (COPILOT_STREAMS / f"{name}.jsonl").read_text(encoding="utf-8")
+    return [json.loads(line) for line in text.replace("__WS__", str(ws)).splitlines()
+            if line.strip()]
+
+
+def no_copilot(monkeypatch):
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("a Copilot process was started")
+
+    for name in ("run_copilot", "spawn", "start", "read_status", "short", "preflight_report",
+                 "confinement_probe"):
+        monkeypatch.setattr(copilot_cli, name, refuse)
+
+
+@pytest.fixture
+def copilot_home(tmp_path, monkeypatch):
+    """A seeded Copilot harness home with the synthetic token beside it; the
+    checks before the lock that would start the client are stubbed."""
+    monkeypatch.setenv(STATE_VAR, str(tmp_path / "state"))
+    account = tmp_path / "account"
+    account.mkdir()
+    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
+    home = host_login.home(host_login.COPILOT)
+    host_login.seed(host_login.COPILOT, home)
+    host_login.token_path(home).write_text(COPILOT_TOKEN + "\n", encoding="utf-8")
+    monkeypatch.setattr(copilot_cli, "installed_version", lambda *_a: (1, 0, 91))
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    return home
+
+
+def fake_copilot_run(monkeypatch, name="success", produce=None, raises=None) -> list[dict]:
+    runs: list[dict] = []
+
+    def run_copilot(ws, request, **kwargs):
+        runs.append({"ws": ws, "request": request, **kwargs,
+                     "staged": sorted(p.name for p in (ws / ".agents" / "skills").iterdir())})
+        if raises is not None:
+            raise raises
+        if produce:
+            produce(ws)
+        return copilot_stream(name, ws)
+
+    monkeypatch.setattr(copilot_cli, "run_copilot", run_copilot)
+    return runs
+
+
+@pytest.mark.parametrize(("argv", "named"), [
+    (["check_report", "--host", "copilot", "--max-ai-credits", "30"], "requires --model"),
+    (["check_report", "--host", "copilot", "--model", "auto", "--max-ai-credits", "30"],
+     "--model auto"),
+    (["check_report", "--host", "copilot", "--model", "github/copilot-fixture-a",
+      "--max-ai-credits", "30"], "provider-qualified"),
+    (["check_report", "--host", "copilot", "--model", "copilot-fixture-a"], "--max-ai-credits"),
+    ([*COPILOT_RUN[:-1], "29"], "below the minimum 30"),
+    ([*COPILOT_RUN, "--max-budget-usd", "1"], "credit cap"),
+    (["install_prompt", "--host", "copilot", "--model", "copilot-fixture-a",
+      "--max-ai-credits", "30"], "install-prompt"),
+    (["check_report", "--preflight-only"], "--preflight-only applies"),
+    (["check_report", "--host", "codex", "--model", "gpt-fixture-a", "--preflight-only"],
+     "--preflight-only applies"),
+    (["check_report", "--max-ai-credits", "30"], "--max-ai-credits applies"),
+    ([*COPILOT_RUN, "--effort", "ultra"], "ultra"),
+    ([*COPILOT_RUN, "--summary-log", "logs/evals/x.jsonl"], "lies inside logs/evals"),
+])
+def test_copilot_usage_errors_stage_nothing_and_start_nothing(argv, named, monkeypatch, capsys):
+    """testing-harness spec: Copilot run without a pinned model; Credit cap required;
+    Dollar budget cap refused on Copilot; Install scenario on Copilot."""
+    refuse_staging(monkeypatch)
+    no_copilot(monkeypatch)
+    with pytest.raises(SystemExit) as usage:
+        main(argv)
+    assert usage.value.code == EXIT_USAGE
+    assert named in capsys.readouterr().err
+
+
+def test_a_codex_effort_outside_its_levels_is_a_usage_error(monkeypatch, capsys):
+    refuse_staging(monkeypatch)
+    with pytest.raises(SystemExit):
+        main([*CODEX_RUN, "--effort", "minimal"])
+    assert "not a Codex effort" in capsys.readouterr().err
+
+
+def test_copilot_stages_where_a_folder_install_puts_the_skills(tmp_path):
+    """testing-harness spec: Copilot skill staged where a folder install puts it."""
+    stage(SCENARIOS["supervise_feedback"], tmp_path, skill_dir=HOSTS["copilot"].skill_dir)
+    root = tmp_path / ".agents" / "skills"
+    assert sorted(p.name for p in root.iterdir()) == ["proposal-import", "proposal-supervise"]
+    assert not list(root.rglob("evals"))
+    assert not (tmp_path / ".claude").exists()
+
+
+@LOCKS
+def test_a_copilot_run_is_summarized_and_labelled(copilot_home, tmp_path, monkeypatch):
+    """testing-harness spec: Copilot dev run labelled by host; Copilot run reports
+    credits, not cost."""
+    monkeypatch.setattr(copilot_cli, "read_stop", lambda _home: None)
+    runs = fake_copilot_run(monkeypatch)
+    log = tmp_path / "log.jsonl"
+    assert main([*COPILOT_RUN, "--summary-log", str(log)]) in (0, 1)  # a verdict, either way
+    [line] = logged(log)
+    assert line["l1"] in ("PASS", "FAIL")
+    assert (line["host"], line["label"]) == ("copilot", COPILOT_LABEL)
+    assert (line["config"], line["config_dir"]) == ("isolated", str(copilot_home))
+    assert (line["login"], line["login_dir"]) == ("harness", str(copilot_home))
+    assert line["cost_usd"] is None
+    assert line["ai_credits"] == 12.0
+    assert line["notional_basis"] == "copilot credits, not billed"
+    assert (line["cap_credits"], line["overage_before"], line["overage_after"]) == (30, 0, 0)
+    assert (line["remaining_before"], line["remaining_after"]) == (80.0, 79.2)
+    assert (line["model_requested"], line["model"], line["cli_version"]) == (
+        "copilot-fixture-a", "copilot-fixture-a", "1.0.91")
+    [run] = runs
+    assert (run["home"], run["model"], run["cap"]) == (copilot_home, "copilot-fixture-a", 30)
+    assert run["staged"] == ["proposal-check"]
+    assert not (REPO / "logs" / "evals" / "x.jsonl").exists()
+
+
+@LOCKS
+@pytest.mark.parametrize(("raises", "stream_name", "named"), [
+    (host_login.RunLockBusy(LoginProblem(
+        "another Copilot run holds the harness home (/fake/copilot/.harness-run.lock)",
+        "rerun after it ends", "copilot", "precondition")), None, ".harness-run.lock"),
+    (None, "model-differs", "copilot-fixture-b"),
+    (None, "effort-unapplied", "left unapplied"),
+    (None, "unknown-tool", "frobnicate"),
+])
+@pytest.mark.usefixtures("copilot_home")
+def test_a_copilot_precondition_is_untested_not_a_runner_failure(raises, stream_name, named,
+                                                                tmp_path, monkeypatch):
+    """testing-harness spec: Copilot precondition is untested, not a runner failure."""
+    monkeypatch.setattr(copilot_cli, "read_stop", lambda _home: None)
+    fake_copilot_run(monkeypatch, name=stream_name or "success", raises=raises)
+    log = tmp_path / "log.jsonl"
+    assert main([*COPILOT_RUN, "--summary-log", str(log)]) == EXIT_UNTESTED
+    [line] = logged(log)
+    assert line["exit_status"] == EXIT_UNTESTED != EXIT_RUNNER
+    assert named in line["why"]
+
+
+@LOCKS
+@pytest.mark.parametrize(("problem", "named"), [
+    (LoginProblem("the installed Copilot CLI is 1.0.92, not the pinned 1.0.91",
+                  "install the Copilot CLI 1.0.91", "copilot", "precondition"), "1.0.92"),
+    (LoginProblem("the Copilot sandbox needs slirp4netns on PATH", "install slirp4netns",
+                  "copilot", "precondition"), "slirp4netns"),
+    (LoginProblem("the client's model listing offers under the policy 'disabled' "
+                  "copilot-fixture-a", "enable the model", "copilot", "precondition"),
+     "'disabled'"),
+])
+@pytest.mark.usefixtures("copilot_home")
+def test_a_copilot_preflight_refusal_is_untested(problem, named, tmp_path, monkeypatch):
+    monkeypatch.setattr(copilot_cli, "isolated_home", lambda *_a, **_k: (_ for _ in ()).throw(
+        copilot_cli.CopilotRefused.of(problem)))
+    no_copilot(monkeypatch)
+    log = tmp_path / "log.jsonl"
+    assert main([*COPILOT_RUN, "--summary-log", str(log)]) == EXIT_UNTESTED
+    [line] = logged(log)
+    assert named in line["why"]
+    assert line["host"] == "copilot"
+
+
+@LOCKS
+def test_the_approval_stop_refuses_the_run_as_untested(copilot_home, tmp_path, monkeypatch):
+    copilot_cli.record_stop(copilot_home, "approval", "first run not yet approved")
+    no_copilot(monkeypatch)
+    log = tmp_path / "log.jsonl"
+    assert main([*COPILOT_RUN, "--summary-log", str(log)]) == EXIT_UNTESTED
+    [line] = logged(log)
+    assert "approval stop" in line["why"]
+    assert "--clear-stop" in line["why"]
+
+
+@LOCKS
+@pytest.mark.usefixtures("copilot_home")
+def test_a_copilot_session_without_shutdown_is_a_runner_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(copilot_cli, "read_stop", lambda _home: None)
+    fake_copilot_run(monkeypatch, name="no-shutdown")
+    log = tmp_path / "log.jsonl"
+    assert main([*COPILOT_RUN, "--summary-log", str(log)]) == EXIT_RUNNER
+    assert "consumption cannot be read" in logged(log)[0]["why"]
+
+
+@LOCKS
+def test_a_copilot_run_is_graded_without_the_token_or_the_home(copilot_home, claude_home,
+                                                               tmp_path, monkeypatch):
+    """testing-harness spec: Token never reaches another child — the judge's child
+    and its login check carry neither COPILOT_GITHUB_TOKEN, its value, nor the
+    Copilot home."""
+    assert claude_home.parent == copilot_home.parent  # both harness homes, one state root
+    monkeypatch.setattr(copilot_cli, "read_stop", lambda _home: None)
+    monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "github_pat_EXPORTED_PLACEHOLDER")
+    children: list[dict] = []
+    fake_copilot_run(monkeypatch, produce=write_draft)
+
+    async def run_child(command, _stdin, env, _cwd, _timeout):
+        children.append({"command": command, "env": dict(env)})
+        if command[1:3] == ["auth", "status"]:
+            return 0, JUDGE_STATUS, ""
+        model = command[command.index("--model") + 1]
+        return 0, JUDGE_STREAM.replace("claude-fixture-1-0", model), ""
+
+    monkeypatch.setattr(claude_cli, "run_child", run_child)
+    log = tmp_path / "log.jsonl"
+    argv = ["write_from_seed", "--host", "copilot", "--model", "copilot-fixture-a",
+            "--max-ai-credits", "30", "--judge", "--summary-log", str(log)]
+    assert main(argv) == 0
+    assert len(children) > 1
+    for child in children:
+        dumped = json.dumps(child)
+        assert "COPILOT_GITHUB_TOKEN" not in child["env"]
+        assert COPILOT_TOKEN not in dumped
+        assert "EXPORTED_PLACEHOLDER" not in dumped
+        assert str(copilot_home) not in dumped
+    assert logged(log)[0]["label"] == COPILOT_LABEL
+
+
+def test_rejudging_a_copilot_workspace_starts_no_copilot_process(tmp_path, monkeypatch):
+    no_copilot(monkeypatch)
+    ws = tmp_path / "kept"
+    ws.mkdir()
+    write_draft(ws)
+    save_events(copilot_stream("model-differs", ws), ws)
+
+    async def judge_all(criteria, *, model, effort, **_options):
+        call = JudgeCall("GRADE: C", model, "2.1.284", effort, 10, 0.01,
+                         RateLimit("allowed", "five_hour", 0.1))
+        return JudgeRun(tuple(Grade(c.name, True, "ok", call) for c in criteria), 0.02)
+
+    monkeypatch.setattr(claude_cli, "judge_all", judge_all)
+    isolated = tmp_path / "devjudge-config"
+    isolated.mkdir()
+    monkeypatch.setattr(claude_runner, "enter_isolation", lambda _stack, _prefix: isolated)
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--host", "copilot", "--rejudge", str(ws),
+                 "--summary-log", str(log)]) == 0
+    [line] = logged(log)
+    assert line["model"] == "copilot-fixture-a, copilot-fixture-b"  # the Copilot reader
+    assert (line["host"], line["label"]) == ("copilot", COPILOT_LABEL)
+
+
+@LOCKS
+@pytest.mark.usefixtures("copilot_home")
+def test_preflight_only_prints_each_check_and_starts_no_run(monkeypatch, capsys):
+    """testing-harness spec: Copilot preflight only."""
+    seen: list[str] = []
+
+    def report(ws, _scenario, **_options):
+        seen.append(str(ws))
+        assert (ws / ".agents" / "skills" / "proposal-check" / "SKILL.md").is_file()
+        stop = LoginProblem("an approval stop is recorded", "clear it", "copilot", "precondition")
+        return [copilot_cli.Check("location"), copilot_cli.Check("stop", stop, "approval (x)"),
+                copilot_cli.Check("confinement_probe")], True
+
+    monkeypatch.setattr(copilot_cli, "preflight_report", report)
+    monkeypatch.setattr(copilot_cli, "run_copilot",
+                        lambda *_a, **_k: pytest.fail("a prompt-mode child started"))
+    assert main([*COPILOT_RUN, "--preflight-only"]) == 0
+    out = capsys.readouterr().out
+    assert "stop: recorded — approval (x)" in out
+    assert "preflight: ready" in out
+    assert not Path(seen[0]).exists()  # the workspace is deleted
+
+
+@LOCKS
+@pytest.mark.usefixtures("copilot_home")
+@pytest.mark.parametrize("raised", [
+    host_login.RunLockBusy(LoginProblem("another Copilot run holds the harness home",
+                                        "rerun after it ends", "copilot", "precondition")),
+    copilot_cli.BillingEnvError(["GH_TOKEN"]),
+])
+def test_a_preflight_only_refusal_is_untested_not_a_runner_failure(raised, monkeypatch, capsys):
+    def report(*_args, **_kwargs):
+        raise raised
+
+    monkeypatch.setattr(copilot_cli, "preflight_report", report)
+    assert main([*COPILOT_RUN, "--preflight-only"]) == EXIT_UNTESTED
+    assert capsys.readouterr().err.startswith("untested: ")

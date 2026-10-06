@@ -1,0 +1,18 @@
+{
+  "connect": {
+    "jsonrpc": "2.0",
+    "id": 0,
+    "result": {
+      "protocolVersion": 3,
+      "version": "1.0.91"
+    }
+  },
+  "auth": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+      "code": -32603,
+      "message": "internal error for fixture-login-octocat (github_pat_FIXTURE_REPLY_ONLY)"
+    }
+  }
+}

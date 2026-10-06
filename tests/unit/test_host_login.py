@@ -25,6 +25,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 import claude_runner
+import copilot_cli
 import host_login
 import pytest
 import routing
@@ -1145,3 +1146,186 @@ def test_a_codex_login_failure_names_the_codex_remedy(passed, monkeypatch):
     assert login_remedy("codex failed: something else", LoginSource.HARNESS,
                         host_login.CODEX) == "codex failed: something else"
     assert login_remedy(reason, LoginSource.HARNESS) == reason  # Claude's wording differs
+
+
+# ---------- the Copilot record and home (add-copilot-dev-runner) -----------------------
+
+COPILOT = host_login.COPILOT
+COPILOT_NOTE = "Your own Copilot login is not affected"
+
+
+def test_the_default_copilot_home_and_token_file_lie_under_the_state_root(tmp_path):
+    """testing-harness spec: Default home location — the token file beside the home."""
+    user = tmp_path / "home"
+    root = state_root({}, "linux", user)
+    home = host_login.home(COPILOT, {STATE_VAR: str(root)})
+    assert home == user / ".local" / "state" / "thesis-proposal-dev" / "hosts" / "copilot"
+    assert host_login.token_path(home) == home.parent / "copilot.token"
+    assert home not in host_login.token_path(home).parents
+    assert home != user / ".copilot"
+
+
+@pytest.mark.parametrize("case", ["dot-copilot", "github-copilot", "copilot-home"])
+@pytest.mark.parametrize("record", ["claude", "codex", "copilot"])
+def test_the_location_guard_refuses_the_copilot_directories_for_every_record(
+        case, record, user_home, tmp_path):
+    """testing-harness spec: Override overlapping the operator's configuration."""
+    inherited = tmp_path / "inherited-copilot"
+    roots = {"dot-copilot": (user_home / ".copilot" / "state", {}),
+             "github-copilot": (user_home / ".config" / "github-copilot" / "state", {}),
+             "copilot-home": (inherited / "state", {"COPILOT_HOME": str(inherited)})}
+    root, environ = roots[case]
+    problem = check_location(root, {STATE_VAR: str(root), **environ}, tmp_path / "repo",
+                             user_home=user_home, record=host_login.RECORDS[record])
+    assert problem is not None
+    assert "client configuration directory" in problem.cause
+    assert problem.client == record
+
+
+def test_a_refused_override_starts_no_copilot_child_and_creates_nothing(tmp_path, monkeypatch):
+    """The location check runs before `copilot --version`, which would unpack the
+    package under the state root."""
+    root = tmp_path / "user"
+    (root / ".copilot").mkdir(parents=True)
+    monkeypatch.setattr(host_login.Path, "home", classmethod(lambda _cls: root))
+    override = root / ".copilot" / "state"
+    monkeypatch.setenv(STATE_VAR, str(override))
+    popen: list = []
+    monkeypatch.setattr(copilot_cli.subprocess, "Popen",
+                        lambda *a, **_k: popen.append(a) or pytest.fail("Popen reached"))
+    checks = list(copilot_cli.preflight_checks(copilot_cli.new_run()))
+    assert [c.name for c in checks] == ["location"]
+    assert checks[0].problem is not None
+    assert popen == []
+    assert not override.exists()
+
+
+@pytest.fixture
+def copilot_home(tmp_path, monkeypatch):
+    """A seeded Copilot home; the account home comes from a patched password entry."""
+    monkeypatch.setenv(STATE_VAR, str(tmp_path / "state"))
+    account = tmp_path / "account"
+    account.mkdir()
+
+    class Entry:
+        pw_dir = str(account)
+
+    monkeypatch.setattr(host_login, "pwd", type("Pwd", (), {
+        "getpwuid": staticmethod(lambda _uid: Entry())}))
+    monkeypatch.setattr(host_login.os, "getuid", lambda: 4242, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "scratch-home"))  # never the deny list's source
+    home = host_login.home(COPILOT)
+    host_login.seed(COPILOT, home)
+    return home
+
+
+@pytest.mark.skipif(host_login.pwd is None, reason="the password database is POSIX")
+def test_the_deny_list_is_built_by_construction_from_the_password_entry(copilot_home, tmp_path):
+    """testing-harness spec: Copilot settings seeded before the token is read."""
+    settings = json.loads((copilot_home / "settings.json").read_text(encoding="utf-8"))
+    sandbox = settings["sandbox"]
+    assert (sandbox["enabled"], sandbox["allowBypass"], sandbox["allowDevToolAccess"]) == (
+        True, False, False)
+    assert sandbox["auth"] == {"git": False, "gh": False}
+    deny = sandbox["userPolicy"]["filesystem"]["deniedPaths"]
+    state = copilot_home.parent.parent
+    assert deny == [str(tmp_path / "account"), "/run/user/4242", str(state),
+                    str(host_login.token_path(copilot_home))]
+    assert all(str(tmp_path / "scratch-home") not in path for path in deny)
+    assert "deniedPaths" not in sandbox["userPolicy"]  # the package's path, not the docs'
+    assert (settings["autoUpdate"], settings["memory"], settings["disableAllHooks"],
+            settings["storeTokenPlaintext"]) == (False, False, True, True)
+    assert (copilot_home / "gh").is_dir()
+    assert not any((copilot_home / "gh").iterdir())
+    assert host_login.check_copilot_home(copilot_home) is None
+
+
+@pytest.mark.skipif(host_login.pwd is None, reason="the password database is POSIX")
+def test_a_state_root_inside_the_account_home_is_covered_by_the_home(tmp_path):
+    account = tmp_path / "account"
+    home = account / ".local" / "state" / "thesis-proposal-dev" / "hosts" / "copilot"
+    deny = host_login.deny_list(home, account, uid=1000)
+    assert deny == [str(account), "/run/user/1000", str(home.parent / "copilot.token")]
+
+
+@pytest.mark.parametrize(("change", "named"), [
+    (lambda s: s["sandbox"].update(allowBypass=True), "sandbox.allowBypass"),
+    (lambda s: s.update(memory=True), "memory"),
+    (lambda s: s.update(extra=1), "extra key extra"),
+])
+def test_check_copilot_home_names_a_differing_settings_key(change, named, copilot_home):
+    path = copilot_home / "settings.json"
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    change(settings)
+    path.write_text(json.dumps(settings), encoding="utf-8")
+    problem = host_login.check_copilot_home(copilot_home)
+    assert problem is not None
+    assert named in problem.cause
+    assert "uv run poe host-login copilot --reset" in problem.remedy
+
+
+def test_check_copilot_home_names_a_state_key_outside_the_managed_set(copilot_home):
+    (copilot_home / "config.json").write_text(json.dumps(
+        {"firstLaunchAt": "x", "loggedInUsers": [], "model": "copilot-fixture-a"}),
+        encoding="utf-8")
+    problem = host_login.check_copilot_home(copilot_home)
+    assert "key model outside the managed-state set" in problem.cause
+    assert "firstLaunchAt" not in problem.cause
+
+
+@pytest.mark.parametrize("entry", ["copilot-instructions.md", "skills/", "mcp-config.json",
+                                   "pkg/", "copilot.token", "session-state/x", "gh/hosts.yml"])
+def test_check_copilot_home_names_each_entry_outside_the_allow_list(entry, copilot_home):
+    """testing-harness spec: Copilot home not clean."""
+    path = copilot_home / entry.rstrip("/")
+    if entry.endswith("/"):
+        path.mkdir()
+    else:
+        path.parent.mkdir(exist_ok=True)
+        path.write_text("synthetic", encoding="utf-8")
+    problem = host_login.check_copilot_home(copilot_home)
+    assert problem is not None
+    assert entry.split("/")[0].rstrip("/") in problem.cause
+
+
+def test_check_copilot_home_allows_every_allow_listed_entry(copilot_home):
+    (copilot_home / "config.json").write_text(json.dumps(
+        dict.fromkeys(host_login.MANAGED_STATE_KEYS)), encoding="utf-8")
+    for name in ("session-store.db", "session-store.db-wal", "quota.json",
+                 host_login.LOCK_NAME):
+        (copilot_home / name).write_text("", encoding="utf-8")
+    (copilot_home / "session-state").mkdir()
+    assert host_login.check_copilot_home(copilot_home) is None
+
+
+@pytest.mark.parametrize("remedy", ["run `uv run poe host-login copilot`",
+                                    "run `uv run poe host-login copilot --reset`",
+                                    "check the billing page"])
+def test_the_copilot_note_is_always_the_not_affected_sentence(remedy):
+    assert login_note(remedy, "copilot") == COPILOT_NOTE
+    assert refusal(LoginProblem("cause", remedy, "copilot")).endswith(f"{COPILOT_NOTE}.")
+
+
+@pytest.mark.parametrize(("value", "kind"), [
+    ("ghp_CLASSIC_PLACEHOLDER", "a classic personal access token"),
+    ("gho_OAUTH_PLACEHOLDER", "not a fine-grained personal access token"),
+    ("github_patX_PLACEHOLDER", "not a fine-grained personal access token"),
+])
+def test_token_problem_refuses_by_prefix_without_echoing(value, kind):
+    problem = host_login.token_problem(value)
+    assert kind in problem.cause
+    assert value not in refusal(problem)
+    assert value[:6] not in problem.cause.replace(
+        "github_pat_", "")
+    assert host_login.token_problem("github_pat_SYNTHETIC_TEST_ONLY") is None
+
+
+def test_the_copilot_record_keeps_claude_and_codex_unchanged():
+    assert (CLAUDE.credential, CLAUDE.token_env) == ("client-login", None)
+    assert (host_login.CODEX.credential, host_login.CODEX.token_env) == ("client-login", None)
+    assert (COPILOT.credential, COPILOT.token_env) == ("token-file", "COPILOT_GITHUB_TOKEN")
+    assert set(host_login.RECORDS) == {"claude", "codex", "copilot"}
+    assert COPILOT.stripped("BASH_ENV")
+    assert COPILOT.stripped("SSH_AUTH_SOCK")
+    assert not COPILOT.stripped("BASH_ENVX")
+    assert not host_login.CODEX.stripped("BASH_ENV")

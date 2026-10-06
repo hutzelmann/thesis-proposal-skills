@@ -1,0 +1,20 @@
+{
+  "connect": {
+    "jsonrpc": "2.0",
+    "id": 0,
+    "result": {
+      "protocolVersion": 3,
+      "version": "1.0.91"
+    }
+  },
+  "auth": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "authInfo": null,
+      "authErrors": [
+        "Bad credentials for github_pat_FIXTURE_REPLY_ONLY (login fixture-login-octocat)"
+      ]
+    }
+  }
+}

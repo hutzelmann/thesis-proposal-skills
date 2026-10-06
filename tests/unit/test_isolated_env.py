@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 import anyio
 import claude_cli
 import claude_runner
+import copilot_cli
 import host_login
 import pytest
 import routing
@@ -371,6 +372,39 @@ def test_the_judge_now_carries_the_machine_and_drops_the_desktop_session(monkeyp
         for name in ("XDG_SESSION_TYPE", "CLAUDE_EFFORT", "ANTHROPIC_API_KEY"):
             assert name not in env, name
         assert env["CLAUDE_CONFIG_DIR"] == str(config)
+
+
+COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
+
+
+def test_the_builder_reads_no_token_and_the_copilot_caller_adds_exactly_one(tmp_path):
+    """testing-harness spec: Token added after the builder."""
+    home = tmp_path / "state" / "hosts" / "copilot"
+    launch = {"PATH": "/usr/bin", "GH_TOKEN": "ghp_PLACEHOLDER",
+              "COPILOT_GITHUB_TOKEN": "github_pat_EXPORTED_PLACEHOLDER"}
+    built = allowlisted_env(host_login.COPILOT, home, launch)
+    assert "COPILOT_GITHUB_TOKEN" not in built
+    assert "GH_TOKEN" not in built
+    final = copilot_cli.child_env(home, launch, tmp_path / "scratch", COPILOT_TOKEN)
+    shaped = [name for name, value in final.items()
+              if name.endswith(("_TOKEN", "_API_KEY")) or value.startswith("github_pat_")]
+    assert shaped == ["COPILOT_GITHUB_TOKEN"]
+    assert final["COPILOT_GITHUB_TOKEN"] == COPILOT_TOKEN
+
+
+@pytest.mark.usefixtures("desktop_session")
+def test_the_judge_never_receives_the_copilot_token(monkeypatch, tmp_path):
+    """testing-harness spec: Token never reaches another child — even when the
+    launching shell exports one under the token variable."""
+    monkeypatch.setenv("COPILOT_GITHUB_TOKEN", COPILOT_TOKEN)
+    monkeypatch.setenv("GH_TOKEN", "ghp_PLACEHOLDER")
+    envs = judge_envs(monkeypatch, tmp_path / "config")
+    for env in envs.values():
+        assert "COPILOT_GITHUB_TOKEN" not in env
+        assert "GH_TOKEN" not in env
+        assert COPILOT_TOKEN not in json.dumps(env)
+    rig = allowlisted_env(CLAUDE, tmp_path / "config")
+    assert "COPILOT_GITHUB_TOKEN" not in rig
 
 
 def test_the_second_allowlists_are_gone():

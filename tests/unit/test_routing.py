@@ -23,6 +23,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import claude_runner
+import codex_cli
+import copilot_cli
 import host_login
 import pytest
 import routing
@@ -1144,3 +1146,22 @@ def test_negative_case_expecting_a_skill_is_reported():
 def test_repo_ships_the_stream_fixture_readme():
     assert (STREAMS / "README.md").is_file()
     assert REPO.joinpath("harness", "routing_cases.toml").is_file()
+
+
+def _copilot(name: str) -> list[dict]:
+    path = STREAMS.parent / "copilot_streams" / f"{name}.jsonl"
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+
+
+def test_tool_calls_read_the_copilot_shape_beside_claude_and_codex():
+    """testing-harness spec: Skill tool call read as Skill; Copilot subagent spawn
+    — through `tool_calls`, whose Claude and Codex readings are unchanged."""
+    assert route_from_events(_copilot("success")) == "proposal-check"
+    names = [name for name, _ in tool_calls(_copilot("helper-spawn"))]
+    assert names.count("Agent") == 1
+    assert "Skill" in names
+    codex = STREAMS.parent / "codex_streams" / "success.jsonl"
+    codex_events = [json.loads(line) for line in codex.read_text(encoding="utf-8").splitlines()]
+    assert tool_calls(codex_events) == codex_cli.codex_tool_calls(codex_events)
+    assert copilot_cli.copilot_tool_calls(codex_events) == []

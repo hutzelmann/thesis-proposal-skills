@@ -73,7 +73,7 @@ from pathlib import Path, PurePath
 
 import host_login
 from host_login import CODEX, MARKER, LoginProblem, LoginSource, login_remedy, refusal
-from hosts import RunView
+from hosts import NETWORK_SKILLS, RunView, needs_network  # noqa: F401  (re-exported)
 
 # ---------- the command (design Decisions 5 and 6) ---------------------------------------
 
@@ -91,17 +91,10 @@ SUBAGENT_FEATURE = "multi_agent"
 # what may read enabled; anything else refuses the run until a reviewed change
 # updates DISABLED_FEATURES
 ALLOWED_FEATURES = ("shell_tool", "unified_exec")
-# D4(a): network only where a scenario needs it
-NETWORK_SKILLS = frozenset({"proposal-import", "proposal-lit-search", "proposal-reverse"})
 # the host's explicit levels, without `ultra`, which hands work to subagents
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-
-
-def needs_network(scenario: Mapping) -> bool:
-    """A scenario that serves a fixture over localhost, or whose skill or
-    siblings include import, literature search or reverse."""
-    skills = {scenario.get("skill"), *scenario.get("siblings", ())}
-    return bool(scenario.get("serve")) or bool(skills & NETWORK_SKILLS)
+# D4(a), network only where a scenario needs it: `needs_network` and
+# NETWORK_SKILLS live in `hosts`, shared with the Copilot host
 
 
 def allowed_features(scenario: Mapping) -> tuple[str, ...]:

@@ -1,0 +1,24 @@
+{
+  "connect": {
+    "jsonrpc": "2.0",
+    "id": 0,
+    "result": {
+      "protocolVersion": 3,
+      "version": "1.0.91"
+    }
+  },
+  "auth": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "authInfo": {
+        "type": "env",
+        "host": "https://github.com",
+        "login": "fixture-login-octocat",
+        "token": "github_pat_FIXTURE_REPLY_ONLY",
+        "envVar": "COPILOT_GITHUB_TOKEN"
+      },
+      "authErrors": []
+    }
+  }
+}

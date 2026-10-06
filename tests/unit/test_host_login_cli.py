@@ -17,6 +17,7 @@ import sys
 import time
 from pathlib import Path
 
+import copilot_cli
 import host_login
 import pytest
 from account_surfaces import CONNECTORS_OFF, PINNED_SETTINGS, PROFILE_DIR
@@ -995,3 +996,283 @@ def test_without_posix_file_locks_the_codex_commands_refuse_cleanly(argv, codex_
     err = capsys.readouterr().err
     assert err.startswith("untested: this platform lacks POSIX file locks")
     assert argv[0] != "login" or not codex_state.exists()
+
+
+# ---------- the Copilot token-file commands (add-copilot-dev-runner) ------------------
+
+COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
+COPILOT_STATUS_KEYS = ["home", "marker", "token_present", "auth_type", "host_ok", "plan_class",
+                       "token_based_billing", "overage_permitted", "overage_count",
+                       "overage_entitlement", "remaining_pct", "reset_date", "stop", "clean",
+                       "cli_version", "pinned_version", "sandbox", "runs_use"]
+STREAMS_DIR = Path(__file__).resolve().parent / "data" / "copilot_streams"
+SANDBOX_PROBLEM = copilot_cli.sandbox_problem  # the real one, before a fixture stubs it
+POSIX_LOCKS = pytest.mark.skipif(host_login.fcntl is None, reason="the run lock needs fcntl")
+
+
+def copilot_reply(name: str) -> dict:
+    return json.loads((STREAMS_DIR / f"{name}.json").read_text(encoding="utf-8"))
+
+
+class FakeStatusRead:
+    """`copilot_cli.read_status`: answers from a status fixture, records the token it
+    was handed and whether the run lock was held, never starts a client."""
+
+    def __init__(self, home: Path, fixture: str = "status-ok"):
+        self.home, self.fixture = home, fixture
+        self.calls: list[dict] = []
+
+    def __call__(self, home, _environ=None, *, token, models=False):
+        import fcntl
+
+        with (home / host_login.LOCK_NAME).open("ab") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held = False
+            except BlockingIOError:
+                held = True
+        self.calls.append({"token": token, "models": models, "lock_held": held})
+        replies = dict(copilot_reply(self.fixture if token else "status-auth-error"))
+        if models:
+            replies["models"] = copilot_reply("models")
+        return copilot_cli.parse_status(replies)
+
+
+@pytest.fixture
+def copilot_state(state, tmp_path, monkeypatch):
+    """The state root of `state`, an account home of the test's own, no real
+    client: the version and the status read are faked."""
+    account = tmp_path / "account"
+    account.mkdir()
+    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
+    monkeypatch.setattr(copilot_cli, "installed_version", lambda *_a: (1, 0, 91))
+    monkeypatch.setattr(copilot_cli, "managed_problem", lambda *_a: None)
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    home = host_login.home(host_login.COPILOT)
+    assert home.parent == state.parent  # beside the Claude home of `state`
+    fake = FakeStatusRead(home)
+    monkeypatch.setattr(copilot_cli, "read_status", fake)
+    no_client(monkeypatch)
+    return home
+
+
+def enter_token(monkeypatch, value: str = COPILOT_TOKEN, order: list | None = None) -> list:
+    prompts: list[str] = order if order is not None else []
+
+    def getpass(prompt):
+        prompts.append(prompt)
+        return value
+
+    monkeypatch.setattr(host_login.getpass, "getpass", getpass)
+    return prompts
+
+
+def status_pairs(out: str) -> dict[str, str]:
+    return dict(line.split(": ", 1) for line in out.splitlines() if ": " in line)
+
+
+@POSIX_LOCKS
+def test_the_copilot_login_writes_the_token_file_beside_the_home(copilot_state, monkeypatch,
+                                                                capsys):
+    """testing-harness spec: Token stored only in the token file."""
+    order: list = []
+    real_seed = host_login.seed
+    monkeypatch.setattr(host_login, "seed", lambda record, home: (
+        order.append("seed"), real_seed(record, home))[1])
+    enter_token(monkeypatch, order=order)
+    assert main(["login", "copilot"]) == 0
+    assert order == ["seed", host_login.TOKEN_PROMPT]
+    path = host_login.token_path(copilot_state)
+    assert path.read_text(encoding="utf-8") == COPILOT_TOKEN + "\n"
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent == copilot_state.parent
+    inside = [p for p in copilot_state.rglob("*") if p.is_file()
+              and COPILOT_TOKEN in p.read_text(encoding="utf-8", errors="replace")]
+    assert inside == []
+    assert copilot_cli.read_stop(copilot_state)["kind"] == "approval"
+    out, err = capsys.readouterr()
+    assert COPILOT_TOKEN not in out + err
+    assert status_pairs(out)["stop"].startswith("approval")
+    assert "--clear-stop" in out
+
+
+@POSIX_LOCKS
+@pytest.mark.usefixtures("copilot_state")
+def test_the_copilot_login_exits_3_when_the_token_is_rejected(monkeypatch, capsys):
+    copilot_cli.read_status.fixture = "status-auth-error"
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 3
+    assert "fine-grained token" in capsys.readouterr().err
+
+
+@POSIX_LOCKS
+@pytest.mark.parametrize("value", ["ghp_CLASSIC_PLACEHOLDER", "gho_OTHER_PLACEHOLDER",
+                                   "plain-text"])
+def test_the_copilot_login_refuses_anything_but_a_fine_grained_token(value, copilot_state,
+                                                                     monkeypatch, capsys):
+    """testing-harness spec: Classic token refused."""
+    enter_token(monkeypatch, value)
+    assert main(["login", "copilot"]) == host_login.EXIT_USAGE
+    assert not host_login.token_path(copilot_state).exists()
+    out, err = capsys.readouterr()
+    assert value not in out + err
+    assert "fine-grained" in err
+    assert copilot_cli.read_stop(copilot_state) is None
+
+
+def test_the_copilot_login_refuses_without_a_terminal_or_inside_an_agent(copilot_state,
+                                                                        monkeypatch, capsys):
+    prompts = enter_token(monkeypatch)
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: False)
+    assert main(["login", "copilot"]) == host_login.EXIT_USAGE
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: True)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert main(["login", "copilot"]) == host_login.EXIT_USAGE
+    assert prompts == []
+    assert not copilot_state.exists()
+    assert "CLAUDECODE" in capsys.readouterr().err
+
+
+@POSIX_LOCKS
+@pytest.mark.usefixtures("copilot_state")
+def test_after_a_login_a_live_run_waits_for_the_approval(monkeypatch):
+    """testing-harness spec: First run after a login waits for approval."""
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 0
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    popen: list = []
+    monkeypatch.setattr(copilot_cli.subprocess, "Popen", lambda *a, **_k: popen.append(a))
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.isolated_home(None, None)
+    assert "approval stop" in refused.value.message
+    assert host_login.CLEAR_STOP_COMMAND in refused.value.message
+    assert refused.value.kind == "precondition"
+    assert popen == []
+
+
+@POSIX_LOCKS
+def test_a_copilot_reset_deletes_the_token_wipes_and_asks_again(copilot_state, monkeypatch):
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 0
+    (copilot_state / "skills").mkdir()  # a synced entry the reset clears
+    copilot_cli.clear_stop(copilot_state)
+    prompts = enter_token(monkeypatch, "github_pat_SECOND_SYNTHETIC")
+    assert main(["login", "copilot", "--reset"]) == 0
+    assert prompts == [host_login.TOKEN_PROMPT]
+    assert not (copilot_state / "skills").exists()
+    assert host_login.token_path(copilot_state).read_text(encoding="utf-8") == (
+        "github_pat_SECOND_SYNTHETIC\n")
+    assert copilot_cli.read_stop(copilot_state)["kind"] == "approval"
+
+
+@POSIX_LOCKS
+@pytest.mark.parametrize("kind", ["billing", "isolation", "approval"])
+def test_clear_stop_removes_any_stop_and_nothing_else(kind, copilot_state, monkeypatch, capsys):
+    """testing-harness spec: Only the operator clears a stop."""
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 0
+    copilot_cli.clear_stop(copilot_state)
+    copilot_cli.record_stop(copilot_state, kind, f"synthetic {kind}")
+    settings = (copilot_state / "settings.json").read_text(encoding="utf-8")
+    token = host_login.token_path(copilot_state).read_text(encoding="utf-8")
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: False)
+    assert main(["login", "copilot", "--clear-stop"]) == host_login.EXIT_USAGE
+    assert copilot_cli.read_stop(copilot_state)["kind"] == kind
+    monkeypatch.setattr(host_login, "stdin_is_tty", lambda: True)
+    monkeypatch.setenv("CODEX_SANDBOX", "seatbelt")
+    assert main(["login", "copilot", "--clear-stop"]) == host_login.EXIT_USAGE
+    monkeypatch.delenv("CODEX_SANDBOX")
+    capsys.readouterr()
+    assert main(["login", "copilot", "--clear-stop"]) == 0
+    assert f"cleared the {kind} stop" in capsys.readouterr().out
+    assert copilot_cli.read_stop(copilot_state) is None
+    assert (copilot_state / "settings.json").read_text(encoding="utf-8") == settings
+    assert host_login.token_path(copilot_state).read_text(encoding="utf-8") == token
+
+
+def test_clear_stop_and_reset_are_separate_and_copilot_only(capsys):
+    for argv in (["login", "copilot", "--clear-stop", "--reset"],
+                 ["login", "codex", "--clear-stop"], ["status", "claude", "--models"],
+                 ["status", "codex", "--no-token"]):
+        with pytest.raises(SystemExit):
+            main(argv)
+        assert "--" in capsys.readouterr().err  # the usage error names the option
+
+
+@POSIX_LOCKS
+def test_the_copilot_logout_deletes_only_the_token_file(copilot_state, monkeypatch, capsys):
+    """testing-harness spec: Copilot logout deletes only the token file."""
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 0
+    before = sorted(p.name for p in copilot_state.iterdir())
+    capsys.readouterr()
+    assert main(["logout", "copilot"]) == 0
+    out, err = capsys.readouterr()
+    assert not host_login.token_path(copilot_state).exists()
+    assert sorted(p.name for p in copilot_state.iterdir()) == before
+    assert "github.com/settings/personal-access-tokens" in out
+    assert "unverified" not in out + err
+
+
+@POSIX_LOCKS
+@pytest.mark.usefixtures("copilot_state")
+def test_the_copilot_status_prints_exactly_its_keys_and_no_account_detail(monkeypatch, capsys):
+    """testing-harness spec: Copilot status reveals no account details; the status
+    read holds the run lock; a recorded stop does not refuse the status command."""
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 0
+    capsys.readouterr()
+    assert main(["status", "copilot"]) == 0  # the approval stop is reported, not refused
+    out, err = capsys.readouterr()
+    pairs = status_pairs(out)
+    assert list(pairs) == COPILOT_STATUS_KEYS
+    assert (pairs["marker"], pairs["token_present"], pairs["auth_type"], pairs["host_ok"]) == (
+        "yes", "yes", "env", "yes")
+    assert (pairs["overage_permitted"], pairs["overage_count"], pairs["overage_entitlement"],
+            pairs["remaining_pct"]) == ("false", "0", "0", "80.0")
+    assert pairs["stop"].startswith("approval")
+    assert (pairs["cli_version"], pairs["pinned_version"], pairs["clean"]) == (
+        "1.0.91", "1.0.91", "yes")
+    for secret in ("fixture-login-octocat", "fixture-org", "FIXTURE_REPLY_ONLY", COPILOT_TOKEN):
+        assert secret not in out + err
+    reads = copilot_cli.read_status.calls
+    assert reads
+    assert all(call["lock_held"] for call in reads)
+
+
+@POSIX_LOCKS
+@pytest.mark.usefixtures("copilot_state")
+def test_the_copilot_status_options_add_the_models_and_the_tokenless_read(monkeypatch, capsys):
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == 0
+    capsys.readouterr()
+    assert main(["status", "copilot", "--models", "--no-token"]) == 0
+    pairs = status_pairs(capsys.readouterr().out)
+    assert pairs["model copilot-fixture-a"] == "policy enabled; efforts low, medium, high"
+    assert pairs["model copilot-fixture-c"].startswith("policy disabled")
+    assert pairs["logged_in"] == "no"
+    tokens = [call["token"] for call in copilot_cli.read_status.calls[-2:]]
+    assert tokens == [COPILOT_TOKEN, None]
+
+
+@POSIX_LOCKS
+@pytest.mark.usefixtures("copilot_state")
+def test_a_missing_sandbox_tool_makes_the_copilot_login_not_ready(monkeypatch, capsys):
+    """The login reports ready only when the status read passes the preflight,
+    the approval stop apart: a missing sandbox tool fails it, naming the tool."""
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda _which, **_k: SANDBOX_PROBLEM(
+        lambda name: None if name == "slirp4netns" else f"/usr/bin/{name}", platform="linux"))
+    enter_token(monkeypatch)
+    assert main(["login", "copilot"]) == host_login.EXIT_NOT_READY
+    out, err = capsys.readouterr()
+    assert "slirp4netns" in status_pairs(out)["sandbox"]
+    assert "needs slirp4netns on PATH" in err
+    assert "install slirp4netns" in err.lower()
+
+
+@pytest.mark.usefixtures("copilot_state")
+def test_the_copilot_status_without_a_home_reads_nothing(capsys):
+    assert main(["status", "copilot"]) == 3
+    pairs = status_pairs(capsys.readouterr().out)
+    assert (pairs["marker"], pairs["token_present"], pairs["auth_type"]) == ("no", "no", "unknown")
+    assert copilot_cli.read_status.calls == []

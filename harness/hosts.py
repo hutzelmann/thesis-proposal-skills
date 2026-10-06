@@ -13,20 +13,37 @@ a fresh isolated Claude configuration, never in another host's login home.
 The `Host` objects are built in `claude_runner.HOSTS`, where the Claude
 callables live, as lambdas over the module attributes, so that every existing
 monkeypatch of `run_claude`, `isolated_config` and `follow_stream` keeps
-working; a host's binary is its login record's (`login.binary`). This module holds only the
-shapes; it imports nothing but `host_login`, so `codex_cli` may use it
-without an import cycle.
+working; a host's binary is its login record's (`login.binary`). Three hosts
+sit behind the seam: Claude Code (the default), Codex (`codex_cli`) and the
+GitHub Copilot CLI (`copilot_cli`). Codex and Copilot stage skills under
+`<ws>/.agents/skills`, run only in their harness homes (`always_isolated`), and
+share one notion of a scenario that needs the network (`needs_network`), so
+both hosts grant it to the same scenarios. This module holds only the shapes
+and that predicate; it imports nothing but `host_login`, so `codex_cli` and
+`copilot_cli` may use it without an import cycle.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from host_login import HostLogin
+
+# The skills whose scripts contact the network (add-codex-dev-runner D4(a)):
+# a scenario that stages one of them, or serves a fixture over localhost,
+# needs the network on every host that can withhold it.
+NETWORK_SKILLS = frozenset({"proposal-import", "proposal-lit-search", "proposal-reverse"})
+
+
+def needs_network(scenario: Mapping) -> bool:
+    """A scenario that serves a fixture over localhost, or whose skill or
+    siblings include import, literature search or reverse."""
+    skills = {scenario.get("skill"), *scenario.get("siblings", ())}
+    return bool(scenario.get("serve")) or bool(skills & NETWORK_SKILLS)
 
 
 @dataclass(frozen=True)

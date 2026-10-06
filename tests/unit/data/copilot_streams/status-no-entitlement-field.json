@@ -1,0 +1,67 @@
+{
+  "connect": {
+    "jsonrpc": "2.0",
+    "id": 0,
+    "result": {
+      "protocolVersion": 3,
+      "version": "1.0.91"
+    }
+  },
+  "auth": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "authInfo": {
+        "type": "env",
+        "host": "https://github.com",
+        "login": "fixture-login-octocat",
+        "token": "github_pat_FIXTURE_REPLY_ONLY",
+        "envVar": "COPILOT_GITHUB_TOKEN",
+        "copilotUser": {
+          "login": "fixture-login-octocat",
+          "access_type_sku": "free_educational_quota",
+          "copilot_plan": "individual_pro",
+          "token_based_billing": true,
+          "quota_reset_date": "2026-11-01",
+          "quota_reset_date_utc": "2026-11-01T00:00:00.000Z",
+          "organization_login_list": [
+            "fixture-org"
+          ],
+          "organization_list": [
+            {
+              "login": "fixture-org",
+              "name": "Fixture Org"
+            }
+          ],
+          "analytics_tracking_id": "fixture-tracking-id",
+          "quota_snapshots": {
+            "premium_interactions": {
+              "entitlement": 1500,
+              "overage_count": 0,
+              "overage_permitted": false,
+              "percent_remaining": 80.0,
+              "quota_id": "premium_interactions",
+              "quota_remaining": 1200,
+              "remaining": 1200,
+              "unlimited": false,
+              "has_quota": true,
+              "timestamp_utc": "2026-10-06T00:00:00.000Z"
+            },
+            "chat": {
+              "entitlement": 0,
+              "overage_count": 0,
+              "overage_entitlement": 0,
+              "overage_permitted": false,
+              "percent_remaining": 100.0,
+              "quota_id": "chat",
+              "remaining": 0,
+              "unlimited": true,
+              "has_quota": true
+            }
+          }
+        }
+      },
+      "authErrors": []
+    }
+  }
+}

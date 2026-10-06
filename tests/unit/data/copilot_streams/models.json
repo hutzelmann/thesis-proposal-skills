@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "models": [
+      {"id": "copilot-fixture-a", "name": "Copilot Fixture A", "capabilities": {},
+       "policy": {"state": "enabled"}, "supportedReasoningEfforts": ["low", "medium", "high"],
+       "defaultReasoningEffort": "medium"},
+      {"id": "copilot-fixture-b", "name": "Copilot Fixture B", "capabilities": {},
+       "policy": {"state": "enabled"}, "supportedReasoningEfforts": []},
+      {"id": "copilot-fixture-c", "name": "Copilot Fixture C", "capabilities": {},
+       "policy": {"state": "disabled", "terms": "synthetic terms"},
+       "supportedReasoningEfforts": ["high"]},
+      {"id": "copilot-fixture-d", "name": "Copilot Fixture D", "capabilities": {},
+       "policy": {"state": "unconfigured"}}
+    ]
+  }
+}

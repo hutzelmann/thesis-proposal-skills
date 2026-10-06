@@ -1,0 +1,48 @@
+{
+  "host_support": {
+    "supported": true,
+    "capabilities": []
+  },
+  "results": [
+    {
+      "name": "token_file",
+      "output": "readable",
+      "sandboxed": true
+    },
+    {
+      "name": "client_environ",
+      "output": "denied",
+      "sandboxed": true
+    },
+    {
+      "name": "ssh_dir",
+      "output": "denied",
+      "sandboxed": true
+    },
+    {
+      "name": "gh_config",
+      "output": "denied",
+      "sandboxed": true
+    },
+    {
+      "name": "gh_token",
+      "output": "1",
+      "sandboxed": true
+    },
+    {
+      "name": "git_credential",
+      "output": "128",
+      "sandboxed": true
+    },
+    {
+      "name": "python",
+      "output": "0",
+      "sandboxed": true
+    },
+    {
+      "name": "skill_script",
+      "output": "0",
+      "sandboxed": true
+    }
+  ]
+}

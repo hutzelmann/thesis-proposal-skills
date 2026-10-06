@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "github-mcp-server": {
+      "source": "builtin",
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/"
+    },
+    "docs": {
+      "source": "user",
+      "type": "stdio",
+      "command": "docs-server"
+    }
+  }
+}

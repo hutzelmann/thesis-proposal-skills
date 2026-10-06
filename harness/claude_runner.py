@@ -5,7 +5,7 @@ host's skill directory (real skill discovery, closer to production than the
 Inspect agent loop), runs the host headless with the user request, then
 applies the same L1 verdicts as the authoritative evals (harness/l1_checks.py).
 
-Two hosts sit behind one runner (`HOSTS`, harness/hosts.py; testing-harness
+Three hosts sit behind one runner (`HOSTS`, harness/hosts.py; testing-harness
 spec: Dev-runner host adapters):
 
 - **Claude Code** (`--host claude`, the default): headless `claude -p` on the
@@ -19,6 +19,23 @@ spec: Dev-runner host adapters):
   quota before each run, under a run lock its child also holds, and the session
   record after it; every refusal is untested. Codex reports no cost: the
   summary carries the quota windows before and after instead.
+- **GitHub Copilot** (`--host copilot --model <id> --max-ai-credits <N>`):
+  `copilot -p --output-format json` in the harness's own Copilot home on the
+  operator's included AI credits (harness/copilot_cli.py), skills under
+  `<ws>/.agents/skills/`, its shell in the OS sandbox. It needs a model named on
+  the command line (never `auto`, never provider-qualified) and a credit cap of
+  at least 30 (a soft cap), refuses `--max-budget-usd`, the install-prompt
+  scenarios and Windows, and always runs isolated, with the fine-grained token
+  of the token file beside the home. Before each run, under the run lock, the
+  headless status read checks the raw quota snapshot (any possible or drawn
+  overage, legacy billing or low quota refuses), the rosters and the
+  confinement probe; after it, a second read, the session's consumption and
+  the sandbox reports may record a billing or isolation stop, and every login
+  records an approval stop, each refusing later runs until the operator runs
+  `uv run poe host-login copilot --clear-stop`. `--preflight-only` prints every
+  check before the run and starts no prompt-mode child. Copilot reports AI
+  credits, not money: the summary's cost is absent, the credits, the cap and
+  the overage and remaining values before and after are reported.
 
 Dev loop only — not the source of record. Every summary carries its host and
 the label "dev-runner (<host>), not comparable to matrix", and a
@@ -50,6 +67,10 @@ Usage:
   uv run python harness/claude_runner.py check_report --host codex --model <name> --keep
   uv run python harness/claude_runner.py write_from_seed --host codex --model <name> --judge
   uv run python harness/claude_runner.py write_from_seed --host codex --rejudge /tmp/devrun-x
+  uv run python harness/claude_runner.py check_report --host copilot --model <id> \
+      --max-ai-credits 30 --preflight-only
+  uv run python harness/claude_runner.py check_report --host copilot --model <id> \
+      --max-ai-credits 30 --keep
   uv run python harness/claude_runner.py --summarize logs/devrun/smoke.jsonl \
       --expect write_from_seed import_messy customize_override
 
@@ -96,14 +117,20 @@ calls' cumulative notional cost (plan quota, not money).
 
 Exit status: 0 every computed verdict passed, 1 a verdict failed (L1 or a
 graded L2 criterion), 2 usage error, 3 untested (the subscription could not
-serve the run or the judge — on Codex, the plan billing guard refused it —, a
-claude.ai account surface or, on Codex, a foreign skill or an MCP call reached
-it, or a Codex precondition did not hold: the run lock, the CLI minimum, the
-feature allowlist, the served effort), 4 other runner failure.
+serve the run or the judge — on Codex or Copilot, the plan billing guard
+refused it, a Copilot billing stop included —, a claude.ai account surface or,
+on Codex or Copilot, a foreign skill, an MCP call, a broken confinement or a
+leaked token reached it, or a Codex or Copilot precondition did not hold: the
+run lock, the CLI version, the feature allowlist, the sandbox tools, the
+model listing, the served model or effort, the Copilot approval stop), 4
+other runner failure (a Copilot session without a shutdown record is one,
+with a billing stop).
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
 workspace so file edits and script calls work headlessly; Codex runs in its
-`workspace-write` sandbox, with network only for the scenarios that need it.
+`workspace-write` sandbox, with network only for the scenarios that need it;
+Copilot approves its allowlisted tools without prompting and runs its shell in
+the OS sandbox, with URL approvals only for the scenarios that need them.
 """
 
 from __future__ import annotations
@@ -128,6 +155,7 @@ from pathlib import Path
 import anyio
 import claude_cli
 import codex_cli
+import copilot_cli
 import host_login
 import support
 from account_surfaces import (
@@ -1302,6 +1330,55 @@ def codex_label(home: Path | None) -> dict:
             "login_dir": str(home or host_login.home(host_login.CODEX))}
 
 
+def copilot_isolation(stack: ExitStack, args: argparse.Namespace) -> Path:
+    """The Copilot harness home after the checks before the lock; a refusal
+    (a recorded stop among them) is untested."""
+    try:
+        return copilot_cli.isolated_home(stack, args)
+    except copilot_cli.CopilotRefused as refused:
+        raise RunnerFailure(refused.message, untested=True, billing=refused.billing) from None
+
+
+def _copilot_failure(problem: copilot_cli.RunProblem, events: list[dict]) -> RunnerFailure:
+    return RunnerFailure(problem.message, untested=problem.untested, events=events,
+                         billing=problem.billing)
+
+
+def run_copilot(ws: Path, request: str, args: argparse.Namespace, home: Path) -> list[dict]:
+    """A Copilot run (`copilot_cli.run_copilot`) and its after-run checks, as
+    the runner's outcomes (design Decision 11): a held run lock, a preflight
+    or billing-guard refusal, a broken confinement, an isolation finding, a
+    rejected token, a limit reached, a served model or effort other than the
+    requested one and an unknown tool are untested (exit 3); a session error,
+    a missing result line and the time limit are runner failures, unless the
+    run's events also show an untested cause; a session without a shutdown
+    record stays a runner failure (exit 4) and records a billing stop. Every
+    message was scrubbed of the token before it reaches here."""
+    scenario = SCENARIOS[args.scenario]
+    try:
+        events = copilot_cli.run_copilot(ws, request, model=args.model, effort=args.effort,
+                                         cap=args.max_ai_credits, timeout=args.timeout,
+                                         home=home, scenario=scenario)
+    except host_login.RunLockRefused as busy:
+        raise RunnerFailure(refusal(busy.problem), untested=True) from None
+    except copilot_cli.CopilotRefused as refused:
+        raise RunnerFailure(refused.message, untested=True, events=refused.events,
+                            billing=refused.billing) from None
+    except copilot_cli.CopilotRunFailed as failed:
+        raise _copilot_failure(copilot_cli.timeout_problem(failed), failed.events) from None
+    problem = copilot_cli.run_problem(events)
+    if problem:
+        raise _copilot_failure(problem, events)
+    return events
+
+
+def copilot_label(home: Path | None) -> dict:
+    """Every Copilot run is isolated in the Copilot harness home, on the
+    harness login (the token file beside it)."""
+    return {"login": LoginSource.HARNESS.value,
+            "login_dir": str(home or host_login.home(host_login.COPILOT))}
+
+
 # Built here, where the Claude callables live, as lambdas over the module
 # attributes, so every monkeypatch of run_claude, isolated_config and
 # follow_stream keeps working (design Decision 2).
@@ -1324,6 +1401,14 @@ HOSTS: dict[str, Host] = {
         login=host_login.CODEX,
         label=lambda home, _isolated: codex_label(home),
         always_isolated=True),
+    "copilot": Host(
+        name="copilot", skill_dir=(".agents", "skills"),
+        run=lambda ws, request, args, home: run_copilot(ws, request, args, home),
+        read=lambda events, args: copilot_cli.copilot_read(events, args),
+        isolation=lambda stack, args: copilot_isolation(stack, args),
+        login=host_login.COPILOT,
+        label=lambda home, _isolated: copilot_label(home),
+        always_isolated=True),
 }
 # D3(a): the Claude dev judge grades every host's runs, in its own isolation
 JUDGE = JudgeBackend(
@@ -1342,30 +1427,76 @@ def _inside_support_logs(path: Path) -> bool:
     return path.resolve().is_relative_to(SUPPORT_LOGS.resolve())
 
 
+EFFORTS = {"codex": codex_cli.EFFORTS, "copilot": copilot_cli.EFFORTS}
+
+
+def _host_rules(args: argparse.Namespace, host: str, scenario: dict,
+                model: str) -> tuple[tuple[bool, str], ...]:
+    """The usage rules a non-Claude host shares (Codex, Copilot): the install
+    scenarios, a model required and passed on verbatim, a dollar cap refused
+    on Codex, an effort from the host's own levels."""
+    title, other = host.capitalize(), host != "claude"
+    efforts = EFFORTS.get(host, ())
+    return (
+        (other and bool(scenario.get("install")),
+         f"{args.scenario} is an install-prompt scenario, which runs on the Claude host only"),
+        (other and not args.rejudge and not model,
+         f"--host {host} requires --model: {title} has no default model here"),
+        (other and "/" in model, f"--model {model!r} is provider-qualified; --host {host} takes "
+         f"the name {title} serves and passes it on unchanged"),
+        (host == "codex" and args.max_budget_usd is not None,
+         "--max-budget-usd is refused on --host codex: Codex offers no hard budget cap, and "
+         "the runner never ignores one"),
+        (other and args.effort is not None and args.effort not in efforts,
+         f"--effort {args.effort} is not a {title} effort ({', '.join(efforts)})"),
+    )
+
+
+def _copilot_rules(args: argparse.Namespace, host: str,
+                   model: str) -> tuple[tuple[bool, str], ...]:
+    """Copilot's own usage rules (testing-harness spec: Dev-runner host adapters;
+    Copilot plan billing guard)."""
+    copilot = host == "copilot"
+    live = copilot and not args.rejudge
+    cap = args.max_ai_credits
+    return (
+        (copilot and model == "auto",
+         "--model auto is refused on --host copilot: the served model could never equal the "
+         "request, so every run would be untested"),
+        (copilot and args.max_budget_usd is not None,
+         "--max-budget-usd is refused on --host copilot: Copilot's only cap is the AI-credit "
+         "cap, --max-ai-credits"),
+        (live and cap is None, f"--host copilot requires --max-ai-credits N, N >= "
+         f"{copilot_cli.MIN_AI_CREDITS}: the credit cap is soft, and the runner never runs "
+         "without one"),
+        (live and cap is not None and cap < copilot_cli.MIN_AI_CREDITS,
+         f"--max-ai-credits {cap} is below the minimum {copilot_cli.MIN_AI_CREDITS}"),
+        (not copilot and cap is not None, "--max-ai-credits applies to --host copilot only"),
+        (not copilot and args.preflight_only, "--preflight-only applies to --host copilot only"),
+    )
+
+
 def usage_problem(args: argparse.Namespace) -> str | None:
     """The first reason the invocation is a usage error (design Decision 3),
     checked before anything is staged or started."""
-    codex = host_for(args).name == "codex"
+    host = host_for(args).name
     scenario = SCENARIOS.get(args.scenario or "", {})
     model = args.model or ""
     rules = (
         (args.summary_log is not None and _inside_support_logs(args.summary_log),
          f"--summary-log {args.summary_log} lies inside logs/evals, where the support report "
          "reads its logs; a dev-runner summary is never written there"),
-        (not codex and args.effort is not None, "--effort applies to --host codex only"),
-        (codex and bool(scenario.get("install")),
-         f"{args.scenario} is an install-prompt scenario, which runs on the Claude host only"),
-        (codex and not args.rejudge and not model,
-         "--host codex requires --model: Codex has no default model here"),
-        (codex and "/" in model, f"--model {model!r} is provider-qualified; --host codex takes "
-         "the name Codex serves and passes it on unchanged"),
-        (codex and args.max_budget_usd is not None,
-         "--max-budget-usd is refused on --host codex: Codex offers no hard budget cap, and "
-         "the runner never ignores one"),
+        (host == "claude" and args.effort is not None,
+         "--effort applies to --host codex or --host copilot only"),
+        *_host_rules(args, host, scenario, model),
+        *_copilot_rules(args, host, model),
         # last, so every other usage error reads the same on every platform; a
-        # re-grade takes no lock and starts no Codex process
-        (codex and not args.rejudge and host_login.fcntl is None,
-         "--host codex needs POSIX file locks (fcntl), which this platform lacks"),
+        # re-grade takes no lock and starts no Codex or Copilot process
+        (host == "copilot" and not args.rejudge and sys.platform == "win32",
+         "--host copilot is refused on Windows: the Copilot sandbox cannot enforce its deny "
+         "list there"),
+        (host != "claude" and not args.rejudge and host_login.fcntl is None,
+         f"--host {host} needs POSIX file locks (fcntl), which this platform lacks"),
     )
     return next((message for refused, message in rules if refused), None)
 
@@ -1455,6 +1586,37 @@ def dev_run(args: argparse.Namespace, judge: Judge | None) -> int:
             print(f"\nworkspace kept: {ws}")
         else:
             shutil.rmtree(ws, ignore_errors=True)
+
+
+def copilot_preflight_only(args: argparse.Namespace) -> int:
+    """`--preflight-only` on Copilot: stage the scenario, run and print every
+    check before the run (`copilot_cli.preflight_report`), delete the
+    workspace. A recorded stop is printed and does not decide the outcome.
+    Exit 0 when every other check passes, 3 otherwise (a held run lock and a
+    refused child environment included); no prompt-mode child."""
+    scenario = SCENARIOS[args.scenario]
+    ws = Path(tempfile.mkdtemp(prefix=f"devrun-{args.scenario}-"))
+    try:
+        stage(scenario, ws, install_skill=not args.no_skill, skill_dir=HOSTS["copilot"].skill_dir)
+        try:
+            checks, ready = copilot_cli.preflight_report(ws, scenario, model=args.model,
+                                                         effort=args.effort)
+        except host_login.RunLockRefused as busy:
+            print(refusal(busy.problem), file=sys.stderr)
+            return EXIT_UNTESTED
+        except copilot_cli.CopilotRefused as refused:
+            print(refused.message, file=sys.stderr)
+            return EXIT_UNTESTED
+        for check in checks:
+            verdict = "ok" if check.problem is None else (
+                "recorded" if check.name == "stop" else "REFUSED")
+            print(f"{check.name}: {verdict} — {check.detail}")
+            if check.problem is not None:
+                print(f"  {refusal(check.problem)}")
+        print(f"preflight: {'ready' if ready else 'not ready'}")
+        return EXIT_PASS if ready else EXIT_UNTESTED
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
 
 
 # ---------- re-grade kept workspaces ----------------------------------------------
@@ -1598,13 +1760,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("scenario", nargs="?", choices=sorted(SCENARIOS))
     parser.add_argument("--host", choices=sorted(HOSTS), default="claude",
                         help="the host CLI that runs the model under test (default claude); "
-                             "codex runs in the Codex harness home on the ChatGPT plan quota")
+                             "codex runs in the Codex harness home on the ChatGPT plan quota, "
+                             "copilot in the Copilot harness home on the included AI credits")
     parser.add_argument("--model", default=None,
                         help="the model under test: an alias or full ID on Claude (default "
-                             "haiku); required on Codex, passed on unchanged")
-    parser.add_argument("--effort", choices=codex_cli.EFFORTS, default=None,
-                        help="codex only: the reasoning effort to request; the served one is "
-                             "checked after the run")
+                             "haiku); required on Codex and Copilot, passed on unchanged")
+    parser.add_argument("--effort", default=None,
+                        choices=list(dict.fromkeys([*copilot_cli.EFFORTS, *codex_cli.EFFORTS])),
+                        help="codex or copilot only: the reasoning effort to request, from the "
+                             "host's own levels; Codex's served one is checked after the run, "
+                             "Copilot's must be one its model listing reports")
+    parser.add_argument("--max-ai-credits", type=int, default=None, metavar="N",
+                        help="copilot only, required: the client's soft AI-credit cap for the "
+                             f"run, at least {copilot_cli.MIN_AI_CREDITS}")
+    parser.add_argument("--preflight-only", action="store_true",
+                        help="copilot only: run and print every check before the run, the "
+                             "rosters and the confinement probe included, and start no "
+                             "prompt-mode child (no model call)")
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep", action="store_true", help="keep the temp workspace")
     parser.add_argument("--no-skill", action="store_true",
@@ -1658,6 +1830,8 @@ def main(argv: list[str] | None = None) -> int:
             return stopped
         if args.rejudge:
             return rejudge(args, judge)
+        if args.preflight_only:
+            return copilot_preflight_only(args)
         scenario = SCENARIOS[args.scenario]
         if scenario.get("install"):  # no rubric twin, so no judge reaches here
             return run_install_probe(args, scenario)

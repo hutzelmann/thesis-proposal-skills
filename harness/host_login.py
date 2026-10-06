@@ -59,6 +59,34 @@ its modification time. Until live check X8 passes (`X8_PASSED`), every message
 whose remedy is `host-login codex` says that its effect on the operator's
 other ChatGPT sessions is unverified (`NOTES`, `login_note(remedy, client)`).
 
+**The Copilot record** (`COPILOT`, add-copilot-dev-runner). Its credential is a
+token file, not a client login (`HostLogin.credential`): a fine-grained
+personal access token carrying only "Copilot Requests", which `host-login
+copilot` reads at a hidden prompt, refuses unless it begins with `github_pat_`
+(`token_problem`; the message never echoes it), and writes to
+`<state>/hosts/copilot.token` at 0600 (`token_path`) — beside the home, never
+inside it, so no grant the client gives its sandbox on its own home covers it.
+Only that login, `host-logout copilot` (which deletes the file and names the
+page where the token is revoked) and `copilot_cli.token_env` touch the file;
+no Copilot client login ever runs, and the operator's keyring, `~/.copilot`,
+`~/.config/github-copilot` and `~/.config/gh` are never read. Every login
+records an approval stop (`copilot_cli.record_stop`), and only `host-login
+copilot --clear-stop`, run by the operator in a terminal, clears it: that is
+the go for the next model call. Before the token prompt the home is seeded
+with `pinned_settings` — auto-update, auto-model switching, hooks, memory,
+editor auto-connect and experimental features off, custom agents local, and
+the OS sandbox pinned (no bypass, no git or gh credentials, no developer-tool
+grants) with a deny list built by construction from the password database:
+the operator's whole real home, `/run/user/<uid>`, the state root where it
+lies outside that home, and the token file. `check_copilot_home` holds the
+home to an allow-list, because the client's `config.json` overrides
+`settings.json` key by key. The child environment adds `TERM=dumb`,
+`NO_COLOR=1`, `DBUS_SESSION_BUS_ADDRESS=disabled:`, `COPILOT_AUTO_UPDATE=false`,
+`COPILOT_CACHE_HOME=<state>/cache/copilot` and an empty `GH_CONFIG_DIR` to the
+admitted plumbing; the token is added after the builder, by the caller.
+`status copilot [--models] [--no-token]` runs the model-free status read
+(`copilot_cli.status`).
+
 **The Codex run lock.** `run_lock` takes an exclusive `flock` on
 `<home>/.harness-run.lock` within `LOCK_WAIT_S`, else raises `RunLockBusy`
 (untested, exit 3); on a platform without POSIX file locks it raises
@@ -88,15 +116,18 @@ and never printed; only `expiresAt` is ever read out of them.
 Usage:
   uv run poe host-login claude [--reset]                 # the operator, in a terminal
   uv run poe host-login codex [--reset] [--device-auth]  # the operator, in a terminal
+  uv run poe host-login copilot [--reset | --clear-stop] # the operator, in a terminal
   uv run poe host-status [claude]                        # anyone; no model call
   uv run poe host-status codex [--quota]                 # anyone; no model call
-  uv run poe host-logout claude|codex                    # the operator
+  uv run poe host-status copilot [--models] [--no-token] # anyone; no model call
+  uv run poe host-logout claude|codex|copilot            # the operator
 """
 
 from __future__ import annotations
 
 import argparse
 import ctypes
+import getpass
 import json
 import os
 import re
@@ -119,6 +150,10 @@ try:  # POSIX file locks: the Codex run lock; the Codex runner refuses without t
     import fcntl
 except ImportError:  # Windows
     fcntl = None  # type: ignore[assignment]
+try:  # the password database: the Copilot deny list's account home
+    import pwd
+except ImportError:  # Windows, where the Copilot runner refuses to start
+    pwd = None  # type: ignore[assignment]
 
 from account_surfaces import (
     CONNECTORS_OFF,
@@ -178,10 +213,15 @@ L3_CAVEAT = "Whether this logs out your other Claude sessions is unverified (L3)
 X8_PASSED = False
 CODEX_NOT_AFFECTED = "Your own Codex login is not affected"
 X8_CAVEAT = "Whether this logs out your other ChatGPT sessions is unverified (X8)"
+# A token-file client has no revocation check: its login and logout touch only
+# the token file, never a client login (add-copilot-dev-runner Decision 3).
+NO_REVOCATION_CHECK = True
+COPILOT_NOT_AFFECTED = "Your own Copilot login is not affected"
 # per client: the not-affected sentence, the caveat, and the name of its pass
 # flag (read at call time, so a flip or a test's monkeypatch takes effect)
 NOTES = {"claude": (NOT_AFFECTED, L3_CAVEAT, "L3_PASSED"),
-         "codex": (CODEX_NOT_AFFECTED, X8_CAVEAT, "X8_PASSED")}
+         "codex": (CODEX_NOT_AFFECTED, X8_CAVEAT, "X8_PASSED"),
+         "copilot": (COPILOT_NOT_AFFECTED, None, "NO_REVOCATION_CHECK")}
 
 # The Codex run lock (design Decision 7): judgment, not a host constant. Runs
 # are serial by design, and a waiter is a second invocation the operator
@@ -197,6 +237,9 @@ PR_SET_PDEATHSIG = 1
 # observing an unsandboxed Codex shell's exports would take a model call, so
 # add-codex-dev-runner keeps the pair (design, Open Questions); the AGENTS.md
 # rule that agents never log in is the guard.
+# The 1.0.91 V-pass found no variable the Copilot shell tool exports to its
+# commands (add-copilot-dev-runner design, Facts at 1.0.91), so the set is
+# unchanged for Copilot.
 AGENT_MARKERS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID",
                  "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED")
 
@@ -225,7 +268,16 @@ class HostLogin:
     file in the home, the client's own status decides whether it holds one),
     `offenders` (what makes the home unclean, in place of `home_offenders`)
     and `status_command` (the client's own `status`). A client that reads an
-    Anthropic profile directory is one with a `profile`."""
+    Anthropic profile directory is one with a `profile`.
+
+    The Copilot record added the rest, again with defaults that leave Claude
+    and Codex as they were: `credential` is the kind of harness login —
+    `client-login` (the client's own login, run in the home) or `token-file`
+    (a token in one file beside the home, handed to the client's children
+    under `token_env` only); `strip_names` are exact names stripped beside the
+    prefix and suffix families; `home_env` adds variables derived from the
+    home to `child_vars`; `dynamic_seed` adds seed files whose content depends
+    on the home (Copilot's settings carry the deny list's absolute paths)."""
 
     name: str
     binary: str
@@ -251,22 +303,32 @@ class HostLogin:
     login_in_status: bool = True
     offenders: Callable[[Path], list[str]] | None = None
     status_command: Callable[[argparse.Namespace, Mapping[str, str]], int] | None = None
+    credential: str = "client-login"
+    token_env: str | None = None
+    strip_names: frozenset[str] = frozenset()
+    home_env: Callable[[PurePath], Mapping[str, str]] | None = None
+    dynamic_seed: Callable[[Path], Mapping[str, str]] | None = None
 
     def child_vars(self, config: PurePath) -> dict[str, str]:
         """What the harness itself sets in every child of this client, replacing
-        any inherited value: the configuration directory, the fixed variables
-        and the profile directory. For Codex that is `CODEX_HOME` alone, which
-        makes it the pre-spawn assertion's exact exemption set."""
+        any inherited value: the configuration directory, the fixed variables,
+        the profile directory and the variables derived from the home. For
+        Codex that is `CODEX_HOME` alone, which makes it the pre-spawn
+        assertion's exact exemption set; for Copilot it is the home, the cache,
+        the update switch, the disabled session bus and the empty GitHub CLI
+        directory (never a scratch directory, never the token)."""
         env = {self.home_var: str(config), **self.fixed_env}
         if self.profile:
             variable, directory = self.profile
             env[variable] = str(config / directory)
+        if self.home_env:
+            env.update(self.home_env(config))
         return env
 
     def stripped(self, name: str) -> bool:
         """Whether an inherited variable belongs to the families every login,
-        logout and (for Codex) child drops."""
-        return name.startswith(self.login_strip_prefixes) or (
+        logout and (for Codex and Copilot) child drops."""
+        return name in self.strip_names or name.startswith(self.login_strip_prefixes) or (
             bool(self.strip_suffixes) and name.endswith(self.strip_suffixes))
 
     @property
@@ -414,7 +476,132 @@ CODEX = HostLogin(
     offenders=lambda home_dir: codex_offenders(home_dir),
     status_command=lambda args, environ: cmd_status_codex(args, environ),
 )
-RECORDS: Mapping[str, HostLogin] = {"claude": CLAUDE, "codex": CODEX}
+# ---------- the Copilot record (add-copilot-dev-runner Decisions 3 to 6) ------------------
+
+COPILOT_SETTINGS = "settings.json"
+COPILOT_CONFIG = "config.json"
+TOKEN_FILE = "copilot.token"
+TOKEN_PREFIX = "github_pat_"
+CLASSIC_PREFIX = "ghp_"
+TOKEN_PROMPT = "Fine-grained token (Copilot Requests only): "
+TOKEN_PAGE = "github.com/settings/personal-access-tokens"
+# the one remedy for a token Copilot rejects, a missing or classic one included
+COPILOT_TOKEN_REMEDY = (f"create a fine-grained token that carries only Copilot Requests "
+                        f"({TOKEN_PAGE}/new), then run `uv run poe host-login copilot --reset`")
+CLEAR_STOP_COMMAND = "uv run poe host-login copilot --clear-stop"
+# The top-level keys of the client's own state file a token-mode home may
+# develop. Starts from the operator's home; live check K3 fixes it at the pin,
+# and widening it is a reviewed change (design Decision 6).
+MANAGED_STATE_KEYS = frozenset({"expAssignmentsCache", "firstLaunchAt", "lastLoggedInUser",
+                                "loggedInUsers"})
+# the only entries a clean Copilot home holds, besides `session-store.db*`;
+# `session-state/` and `gh/` must also be empty (Decision 6)
+COPILOT_ALLOWED = frozenset({COPILOT_SETTINGS, COPILOT_CONFIG, "session-state", "gh", MARKER,
+                             LOCK_NAME, "quota.json"})
+COPILOT_EMPTY_DIRS = ("session-state", "gh")
+
+
+def token_path(home_dir: Path) -> Path:
+    """The token file: `<state>/hosts/copilot.token`, a sibling of the home and
+    never inside it (Decision 4). Read only by `copilot_cli.token_env`, written
+    only by the login, deleted only by the login and the logout."""
+    return home_dir.parent / TOKEN_FILE
+
+
+def account_home(uid: int | None = None) -> Path:
+    """The operator's real home from the password database, never `$HOME`: a
+    child's `HOME` is a scratch directory, so a deny list built from it would
+    leave the real home readable. Windows (refused by the runner) falls back
+    to the profile directory."""
+    if pwd is None:
+        return Path.home()
+    return Path(pwd.getpwuid(os.getuid() if uid is None else uid).pw_dir)
+
+
+def deny_list(home_dir: Path, account: Path, uid: int | None = None) -> list[str]:
+    """The sandbox deny list, built by construction (Decision 3): the whole
+    account home, the per-user runtime directory (the session bus and the
+    agent sockets), the state root where it lies outside the account home,
+    and the token file — absolute paths, so no `~` resolves under scratch."""
+    uid = (os.getuid() if hasattr(os, "getuid") else 0) if uid is None else uid
+    state = home_dir.parent.parent
+    deny = [str(account), f"/run/user/{uid}"]
+    if not _within(state.resolve(), account.resolve()):
+        deny.append(str(state))
+    return [*deny, str(token_path(home_dir))]
+
+
+def pinned_settings(home_dir: Path, account: Path, uid: int | None = None) -> dict:
+    """The Copilot home's `settings.json` (Decision 3): auto-update, the switch
+    to automatic model selection, hooks, memory, editor auto-connect and
+    experimental features off, custom agents local, a file token store, and
+    the OS sandbox pinned — enabled, no bypass, no developer-tool grants, no
+    git or gh credentials — with the deny list at the key path the 1.0.91
+    package reads, `sandbox.userPolicy.filesystem.deniedPaths`."""
+    return {
+        "autoUpdate": False, "continueOnAutoMode": False,
+        "customAgents": {"defaultLocalOnly": True}, "disableAllHooks": True,
+        "experimental": False, "ide": {"autoConnect": False}, "memory": False,
+        "storeTokenPlaintext": True,
+        "sandbox": {"enabled": True, "allowBypass": False, "allowDevToolAccess": False,
+                    "auth": {"git": False, "gh": False},
+                    "userPolicy": {"filesystem": {
+                        "deniedPaths": deny_list(home_dir, account, uid)}}},
+    }
+
+
+def copilot_home_env(home_dir: PurePath) -> dict[str, str]:
+    """The variables a Copilot child gets from its home (Decision 5): the
+    persistent package cache outside the home, and the empty GitHub CLI
+    configuration directory inside it."""
+    return {"COPILOT_CACHE_HOME": str(home_dir.parent.parent / "cache" / "copilot"),
+            "GH_CONFIG_DIR": str(home_dir / "gh")}
+
+
+def _settings_seed(home_dir: Path) -> dict[str, str]:
+    return {COPILOT_SETTINGS: json.dumps(pinned_settings(home_dir, account_home()), indent=2)
+            + "\n"}
+
+
+COPILOT = HostLogin(
+    name="copilot",
+    binary="copilot",
+    home_var="COPILOT_HOME",
+    # a token-file record runs no client login, logout or status command
+    login_argv=(),
+    status_argv=(),
+    logout_argv=(),
+    admitted=CLAUDE_ADMITTED - {LONG_LIVED_TOKEN},
+    admitted_prefixes=("LC_",),
+    # every variable that could bill a run elsewhere, act as another account
+    # or route it to a third-party provider: an environment token outranks
+    # every other credential in the client
+    login_strip_prefixes=("COPILOT_", "GITHUB_", "GH_", "CAPI_", "OTEL_", "OPENAI_",
+                          "ANTHROPIC_", "AZURE_OPENAI_"),
+    seed={"gh/": ""},
+    forbidden=(),
+    plugin_record=None,
+    fixed_env={"TERM": "dumb", "NO_COLOR": "1",
+               # set, not dropped: the GitHub CLI's bus library falls back to
+               # /run/user/<uid>/bus when the variable is empty
+               "DBUS_SESSION_BUS_ADDRESS": "disabled:",
+               "COPILOT_AUTO_UPDATE": "false"},
+    profile=None,
+    credentials=TOKEN_FILE,
+    # the session errors that mean the token no longer serves
+    failure=re.compile(r"\b(?:authentication|authorization)\b"),
+    strip_suffixes=("_TOKEN", "_API_KEY"),
+    run_locked=True,
+    login_in_status=False,
+    offenders=lambda home_dir: copilot_offenders(home_dir),
+    status_command=lambda args, environ: cmd_status_copilot(args, environ),
+    credential="token-file",
+    token_env="COPILOT_GITHUB_TOKEN",
+    strip_names=frozenset({"BASH_ENV", "SSH_AUTH_SOCK"}),
+    home_env=copilot_home_env,
+    dynamic_seed=_settings_seed,
+)
+RECORDS: Mapping[str, HostLogin] = {"claude": CLAUDE, "codex": CODEX, "copilot": COPILOT}
 LOGIN_FAILURE = CLAUDE.failure
 
 
@@ -451,6 +638,16 @@ class RunLockUnsupported(RunLockRefused):
 NO_FILE_LOCKS = LoginProblem(
     "this platform lacks POSIX file locks (fcntl), which the Codex run lock needs",
     "run the Codex harness commands on Linux or macOS", "codex", "precondition")
+
+
+def no_file_locks(record: HostLogin) -> LoginProblem:
+    """`NO_FILE_LOCKS`, worded for the record whose run lock it concerns."""
+    if record is CODEX:
+        return NO_FILE_LOCKS
+    title = record.name.capitalize()
+    return LoginProblem(f"this platform lacks POSIX file locks (fcntl), which the {title} run "
+                        "lock needs", f"run the {title} harness commands on Linux or macOS",
+                        record.name, "precondition")
 
 
 class LoginSource(Enum):
@@ -575,9 +772,12 @@ def partial_popen(record: HostLogin) -> Starter:
 
 
 @contextmanager
-def run_lock(home_dir: Path, wait: float | None = None) -> Iterator[int]:
-    """The Codex run lock: an exclusive `flock` on `<home>/.harness-run.lock`,
-    taken within `wait` (default LOCK_WAIT_S) or refused with `RunLockBusy`.
+def run_lock(home_dir: Path, wait: float | None = None,
+             record: HostLogin | None = None) -> Iterator[int]:
+    """The run lock of a client whose runs are serial — Codex by default,
+    Copilot with `record=COPILOT`: an exclusive `flock` on
+    `<home>/.harness-run.lock`, taken within `wait` (default LOCK_WAIT_S) or
+    refused with `RunLockBusy`.
     Yields the descriptor, which a child receives through `pass_fds`: `flock`
     binds to the open file description, so the lock stays held while that
     child lives, even after the harness is killed. The harness never unlocks
@@ -587,8 +787,9 @@ def run_lock(home_dir: Path, wait: float | None = None) -> Iterator[int]:
     `codex exec` and leaves running may hold the lock too (unverified until
     the first live run); the refusal therefore names `fuser`, which shows
     the holder. Without POSIX file locks it raises `RunLockUnsupported`."""
+    record = record or CODEX
     if fcntl is None:
-        raise RunLockUnsupported(NO_FILE_LOCKS)
+        raise RunLockUnsupported(no_file_locks(record))
     path = home_dir / LOCK_NAME
     handle = path.open("ab")  # binary: the lock file holds nothing
     with suppress(OSError):
@@ -602,9 +803,9 @@ def run_lock(home_dir: Path, wait: float | None = None) -> Iterator[int]:
             if time.monotonic() >= deadline:
                 handle.close()
                 raise RunLockBusy(LoginProblem(
-                    f"another Codex run holds the harness home ({path}), or a process a run "
-                    f"left behind does (`fuser -v {path}` names it)", "rerun after it ends",
-                    CODEX.name, "precondition")) from None
+                    f"another {record.name.capitalize()} run holds the harness home ({path}), "
+                    f"or a process a run left behind does (`fuser -v {path}` names it)",
+                    "rerun after it ends", record.name, "precondition")) from None
             time.sleep(LOCK_POLL_S)
     try:
         yield handle.fileno()
@@ -645,9 +846,13 @@ def _within(path: Path, other: Path) -> bool:
 
 
 def _client_dirs(environ: Mapping[str, str], user: Path) -> list[Path]:
-    dirs = [user / ".claude", user / ".codex"]
-    return dirs + [Path(environ[name]) for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
-                   if environ.get(name)]
+    """Every client's own configuration directory: Claude's, Codex's and
+    Copilot's (`~/.copilot`, `~/.config/github-copilot`), and those an
+    inherited configuration variable names."""
+    dirs = [user / ".claude", user / ".codex", user / ".copilot",
+            user / ".config" / "github-copilot"]
+    return dirs + [Path(environ[name]) for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME",
+                                                    "COPILOT_HOME") if environ.get(name)]
 
 
 def system_tempdir() -> str:
@@ -725,7 +930,8 @@ def seed(record: HostLogin, home_dir: Path) -> None:
     if os.name == "posix":
         home_dir.chmod(0o700)
     (home_dir / MARKER).write_text(MARKER_TEXT, encoding="utf-8")
-    for rel, content in record.seed.items():
+    files = {**record.seed, **(record.dynamic_seed(home_dir) if record.dynamic_seed else {})}
+    for rel, content in files.items():
         path = home_dir / rel
         if rel.endswith("/"):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -875,6 +1081,90 @@ def check_codex_home(home_dir: Path) -> LoginProblem | None:
     backstop should `--strict-config` miss a nested key — and it holds nothing
     forbidden."""
     return check_home(CODEX, home_dir)
+
+
+def _json_object(path: Path) -> dict | str:
+    """A JSON object read from `path`, or why it is none: `missing`,
+    `unreadable` or `not an object`."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "missing"
+    except (OSError, ValueError):
+        return "unreadable"
+    return data if isinstance(data, dict) else "not an object"
+
+
+def _settings_offender(home_dir: Path, account: Path) -> list[str]:
+    actual = _json_object(home_dir / COPILOT_SETTINGS)
+    difference = (actual if isinstance(actual, str)
+                  else _first_difference(actual, pinned_settings(home_dir, account)))
+    return [f"{COPILOT_SETTINGS} ({difference})"] if difference else []
+
+
+def _state_offenders(home_dir: Path) -> list[str]:
+    state = _json_object(home_dir / COPILOT_CONFIG)
+    if state == "missing":
+        return []
+    if isinstance(state, str):
+        return [f"{COPILOT_CONFIG} ({state})"]
+    return [f"{COPILOT_CONFIG} (key {key} outside the managed-state set)"
+            for key in sorted(set(state) - MANAGED_STATE_KEYS)]
+
+
+def _entry_offenders(home_dir: Path) -> list[str]:
+    found = []
+    for entry in sorted(home_dir.iterdir()):
+        name = entry.name
+        if name in COPILOT_EMPTY_DIRS:
+            if entry.is_dir() and not entry.is_symlink() and not any(entry.iterdir()):
+                continue
+            found.append(f"{name}/ (not an empty directory)")
+        elif name not in COPILOT_ALLOWED and not name.startswith("session-store.db"):
+            found.append(name)
+    return found
+
+
+def copilot_offenders(home_dir: Path, account: Path | None = None) -> list[str]:
+    """What makes the Copilot home unclean, by key path or entry (Decision 6):
+    settings that differ from `pinned_settings` in any key, a key of the
+    client's state file outside MANAGED_STATE_KEYS — `config.json` overrides
+    `settings.json` key by key, so this is an allow-list — and any entry
+    outside the allow-list: a custom-instructions file, `skills/`,
+    `mcp-config.json`, `pkg/`, a token file, a non-empty `session-state/` or
+    `gh/`."""
+    if not home_dir.is_dir():
+        return []
+    account = account_home() if account is None else account
+    return (_settings_offender(home_dir, account) + _state_offenders(home_dir)
+            + _entry_offenders(home_dir))
+
+
+def check_copilot_home(home_dir: Path, account: Path | None = None) -> LoginProblem | None:
+    """The Copilot home is clean (`copilot_offenders`); refused naming the first
+    offending key path or entry, with the reset remedy."""
+    offenders = copilot_offenders(home_dir, account)
+    if not offenders:
+        return None
+    return LoginProblem(f"the harness login home {home_dir} is not clean: it holds "
+                        f"{', '.join(offenders)}",
+                        f"remove {'it' if len(offenders) == 1 else 'them'}, or run "
+                        f"`{COPILOT.reset_command}`", COPILOT.name)
+
+
+def token_problem(value: str) -> LoginProblem | None:
+    """Whether a token is a fine-grained personal access token, judged by its
+    prefix alone (the first 11 characters): a classic `ghp_` token is refused
+    by name — the client rejects it in prompt mode — and so is any other
+    prefix. The message never echoes any part of the value."""
+    head = value[:len(TOKEN_PREFIX)]
+    if head == TOKEN_PREFIX:
+        return None
+    kind = ("a classic personal access token" if head.startswith(CLASSIC_PREFIX)
+            else "not a fine-grained personal access token")
+    return LoginProblem(f"the token entered is {kind}; the harness takes only a fine-grained "
+                        f"token (it begins with {TOKEN_PREFIX})", COPILOT_TOKEN_REMEDY,
+                        COPILOT.name)
 
 
 def codex_status(stderr: str) -> str:
@@ -1365,7 +1655,7 @@ def _home_or_problem(record: HostLogin, environ: Mapping[str, str]) -> Path | Lo
     anything is created."""
     root = state_root(environ)
     profile = profile_problem(environ) if record.profile else None
-    locks = NO_FILE_LOCKS if record.run_locked and fcntl is None else None
+    locks = no_file_locks(record) if record.run_locked and fcntl is None else None
     return (check_location(root, environ, record=record, tempdir=system_tempdir())
             or profile or locks or root / "hosts" / record.name)
 
@@ -1389,7 +1679,10 @@ def cmd_login(record: HostLogin, args: argparse.Namespace, environ: Mapping[str,
     """Seed a missing home; refuse an existing one the harness did not make,
     with or without `--reset`; log out first over an existing login. A Codex
     login holds the run lock from the logout to the end of the login, and
-    takes it again on the reseeded home after a reset."""
+    takes it again on the reseeded home after a reset. A token-file record
+    (Copilot) takes `cmd_login_token` instead: no client login runs."""
+    if record.credential == "token-file":
+        return cmd_login_token(record, args, environ)
     bump = _speed_bumps(environ)
     if bump:
         print(bump, file=sys.stderr)
@@ -1426,7 +1719,10 @@ def cmd_logout(record: HostLogin, _args: argparse.Namespace,
                environ: Mapping[str, str]) -> int:
     """Log the client out of the home. A missing home has nothing to log out;
     an existing path the harness did not make is refused like every command
-    refuses it, so a foreign login there is never logged out."""
+    refuses it, so a foreign login there is never logged out. A token-file
+    record deletes its token file instead (`cmd_logout_token`)."""
+    if record.credential == "token-file":
+        return cmd_logout_token(record, environ)
     home_dir = _home_or_problem(record, environ)
     if isinstance(home_dir, LoginProblem):
         print(refusal(home_dir), file=sys.stderr)
@@ -1531,6 +1827,158 @@ def cmd_status(record: HostLogin, args: argparse.Namespace,
     return EXIT_READY
 
 
+# ---------- the token-file commands (Copilot; add-copilot-dev-runner Decision 4) -------------
+
+APPROVAL_CAUSE = "first run not yet approved"
+
+
+def _token_home(record: HostLogin, environ: Mapping[str, str]) -> Path | LoginProblem:
+    """The token-file record's home, or why no command may touch it: its
+    location, a platform without file locks, or a path the harness did not
+    make (never adopted, never deleted)."""
+    home_dir = _home_or_problem(record, environ)
+    if isinstance(home_dir, LoginProblem):
+        return home_dir
+    if home_dir.exists() or home_dir.is_symlink():
+        return not_harness_made(home_dir, record) or home_dir
+    return home_dir
+
+
+def _read_token() -> str | None:
+    """The token from the terminal, without echo; None when nothing came."""
+    try:
+        value = getpass.getpass(TOKEN_PROMPT)
+    except (EOFError, KeyboardInterrupt):
+        return None
+    return value.strip() or None
+
+
+def _write_token(home_dir: Path, value: str) -> None:
+    """The token file beside the home: created exclusively and owner-only
+    (`touch(mode=0o600, exist_ok=False)` is `os.open` with `O_WRONLY | O_CREAT
+    | O_EXCL` and mode 0600, so an existing file or link at the path fails the
+    login), then written as bytes — never readable by anyone else, not even
+    while empty."""
+    path = token_path(home_dir)
+    path.touch(mode=0o600, exist_ok=False)
+    with path.open("wb") as handle:
+        handle.write(value.encode("utf-8") + b"\n")
+
+
+def _take_token(home_dir: Path) -> LoginProblem | None:
+    """Prompt, refuse anything but a fine-grained token before writing, write
+    the token file and record the approval stop. Under the run lock."""
+    import copilot_cli  # deferred: copilot_cli imports this module
+
+    value = _read_token()
+    if value is None:
+        return LoginProblem("no token was entered", "run the login again and paste the token",
+                            COPILOT.name)
+    problem = token_problem(value)
+    if problem:
+        return problem
+    _write_token(home_dir, value)
+    copilot_cli.record_stop(home_dir, "approval", APPROVAL_CAUSE)
+    return None
+
+
+def _clear_stop(record: HostLogin, home_dir: Path) -> int:
+    """`--clear-stop`: under the run lock, remove a recorded stop of any kind
+    from the status snapshot, and change nothing else in the home."""
+    import copilot_cli  # deferred: copilot_cli imports this module
+
+    absent = check_presence(home_dir, record)
+    if absent:
+        print(refusal(absent), file=sys.stderr)
+        return EXIT_NOT_READY
+    with run_lock(home_dir, record=record):
+        removed = copilot_cli.clear_stop(home_dir)
+    if removed is None:
+        print("host-login: no stop is recorded in the Copilot harness home")
+    else:
+        print(f"host-login: cleared the {removed.get('kind')} stop ({removed.get('cause')}); "
+              "the next Copilot run may start")
+    return EXIT_READY
+
+
+def cmd_login_token(record: HostLogin, args: argparse.Namespace,
+                    environ: Mapping[str, str]) -> int:
+    """The token-file login: the same speed bumps, the location, the seed
+    before the prompt, then under the run lock the logout (deleting the token
+    file), with `--reset` the wipe and reseed, the hidden prompt, the prefix
+    check, the 0600 file and the approval stop; then the status read. No
+    client login ever runs. `--clear-stop` removes a recorded stop instead."""
+    bump = _speed_bumps(environ)
+    if bump:
+        print(bump, file=sys.stderr)
+        return EXIT_USAGE
+    home_dir = _token_home(record, environ)
+    if isinstance(home_dir, LoginProblem):
+        print(refusal(home_dir), file=sys.stderr)
+        return EXIT_NOT_READY
+    if getattr(args, "clear_stop", False):
+        return _clear_stop(record, home_dir)
+    existed = home_dir.exists()
+    if not existed:
+        seed(record, home_dir)
+    with ExitStack() as hold:
+        hold.enter_context(run_lock(home_dir, record=record))
+        token_path(home_dir).unlink(missing_ok=True)
+        if existed and args.reset:
+            wipe(home_dir, record)  # a marked home: `_token_home` refused anything else
+            seed(record, home_dir)
+            hold.enter_context(run_lock(home_dir, record=record))
+        problem = _take_token(home_dir)
+    if problem:
+        print(f"host-login: {problem.cause}. {problem.remedy[:1].upper()}{problem.remedy[1:]}.",
+              file=sys.stderr)
+        return EXIT_USAGE
+    print(f"host-login: wrote {token_path(home_dir)} (owner-only) and recorded the approval "
+          f"stop: the first Copilot run waits until you run `{CLEAR_STOP_COMMAND}` in a "
+          "terminal outside any agent session.")
+    return cmd_status(record, args, environ)
+
+
+def cmd_logout_token(record: HostLogin, environ: Mapping[str, str]) -> int:
+    """The token-file logout: under the run lock, delete the token file and
+    nothing else, run no client logout, and name the page where the operator
+    revokes the token. No unverified-logout caveat: no client login is
+    touched."""
+    home_dir = _token_home(record, environ)
+    if isinstance(home_dir, LoginProblem):
+        print(refusal(home_dir), file=sys.stderr)
+        return EXIT_NOT_READY
+    path = token_path(home_dir)
+    with run_lock(home_dir, record=record) if home_dir.is_dir() else nullcontext():
+        existed = path.exists()
+        path.unlink(missing_ok=True)
+    done = f"deleted the token file {path}" if existed else f"no token file at {path}"
+    print(f"host-logout: {done}. Revoke the token at {TOKEN_PAGE}.")
+    return EXIT_READY
+
+
+def cmd_status_copilot(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """`status copilot [--models] [--no-token]`: the keys of the spec's status
+    list (`copilot_cli.status`), with no model call, under the run lock. A
+    recorded stop is reported and does not decide the exit status. Exit 0
+    ready, 3 not ready."""
+    import copilot_cli  # deferred: copilot_cli imports this module
+
+    root = state_root(environ)
+    home_dir = root / "hosts" / COPILOT.name
+    problem = check_location(root, environ, record=COPILOT)
+    lines, found = copilot_cli.status(home_dir, environ, models=getattr(args, "models", False),
+                                      no_token=getattr(args, "no_token", False),
+                                      run_probes=problem is None)
+    for key, value in lines.items():
+        print(f"{key}: {value}")
+    problem = problem or found
+    if problem:
+        print(refusal(problem), file=sys.stderr)
+        return EXIT_NOT_READY
+    return EXIT_READY
+
+
 COMMANDS = {"login": cmd_login, "status": cmd_status, "logout": cmd_logout}
 
 
@@ -1544,11 +1992,19 @@ def build_parser() -> argparse.ArgumentParser:
                        help="log out, wipe the marked home, seed it again, then log in")
     login.add_argument("--device-auth", action="store_true",
                        help="codex only: the client's device-code login instead of a browser")
+    login.add_argument("--clear-stop", action="store_true",
+                       help="copilot only: remove a recorded stop (billing, isolation or "
+                            "approval); clearing the approval stop approves the next run")
     status = sub.add_parser("status", help="report the harness home; no model call")
     status.add_argument("client", nargs="?", default="claude", choices=sorted(RECORDS))
     status.add_argument("--quota", action="store_true",
                         help="codex only: also read the plan quota now (under the run lock; "
                              "a GET of plan usage, not a model call)")
+    status.add_argument("--models", action="store_true",
+                        help="copilot only: also list the models (id, policy, efforts)")
+    status.add_argument("--no-token", action="store_true",
+                        help="copilot only: also repeat the read without the token, to show "
+                             "the client finds no other credential")
     logout = sub.add_parser("logout", help="run the client's logout in the harness home")
     logout.add_argument("client", choices=sorted(RECORDS))
     return parser
@@ -1560,10 +2016,16 @@ def main(argv: list[str] | None = None) -> int:
     included."""
     parser = build_parser()
     args = parser.parse_args(argv)
-    for option, given in (("--device-auth", getattr(args, "device_auth", False)),
-                          ("--quota", getattr(args, "quota", False))):
-        if given and args.client != CODEX.name:
-            parser.error(f"{option} applies to the codex client only")
+    for option, given, client in (
+            ("--device-auth", getattr(args, "device_auth", False), CODEX.name),
+            ("--quota", getattr(args, "quota", False), CODEX.name),
+            ("--clear-stop", getattr(args, "clear_stop", False), COPILOT.name),
+            ("--models", getattr(args, "models", False), COPILOT.name),
+            ("--no-token", getattr(args, "no_token", False), COPILOT.name)):
+        if given and args.client != client:
+            parser.error(f"{option} applies to the {client} client only")
+    if getattr(args, "clear_stop", False) and args.reset:
+        parser.error("--clear-stop and --reset are separate commands: pass one")
     try:
         return COMMANDS[args.command](RECORDS[args.client], args, os.environ)
     except RunLockRefused as refused:

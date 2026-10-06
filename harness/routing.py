@@ -63,6 +63,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import codex_cli
+import copilot_cli
 import host_login
 from account_surfaces import (
     PINNED_SETTINGS,
@@ -272,8 +273,9 @@ def composition_problems(cases: list[Case], skills: list[str]) -> list[str]:
 
 def tool_calls(events: list[dict]) -> list[tuple[str, dict]]:
     """(tool name, input) in order, across assistant messages — then the
-    completed items of a Codex stream under the same canonical names
-    (`codex_cli.codex_tool_calls`; the two shapes never collide), so the
+    completed items of a Codex stream and the tool events of a Copilot stream
+    under the same canonical names (`codex_cli.codex_tool_calls`,
+    `copilot_cli.copilot_tool_calls`; the three shapes never collide), so the
     verdicts and the route reader work on every dev-runner host."""
     calls = []
     for event in events:
@@ -282,7 +284,7 @@ def tool_calls(events: list[dict]) -> list[tuple[str, dict]]:
         for block in event.get("message", {}).get("content", []) or []:
             if isinstance(block, dict) and block.get("type") == "tool_use":
                 calls.append((block.get("name", ""), block.get("input") or {}))
-    return calls + codex_cli.codex_tool_calls(events)
+    return calls + codex_cli.codex_tool_calls(events) + copilot_cli.copilot_tool_calls(events)
 
 
 def result_event(events: list[dict]) -> dict:

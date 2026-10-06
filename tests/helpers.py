@@ -29,6 +29,8 @@ REGISTRY_PATH = REPO / "harness" / "models.toml"
 
 # markdown that sits beside a fixture proposal without being one
 NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
+# the draft the dev-runner tests place in a workspace as a run's produced draft
+CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
 
 
 @dataclass(frozen=True)

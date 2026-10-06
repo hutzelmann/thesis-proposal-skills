@@ -1,0 +1,30 @@
+[
+  {
+    "name": "proposal-check",
+    "description": "Synthetic.",
+    "source": "project",
+    "path": "__WS__/.agents/skills/proposal-check",
+    "enabled": true
+  },
+  {
+    "name": "customize-cloud-agent",
+    "description": "Synthetic.",
+    "source": "builtin",
+    "path": "/pkg/builtin/customize-cloud-agent",
+    "enabled": true
+  },
+  {
+    "name": "github-pr-media",
+    "description": "Synthetic.",
+    "source": "builtin",
+    "path": "/pkg/builtin/github-pr-media",
+    "enabled": true
+  },
+  {
+    "name": "parent-notes",
+    "description": "Synthetic.",
+    "source": "inherited",
+    "path": "/srv/.agents/skills/parent-notes",
+    "enabled": true
+  }
+]
