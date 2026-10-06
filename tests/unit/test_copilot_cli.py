@@ -23,7 +23,7 @@ import tempfile
 import textwrap
 import time
 from argparse import Namespace
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
@@ -132,16 +132,19 @@ def send(message):
 
 PROBES = ((f"/proc/{os.getpid()}/environ", "client_environ"),  # this server's own pid
           (f"/proc/{os.getppid()}/environ", "harness_environ"),  # the harness that started it
-          (".ssh", "ssh_dir"), (".config/gh", "gh_config"),
-          ("gh auth token", "gh_token"), ("git credential", "git_credential"),
-          ("python3 -c", "python"), ("--help", "skill_script"), ("copilot.token", "token_file"))
+          # git's row names the operator's GitHub CLI directory too, so it comes first
+          ("git credential", "git_credential"), (".ssh", "ssh_dir"), (".config/gh", "gh_config"),
+          ("gh auth token", "gh_token"), ("python3 -c", "python"), ("--help", "skill_script"),
+          ("copilot.token", "token_file"), ("ns/net", "net_ns"), ("devrun-probe-tmp-", "host_tmp"),
+          ("devrun-probe-write-", "tmp_write"))
 
 def probe_name(command):
     return next(name for needle, name in PROBES if needle in command)
 
 HOME = pathlib.Path(os.environ.get("COPILOT_HOME", "."))
 SANDBOXED = set()  # the sessions `session.options.update` put in the home's sandbox block
-UNCONFINED = {"gh_token": "0", "git_credential": "128", "python": "0", "skill_script": "0"}
+UNCONFINED = {"gh_token": "0", "git_credential": "128", "python": "0", "skill_script": "0",
+              "net_ns": "shared", "tmp_write": "0"}
 
 def home_sandbox():
     return json.loads((HOME / "settings.json").read_text(encoding="utf-8")).get("sandbox")
@@ -240,6 +243,14 @@ def run():
     for name in CONFIG.get("write", []):  # a relative name lands in the workspace
         pathlib.Path(name).write_text(CONFIG.get("write_body", "") + CONFIG["token"],
                                       encoding="utf-8")
+    for name, target in CONFIG.get("links", {}).items():  # what a sandboxed shell may plant
+        pathlib.Path(name).unlink(missing_ok=True)
+        pathlib.Path(name).symlink_to(target)
+    if CONFIG.get("background"):  # a process the run leaves behind in its group
+        import subprocess
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pathlib.Path(CONFIG["background"]).write_text(str(child.pid), encoding="utf-8")
     sys.stdout.write(CONFIG["stream"].replace("__WS__", os.getcwd())
                      .replace("11111111-1111-4111-8111-111111111111", session))
     sys.stdout.flush()
@@ -483,6 +494,106 @@ def test_scrub_tree_rewrites_workspace_files(tmp_path):
     (tmp_path / "clean.md").write_text("clean", encoding="utf-8")
     assert copilot_cli.scrub_tree(tmp_path, TOKEN) == ["draft.md"]
     assert TOKEN not in (tmp_path / "draft.md").read_text(encoding="utf-8")
+
+
+def _planted(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A workspace as a sandboxed shell could leave it: links to files outside
+    it, a link to a directory outside it, a FIFO and a hard link — beside the
+    run's real files. Returns the workspace, the outside file and directory."""
+    ws, outside = tmp_path / "ws", tmp_path / "outside"
+    (ws / "sub").mkdir(parents=True)
+    outside.mkdir()
+    victim = outside / "victim"
+    victim.write_text(f"victim {TOKEN}", encoding="utf-8")
+    (outside / "inner.md").write_text(f"inner {TOKEN}", encoding="utf-8")
+    (ws / "draft.md").write_text(f"draft {TOKEN}", encoding="utf-8")
+    (ws / "proposal.md").symlink_to(victim)
+    (ws / "sub" / "dir-link").symlink_to(outside)
+    (ws / "dangling.md").symlink_to(outside / "missing")
+    os.mkfifo(ws / "pipe.md")
+    os.link(victim, ws / "hard.md")
+    return ws, victim, outside
+
+
+@POSIX
+def test_scrub_tree_follows_no_link_and_writes_no_hard_link(tmp_path):
+    """Decision 13, the workspace after the run: the scrub reads and writes
+    only singly linked regular files in the workspace — a link, a link to a
+    directory, a FIFO (whose read would block) and a hard link (whose content
+    is another file's) are passed over, so nothing outside changes."""
+    ws, victim, outside = _planted(tmp_path)
+    assert copilot_cli.scrub_tree(ws, TOKEN) == ["draft.md"]
+    assert victim.read_text(encoding="utf-8") == f"victim {TOKEN}"
+    assert (outside / "inner.md").read_text(encoding="utf-8") == f"inner {TOKEN}"
+    link = tmp_path / "ws-link"
+    link.symlink_to(ws)
+    assert copilot_cli.scrub_tree(link, TOKEN) == []  # a root that is a link is not walked
+
+
+@POSIX
+def test_the_workspace_check_removes_what_the_harness_must_not_follow(tmp_path):
+    """Decision 13: after the run, before anything in the workspace is read,
+    scrubbed or written, every link, FIFO, socket, device or hard link in it is
+    named and unlinked without being followed; the run's own files and every
+    target outside stay as they were."""
+    ws, victim, outside = _planted(tmp_path)
+    identity = copilot_cli.workspace_identity(ws)
+    found = copilot_cli.workspace_breach(ws, identity, TOKEN)
+    for name in ("proposal.md (a link)", "sub/dir-link (a link)", "dangling.md (a link)",
+                 "pipe.md (not a regular file)", "hard.md (a hard link)"):
+        assert name in found, name
+    assert "removed unread" in found
+    remaining = sorted(p.relative_to(ws).as_posix() for p in ws.rglob("*"))
+    assert remaining == ["draft.md", "sub"]
+    assert victim.read_text(encoding="utf-8") == f"victim {TOKEN}"
+    assert sorted(p.name for p in outside.iterdir()) == ["inner.md", "victim"]
+    assert copilot_cli.workspace_breach(ws, identity, TOKEN) is None  # nothing left
+
+
+@POSIX
+def test_the_workspace_check_names_at_most_a_few_entries_and_scrubs_them(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    for index in range(copilot_cli.SHOWN_ENTRIES + 2):
+        (ws / f"{TOKEN}-{index}").symlink_to(tmp_path)
+    found = copilot_cli.workspace_breach(ws, copilot_cli.workspace_identity(ws), TOKEN)
+    assert found.endswith(" and 2 more")
+    assert TOKEN not in found
+    assert copilot_cli.SCRUBBED in found
+    assert list(ws.iterdir()) == []
+
+
+@POSIX
+def test_a_replaced_workspace_is_read_by_nothing(tmp_path):
+    """A workspace swapped for a link (or for another directory) is not the one
+    the run started in: the link is removed, never followed, and nothing in
+    its target is walked or scrubbed."""
+    ws, outside = tmp_path / "ws", tmp_path / "outside"
+    ws.mkdir()
+    outside.mkdir()
+    (outside / "keep.md").write_text(f"keep {TOKEN}", encoding="utf-8")
+    identity = copilot_cli.workspace_identity(ws)
+    ws.rmdir()
+    ws.symlink_to(outside)
+    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == copilot_cli.WORKSPACE_REPLACED
+    assert not ws.is_symlink()
+    assert not ws.exists()
+    assert (outside / "keep.md").read_text(encoding="utf-8") == f"keep {TOKEN}"
+    ws.mkdir()  # another directory under the same name
+    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == copilot_cli.WORKSPACE_REPLACED
+    assert ws.is_dir()
+    ws.rmdir()
+    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == copilot_cli.WORKSPACE_REPLACED
+
+
+def test_a_workspace_breach_is_untested_for_isolation_and_stops():
+    events = stream("success")
+    copilot_cli.harness_record(events)["workspace_breach"] = copilot_cli.WORKSPACE_REPLACED
+    assessment = copilot_cli.assess(events)
+    assert assessment.problem.untested
+    assert assessment.problem.kind == "isolation"
+    assert copilot_cli.WORKSPACE_REPLACED in assessment.problem.message
+    assert ("isolation", copilot_cli.WORKSPACE_REPLACED) in assessment.stops
 
 
 @POSIX
@@ -1171,7 +1282,37 @@ def test_probe_problem_passes_a_clean_probe_and_refuses_unsandboxed_or_missing()
     assert "session.options.update gave no answer" in unapplied.cause
 
 
-GATED = ("--sandbox/--no-sandbox requires the sandbox feature, available in experimental mode "
+def test_the_measured_rows_are_printed_not_refused_but_must_be_sandboxed():
+    """Decision 13, network and /tmp: the namespace and /tmp rows are recorded
+    for K6, not yet a rule — whatever they read, they refuse nothing — but a
+    measured command the client did not report as sandboxed still refuses."""
+    supported, results = probe("probe-ok")
+    assert set(copilot_cli.MEASURED_TARGETS) <= {r.name for r in results}
+    open_host = {"net_ns": "shared", "host_tmp": "readable", "tmp_write": "writable"}
+    widened = [ProbeResult(r.name, open_host.get(r.name, r.output), r.sandboxed) for r in results]
+    assert copilot_cli.probe_problem(widened, supported) is None
+    loose = [ProbeResult(r.name, r.output, None if r.name == "net_ns" else True) for r in results]
+    assert "(net_ns)" in copilot_cli.probe_problem(loose, supported).cause
+
+
+def test_the_write_row_is_judged_on_the_host(tmp_path):
+    """`tmp_write` reads `writable` only when the host sees the file: a write
+    into the sandbox's own overlay succeeds and reaches nothing."""
+    with copilot_cli.probe_host(tmp_path) as host:
+        assert host.sentinel.parent == tmp_path
+        assert host.sentinel.is_file()
+        assert host.marker.parent == tmp_path
+        assert not host.marker.exists()
+        assert copilot_cli._row_output("tmp_write", {"output": "0\n"}, host) == "denied"
+        host.marker.write_text("", encoding="utf-8")
+        assert copilot_cli._row_output("tmp_write", {"output": "1\n"}, host) == "writable"
+        assert copilot_cli._row_output("host_tmp", {"output": "x\nreadable\n"}, host) == "readable"
+    assert list(tmp_path.iterdir()) == []  # both removed
+    with copilot_cli.probe_host(tmp_path / "missing") as host:
+        assert (host.sentinel, host.marker) == (None, None)
+
+
+GATED =("--sandbox/--no-sandbox requires the sandbox feature, available in experimental mode "
          "(run with --experimental or enable /experimental). Ignoring for this session.")
 
 
@@ -1219,6 +1360,47 @@ def test_the_live_watch_reads_stderr_and_keeps_the_first_breach():
     assert not copilot_cli.sandbox_warned(GATED)
 
 
+def _file_start(call: str, tool: str, **arguments) -> dict:
+    return {"type": "tool.execution_start",
+            "data": {"toolCallId": call, "toolName": tool, "arguments": arguments}}
+
+
+@POSIX
+def test_the_live_watch_stops_a_file_tool_pointed_outside_the_workspace(tmp_path):
+    """testing-harness spec: File tool outside the workspace stops the run. The
+    client's file tools run in
+    its own process, outside the sandbox, so a file tool whose path — links
+    resolved on the harness's side — leaves the workspace is a breach; one
+    inside it is not, and without a workspace the watch checks no path."""
+    ws = tmp_path / "ws"
+    (ws / "sub").mkdir(parents=True)
+    secret = tmp_path / "secret"
+    secret.write_text("synthetic", encoding="utf-8")
+    (ws / "proposal-review.md").symlink_to(secret)
+    patch = "*** Begin Patch\n*** Add File: notes.md\n*** Update File: /etc/hosts\n*** End Patch"
+    cases = [
+        (_file_start("f1", "view", path="sub"), None),
+        (_file_start("f2", "view", path=str(ws / "sub")), None),
+        (_file_start("f3", "glob", pattern="**/*.md"), None),  # no path: the workspace
+        (_file_start("f4", "view", path=str(secret)), copilot_cli.OUTSIDE_FILE),
+        (_file_start("f5", "view", path="proposal-review.md"), copilot_cli.OUTSIDE_FILE),
+        (_file_start("f6", "grep", path="../"), copilot_cli.OUTSIDE_FILE),
+        (_file_start("f7", "create", path="~/.bashrc"), copilot_cli.OUTSIDE_FILE),
+        (_file_start("f8", "apply_patch", input=patch), copilot_cli.OUTSIDE_FILE),
+        (_file_start("f9", "apply_patch", input=patch.replace("/etc/hosts", "a.md")), None),
+    ]
+    for event, breach in cases:
+        assert copilot_cli.breach_of(event, set(), ws) == breach, event
+        assert copilot_cli.breach_of(event, set()) is None  # no workspace, no path check
+    mcp = _file_start("m1", "view", path=str(secret))
+    mcp["data"]["mcpServerName"] = "github-mcp-server"
+    assert copilot_cli.breach_of(mcp, set(), ws) is None
+    watch = copilot_cli.ConfinementWatch(ws)
+    assert watch.event_line(json.dumps(_file_start("f5", "view", path="proposal-review.md")))
+    assert watch.breach == copilot_cli.OUTSIDE_FILE
+    assert secret.read_text(encoding="utf-8") == "synthetic"
+
+
 def test_a_run_the_watch_stopped_is_untested_for_isolation_and_stops():
     """testing-harness spec: Unconfined shell call stops the run — pure over the
     saved events: the harness record names the breach."""
@@ -1234,19 +1416,37 @@ def test_a_run_the_watch_stopped_is_untested_for_isolation_and_stops():
 
 
 def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
+    account = tmp_path / "account"
+    host = copilot_cli.ProbeHost("net:[4026531840]", tmp_path / "devrun-probe-tmp-x",
+                                 tmp_path / "devrun-probe-write-x")
     commands = dict(copilot_cli.probe_commands(token_file=tmp_path / "copilot.token",
                                                server_pid=4242, harness_pid=4343,
-                                               account=tmp_path / "account",
-                                               uid=1000, script=tmp_path / "check.py"))
+                                               account=account, uid=1000,
+                                               script=tmp_path / "check.py", host=host))
     assert set(commands) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
-                             "skill_script"}
-    for name in copilot_cli.READ_TARGETS:
+                             "skill_script", *copilot_cli.MEASURED_TARGETS}
+    for name in (*copilot_cli.READ_TARGETS, "host_tmp"):
         assert commands[name].endswith("&& echo readable || echo denied")
         assert ">/dev/null 2>&1" in commands[name]
     assert "/proc/4242/environ" in commands["client_environ"]
     assert "/proc/4343/environ" in commands["harness_environ"]
     assert "unix:path=/run/user/1000/bus" in commands["gh_token"]
-    assert "GIT_TERMINAL_PROMPT=0" in commands["git_credential"]
+    # git runs with the operator's own home, configuration, GitHub CLI directory
+    # and session bus, so a configured credential helper is reached unless the
+    # sandbox denies it; the child's scratch home holds none
+    git = commands["git_credential"]
+    for needle in (f"HOME={account}", f"XDG_CONFIG_HOME={account / '.config'}",
+                   f"GH_CONFIG_DIR={account / '.config' / 'gh'}", "unix:path=/run/user/1000/bus",
+                   "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/false", "GCM_INTERACTIVE=never",
+                   ">/dev/null 2>&1; echo $?"):
+        assert needle in git, needle
+    assert "'net:[4026531840]'" in commands["net_ns"]
+    assert commands["net_ns"].count("echo ") == 3  # unknown, shared, private
+    assert commands["tmp_write"] == f": > {host.marker} 2>/dev/null; echo $?"
+    # without a host side, the measured rows are left out
+    bare = dict(copilot_cli.probe_commands(token_file=tmp_path / "t", server_pid=1,
+                                           harness_pid=2, account=account, uid=1000, script=None))
+    assert not set(bare) & set(copilot_cli.MEASURED_TARGETS)
 
 
 def test_no_scenario_prompt_names_a_skill_by_slash_command():
@@ -1536,6 +1736,10 @@ def test_a_token_in_the_output_is_scrubbed_and_stops(home, tmp_path, monkeypatch
     assert problem.untested
     assert problem.kind == "isolation"
     assert TOKEN not in problem.message
+    # the client's session store keeps the transcript unscrubbed: the remedy is
+    # a new token and a reset, which deletes the store with the home
+    assert "session store" in problem.message
+    assert COPILOT.reset_command in problem.message
     assert copilot_cli.read_stop(home)["kind"] == "isolation"
 
 
@@ -1665,19 +1869,137 @@ def test_the_watch_stops_a_run_at_its_first_unconfined_shell_call(home, tmp_path
     assert "stopped at" in stop["cause"]
 
 
+def _gone(pid: int, wait: float = 10.0) -> bool:
+    """Whether a process has ended (gone, or a zombie its new parent has not
+    reaped yet), polled for up to `wait` seconds."""
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        try:
+            state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()
+        except OSError:
+            return True
+        if state[0] in ("Z", "X"):
+            return True
+        time.sleep(0.1)
+    return False
+
+
+@POSIX
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc")
+def test_a_process_the_run_left_in_its_group_is_killed(home, tmp_path, monkeypatch):
+    """testing-harness spec: Process left behind by a Copilot run. Every
+    Copilot child leads its own process
+    group, and whatever ended the run, the group is killed — a process an
+    unconfined shell command put in the background does not outlive it."""
+    skip_scan(monkeypatch)
+    pidfile = tmp_path / "background.pid"
+    fake_copilot(tmp_path, monkeypatch, background=str(pidfile))
+    copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                            effort=None, cap=30, timeout=30, home=home,
+                            scenario=claude_runner.SCENARIOS["check_report"])
+    pid = int(pidfile.read_text(encoding="utf-8"))
+    try:
+        assert _gone(pid)
+    finally:
+        with suppress(OSError):
+            os.kill(pid, 9)
+
+
+@POSIX
+def test_a_stream_held_outside_the_group_does_not_stall_the_watch(tmp_path, monkeypatch):
+    """A process that left the group (`setsid`) and holds the child's output
+    pipe keeps its reader blocked: the stream is left to that reader rather
+    than closed under it, so the watch returns after the grace period."""
+    monkeypatch.setattr(host_login, "TERM_GRACE_S", 1)
+    pidfile = tmp_path / "holder.pid"
+    script = ("import subprocess, sys, pathlib\n"
+              "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], "
+              "start_new_session=True)\n"
+              f"pathlib.Path({str(pidfile)!r}).write_text(str(p.pid))\n"
+              "print('{}', flush=True)\n")
+    proc = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        begun = time.monotonic()
+        out, _err, timed_out, breach = copilot_cli._watch_child(proc, timeout=20)
+        assert time.monotonic() - begun < 10
+        assert (out.strip(), timed_out, breach) == ("{}", False, None)
+    finally:
+        with suppress(OSError, ValueError):
+            os.kill(int(pidfile.read_text(encoding="utf-8")), 9)
+        for stream in (proc.stdout, proc.stderr):  # their readers end once the holder is gone
+            stream.close()  # type: ignore[union-attr]
+
+
+@POSIX
+def test_a_planted_link_is_never_followed_and_the_run_is_untested(home, tmp_path, monkeypatch,
+                                                                  capsys):
+    """testing-harness spec: Workspace entry the runner must not follow (Decision
+    13, the workspace after the run) — end to end through the
+    runner: a run whose every shell call was sandboxed leaves the proposal as
+    a link to a file outside and the event file as a link to another; the run
+    is untested for isolation with an isolation stop, no verdict runs, the
+    secret is in no output, summary or kept file, and the victim is
+    unchanged."""
+    skip_scan(monkeypatch)
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    monkeypatch.setattr(copilot_cli, "managed_problem", lambda *_a, **_k: None)
+    secret, victim = tmp_path / "secret", tmp_path / "victim"
+    secret.write_text("SYNTHETIC-SECRET-CONTENT", encoding="utf-8")
+    victim.write_text("SYNTHETIC-VICTIM-CONTENT", encoding="utf-8")
+    fake_copilot(tmp_path, monkeypatch, links={
+        "broken-format.md": str(secret), claude_runner.EVENTS_FILE: str(victim)})
+
+    def no_verdict(*_args, **_kwargs):
+        raise AssertionError("a verdict read the run's files")
+
+    monkeypatch.setattr(claude_runner, "verdict", no_verdict)
+    log = tmp_path / "run.jsonl"
+    status = claude_runner.main(["check_report", "--host", "copilot", "--model",
+                                 "copilot-fixture-a", "--max-ai-credits", "30", "--keep",
+                                 "--summary-log", str(log)])
+    out, err = capsys.readouterr()
+    ws = Path(re.search(r"workspace kept: (\S+)", out)[1])  # type: ignore[index]
+    try:
+        assert status == claude_runner.EXIT_UNTESTED
+        [line] = [json.loads(text) for text in log.read_text(encoding="utf-8").splitlines()]
+        assert "must not follow" in line["why"]
+        assert "broken-format.md (a link)" in line["why"]
+        stop = copilot_cli.read_stop(home)
+        assert stop["kind"] == "isolation"
+        assert "must not follow" in stop["cause"]
+        assert victim.read_text(encoding="utf-8") == "SYNTHETIC-VICTIM-CONTENT"
+        assert secret.read_text(encoding="utf-8") == "SYNTHETIC-SECRET-CONTENT"
+        assert "SYNTHETIC-SECRET-CONTENT" not in out + err + log.read_text(encoding="utf-8")
+        assert not any(p.is_symlink() for p in ws.rglob("*"))
+        events_file = ws / claude_runner.EVENTS_FILE
+        assert not events_file.is_symlink()
+        assert events_file.is_file()
+        assert "SYNTHETIC-SECRET-CONTENT" not in events_file.read_text(encoding="utf-8")
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
+
+
 @POSIX
 def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home, tmp_path,
                                                                           monkeypatch):
     log = fake_copilot(tmp_path, monkeypatch)
+    host_tmp = tmp_path / "host-tmp"
+    host_tmp.mkdir()
+    monkeypatch.setattr(copilot_cli, "PROBE_TMP", host_tmp)
     ws = staged_ws(tmp_path)
     run = copilot_cli.new_run(ws=ws, model="copilot-fixture-a")
     run.token, run.scratch = TOKEN, copilot_cli.make_scratch("devrun-test-")
     found = copilot_cli.confinement_probe(run)
     assert (found.supported, found.unapplied) == (True, None)
-    assert {r.name for r in found.results} == {*copilot_cli.READ_TARGETS,
-                                               *copilot_cli.AUTH_TARGETS, "python", "skill_script"}
+    assert {r.name for r in found.results} == {
+        *copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python", "skill_script",
+        *copilot_cli.MEASURED_TARGETS}
     assert all(r.sandboxed is True for r in found.results)
     assert copilot_cli.probe_problem(found.results, found.supported, found.unapplied) is None
+    by = {r.name: r.output for r in found.results}
+    assert by["tmp_write"] == "denied"  # judged on the host: the fake wrote nothing there
+    assert list(host_tmp.iterdir()) == []  # the sentinel removed
     assert sessions(home) == []
     assert calls(log)[0]["cwd"] == str(ws)
     argv = calls(log)[0]["argv"]

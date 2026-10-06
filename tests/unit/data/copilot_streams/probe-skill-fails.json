@@ -48,6 +48,21 @@
       "name": "skill_script",
       "output": "2",
       "sandboxed": true
+    },
+    {
+      "name": "net_ns",
+      "output": "private",
+      "sandboxed": true
+    },
+    {
+      "name": "host_tmp",
+      "output": "denied",
+      "sandboxed": true
+    },
+    {
+      "name": "tmp_write",
+      "output": "1",
+      "sandboxed": true
     }
   ]
 }

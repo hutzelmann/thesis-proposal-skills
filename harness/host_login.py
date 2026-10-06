@@ -505,14 +505,20 @@ MANAGED_STATE_KEYS = frozenset({"firstLaunchAt"})
 # file (`runtime.node` strings); any other comment in the file is refused
 COPILOT_CONFIG_HEADER = ("// User settings belong in settings.json.",
                          "// This file is managed automatically.")
-# the only entries a clean Copilot home holds, besides `session-store.db*`;
-# `gh/` and `installed-plugins/` must also be empty, and `session-state/` may
-# hold nothing but empty session locks (Decision 6). `logs/` only while it holds
-# nothing but empty process logs (`_empty_process_logs`): every child that
-# writes a process log is pointed at scratch (`--log-dir`), and an empty one,
-# the first login's, holds nothing to keep out.
+# the only entries a clean Copilot home holds, besides the session store's
+# three files and the run lock (COPILOT_ENTRY_CHECKS); `gh/` and
+# `installed-plugins/` must also be empty, and `session-state/` may hold nothing
+# but empty session locks (Decision 6). `logs/` only while it holds nothing but
+# empty process logs (`_empty_process_logs`): every child that writes a process
+# log is pointed at scratch (`--log-dir`), and an empty one, the first login's,
+# holds nothing to keep out.
 COPILOT_ALLOWED = frozenset({COPILOT_SETTINGS, COPILOT_CONFIG, "session-state", "gh", MARKER,
-                             LOCK_NAME, "quota.json"})
+                             "quota.json"})
+# The client's session store (SQLite in WAL mode at 1.0.91): exactly these three
+# regular files, never a link and never another name beside them. It keeps every
+# session's transcript, the probe's and a run's, unscrubbed (Decisions 4 and 6),
+# which is why a scrub hit's remedy is a reset.
+COPILOT_STORE = ("session-store.db", "session-store.db-wal", "session-store.db-shm")
 COPILOT_LOGS = "logs"
 # the name the client gives a process log (`app.js`: `process-${t}-${n}.log`)
 PROCESS_LOG = re.compile(r"process-\d+-\d+\.log")
@@ -1224,6 +1230,17 @@ def _empty_dir(folder: Path) -> bool:
     return folder.is_dir() and not folder.is_symlink() and not any(folder.iterdir())
 
 
+def _regular_file(path: Path) -> bool:
+    return not path.is_symlink() and path.is_file()
+
+
+def _empty_lock(path: Path) -> bool:
+    """The run lock is a regular file that holds nothing: the harness only ever
+    locks it, and a child that inherited its descriptor (`pass_fds`) and wrote
+    through it would otherwise have written into the home unnoticed."""
+    return _regular_file(path) and path.stat().st_size == 0
+
+
 def _no_session(state: Path) -> bool:
     """`session-state/` holds no session: a real directory, empty but for
     `.session-operation-locks/`, which holds nothing but empty session locks
@@ -1243,17 +1260,24 @@ COPILOT_HOLDING_NOTHING: dict[str, tuple[Callable[[Path], bool], str]] = {
     COPILOT_LOGS: (_empty_process_logs, f"{COPILOT_LOGS}/ (client process logs with content or "
                                         "other entries, which every child writes to scratch)"),
 }
+# every entry allowed only in a given shape: the three above while they hold
+# nothing, the run lock while empty, the session store's files as regular files
+COPILOT_ENTRY_CHECKS: dict[str, tuple[Callable[[Path], bool], str]] = {
+    **COPILOT_HOLDING_NOTHING,
+    LOCK_NAME: (_empty_lock, f"{LOCK_NAME} (not an empty regular file)"),
+    **{name: (_regular_file, f"{name} (not a regular file)") for name in COPILOT_STORE},
+}
 
 
 def _entry_offenders(home_dir: Path) -> list[str]:
     found = []
     for entry in sorted(home_dir.iterdir()):
         name = entry.name
-        if name in COPILOT_HOLDING_NOTHING:
-            holds_nothing, offender = COPILOT_HOLDING_NOTHING[name]
-            if not holds_nothing(entry):
+        if name in COPILOT_ENTRY_CHECKS:
+            in_shape, offender = COPILOT_ENTRY_CHECKS[name]
+            if not in_shape(entry):
                 found.append(offender)
-        elif name not in COPILOT_ALLOWED and not name.startswith("session-store.db"):
+        elif name not in COPILOT_ALLOWED:
             found.append(name)
     return found
 
@@ -1267,8 +1291,10 @@ def copilot_offenders(home_dir: Path, account: Path | None = None) -> list[str]:
     this is an allow-list — or a managed key that is no timestamp; and any
     entry outside the allow-list: a custom-instructions file, `skills/`,
     `mcp-config.json`, `pkg/`, a `logs/` with more than empty process logs, a
-    token file, a non-empty `gh/` or `installed-plugins/`, or a
-    `session-state/` holding a session or more than empty session locks."""
+    token file, a non-empty `gh/` or `installed-plugins/`, a `session-state/`
+    holding a session or more than empty session locks, a session-store file
+    that is not a regular file or carries another name, or a run lock that is
+    not an empty regular file."""
     if not home_dir.is_dir():
         return []
     account = account_home() if account is None else account

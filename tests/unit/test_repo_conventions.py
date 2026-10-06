@@ -199,7 +199,21 @@ def test_no_absolute_posix_path_literal(path):
 # ---------- text I/O encoding -------------------------------------------------
 
 
-TEXT_IO = {"read_text", "write_text", "open"}
+TEXT_IO = {"read_text", "write_text", "open", "fdopen"}
+
+
+def _descriptor_open(func: ast.Attribute) -> bool:
+    """`os.open`: it takes flags, not a mode, and returns a descriptor — no text
+    and no codec. The text layer over a descriptor is `os.fdopen`, whose mode
+    the scan reads like any other `open`."""
+    return func.attr == "open" and isinstance(func.value, ast.Name) and func.value.id == "os"
+
+
+def test_the_encoding_scan_exempts_descriptor_opens_only():
+    """`os.open` opens no text; `os.fdopen` does, and is read for its mode."""
+    tree = ast.parse("import os\nos.open(p, 0)\nos.fdopen(fd, 'w')\nos.fdopen(fd, 'rb')\n"
+                     "open(p)\nos.fdopen(fd, 'w', encoding='utf-8')\n")
+    assert unencoded_text_io(tree) == [3, 5]
 
 
 def unencoded_text_io(tree: ast.AST) -> list[int]:
@@ -214,6 +228,8 @@ def unencoded_text_io(tree: ast.AST) -> list[int]:
         if not isinstance(node, ast.Call):
             continue
         if isinstance(node.func, ast.Attribute):
+            if _descriptor_open(node.func):
+                continue
             name = node.func.attr
         elif isinstance(node.func, ast.Name):
             name = node.func.id

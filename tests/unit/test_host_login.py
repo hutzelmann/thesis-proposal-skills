@@ -1292,12 +1292,44 @@ def test_check_copilot_home_names_each_entry_outside_the_allow_list(entry, copil
     assert entry.split("/")[0].rstrip("/") in problem.cause
 
 
+def _make(path: Path, shape: str) -> None:
+    if shape == "dir":
+        path.mkdir()
+    elif shape == "link":
+        target = path.parent.parent / f"elsewhere-{path.name}"
+        target.write_text("", encoding="utf-8")
+        path.symlink_to(target)
+    else:
+        path.write_text(shape, encoding="utf-8")
+
+
+@pytest.mark.parametrize(("name", "shape", "named"), [
+    ("session-store.db-journal", "", "session-store.db-journal"),  # not one of the three
+    ("session-store.db.bak", "x", "session-store.db.bak"),
+    ("session-store.db", "link", "session-store.db (not a regular file)"),
+    ("session-store.db-wal", "dir", "session-store.db-wal (not a regular file)"),
+    (host_login.LOCK_NAME, "written through an inherited descriptor",
+     f"{host_login.LOCK_NAME} (not an empty regular file)"),
+    (host_login.LOCK_NAME, "link", f"{host_login.LOCK_NAME} (not an empty regular file)"),
+    (host_login.LOCK_NAME, "dir", f"{host_login.LOCK_NAME} (not an empty regular file)"),
+])
+def test_check_copilot_home_holds_the_store_and_the_lock_to_their_shape(name, shape, named,
+                                                                       copilot_home):
+    """Decision 6: the session store is exactly its three regular files, and the
+    run lock an empty regular file; anything else under those names refuses,
+    named, never read."""
+    _make(copilot_home / name, shape)
+    problem = host_login.check_copilot_home(copilot_home)
+    assert problem is not None
+    assert named in problem.cause
+
+
 def test_check_copilot_home_allows_every_allow_listed_entry(copilot_home):
     (copilot_home / "config.json").write_text(json.dumps(
         dict.fromkeys(host_login.MANAGED_STATE_KEYS, LAUNCHED)), encoding="utf-8")
-    for name in ("session-store.db", "session-store.db-wal", "quota.json",
-                 host_login.LOCK_NAME):
+    for name in (*host_login.COPILOT_STORE, "quota.json", host_login.LOCK_NAME):
         (copilot_home / name).write_text("", encoding="utf-8")
+    (copilot_home / "session-store.db").write_text("SQLite format 3", encoding="utf-8")
     (copilot_home / "session-state").mkdir()
     assert host_login.check_copilot_home(copilot_home) is None
 

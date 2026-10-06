@@ -146,7 +146,7 @@ import threading
 import traceback
 import zipfile
 from collections.abc import Mapping
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from dataclasses import asdict, dataclass
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -787,10 +787,27 @@ EVENTS_FILE = ".devrun-events.jsonl"
 
 def save_events(events: list[dict], ws: Path) -> Path:
     """Write the host's event stream into the workspace, one object per line —
-    the only record of why a run did or skipped something."""
+    the only record of why a run did or skipped something. The file is always
+    created afresh, never opened through what the run left at its name: an
+    entry there is unlinked first (a link goes, its target stays untouched),
+    and the new file is created exclusively without following a link. A
+    workspace that is no longer a real directory, or a name that cannot be
+    freed, gets no file, and stderr says so (add-copilot-dev-runner Decision
+    13, the workspace after the run)."""
     path = ws / EVENTS_FILE
-    path.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events),
-                    encoding="utf-8")
+    text = "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events)
+    if ws.is_symlink() or not ws.is_dir():
+        print(f"events not saved: the workspace {ws} is not a directory", file=sys.stderr)
+        return path
+    with suppress(FileNotFoundError, IsADirectoryError, PermissionError):
+        path.unlink()
+    try:
+        handle = path.open("x", encoding="utf-8")  # O_CREAT|O_EXCL: a link there fails, unfollowed
+    except OSError:
+        print(f"events not saved: {path} is taken by an entry the run left", file=sys.stderr)
+        return path
+    with handle:
+        handle.write(text)
     return path
 
 

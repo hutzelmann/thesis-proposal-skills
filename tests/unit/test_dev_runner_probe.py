@@ -14,6 +14,7 @@ subprocess still runs.
 
 import argparse
 import json
+import os
 import shutil
 import tomllib
 from contextlib import ExitStack, contextmanager
@@ -451,6 +452,49 @@ def test_save_events_writes_jsonl_outside_the_markdown_globs(tmp_path):
     assert [json.loads(line)["type"] for line in lines] == ["assistant", "result"]
     assert path.name == EVENTS_FILE
     assert not list(tmp_path.glob("*.md"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="links and FIFOs")
+@pytest.mark.parametrize("planted", ["link", "dangling", "fifo", "hard", "file"])
+def test_save_events_never_writes_through_what_the_run_left(planted, tmp_path):
+    """add-copilot-dev-runner Decision 13, the workspace after the run: the event
+    file is created afresh, never opened through an entry the run left at its
+    name — a link (dangling or not), a FIFO, a hard link — so no file outside
+    the workspace is created, truncated or overwritten."""
+    ws, victim = tmp_path / "ws", tmp_path / "victim"
+    ws.mkdir()
+    victim.write_text("synthetic victim", encoding="utf-8")
+    entry = ws / EVENTS_FILE
+    {"link": lambda: entry.symlink_to(victim),
+     "dangling": lambda: entry.symlink_to(tmp_path / "created-through-a-link"),
+     "fifo": lambda: os.mkfifo(entry),
+     "hard": lambda: os.link(victim, entry),
+     "file": lambda: entry.write_text("stale", encoding="utf-8")}[planted]()
+    path = save_events([{"type": "result", "result": "done"}], ws)
+    assert not path.is_symlink()
+    assert path.is_file()
+    assert path.stat().st_nlink == 1
+    assert json.loads(path.read_text(encoding="utf-8"))["type"] == "result"
+    assert victim.read_text(encoding="utf-8") == "synthetic victim"
+    assert not (tmp_path / "created-through-a-link").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="links")
+def test_save_events_writes_nothing_into_a_workspace_that_is_a_link(tmp_path, capsys):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    ws = tmp_path / "ws"
+    ws.symlink_to(outside)
+    save_events([{"type": "result"}], ws)
+    assert list(outside.iterdir()) == []
+    assert "events not saved" in capsys.readouterr().err
+    gone = tmp_path / "gone"
+    save_events([{"type": "result"}], gone)
+    assert not gone.exists()
+    (ws.unlink(), ws.mkdir(), (ws / EVENTS_FILE).mkdir())  # a directory under the name
+    save_events([{"type": "result"}], ws)
+    assert (ws / EVENTS_FILE).is_dir()
+    assert "is taken by an entry" in capsys.readouterr().err
 
 
 def test_supervise_scenarios_allow_exactly_one_verifier():

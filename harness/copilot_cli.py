@@ -20,6 +20,8 @@ the backstop, failing closed:
   everything a child produced — stderr, the stdout events, the session
   records, the workspace files — before anything is saved, printed or judged;
   a hit makes the run untested for isolation and records an isolation stop.
+  The client's own session store in the home keeps every transcript
+  unscrubbed, so a hit's remedy is a new token and a reset.
   Every child carries `--no-auto-login`, so no stored or `gh` login is used,
   and every child that carries the token names it (`TOKEN_FLAGS`), because at
   1.0.91 that flag leaves an unnamed environment token unread too; the short
@@ -52,15 +54,26 @@ the backstop, failing closed:
 - **During the run** (`ConfinementWatch`): prompt mode applies the home's
   sandbox itself, which nothing before the run can observe, so the child's
   output is read as it arrives and the child is stopped at the first shell
-  completion not reported `sandboxed` or the first sandbox warning, rather
-  than left to go on with the skill prompt; the stop names the breach.
+  completion not reported `sandboxed`, the first sandbox warning, or the
+  first file tool pointed outside the workspace (links resolved), rather than
+  left to go on with the skill prompt; the stop names the breach. Every child
+  leads its own process group, and whatever ended it, the group is killed
+  (`stop_group`).
+- **The workspace after the run** (`workspace_breach`), before the harness
+  reads, scrubs or writes anything in it: the sandboxed shell may write the
+  workspace, so a link, a FIFO, socket or device, or a hard link it left
+  there, or the workspace itself replaced, would make the unsandboxed harness
+  act on another file; each such entry is unlinked unread, and the run is
+  untested for isolation with an isolation stop. The event file is created
+  afresh without following a link (`claude_runner.save_events`).
 - **After the run** (`assess`): the session file is reduced into `copilot.*`
   records (`reduce_session`) and deleted; the status is read again; overage
   growth, an unavailable read, unreadable consumption, more than twice the
   credit cap, zero nano-AIU with tokens and a reached soft cap or session
-  limit record a billing stop; a run the watch stopped, a sandbox warning, a
-  shell completion not reported `sandboxed`, or no shell completion at all
-  records an isolation stop. The steps after the child's start fail closed (`_execute`): one that
+  limit record a billing stop; a run the watch stopped, a workspace breach, a
+  sandbox warning, a shell completion not reported `sandboxed`, or no shell
+  completion at all records an isolation stop. The steps after the child's
+  start fail closed (`_execute`): one that
   raises still scrubs the workspace and records a billing stop. A stop — a
   damaged stop record included — refuses every later run until the operator
   clears it with `uv run poe host-login copilot --clear-stop`; so does the
@@ -95,6 +108,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -354,20 +368,71 @@ def scrub_events(events: list[dict], token: str | None) -> tuple[list[dict], boo
     return cleaned, hit
 
 
+def _unsafe_entry(mode: int, links: int) -> str | None:
+    """Why the harness must not follow, read or write a workspace entry: a
+    link (it would act on the link's target), a FIFO, socket or device, or a
+    regular file with another name elsewhere (a hard link, whose content is
+    another file's). A directory or a singly linked regular file is safe."""
+    if stat.S_ISDIR(mode):
+        return None
+    if stat.S_ISLNK(mode):
+        return "a link"
+    if not stat.S_ISREG(mode):
+        return "not a regular file"
+    return "a hard link" if links > 1 else None
+
+
+def workspace_entries(root: Path) -> Iterator[tuple[Path, os.stat_result]]:
+    """Every entry under `root`, by `lstat`, without following a link: a link
+    to a directory is listed, never descended into."""
+    for top, dirs, files in os.walk(root, followlinks=False):
+        for name in sorted((*dirs, *files)):
+            path = Path(top, name)
+            with suppress(OSError):
+                yield path, os.lstat(path)
+
+
+def unsafe_entries(root: Path) -> list[tuple[Path, str]]:
+    """The entries under `root` the harness must not follow (`_unsafe_entry`),
+    each with why; nothing is read."""
+    found = []
+    for path, info in workspace_entries(root):
+        why = _unsafe_entry(info.st_mode, info.st_nlink)
+        if why:
+            found.append((path, why))
+    return found
+
+
+def _scrub_file(path: Path, needle: bytes) -> bool:
+    """Replace the token's value in one regular file, opened without following
+    a link at its name; whether it held the value."""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    with os.fdopen(os.open(path, os.O_RDONLY | nofollow), "rb") as fh:
+        data = fh.read()
+    if needle not in data:
+        return False
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_TRUNC | nofollow), "wb") as fh:
+        fh.write(data.replace(needle, SCRUBBED.encode("utf-8")))
+    return True
+
+
 def scrub_tree(root: Path, token: str | None) -> list[str]:
-    """Scrub the token's value from every file under `root` (the workspace a
-    verdict, the judge and a kept run read); the relative names of the files
-    that held it."""
-    if not token:
+    """Scrub the token's value from every regular file under `root` (the
+    workspace a verdict, the judge and a kept run read); the relative names of
+    the files that held it. Nothing is followed: a root that is no longer a
+    directory, a link, and any other entry `_unsafe_entry` names are passed
+    over, unread and unwritten — `workspace_breach`, which runs first, reports
+    and removes them (Decision 13, the workspace after the run)."""
+    if not token or root.is_symlink() or not root.is_dir():
         return []
     needle, hits = token.encode("utf-8"), []
-    for path in sorted(p for p in root.rglob("*") if p.is_file() and not p.is_symlink()):
+    for path, info in workspace_entries(root):
+        if stat.S_ISDIR(info.st_mode) or _unsafe_entry(info.st_mode, info.st_nlink):
+            continue
         with suppress(OSError):
-            data = path.read_bytes()
-            if needle in data:
-                path.write_bytes(data.replace(needle, SCRUBBED.encode("utf-8")))
+            if _scrub_file(path, needle):
                 hits.append(path.relative_to(root).as_posix())
-    return hits
+    return sorted(hits)
 
 
 def ignored_env(environ: Mapping[str, str]) -> list[str]:
@@ -412,15 +477,31 @@ def start(argv: Sequence[str], *, home: Path, cwd: Path, env: Mapping[str, str],
           text: bool = True) -> subprocess.Popen:
     """The single place a Copilot child starts — the run, `--version`, the
     headless status read and probe, `skill list` and `mcp list`: the final
-    environment is checked immediately before `Popen`, and on Linux the child
-    gets the parent-death termination request."""
+    environment is checked immediately before `Popen`, on Linux the child gets
+    the parent-death termination request, and every child leads a process
+    group of its own, so that `stop_group` reaches what it started."""
     assert_copilot_env(env, home)
     command = [binary(), *argv[1:]]
     options = {"encoding": "utf-8", "errors": "replace"} if text else {}
     return subprocess.Popen(command, cwd=cwd, env=dict(env), stdin=stdin,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text,
-                            pass_fds=tuple(pass_fds),
+                            pass_fds=tuple(pass_fds), start_new_session=os.name == "posix",
                             preexec_fn=host_login.child_preexec(COPILOT), **options)
+
+
+def stop_group(proc: subprocess.Popen, sig: int = signal.SIGTERM) -> None:
+    """Stop a Copilot child and whatever it started (Decision 13): the child's
+    own stop request, a kill after TERM_GRACE_S (`host_login.stop_child`), then
+    a kill to every process left in its process group, which `start` made the
+    child lead. A shell command the sandbox did not confine has no bwrap
+    `--die-with-parent` over it, so a process it put in the background would
+    otherwise outlive the stop. One that left the group (`setsid`) is not
+    reached: the residual risk the design records."""
+    if proc.poll() is None:
+        host_login.stop_child(proc, sig)
+    if hasattr(os, "killpg"):
+        with suppress(OSError):
+            os.killpg(proc.pid, signal.SIGKILL)
 
 
 def spawn(argv: Sequence[str], *, home: Path, cwd: Path, scratch: Path | None,
@@ -717,7 +798,7 @@ def _status_exchange(rpc: Rpc, models: bool) -> dict:
 
 
 def _close(proc: subprocess.Popen) -> None:
-    host_login.stop_child(proc, COPILOT.stop_signal)
+    stop_group(proc, COPILOT.stop_signal)
     for stream in (proc.stdin, proc.stdout, proc.stderr):
         with suppress(OSError, AttributeError):
             stream.close()  # type: ignore[union-attr]
@@ -1046,6 +1127,8 @@ class Run:
     cap: int = MIN_AI_CREDITS
     before: Status | None = None
     roster: list[str] = field(default_factory=list)
+    # the workspace directory's device and inode before any child starts in it
+    ws_id: tuple[int, int] | None = None
 
 
 def new_run(environ: Mapping[str, str] | None = None, **fields) -> Run:
@@ -1277,6 +1360,20 @@ AUTH_TARGETS = {"gh_token": "the GitHub CLI's token over the session bus",
 RUN_TARGETS = {"python": "the skills' interpreter (python3)",
                "skill_script": "a staged skill script"}
 REQUIRED_PROBES = (*READ_TARGETS, *AUTH_TARGETS, "python")
+# Measured and printed, not yet refused (Decision 13, network and /tmp): whether
+# the sandboxed shell shares the harness's network namespace (`shared` or
+# `private`), can read a file the harness put in the host's /tmp (`readable` or
+# `denied`), and can write one there that the host then sees (`writable` or
+# `denied`, judged by the harness on the host after the probe: a write into the
+# sandbox's own overlay or tmpfs reaches nothing). K6 records them before the
+# first paid run; a rule on them is a change of its own.
+MEASURED_TARGETS = {"net_ns": "the harness's network namespace",
+                    "host_tmp": "a file in the host's /tmp",
+                    "tmp_write": "a write into the host's /tmp"}
+# the host's own /tmp and the harness's network namespace (Linux paths, read on
+# the host; the probe runs only where the client's sandbox does)
+PROBE_TMP = "/tmp"
+NET_NS = "/proc/self/ns/net"
 
 
 @dataclass(frozen=True)
@@ -1289,29 +1386,64 @@ class ProbeResult:
     sandboxed: bool | None
 
 
+@dataclass(frozen=True)
+class ProbeHost:
+    """What the probe's measured rows compare against on the host: the
+    harness's own network namespace (`/proc/self/ns/net`), a file the harness
+    wrote into the host's /tmp, and the name the `tmp_write` row writes to.
+    Each is None where it cannot be had, and its row is then left out."""
+
+    net_ns: str | None = None
+    sentinel: Path | None = None
+    marker: Path | None = None
+
+
+def _measured_commands(host: ProbeHost) -> list[tuple[str, str]]:
+    q = shlex.quote
+    commands = []
+    if host.net_ns:
+        commands.append(("net_ns", "n=$(readlink /proc/self/ns/net 2>/dev/null); "
+                                   f"if [ -z \"$n\" ]; then echo unknown; elif [ \"$n\" = "
+                                   f"{q(host.net_ns)} ]; then echo shared; else echo private; fi"))
+    if host.sentinel:
+        commands.append(("host_tmp", f"cat {q(str(host.sentinel))} >/dev/null 2>&1 && echo "
+                                     "readable || echo denied"))
+    if host.marker:
+        commands.append(("tmp_write", f": > {q(str(host.marker))} 2>/dev/null; echo $?"))
+    return commands
+
+
 def probe_commands(*, token_file: Path, server_pid: int, harness_pid: int, account: Path,
-                   uid: int, script: Path | None) -> list[tuple[str, str]]:
+                   uid: int, script: Path | None,
+                   host: ProbeHost | None = None) -> list[tuple[str, str]]:
     """The probe's fixed commands. Each discards its own output and prints one
-    word or its exit code, so no output of the target ever leaves the sandbox."""
+    word or its exit code, so no output of the target ever leaves the sandbox.
+    `git credential fill` runs with the operator's real home, configuration,
+    GitHub CLI directory and session bus, as a command in the sandbox could
+    set them, so that a credential helper the operator configured (such as
+    `gh auth git-credential`) is reached unless the sandbox denies it; the
+    child's own scratch home holds no helper and would prove nothing."""
     readable = "{} >/dev/null 2>&1 && echo readable || echo denied"
     q = shlex.quote
+    bus = f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus"
+    operator = (f"HOME={q(str(account))} XDG_CONFIG_HOME={q(str(account / '.config'))} "
+                f"GH_CONFIG_DIR={q(str(account / '.config' / 'gh'))} {bus}")
     commands = [
         ("token_file", readable.format(f"cat {q(str(token_file))}")),
         ("client_environ", readable.format(f"cat /proc/{server_pid}/environ")),
         ("harness_environ", readable.format(f"cat /proc/{harness_pid}/environ")),
         ("ssh_dir", readable.format(f"ls -A {q(str(account / '.ssh'))}")),
         ("gh_config", readable.format(f"ls -A {q(str(account / '.config' / 'gh'))}")),
-        ("gh_token", f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus gh auth token "
-                     "--hostname github.com >/dev/null 2>&1; echo $?"),
+        ("gh_token", f"{bus} gh auth token --hostname github.com >/dev/null 2>&1; echo $?"),
         ("git_credential", "printf 'protocol=https\\nhost=github.com\\n\\n' | "
-                           "GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false git credential fill "
-                           ">/dev/null 2>&1; echo $?"),
+                           f"{operator} GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false "
+                           "GCM_INTERACTIVE=never git credential fill >/dev/null 2>&1; echo $?"),
         ("python", "python3 -c 'print(1)' >/dev/null 2>&1; echo $?"),
     ]
     if script is not None:
         commands.append(("skill_script", f"python3 {q(str(script))} --help >/dev/null 2>&1; "
                                          "echo $?"))
-    return commands
+    return commands + _measured_commands(host or ProbeHost())
 
 
 def _exit_code(output: str | None) -> int | None:
@@ -1428,14 +1560,54 @@ def _apply_sandbox(rpc: Rpc, session_id: str, block: object, deadline: float) ->
     return None
 
 
-def _probe_rows(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float
-                ) -> tuple[ProbeResult, ...]:
+def _own_net_ns() -> str | None:
+    with suppress(OSError):
+        return str(Path(NET_NS).readlink())
+    return None
+
+
+@contextmanager
+def probe_host(tmp: Path | str | None = None) -> Iterator[ProbeHost]:
+    """The host side of the probe's measured rows: the harness's own network
+    namespace, a file written into the host's /tmp (PROBE_TMP) for
+    `host_tmp`, and a free name beside it for `tmp_write`; both files removed
+    afterwards."""
+    tmp = Path(PROBE_TMP if tmp is None else tmp)
+    if not tmp.is_dir():
+        yield ProbeHost(_own_net_ns())
+        return
+    fd, name = tempfile.mkstemp(prefix="devrun-probe-tmp-", dir=tmp)
+    os.close(fd)
+    sentinel = Path(name)
+    marker = sentinel.with_name(sentinel.name.replace("devrun-probe-tmp-", "devrun-probe-write-"))
+    try:
+        yield ProbeHost(_own_net_ns(), sentinel, marker)
+    finally:
+        for path in (sentinel, marker):
+            with suppress(OSError):
+                path.unlink()
+
+
+def _row_output(name: str, result: dict, host: ProbeHost) -> str | None:
+    """A probe row's one word: the last line of its output — except
+    `tmp_write`, which the harness judges on the host, since a write into the
+    sandbox's own overlay succeeds and reaches nothing."""
+    if name == "tmp_write" and host.marker is not None:
+        return "writable" if os.path.lexists(host.marker) else "denied"
+    text = str(result.get("output") or "").strip()
+    return text.splitlines()[-1] if text else None
+
+
+def _probe_rows(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float,
+                host: ProbeHost | None = None) -> tuple[ProbeResult, ...]:
+    host = host or ProbeHost()
     uid = os.getuid() if hasattr(os, "getuid") else 0
     calls = []
     for name, command in probe_commands(token_file=host_login.token_path(run.home),
                                         server_pid=pid, harness_pid=os.getpid(),
                                         account=host_login.account_home(),
-                                        uid=uid, script=_probe_script(run.ws)):  # type: ignore[arg-type]
+                                        uid=uid, script=_probe_script(run.ws),  # type: ignore[arg-type]
+                                        host=host):
         reply = rpc.call("session.shell.executeUserRequested",
                          {"sessionId": session_id, "requestId": uuid.uuid4().hex,
                           "command": command}, deadline)
@@ -1444,8 +1616,7 @@ def _probe_rows(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float
     ids = {str(result.get("toolCallId")) for _, result in calls if result.get("toolCallId")}
     rpc.drain(lambda: ids <= set(_completions(rpc.notes)), min(deadline, time.monotonic() + 5))
     done = _completions(rpc.notes)
-    return tuple(ProbeResult(name, str(result["output"]).strip().splitlines()[-1]
-                             if str(result.get("output") or "").strip() else None,
+    return tuple(ProbeResult(name, _row_output(name, result, host),
                              done.get(str(result.get("toolCallId")), {}).get("sandboxed"))
                  for name, result in calls)
 
@@ -1465,8 +1636,10 @@ def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: floa
         return Probe(True)
     try:
         why = _apply_sandbox(rpc, session_id, block, deadline)
-        return Probe(True, why) if why else Probe(
-            True, None, _probe_rows(rpc, run, session_id, pid, deadline))
+        if why:
+            return Probe(True, why)
+        with probe_host() as host:
+            return Probe(True, None, _probe_rows(rpc, run, session_id, pid, deadline, host))
     finally:
         rpc.call("session.delete", {"sessionId": session_id}, deadline)
 
@@ -2065,22 +2238,64 @@ def sandbox_after(events: list[dict], stderr: str = "") -> RunProblem | None:
 
 UNCONFINED_CALL ="a shell call the client did not report as sandboxed"
 SANDBOX_NOTICE = "the client's warning that the sandbox did not engage"
+OUTSIDE_FILE = "a file tool call on a path outside the workspace"
+# The client's file tools run in its own process, outside the sandbox, so the
+# watch checks where they point (Decision 13, the workspace after the run).
+FILE_TOOLS = frozenset({"view", "glob", "grep", "rg", "str_replace_editor", *EDIT_TOOLS})
+# the file headers of a patch in the format `apply_patch` takes
+PATCH_FILE = re.compile(r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$", re.MULTILINE)
 
 
-def breach_of(event: object, shells: set[str]) -> str | None:
+def tool_paths(data: Mapping) -> list[str]:
+    """The paths a file tool's start names: its `path` argument and, for a
+    patch, every file the patch's headers name. Pure."""
+    args = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
+    paths = [args["path"]] if isinstance(args.get("path"), str) and args["path"] else []
+    if data.get("toolName") == "apply_patch":
+        paths += [found.strip() for value in args.values() if isinstance(value, str)
+                  for found in PATCH_FILE.findall(value)]
+    return paths
+
+
+def leaves_workspace(path: str, ws: Path) -> bool:
+    """Whether a file tool's path, resolved as the harness's own process sees
+    it — relative to the workspace, every link followed — lies outside the
+    workspace: a link the sandboxed shell planted there resolves to its
+    target. A `~` path counts as outside, since the client resolves it against
+    a home that is not the workspace."""
+    if path.startswith("~"):
+        return True
+    root = os.path.realpath(ws)
+    target = os.path.realpath(Path(ws, path))  # an absolute `path` replaces `ws`
+    return target != root and not target.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _start_breach(data: Mapping, shells: set[str], ws: Path | None) -> str | None:
+    name = data.get("toolName")
+    if name in SHELL_TOOLS:
+        shells.add(str(data.get("toolCallId")))
+    elif (ws is not None and name in FILE_TOOLS and not data.get("mcpServerName")
+          and any(leaves_workspace(path, ws) for path in tool_paths(data))):
+        return OUTSIDE_FILE
+    return None
+
+
+def breach_of(event: object, shells: set[str], ws: Path | None = None) -> str | None:
     """One step of the run's live watch over its stdout events (Decision 13):
     a shell tool's start is noted in `shells`; the completion of a noted call
-    whose `sandboxed` is not true, or a sandbox warning, is a breach. Pure but
-    for `shells`."""
+    whose `sandboxed` is not true, or a sandbox warning, is a breach; given the
+    workspace, so is a file tool's start whose path leaves it
+    (`leaves_workspace`, which resolves links on the harness's side). Pure but
+    for `shells` and that resolution."""
     if not isinstance(event, dict):
         return None
     kind, data = event.get("type"), _data(event)
+    if kind == "tool.execution_start":
+        return _start_breach(data, shells, ws)
     call = str(data.get("toolCallId"))
-    if kind == "tool.execution_start" and data.get("toolName") in SHELL_TOOLS:
-        shells.add(call)
-    elif kind == "tool.execution_complete" and call in shells and data.get("sandboxed") is not True:
+    if kind == "tool.execution_complete" and call in shells and data.get("sandboxed") is not True:
         return UNCONFINED_CALL
-    elif kind in NOTICE_TYPES and sandbox_warned(str(data.get("message") or "")):
+    if kind in NOTICE_TYPES and sandbox_warned(str(data.get("message") or "")):
         return SANDBOX_NOTICE
     return None
 
@@ -2090,9 +2305,11 @@ class ConfinementWatch:
     applies the home's sandbox itself, which no check before the run can
     observe, so the run is watched while it lasts and stopped at the first
     breach (`breach_of` over stdout, a sandbox warning on stderr) rather than
-    left to go on with the skill prompt. `breach` keeps the first one."""
+    left to go on with the skill prompt. Given the workspace, a file tool
+    pointed outside it is a breach too. `breach` keeps the first one."""
 
-    def __init__(self) -> None:
+    def __init__(self, ws: Path | None = None) -> None:
+        self.ws = ws
         self.shells: set[str] = set()
         self.breach: str | None = None
 
@@ -2106,7 +2323,7 @@ class ConfinementWatch:
             event = json.loads(line)
         except ValueError:
             return False
-        return self._found(breach_of(event, self.shells))
+        return self._found(breach_of(event, self.shells, self.ws))
 
     def stderr_line(self, line: str) -> bool:
         return self._found(SANDBOX_NOTICE if sandbox_warned(line) else None)
@@ -2119,6 +2336,20 @@ def stopped_after(breach: object) -> RunProblem | None:
         return None
     return RunProblem(refusal(_problem(f"the run was stopped at {breach}; the sandbox's "
                                        "confinement is not confirmed",
+                                       f"read the run's findings, then run "
+                                       f"`{host_login.CLEAR_STOP_COMMAND}`", "isolation")),
+                      True, "isolation")
+
+
+def planted_after(planted: object) -> RunProblem | None:
+    """A run that left the workspace replaced, or holding entries the harness
+    must not follow (`workspace_breach`): untested for isolation (the caller
+    records an isolation stop), naming them; no verdict reads the run's
+    files."""
+    if not planted:
+        return None
+    return RunProblem(refusal(_problem(f"{planted}; no verdict read the run's files, and the "
+                                       "sandbox's confinement is not confirmed",
                                        f"read the run's findings, then run "
                                        f"`{host_login.CLEAR_STOP_COMMAND}`", "isolation")),
                       True, "isolation")
@@ -2260,8 +2491,11 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
     helpers = bool(harness.get("helpers"))
     scrubbed = RunProblem(refusal(_problem(
         "the token's value appeared in the Copilot child's output; it was scrubbed from "
-        "everything saved", f"read the run's findings, revoke the token at "
-        f"{host_login.TOKEN_PAGE}, then run `{host_login.CLEAR_STOP_COMMAND}`", "isolation")),
+        "everything the harness saved, but the client's session store in the harness home "
+        "keeps the transcript unscrubbed", f"read the run's findings, revoke the token at "
+        f"{host_login.TOKEN_PAGE}, create a new one ({host_login.TOKEN_PAGE}/new) and run "
+        f"`{COPILOT.reset_command}`, which deletes the session store with the rest of the home",
+        "isolation")),
         True, "isolation") if harness.get("scrub_hit") else None
     failure = (RunProblem(timed_out, False) if timed_out else
                failure_reason(events, int(harness.get("exit_code") or 0),
@@ -2269,7 +2503,9 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
     billing, billing_stop = billing_after(harness.get("before"), harness.get("after"), events, cap)
     sandbox = sandbox_after(events, str(harness.get("stderr_tail") or ""))
     breach = harness.get("confinement_breach")
-    problems = [scrubbed, stopped_after(breach), failure, session_problem(events), billing, sandbox,
+    planted = harness.get("workspace_breach")
+    problems = [scrubbed, stopped_after(breach), planted_after(planted), failure,
+                session_problem(events), billing, sandbox,
                 isolation_after(events, harness.get("roster") or [],
                                 str(harness.get("skill_root") or "")),
                 model_after(events, model, helpers, effort),
@@ -2277,6 +2513,7 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
                 helper_after(events), version_after(events)]
     stops = ([("isolation", "the token's value appeared in a child's output")] if scrubbed else [])
     stops += [("isolation", f"the run was stopped at {breach}")] if breach else []
+    stops += [("isolation", str(planted))] if planted else []
     stops += [("billing", billing.billing or billing.message)] if billing_stop and billing else []
     stops += [("isolation", "the sandbox was ignored or not reported active")] if sandbox else []
     return Assessment(combine(problems), tuple(stops))
@@ -2317,13 +2554,17 @@ def _pump(stream, sink: list[str], feed: Callable[[str], bool], tripped: threadi
                 tripped.set()
 
 
-def _watch_child(proc: subprocess.Popen, timeout: float) -> tuple[str, str, bool, str | None]:
+def _watch_child(proc: subprocess.Popen, timeout: float,
+                 ws: Path | None = None) -> tuple[str, str, bool, str | None]:
     """Wait for the prompt-mode child while `ConfinementWatch` reads its
     output (Decision 13): the first breach stops the child there, so a run
     whose shell is not confined does not go on with the skill prompt; the time
-    limit stops it as before. Returns stdout, stderr, whether the limit was
-    reached, and the breach."""
-    watch, tripped = ConfinementWatch(), threading.Event()
+    limit stops it as before. Whatever ended it, every process left in its
+    process group is killed (`stop_group`). A stream is closed only once its
+    reader has finished: one still blocked on a pipe that a process outside
+    the group holds is left to the daemon thread rather than closed under it.
+    Returns stdout, stderr, whether the limit was reached, and the breach."""
+    watch, tripped = ConfinementWatch(ws), threading.Event()
     out: list[str] = []
     err: list[str] = []
     pumps = [threading.Thread(target=_pump, args=(proc.stdout, out, watch.event_line, tripped),
@@ -2339,13 +2580,12 @@ def _watch_child(proc: subprocess.Popen, timeout: float) -> tuple[str, str, bool
             timed_out = True
             break
         tripped.wait(min(WATCH_POLL_S, remaining))
-    if proc.poll() is None:
-        host_login.stop_child(proc, signal.SIGTERM)
-    for pump in pumps:
+    stop_group(proc, signal.SIGTERM)
+    for pump, stream in zip(pumps, (proc.stdout, proc.stderr), strict=True):
         pump.join(timeout=host_login.TERM_GRACE_S)
-    for stream in (proc.stdout, proc.stderr):
-        with suppress(OSError, AttributeError):
-            stream.close()  # type: ignore[union-attr]
+        if not pump.is_alive():
+            with suppress(OSError, AttributeError):
+                stream.close()  # type: ignore[union-attr]
     return "".join(out), "".join(err), timed_out, watch.breach
 
 
@@ -2361,10 +2601,11 @@ def _after_status(run: Run) -> Status | None:
 
 
 def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun: float,
-             after: Status | None, hit: bool, timed_out: bool, breach: str | None) -> dict:
+             after: Status | None, hit: bool, timed_out: bool, breach: str | None,
+             planted: str | None = None) -> dict:
     return {"type": "copilot.harness", "duration_ms": int((time.monotonic() - begun) * 1000),
             "exit_code": code, "stderr_tail": stderr.strip()[-800:], "timed_out": timed_out,
-            "confinement_breach": breach,
+            "confinement_breach": breach, "workspace_breach": planted,
             "session_id": session_id, "cap": run.cap, "model": run.model, "effort": run.effort,
             "helpers": int(run.scenario.get("helpers") or 0),
             "network": needs_network(run.scenario), "roster": run.roster,
@@ -2376,14 +2617,67 @@ def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun:
 
 AFTER_INCOMPLETE = ("the checks after the run did not complete, so its draw on the plan and its "
                     "output were not checked")
+WORKSPACE_REPLACED = ("the workspace itself was replaced (by a link or another directory), so "
+                      "the harness read nothing in it")
+SHOWN_ENTRIES = 5
+
+
+def workspace_identity(ws: Path) -> tuple[int, int]:
+    """The workspace directory's device and inode, taken before any Copilot
+    child starts in it."""
+    info = os.lstat(ws)
+    return info.st_dev, info.st_ino
+
+
+def _replaced(ws: Path, identity: tuple[int, int] | None) -> bool:
+    """Whether `ws` is no longer the directory the run started in; a link left
+    in its place is removed, never followed."""
+    try:
+        info = os.lstat(ws)
+    except OSError:
+        return True
+    if stat.S_ISDIR(info.st_mode) and (info.st_dev, info.st_ino) == identity:
+        return False
+    if stat.S_ISLNK(info.st_mode):
+        with suppress(OSError):
+            ws.unlink()  # the link itself, never its target
+    return True
+
+
+def workspace_breach(ws: Path, identity: tuple[int, int] | None,
+                     token: str | None) -> str | None:
+    """The workspace after the run (Decision 13), before the harness reads,
+    scrubs or writes anything in it. The sandboxed shell may write the
+    workspace, and making a link never touches its target, so a run whose
+    every shell call was sandboxed can still leave a link that the harness —
+    unsandboxed — would follow: into the judge's prompt, the event file, the
+    scrub. Why it cannot be read, or None: the workspace replaced (`_replaced`),
+    or entries `_unsafe_entry` names, each unlinked without being followed
+    (the link goes, its target stays untouched). Names at most SHOWN_ENTRIES
+    entries, scrubbed; never reads one."""
+    if _replaced(ws, identity):
+        return WORKSPACE_REPLACED
+    found = unsafe_entries(ws)
+    for path, _why in found:
+        with suppress(OSError):
+            path.unlink()  # the entry itself, never a link's target
+    if not found:
+        return None
+    named = ", ".join(f"{path.relative_to(ws).as_posix()} ({why})"
+                      for path, why in found[:SHOWN_ENTRIES])
+    more = f" and {len(found) - SHOWN_ENTRIES} more" if len(found) > SHOWN_ENTRIES else ""
+    return scrub(f"the workspace held entries the harness must not follow, removed unread: "
+                 f"{named}{more}", token)[0]
 
 
 def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
             timeout: float) -> tuple[list[dict], str | None]:
-    """Wait for the child under the live watch, then the session file, the
-    read after, the scrub, the snapshot and the stops; the events and the
-    time-limit message."""
-    out, err, timed_out, breach = _watch_child(proc, timeout)
+    """Wait for the child under the live watch, then the workspace check (the
+    first thing after the child, before anything in the workspace is read or
+    written), the session file, the read after, the scrub, the snapshot and
+    the stops; the events and the time-limit message."""
+    out, err, timed_out, breach = _watch_child(proc, timeout, run.ws)
+    planted = workspace_breach(run.ws, run.ws_id, run.token)  # type: ignore[arg-type]
     records, file_hit = capture_session(run.home, session_id, run.token)
     after = _after_status(run)
     out, out_hit = scrub(out, run.token)
@@ -2392,7 +2686,8 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
     hit = file_hit or out_hit or err_hit or bool(tree_hits)
     events = [*parse_lines(out), *records,
               _harness(run, session_id, code=proc.returncode, stderr=err, begun=begun,
-                       after=after, hit=hit, timed_out=timed_out, breach=breach)]
+                       after=after, hit=hit, timed_out=timed_out, breach=breach,
+                       planted=planted)]
     write_snapshot(run.home, after)
     limit = f"copilot did not finish within {timeout:g}s" if timed_out else None
     for kind, cause in assess(events, timed_out=limit).stops:
@@ -2403,8 +2698,9 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
 def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
     """The prompt-mode child, holding the lock through `pass_fds`, then
     `_settle`. The steps after the start fail closed: whatever raises among
-    them, the child is stopped, the workspace scrubbed and a billing stop
-    recorded before the exception goes on."""
+    them, the child and its process group are stopped, the workspace checked
+    and scrubbed, and a billing stop recorded (an isolation stop too, for a
+    workspace breach) before the exception goes on."""
     session_id = str(uuid.uuid4())
     log_dir = run.scratch / "logs"  # type: ignore[operator]
     argv = command(run.scenario, request, model=run.model, effort=run.effort,  # type: ignore[arg-type]
@@ -2415,10 +2711,12 @@ def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
     try:
         events, limit = _settle(run, proc, session_id, begun=begun, timeout=timeout)
     except BaseException:
-        if proc.poll() is None:
-            host_login.stop_child(proc, signal.SIGTERM)
+        stop_group(proc, signal.SIGTERM)
+        planted = workspace_breach(run.ws, run.ws_id, run.token)  # type: ignore[arg-type]
         scrub_tree(run.ws, run.token)  # type: ignore[arg-type]
         record_stop(run.home, "billing", AFTER_INCOMPLETE)
+        if planted:
+            record_stop(run.home, "isolation", planted)
         raise
     if limit:
         raise CopilotRunFailed(limit, events)
@@ -2441,7 +2739,8 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
     problem = scan_problem(ws)
     if problem:
         raise CopilotRefused.of(problem)
-    run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort, cap=cap)
+    run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort, cap=cap,
+                  ws_id=workspace_identity(ws))
     run.home = home
     run.scratch = make_scratch("devrun-copilot-home-")
     try:
