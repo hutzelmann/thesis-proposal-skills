@@ -678,13 +678,14 @@ def test_choose_snapshot_reads_chat_for_the_free_limited_plan():
     assert status_of("status-ok").snapshot.name == "premium_interactions"
 
 
+STOP_USAGE = 'a $0 budget with "Stop usage" on "All AI Credit SKUs"'
+
+
 @pytest.mark.parametrize(("fixture", "named", "remedy", "billing"), [
-    ("status-no-overage-field", "overage permission is missing", "delete the Copilot budget",
-     True),
-    ("status-no-entitlement-field", "overage entitlement is missing", "delete the Copilot budget",
-     True),
-    ("status-budget", "overage is permitted", "delete the Copilot budget", True),
-    ("status-entitlement", "overage entitlement is 50", "delete the Copilot budget", True),
+    ("status-no-overage-field", "overage permission is missing", STOP_USAGE, True),
+    ("status-no-entitlement-field", "overage entitlement is missing", STOP_USAGE, True),
+    ("status-budget", "overage is permitted", STOP_USAGE, True),
+    ("status-entitlement", "overage entitlement is 50", STOP_USAGE, True),
     ("status-overage-drawn", "overage count 3", "reset date 2026-11-01", True),
     ("status-legacy", "consumption in credits", "report it", True),
     ("status-low", "8.0% remaining", "reset date 2026-11-01", True),
@@ -708,6 +709,20 @@ def test_status_problem_refuses_with_the_spec_remedy(fixture, named, remedy, bil
     assert message.endswith(f"{NOTE}.")
     for secret in ("fixture-login-octocat", "fixture-org", "FIXTURE_REPLY_ONLY"):
         assert secret not in message
+
+
+def test_a_deleted_budget_reads_as_possible_overage_and_the_remedy_never_deletes():
+    """testing-harness spec: Budget present; Deleted budget reads as possible
+    overage. With every budget deleted, K2 read `overage_permitted: true`
+    (GitHub: no budget means unlimited usage), so the remedy is the $0 budget
+    that stops usage (D-a, 2026-10-06), and no wording tells the operator to
+    delete one."""
+    problem = copilot_cli.status_problem(status_of("status-budget"))
+    message = refusal(problem)
+    assert "overage is permitted" in problem.cause
+    assert STOP_USAGE in message and "never deleting it" in message
+    assert "delete the" not in message.lower()
+    assert "delete" not in copilot_cli.STOP_BUDGET.replace("deleting", "")
 
 
 def _with_auth_type(kind: str) -> copilot_cli.Status:

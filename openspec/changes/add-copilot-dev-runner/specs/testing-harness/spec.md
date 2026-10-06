@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Copilot plan billing guard
-A Copilot run SHALL draw only on the included AI credits of the operator's Copilot plan, and nothing else. The account keeps money out: the operator keeps no Copilot budget of any kind, and a budget is deleted rather than set to zero. The checks below are the backstop, and each one fails closed. A run that any of them refuses:
+A Copilot run SHALL draw only on the included AI credits of the operator's Copilot plan, and nothing else. The account keeps money out: the operator keeps a budget of zero on the account's AI-credit usage with its "stop usage" setting on, and never deletes it, because a product with no budget has unlimited usage. The checks below are the backstop, and each one fails closed. A run that any of them refuses:
 
 - is untested and exits with the untested status. The one exception is a run whose session record holds no shutdown record, which is a runner failure (requirement: Dev-runner cost and helper-agent telemetry) and still records a billing stop;
 - starts no further Copilot process;
@@ -54,7 +54,7 @@ The refusal names the variable, never its value. The reason: an environment toke
 Before the run, the runner SHALL refuse in any of these cases:
 
 - **The read is unavailable.** The reader cannot start, its handshake or a call fails, it gives no answer within a bounded time, or the answer carries no Copilot user record or no chosen snapshot. Remedy: report it, because the client's server interface does not match the pinned version.
-- **A budget is possible.** The overage permission is missing, is not a boolean, or is true; or the overage entitlement is missing, is not a number, or is above zero. Remedy: delete the Copilot budget, or, on an organization seat, ask its administrator.
+- **A budget is possible.** The overage permission is missing, is not a boolean, or is true; or the overage entitlement is missing, is not a number, or is above zero. Remedy: set the account's AI-credit budget to zero with "stop usage" on, never deleting it, or, on an organization seat, ask its administrator.
 - **Overage already drawn.** The overage count is missing or above zero. Remedy: check the account's billing page, and rerun after the reset date.
 - **Legacy billing.** Billing is not token based. A legacy plan reports no consumption in credits, which would leave the credit cap unenforced. Remedy: report it.
 - **Quota low.** The remaining percentage is missing or below 10, or the snapshot reports no quota. Remedy: rerun after the reset date.
@@ -109,7 +109,11 @@ The summary SHALL report the overage count and the remaining percentage before a
 
 #### Scenario: Budget present
 - **WHEN** the chosen snapshot reports the overage permission as true, or an overage entitlement above zero
-- **THEN** the run is refused as untested, and the message names deleting the Copilot budget as the one remedy
+- **THEN** the run is refused as untested, and the message names a zero AI-credit budget with "stop usage" on as the one remedy, never deleting the budget
+
+#### Scenario: Deleted budget reads as possible overage
+- **WHEN** the operator has deleted the account's AI-credit budget, so that the chosen snapshot reports the overage permission as true
+- **THEN** the run is refused as untested before any prompt-mode child starts, and the remedy names the zero budget with "stop usage" on
 
 #### Scenario: Missing entitlement field refuses
 - **WHEN** the chosen snapshot carries no overage entitlement, or one that is not a number

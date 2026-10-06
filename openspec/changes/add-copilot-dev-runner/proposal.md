@@ -46,7 +46,7 @@ This change lands after `close-claudeai-surfaces`, `add-harness-claude-login` an
   - During the run, the child is stopped at its first shell call the client does not report as sandboxed, at a sandbox warning, or at a file tool pointed outside the workspace, so a run whose shell is not confined does not go on with the skill prompt; whatever ends a child, its process group is stopped with it. Prompt mode applies the sandbox itself, after resolving the block natively, so that its confinement can only be observed in the run; the probe's evidence covers the same block applied through the same call, unresolved.
   - After the run, before anything in the workspace is read, a link, FIFO, socket, device or hard link the sandboxed shell left there, or a replaced workspace, is removed unfollowed and marks the run untested with an isolation stop; so do a run stopped by the watch, a sandbox reported ignored or not active, and the token's value in the child's output.
 - **A Copilot plan billing guard.**
-  - The operator keeps no Copilot budget at all.
+  - The operator keeps a $0 budget on "All AI Credit SKUs" with "Stop usage" on, and never deletes it: GitHub's Budgets page states that a product with no budget has unlimited usage, and K2 measured `overage_permitted: true` with every budget deleted and `false` once the $0 Stop-usage budget was set (corrected 2026-10-06, the user's decision D-a).
   - Under the run lock, a headless RPC status read, with no model call, reads the raw `quota_snapshots` before and after each run, never the coerced `getQuota` values. Any possible or drawn overage (a missing overage field included), legacy billing, low quota, or an unavailable read refuses the run.
   - Consumption comes from the session's `totalNanoAiu`. Any of these marks the run untested:
     - a soft-cap stop;
@@ -59,7 +59,7 @@ This change lands after `close-claudeai-surfaces`, `add-harness-claude-login` an
 - **L0 coverage on synthetic streams and RPC replies** derived from the pinned 1.0.91 package, labelled synthetic until the follow-up `record-copilot-streams`.
 - **USER ACTIONS** (agents never log in):
   - the CLI upgrade to 1.0.91;
-  - deleting every Copilot budget;
+  - a $0 budget with "Stop usage" on "All AI Credit SKUs" (not deleting budgets, which lifts the cap);
   - creating the PAT;
   - `host-login copilot`;
   - the `gh` check of K1.

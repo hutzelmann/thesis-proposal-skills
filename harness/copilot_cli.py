@@ -7,8 +7,9 @@ credits of the operator's Copilot plan (testing-harness spec: Dev-runner host
 adapters; Copilot plan billing guard). It is a dev loop only, labelled
 "dev-runner (copilot), not comparable to matrix": no registry role, no matrix
 cell, nothing written where the support report reads. The account keeps money
-out — the operator keeps no Copilot budget at all — and every check here is
-the backstop, failing closed:
+out — the operator keeps a $0 budget with "Stop usage" on "All AI Credit SKUs"
+and never deletes it, since a product with no budget has unlimited usage —
+and every check here is the backstop, failing closed:
 
 - **The credential.** A fine-grained token carrying only "Copilot Requests",
   in the token file beside the home (`host_login.token_path`). `token_env` is
@@ -842,8 +843,13 @@ def read_status(home: Path, environ: Mapping[str, str] | None = None, *, token: 
 
 UNAVAILABLE_REMEDY = ("report it: the client's server interface does not match the pinned "
                       f"version {host_login.version_text(COPILOT_PINNED_VERSION)}")
-DELETE_BUDGET = ("delete the Copilot budget at github.com/settings/billing (Budgets and alerts), "
-                 "or, on an organization seat, ask its administrator")
+# GitHub's Budgets page: "If no budget is set, usage for that product is
+# unlimited." So the remedy is a $0 budget that stops usage, never a deleted
+# one: with every budget deleted, K2 read `overage_permitted: true` (task 7.6;
+# the user's decision D-a, 2026-10-06)
+STOP_BUDGET = ('set a $0 budget with "Stop usage" on "All AI Credit SKUs" at '
+               "github.com/settings/billing (Budgets and alerts), never deleting it, since no "
+               "budget means unlimited usage; or, on an organization seat, ask its administrator")
 MODEL_REMEDY = ("enable the model in the account's Copilot settings (github.com/settings/copilot), "
                 "or name another model with --model")
 
@@ -901,7 +907,7 @@ def _budget(status: Status) -> LoginProblem | None:
            f"the overage entitlement is {entitlement}" if entitlement > 0 else None)  # type: ignore[operator]
     if why is None:
         return None
-    return _problem(f"a Copilot budget is possible: {why}", DELETE_BUDGET)
+    return _problem(f"a Copilot budget is possible: {why}", STOP_BUDGET)
 
 
 def _overage(status: Status) -> LoginProblem | None:
