@@ -99,15 +99,22 @@ and every check here is the backstop, failing closed:
   (`GO_USED`), and every recorded stop ends the go.
 
 The canary (`run_copilot(…, canary=True)`, the user's decision D-c) is the
-first model call after the operator's go: an empty workspace, the shell
-alone, the confinement probe's commands as the whole prompt (`canary_commands`,
-`canary_prompt`); its rows come from the client's own shell completions
-(`canary_rows`), and it passes only when every fixed command ran once and
-nothing else, every row reads as the probe requires, its network namespace
-is its own, every shell completion is reported sandboxed and the billing
-guard passes after it (`canary_after` in `assess`); anything else found after
-its child records a stop, and a canary that does not pass leaves the go's
-skill run refused. Every run's telemetry carries K5's parts (`events_seen`):
+first model call after the operator's go: the shell alone, the confinement
+probe's commands (`canary_commands`) in one script the harness writes into
+the workspace under the lock (`canary_script`, `write_canary_script`), and
+one fixed command that runs it as the whole prompt (`CANARY_RUN`,
+`canary_prompt`), which the client's lexical path check lets through and the
+model has nothing in to re-escape (the first canary, 2026-10-07). Its rows
+come from the client's own completion of that one call, accepted only when
+it ran to its end (`canary_rows`); it passes only when that command ran once
+and nothing else, the script kept its digest, every row is answered and
+reads as the probe requires, its network namespace is its own, every shell
+completion is reported sandboxed and the billing guard passes after it
+(`canary_after` in `assess`); anything else found after its child records a
+stop, and a canary that does not pass leaves the go's skill run refused. A
+shell completion counts as the sandbox's report only when it ran
+(`shell_ran`): the client's own permission refusal (`shell_refused`) reports
+`sandboxed` too. Every run's telemetry carries K5's parts (`events_seen`):
 where each listed event type arrived, stdout or the session file.
 
 Copilot tool events map to the canonical tool names (`copilot_tool_calls`), so
@@ -132,6 +139,7 @@ Usage (the operator only; K1's `gh` cut-off check, never used by a run):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import queue
@@ -1314,6 +1322,8 @@ class Run:
     # the canary's fixed commands and their host side (D-c), None for a skill run
     canary: list[tuple[str, str]] | None = None
     host: ProbeHost | None = None
+    # the sha256 of the canary's script as the harness wrote it, None for a skill run
+    canary_sha: str | None = None
     # whether this run is the canary, which the go check reads before the
     # commands exist (Decision 9, the go)
     is_canary: bool = False
@@ -1834,14 +1844,25 @@ def probe_host(tmp: Path | str | None = None,
                 path.unlink()
 
 
+def host_write(word: str | None, seen: bool) -> str | None:
+    """The `tmp_write` row as the harness judges it on the host, since a write
+    into the sandbox's own overlay succeeds and reaches nothing: `writable`
+    when the host sees the file, `denied` otherwise — but only once the row's
+    command printed its exit code; a command that never ran is unanswered
+    (None), never `denied` (the first canary, 2026-10-07). Pure."""
+    if _exit_code(word) is None:
+        return None
+    return "writable" if seen else "denied"
+
+
 def _row_output(name: str, result: dict, host: ProbeHost) -> str | None:
     """A probe row's one word: the last line of its output — except
-    `tmp_write`, which the harness judges on the host, since a write into the
-    sandbox's own overlay succeeds and reaches nothing."""
-    if name == "tmp_write" and host.marker is not None:
-        return "writable" if os.path.lexists(host.marker) else "denied"
+    `tmp_write`, judged on the host (`host_write`)."""
     text = str(result.get("output") or "").strip()
-    return text.splitlines()[-1] if text else None
+    word = text.splitlines()[-1] if text else None
+    if name == "tmp_write" and host.marker is not None:
+        return host_write(word, os.path.lexists(host.marker))
+    return word
 
 
 def _probe_rows(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float,
@@ -2077,6 +2098,34 @@ def _reduce_notice(kind_: str, data: dict) -> list[dict]:
              "message": message[:300]}] if notice else []
 
 
+def _obj(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+# how many paths of one permission prompt a `copilot.permission` record keeps,
+# and how many characters of each
+SHOWN_PERMISSION_PATHS = 10
+PERMISSION_PATH_CHARS = 200
+
+
+def _reduce_permission(kind_: str, data: dict) -> list[dict]:
+    """A permission request or its outcome (`permission.requested`,
+    `permission.completed`; the session file only, at 1.0.91): the request's
+    kind, the prompt's kind, access kind and paths, the result's kind and who
+    decided it — never the command text (added after the first canary,
+    2026-10-07, whose refusals the reducer had dropped)."""
+    request, prompt = _obj(data.get("permissionRequest")), _obj(data.get("promptRequest"))
+    paths = prompt.get("paths") if isinstance(prompt.get("paths"), list) else []
+    call = data.get("toolCallId") or request.get("toolCallId") or prompt.get("toolCallId")
+    return [{"type": "copilot.permission", "event": kind_,
+             "requestId": _text(data.get("requestId")), "toolCallId": _text(call),
+             "kind": _text(request.get("kind")), "prompt": _text(prompt.get("kind")),
+             "accessKind": _text(prompt.get("accessKind")),
+             "paths": [str(p)[:PERMISSION_PATH_CHARS] for p in paths[:SHOWN_PERMISSION_PATHS]],
+             "result": _text(_obj(data.get("result")).get("kind")),
+             "decisionSource": _text(data.get("decisionSource"))}]
+
+
 SESSION_REDUCERS: dict[str, Callable[[str, dict], list[dict]]] = {
     "session.start": lambda _k, d: [{"type": "copilot.session_start",
                                      "copilotVersion": d.get("copilotVersion")}],
@@ -2090,6 +2139,7 @@ SESSION_REDUCERS: dict[str, Callable[[str, dict], list[dict]]] = {
                                                 "cause", "previousModel", "newModel")}}],
     "session.warning": _reduce_notice, "session.error": _reduce_notice,
     "session.info": _reduce_notice,
+    "permission.requested": _reduce_permission, "permission.completed": _reduce_permission,
 }
 
 
@@ -2097,8 +2147,9 @@ def reduce_session(lines: Iterable[str]) -> list[dict]:
     """Only the fields the readers use (Decision 9): the CLI version, each skill
     invocation's name, path, source and trigger (never its SKILL.md text),
     the shutdown's consumption, model changes, the type alone of each hook
-    event, and the sandbox and effort notices. `system.message`, prompts and
-    unknown fields are dropped; a torn line is skipped."""
+    event, the sandbox and effort notices, and each permission request and
+    its outcome (`_reduce_permission`). `system.message`, prompts and unknown
+    fields are dropped; a torn line is skipped."""
     records = []
     for line in lines:
         with suppress(ValueError):
@@ -2478,27 +2529,60 @@ def billing_after(before: object, after: object, events: list[dict], cap: float
                       "subscription", billing=cause), True
 
 
-def _shell_reports(events: list[dict]) -> list[object]:
+def shell_ran(done: Mapping) -> bool:
+    """Whether a shell completion shows that its command ran: a `result` and
+    an integer `shellExecution.exitCode` (facts measured at the first canary,
+    2026-10-07). A call the client's own permission check refused carries
+    neither, though it reports `sandboxed: true`. Pure."""
+    code = _obj(done.get("shellExecution")).get("exitCode")
+    return (isinstance(done.get("result"), dict) and isinstance(code, int)
+            and not isinstance(code, bool))
+
+
+def shell_refused(done: Mapping) -> bool:
+    """Whether a shell completion is the client's own permission refusal,
+    before any shell ran: an error with the `denied` code, the telemetry's
+    `permission_denied` category, and nothing that ran (`shell_ran`). Pure."""
+    properties = _obj(_obj(done.get("toolTelemetry")).get("properties"))
+    return (_obj(done.get("error")).get("code") == "denied"
+            and properties.get("shell_error_category") == "permission_denied"
+            and not shell_ran(done))
+
+
+def _shell_completions(events: list[dict]) -> list[dict | None]:
+    """Each shell call's completion, None for a call without one, in order."""
     done = _done(events)
-    return [done.get(str(s.get("toolCallId")), {}).get("sandboxed")
+    return [done.get(str(s.get("toolCallId")))
             for s in _starts(events, top_level=False) if s.get("toolName") in SHELL_TOOLS]
+
+
+def _unconfirmed(completions: Sequence[dict | None]) -> str | None:
+    """Why no shell completion reports the sandbox active, or None: a report
+    counts only from a completion that ran (`shell_ran`)."""
+    if any(done is not None and shell_ran(done) for done in completions):
+        return None
+    if completions and all(done is not None and shell_refused(done) for done in completions):
+        return ("the stream carries no report that the sandbox is active: the client's permission "
+                "check refused every shell call before any shell ran it")
+    if completions:
+        return "the stream carries no report that the sandbox is active (no shell call ran)"
+    return "the stream carries no report that the sandbox is active (no shell call)"
 
 
 def sandbox_after(events: list[dict], stderr: str = "") -> RunProblem | None:
     """The client's warning that the sandbox did not engage (stream, session
     file or stderr), or no report that it did: a shell completion whose
-    `sandboxed` is not true, or no shell completion at all — whatever ended
-    the run, a session error included (design Decision 13: until a recorded
-    run confirms the report, its absence stops). Untested for isolation; the
-    caller records an isolation stop."""
+    `sandboxed` is not true, refused or not, or no shell completion that ran
+    (`_unconfirmed`) — whatever ended the run, a session error included
+    (design Decision 13: until a recorded run confirms the report, its absence
+    stops). Untested for isolation; the caller records an isolation stop."""
     warnings = _notices(events, "sandbox") + [line for line in stderr.splitlines()
                                               if sandbox_warned(line)]
-    reports = _shell_reports(events)
+    completions = _shell_completions(events)
     why = ("the client warned that the sandbox did not engage" if warnings else
-           "the stream carries no report that the sandbox is active (no shell call)"
-           if not reports else
-           "a shell call was not reported as sandboxed" if any(r is not True for r in reports)
-           else None)
+           "a shell call was not reported as sandboxed"
+           if any(_obj(done).get("sandboxed") is not True for done in completions)
+           else _unconfirmed(completions))
     if why is None:
         return None
     return RunProblem(refusal(_problem(f"{why}; the sandbox's confinement is not confirmed",
@@ -2740,23 +2824,49 @@ def version_after(events: list[dict]) -> RunProblem | None:
 
 # ---------- the canary (the user's decision D-c; design Decision 13, the canary) ----------------
 
+# The canary's script and its one fixed command (revised after the first
+# canary, 2026-10-07): the client's lexical path check refused every fixed
+# command that named an absolute path outside the workspace before any shell
+# ran it, and the model re-escaped one with `printf` escapes. The script holds
+# the commands; the command names it relatively and carries nothing to
+# re-escape (no quotes, backslashes, `$`, absolute path or line break).
+CANARY_SCRIPT = ".devrun-canary.sh"
+CANARY_RUN = f"sh {CANARY_SCRIPT}"
+CANARY_END = "canary end"
+# one row of the script's output: `canary <name> <word>`
+CANARY_LINE = re.compile(r"^canary (\w+) (\S+)$")
 CANARY_PROMPT = (
-    "This is a sandbox check, not a task. Use the bash tool to run each command below exactly "
-    "as written: one command per tool call, one at a time, in the order given, waiting for each "
-    "to finish before the next. Do not change, combine, explain or skip any command, and run "
-    "nothing else. Each command prints one word or one number. When all of them have run, reply "
-    "with their outputs only, one per line, in the same order.")
+    "This is a sandbox check, not a task. Use the bash tool exactly once, to run the command "
+    "below exactly as written. Do not read, change or explain the file it runs, do not change "
+    "or add to the command, and run nothing else. When it has finished, reply with the word done.")
 # what a probe command prints: one word of the probe's vocabulary, or an exit code
 PROBE_WORD = re.compile(r"^(?:denied|readable|shared|private|unknown|\d+)$")
 NOT_CONFIRMED = "the canary did not confirm prompt mode's sandbox"
-CANARY_PASSED = ("the canary confirmed prompt mode's sandbox: every fixed command run once and "
-                 "nothing else, every probe row as required, a network namespace of its own, "
-                 "every shell completion reported sandboxed, the billing guard passing after the "
-                 "run; the go now covers one skill run")
-MISSING_REMEDY = ("rerun the canary, or name a model that runs the given commands verbatim: a "
-                  "command it skipped, combined or altered measures nothing")
+CANARY_PASSED = ("the canary confirmed prompt mode's sandbox: its one command run once to its end "
+                 "and nothing else, its script unchanged, every probe row answered and as "
+                 "required, a network namespace of its own, every shell completion reported "
+                 "sandboxed, the billing guard passing after the run; the go now covers one skill "
+                 "run")
+# the canary's call: ran, or why its rows are unanswered (`CanaryReading.call`)
+CALL_RAN = "ran"
+CALL_MISSING = "the model did not run the canary's command verbatim"
+CALL_REFUSED = ("the client's permission check refused the canary's command before any shell "
+                "ran it")
+CALL_CHANGED = "the canary's script changed during the run, or could not be read after it"
+CALL_UNCLOSED = "the canary's script did not reach its closing line"
+# why a row is unanswered although the call ran
+NO_LINE = "the script printed no single tagged line with a probe word for it"
+MISSING_REMEDY = ("read the run's findings, then give a new go "
+                  f"(`{host_login.CLEAR_STOP_COMMAND}`) and rerun the canary, or name a model that "
+                  "runs the given command verbatim: a row without its line measures nothing")
+REFUSED_REMEDY = ("read the kept events' copilot.permission records: the client's own permission "
+                  "check, not the sandbox, refused the command; a change to the canary goes "
+                  "through openspec-update-change")
 EXTRA_REMEDY = ("read the commands the summary names, then rerun the canary, or name a model that "
-                "runs exactly the given commands: one it added could change what the host judges")
+                "runs exactly the given command: one it added could change what the host judges")
+# the network-namespace readings beside the shell's own words (`net_reading`)
+NET_UNANSWERED = "unanswered"
+NET_UNMEASURED = "unmeasured"
 NET_REMEDY = ("read the run's findings; decide whether to pin sandbox.userPolicy.network through "
               "openspec-update-change before any skill run, then run "
               f"`{host_login.CLEAR_STOP_COMMAND}`")
@@ -2788,61 +2898,162 @@ def canary_commands(*, token_file: Path, session_id: str, harness_pid: int, acco
             for name, command in rows]
 
 
-def canary_prompt(commands: Sequence[tuple[str, str]]) -> str:
-    """The canary's whole prompt: the instruction and the numbered commands."""
-    blocks = [f"Command {i}:\n```sh\n{cmd}\n```" for i, (_name, cmd) in enumerate(commands, 1)]
-    return "\n\n".join([CANARY_PROMPT, *blocks])
+def canary_script(commands: Sequence[tuple[str, str]]) -> str:
+    """The canary's script (Decision 13, the canary): each fixed command in a
+    group whose errors are discarded and whose output is cut to its last
+    line, printed as one tagged line `canary <name> <word>`; then the closing
+    line CANARY_END. The commands' own text is never re-typed by a model. Pure."""
+    rows = [f"w=$( {{ {command} ; }} 2>/dev/null | tail -n 1 ); "
+            f"printf 'canary %s %s\\n' {shlex.quote(name)} \"$w\"" for name, command in commands]
+    return "\n".join([*rows, f"echo {CANARY_END}", ""])
 
 
-def _completion_word(done: Mapping) -> str | None:
-    """The probe word a shell completion's result carries: the last line of its
-    content (or detailed content) that is one."""
-    result = done.get("result") if isinstance(done.get("result"), dict) else {}
-    for text in (result.get("content"), result.get("detailedContent")):
-        words = [line.strip() for line in str(text or "").splitlines()
-                 if PROBE_WORD.match(line.strip())]
-        if words:
-            return words[-1]
+def write_canary_script(ws: Path, commands: Sequence[tuple[str, str]]) -> str:
+    """Write the canary's script into the workspace: created exclusively and
+    never through a link, readable by its owner alone (0400); its sha256."""
+    data = canary_script(commands).encode("utf-8")
+    fd = os.open(ws / CANARY_SCRIPT,
+                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o400)
+    with os.fdopen(fd, "wb") as fh:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fh.fileno(), 0o400)
+        fh.write(data)
+    return hashlib.sha256(data).hexdigest()
+
+
+def script_digest(ws: Path) -> str | None:
+    """The sha256 of the canary's script as it is now, read by its fixed name
+    without following a link; None when it cannot be read. Called only after
+    the workspace check found nothing (`canary_record`)."""
+    try:
+        fd = os.open(ws / CANARY_SCRIPT, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None
+    with os.fdopen(fd, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def canary_prompt() -> str:
+    """The canary's whole prompt: the instruction and its one fixed command."""
+    return f"{CANARY_PROMPT}\n\n```sh\n{CANARY_RUN}\n```"
+
+
+def script_words(text: str) -> tuple[dict[str, str], bool]:
+    """The rows a canary script's output carries, and whether its closing
+    line is there: a row counts only when its tagged line appears exactly
+    once and its word is a probe word (PROBE_WORD). Pure."""
+    lines = [line.strip() for line in text.splitlines()]
+    seen: dict[str, list[str]] = {}
+    for line in lines:
+        found = CANARY_LINE.match(line)
+        if found:
+            seen.setdefault(found[1], []).append(found[2])
+    words = {name: got[0] for name, got in seen.items()
+             if len(got) == 1 and PROBE_WORD.match(got[0])}
+    return words, CANARY_END in lines
+
+
+def _completion_problem(done: Mapping | None) -> str | None:
+    """Why the canary call's completion does not count as having run to its
+    end, or None: success, no error, a result and the exit code 0."""
+    if done is None:
+        return "the canary's command has no completion"
+    if shell_refused(done):
+        return CALL_REFUSED
+    code = _obj(done.get("shellExecution")).get("exitCode")
+    if done.get("success") is not True or done.get("error") or not shell_ran(done) or code != 0:
+        return (f"the canary's command did not run to its end (success {done.get('success')}, "
+                f"exit code {code})")
     return None
 
 
-def _canary_row(name: str, completion: Mapping, record: Mapping) -> ProbeResult:
-    word = (("writable" if record.get("tmp_seen") else "denied") if name == "tmp_write"
-            else _completion_word(completion))
-    return ProbeResult(name, word, completion.get("sandboxed"))
+def _call_state(done: Mapping | None, record: Mapping) -> tuple[str, dict[str, str]]:
+    """The canary call's state and the rows it answered (none unless it ran):
+    a completion that ran to its end (`_completion_problem`), a script whose
+    digest after the run is the one written, and the closing line."""
+    problem = _completion_problem(done)
+    if problem:
+        return problem, {}
+    if not record.get("script_sha256") or record.get("script_after") != record["script_sha256"]:
+        return CALL_CHANGED, {}
+    result = _obj(_obj(done).get("result"))
+    text = next((str(result[key]) for key in ("detailedContent", "content")
+                 if isinstance(result.get(key), str) and result[key].strip()), "")
+    words, closed = script_words(text)
+    return (CALL_RAN, words) if closed else (CALL_UNCLOSED, {})
 
 
-def canary_rows(events: list[dict]) -> tuple[list[ProbeResult], list[str]]:
-    """The canary's rows, from the client's own shell completions and never
-    from the model's reply: each fixed command (the `copilot.canary` record)
-    paired with the shell start whose command equals it, stripped; its word
-    from the completion, `tmp_write`'s judged on the host; its `sandboxed`
-    the completion's. Also every shell call that matched no fixed command or
-    repeated one, as its command cut to UNMATCHED_CHARS characters. Pure."""
+@dataclass(frozen=True)
+class CanaryReading:
+    """What the canary's one call yielded (Decision 13, the canary): every
+    fixed row, its output None where unanswered; the shell calls other than
+    that one call (each cut to UNMATCHED_CHARS characters); and the call's
+    state, CALL_RAN or why its rows are unanswered."""
+
+    rows: tuple[ProbeResult, ...]
+    unmatched: tuple[str, ...]
+    call: str
+
+
+def _canary_word(name: str, words: Mapping[str, str], record: Mapping) -> str | None:
+    word = words.get(name)
+    return host_write(word, bool(record.get("tmp_seen"))) if name == "tmp_write" else word
+
+
+def canary_rows(events: list[dict]) -> CanaryReading:
+    """The canary's rows, from the client's own completion of its one call
+    and never from the model's reply (revised after the first canary,
+    2026-10-07): the first shell start whose command, stripped, is CANARY_RUN
+    is that call, and every other shell call is unmatched. Its rows come from
+    its completion's tagged lines (`_call_state`), `tmp_write`'s judged on the
+    host once answered (`host_write`); each row's `sandboxed` is true only
+    when the completion reports `sandboxed` with the sandbox applied. Pure."""
     record = _last(events, "copilot.canary")
-    commands = [(str(pair[0]), str(pair[1])) for pair in record.get("commands") or []]
-    wanted = {command.strip(): name for name, command in commands}
+    names = [str(pair[0]) for pair in record.get("commands") or []]
     done = _done(events)
-    found: dict[str, ProbeResult] = {}
+    call: dict | None = None
+    found = False
     unmatched: list[str] = []
     for start in _starts(events, top_level=False):
         if start.get("toolName") not in SHELL_TOOLS:
             continue
-        args = start.get("arguments") if isinstance(start.get("arguments"), dict) else {}
-        command = str(args.get("command") or "").strip()
-        name = wanted.get(command)
-        if name is None or name in found:
+        command = str(_obj(start.get("arguments")).get("command") or "").strip()
+        if command == CANARY_RUN and not found:
+            found, call = True, done.get(str(start.get("toolCallId")))
+        else:
             unmatched.append(command[:UNMATCHED_CHARS])
-            continue
-        found[name] = _canary_row(name, done.get(str(start.get("toolCallId")), {}), record)
-    return [found[name] for name, _ in commands if name in found], unmatched
+    state, words = _call_state(call, record) if found else (CALL_MISSING, {})
+    applied = _obj(_obj(_obj(call).get("toolTelemetry")).get("properties")).get("sandboxApplied")
+    sandboxed = None if call is None else (call.get("sandboxed") is True and applied == "true")
+    rows = tuple(ProbeResult(name, _canary_word(name, words, record), sandboxed)
+                 for name in names)
+    return CanaryReading(rows, tuple(unmatched), state)
 
 
 def net_reading(rows: Sequence[ProbeResult]) -> str:
-    """The canary's network-namespace reading: the `net_ns` row's word, or
-    `unknown` without one (the host could not read its own namespace)."""
+    """The canary's network-namespace reading: the `net_ns` row's word as the
+    shell printed it (`private`, `shared`, or `unknown` when its `readlink`
+    failed); NET_UNANSWERED when the row has no answer (its command never ran
+    — the first canary's "unknown" meant that); NET_UNMEASURED when no row
+    was asked, because the host could not read its own namespace. Pure."""
     by = {r.name: r for r in rows}
-    return str(by["net_ns"].output) if "net_ns" in by and by["net_ns"].output else "unknown"
+    if "net_ns" not in by:
+        return NET_UNMEASURED
+    return str(by["net_ns"].output) if by["net_ns"].output else NET_UNANSWERED
+
+
+def unanswered_why(reading: CanaryReading) -> str:
+    """Why the canary's unanswered rows have no answer: the call's state, or,
+    when the call ran, that the script printed no usable line for them."""
+    return NO_LINE if reading.call == CALL_RAN else reading.call
+
+
+def net_text(reading: CanaryReading) -> str:
+    """The network-namespace reading as a stop names it: for an unanswered
+    row, with why (`unanswered_why`), so a refused command never reads as a
+    namespace the shell could not read."""
+    net = net_reading(reading.rows)
+    return f"{net}: {unanswered_why(reading)}" if net == NET_UNANSWERED else net
 
 
 def _unmatched_problem(unmatched: Sequence[str]) -> RunProblem | None:
@@ -2850,79 +3061,80 @@ def _unmatched_problem(unmatched: Sequence[str]) -> RunProblem | None:
         return None
     return RunProblem(refusal(_problem(
         f"the model ran {len(unmatched)} shell call{'s' if len(unmatched) > 1 else ''} beyond "
-        "the canary's fixed commands, one each (the summary names them), so the canary measured "
+        "the canary's fixed command, one each (the summary names them), so the canary measured "
         "something else", EXTRA_REMEDY, "precondition")), True, "precondition")
 
 
-def _net_problem(rows: Sequence[ProbeResult]) -> RunProblem | None:
-    reading = net_reading(rows)
-    if reading == PRIVATE_NET:
+def _net_problem(reading: CanaryReading) -> RunProblem | None:
+    if net_reading(reading.rows) == PRIVATE_NET:
         return None
     return RunProblem(refusal(_problem(
-        f"the canary's shell did not read a network namespace of its own (net_ns {reading}): "
-        "prompt mode's shell would reach the host's abstract unix sockets and loopback services",
-        NET_REMEDY, "isolation")), True, "isolation")
+        f"the canary's shell did not read a network namespace of its own "
+        f"(net_ns {net_text(reading)}): prompt mode's shell would reach the host's abstract unix "
+        "sockets and loopback services", NET_REMEDY, "isolation")), True, "isolation")
 
 
-def _rows_problem(events: list[dict], names: Sequence[str]) -> RunProblem | None:
-    """The canary's rows against the probe's rules (`probe_problem`), then
-    its network namespace (`_net_problem`), then the shell calls it ran
-    beyond the fixed commands (`_unmatched_problem`). A fixed command the
-    model skipped or altered leaves its row unanswered, which comes first."""
-    rows, unmatched = canary_rows(events)
-    missing = [name for name in names if name not in {r.name for r in rows}]
+def _rows_problem(events: list[dict]) -> RunProblem | None:
+    """The canary's rows: an unanswered row first, naming the call's state
+    (a refusal by the client's permission check with its own remedy); then
+    the probe's rules (`probe_problem`), the network namespace
+    (`_net_problem`) and the shell calls beyond the one fixed command
+    (`_unmatched_problem`)."""
+    reading = canary_rows(events)
+    missing = [r.name for r in reading.rows if r.output is None]
     if missing:
         return RunProblem(refusal(_problem(
-            f"the model did not run the canary's {', '.join(missing)} command"
-            f"{'s' if len(missing) > 1 else ''} verbatim, one per shell call", MISSING_REMEDY,
+            f"the canary's {', '.join(missing)} row{'s' if len(missing) > 1 else ''} went "
+            f"unanswered: {unanswered_why(reading)}",
+            REFUSED_REMEDY if reading.call == CALL_REFUSED else MISSING_REMEDY,
             "precondition")), True, "precondition")
-    problem = probe_problem(rows, what="the canary")
+    problem = probe_problem(list(reading.rows), what="the canary")
     if problem is not None:
         return RunProblem(refusal(problem), True, problem.kind)
-    return _net_problem(rows) or _unmatched_problem(unmatched)
+    return _net_problem(reading) or _unmatched_problem(reading.unmatched)
 
 
 def canary_stop_cause(events: list[dict]) -> str:
     """The isolation stop a canary that did not pass records: NOT_CONFIRMED,
-    naming the network-namespace reading where it was not `private`."""
-    reading = net_reading(canary_rows(events)[0])
-    return NOT_CONFIRMED if reading == PRIVATE_NET else f"{NOT_CONFIRMED} (net_ns {reading})"
+    naming the network-namespace reading where it was not `private`
+    (`net_text`: an unanswered one with why)."""
+    reading = canary_rows(events)
+    if net_reading(reading.rows) == PRIVATE_NET:
+        return NOT_CONFIRMED
+    return f"{NOT_CONFIRMED} (net_ns {net_text(reading)})"
 
 
 def canary_after(events: list[dict]) -> list[RunProblem | None]:
-    """The canary's own findings (D-c), none for a skill run: its rows read as
-    the confinement probe's are (`probe_problem`; a fixed command the model
-    skipped or altered is unanswered, a precondition), its network namespace
-    must read `private`, no shell call beyond the fixed commands may have run
-    (`_rows_problem`), and the billing guard over the status read after the
-    run (`after_guard` in the runner's record). Pure."""
-    record = _last(events, "copilot.canary")
-    if not record:
+    """The canary's own findings (D-c), none for a skill run: its rows
+    (`_rows_problem`: every row answered from its one call, as the
+    confinement probe's are read, its network namespace `private`, no shell
+    call beyond the fixed command), and the billing guard over the status
+    read after the run (`after_guard` in the runner's record). Pure."""
+    if not _last(events, "copilot.canary"):
         return []
-    names = [str(pair[0]) for pair in record.get("commands") or []]
     guard = harness_record(events).get("after_guard")
     guarded = None if not guard else RunProblem(refusal(_problem(
         f"after the canary, the billing guard refuses: {guard}",
         f"check github.com/settings/billing, then run `{host_login.CLEAR_STOP_COMMAND}`")),
         True, "subscription", billing=f"the billing guard after the canary: {guard}")
-    return [_rows_problem(events, names), guarded]
+    return [_rows_problem(events), guarded]
 
 
 def canary_report(events: list[dict]) -> dict:
     """What the canary's summary records beside the run's telemetry: every row
-    with its word and sandbox report, the unanswered rows, and the shell calls
-    that matched no fixed command or repeated one: their count, and the first
-    SHOWN_UNMATCHED of them, each cut to UNMATCHED_CHARS characters (from the
-    scrubbed events). Pure."""
-    record = _last(events, "copilot.canary")
-    if not record:
+    with its word (None where unanswered) and sandbox report, the unanswered
+    rows, the call's state, and the shell calls beyond the fixed command:
+    their count, and the first SHOWN_UNMATCHED of them, each cut to
+    UNMATCHED_CHARS characters (from the scrubbed events). Pure."""
+    if not _last(events, "copilot.canary"):
         return {}
-    rows, unmatched = canary_rows(events)
-    names = [str(pair[0]) for pair in record.get("commands") or []]
-    return {"canary_rows": {r.name: {"output": r.output, "sandboxed": r.sandboxed} for r in rows},
-            "canary_unanswered": [n for n in names if n not in {r.name for r in rows}],
-            "canary_extra_shell_calls": len(unmatched),
-            "canary_unmatched": unmatched[:SHOWN_UNMATCHED]}
+    reading = canary_rows(events)
+    return {"canary_rows": {r.name: {"output": r.output, "sandboxed": r.sandboxed}
+                            for r in reading.rows},
+            "canary_unanswered": [r.name for r in reading.rows if r.output is None],
+            "canary_call": reading.call,
+            "canary_extra_shell_calls": len(reading.unmatched),
+            "canary_unmatched": list(reading.unmatched[:SHOWN_UNMATCHED])}
 
 
 # K5's parts (task 8.0 and 8.1): where each of these event types arrives
@@ -3149,14 +3361,18 @@ def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun:
             "cli_version": host_login.version_text(COPILOT_PINNED_VERSION)}
 
 
-def canary_record(run: Run) -> dict:
-    """The canary's own record (D-c): its fixed commands, and whether the file
-    its `tmp_write` command names reached the host's /tmp, judged on the host
-    after the child."""
+def canary_record(run: Run, planted: str | None = None) -> dict:
+    """The canary's own record (D-c): its fixed commands; whether the file its
+    `tmp_write` command names reached the host's /tmp, judged on the host
+    after the child; and its script's sha256 as written and as read after the
+    run — read only when the workspace check found nothing (`planted`), so a
+    breach leaves it None, which no digest equals."""
     marker = run.host.marker if run.host else None
+    after = None if planted or run.ws is None else script_digest(run.ws)
     return {"type": "copilot.canary",
             "commands": [[name, command] for name, command in run.canary or []],
-            "tmp_seen": bool(marker is not None and os.path.lexists(marker))}
+            "tmp_seen": bool(marker is not None and os.path.lexists(marker)),
+            "script_sha256": run.canary_sha, "script_after": after}
 
 
 AFTER_INCOMPLETE = ("the checks after the run did not complete, so its draw on the plan and its "
@@ -3191,7 +3407,7 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
     tree_hits = scrub_tree(run.ws, run.token)  # type: ignore[arg-type]
     hit = file_hit or out_hit or err_hit or bool(tree_hits)
     events = [*parse_lines(out), *records,
-              *([canary_record(run)] if run.canary is not None else []),
+              *([canary_record(run, planted)] if run.canary is not None else []),
               _harness(run, session_id, code=proc.returncode, stderr=err, begun=begun,
                        after=after, hit=hit, timed_out=timed_out, breach=breach,
                        planted=planted, first_event=watch.first_event_at)]
@@ -3238,6 +3454,19 @@ def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
     return events
 
 
+def _canary_script(ws: Path, commands: Sequence[tuple[str, str]]) -> str:
+    """The canary's script written before its child (`write_canary_script`);
+    a workspace that refuses it refuses the canary as a precondition, before
+    any child and with no stop."""
+    try:
+        return write_canary_script(ws, commands)
+    except OSError as exc:
+        raise CopilotRefused.of(_problem(
+            f"the canary could not write its script into the workspace ({exc.__class__.__name__})",
+            "report it: the workspace is the harness's own, made empty for the canary",
+            "precondition")) from exc
+
+
 def canary_for(run: Run, host: ProbeHost) -> list[tuple[str, str]]:
     """The canary's commands for this run: its token file, its session id, this
     process, the operator's account and the probe's host side."""
@@ -3256,9 +3485,11 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
     token and record the approval stop), the status read before, the model
     listing, the rosters and the confinement probe, the run (whose child holds
     the lock too), the session file, the read after, the scrub and the stops.
-    The canary (D-c) ignores `request`: its prompt is the probe's commands for
-    this run (`canary_for`), built under the lock, with the probe's host side
-    (`probe_host`) kept until the child is checked. Raises
+    The canary (D-c) ignores `request`: the probe's commands for this run
+    (`canary_for`), built under the lock, go into the workspace's script
+    (`_canary_script`) and its prompt is the one command that runs it
+    (`canary_prompt`), with the probe's host side (`probe_host`) kept until the
+    child is checked. Raises
     `host_login.RunLockRefused`, `CopilotRefused` (untested) or
     `CopilotRunFailed` (checked by `timeout_problem`); the events it returns
     are checked afterwards by `run_problem`."""
@@ -3277,7 +3508,8 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
                 return _execute(run, request, fd, timeout)
             with probe_host() as host:
                 run.host, run.canary = host, canary_for(run, host)
-                return _execute(run, canary_prompt(run.canary), fd, timeout)
+                run.canary_sha = _canary_script(ws, run.canary)
+                return _execute(run, canary_prompt(), fd, timeout)
     finally:
         shutil.rmtree(run.scratch, ignore_errors=True)
 

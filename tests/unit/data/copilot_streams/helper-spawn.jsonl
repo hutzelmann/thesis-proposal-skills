@@ -4,7 +4,7 @@
 {"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"skill","arguments":{"skill":"proposal-supervise"}}}
 {"type":"tool.execution_complete","data":{"toolCallId":"t1","success":true}}
 {"type":"tool.execution_start","data":{"toolCallId":"t2","toolName":"bash","arguments":{"command":"python3 .agents/skills/proposal-check/scripts/check.py broken-format.md"}}}
-{"type":"tool.execution_complete","data":{"toolCallId":"t2","success":true,"sandboxed":true}}
+{"type":"tool.execution_complete","data":{"toolCallId":"t2","success":true,"sandboxed":true,"result":{"content":"<shellId: 1 completed with exit code 0>","detailedContent":"<shellId: 1 completed with exit code 0>"},"shellExecution":{"exitCode":0},"toolTelemetry":{"properties":{"sandboxApplied":"true"}}}}
 {"type":"assistant.turn_end","data":{"turnId":"1"}}
 {"type":"tool.execution_start","data":{"toolCallId":"t3","toolName":"task","arguments":{"name":"verifier","description":"Verify the feedback","agent_type":"general-purpose","prompt":"Follow references/verifier-brief.md. Feedback: submission-feedback.md"}}}
 {"type":"subagent.started","data":{"toolCallId":"t3","agentName":"verifier","agentDisplayName":"verifier","agentType":"general-purpose","model":"copilot-fixture-b"}}

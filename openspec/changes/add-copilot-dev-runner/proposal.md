@@ -65,7 +65,7 @@ This change lands after `close-claudeai-surfaces`, `add-harness-claude-login` an
   - `host-login copilot`;
   - the `gh` check of K1.
 
-  K1–K4, K6a and K6, the confinement probe, cost $0. The first live run, one `check_report` on a cheap model, spends credits. It runs only after every $0 check has passed and a canary (the probe's fixed commands as the whole prompt, the shell alone, the minimum cap) has passed under the same go, and only once the user has cleared the approval stop from a terminal, after a go request that names the soft cap and every confinement item still unverified, the prompt-mode sandbox among them: that run is the first to observe it, and its live watch stops it at the first shell call not reported sandboxed.
+  K1–K4, K6a and K6, the confinement probe, cost $0. The first live run, one `check_report` on a cheap model, spends credits. It runs only after every $0 check has passed and a canary (the probe's fixed commands in one script the harness writes, run by one fixed command that is the whole prompt, the shell alone, the minimum cap) has passed under the same go, and only once the user has cleared the approval stop from a terminal, after a go request that names the soft cap and every confinement item still unverified, the prompt-mode sandbox among them: that run is the first to observe it, and its live watch stops it at the first shell call not reported sandboxed.
 - **Out of scope:**
   - `smoke-copilot`, because the credit cap is soft;
   - routing on Copilot;

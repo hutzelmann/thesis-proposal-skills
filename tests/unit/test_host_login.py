@@ -1296,6 +1296,10 @@ def test_a_home_seeded_before_the_deny_list_changed_needs_a_reset(copilot_home):
     (lambda s: s["sandbox"].update(allowBypass=True), "sandbox.allowBypass"),
     (lambda s: s.update(memory=True), "memory"),
     (lambda s: s.update(extra=1), "extra key extra"),
+    (lambda s: s.update(bashEnv=True), "bashEnv differs"),
+    (lambda s: s.update(bashEnv=0), "bashEnv differs"),  # `0` never passes for `false`
+    (lambda s: s.update(bashEnv="false"), "bashEnv differs"),
+    (lambda s: (s.pop("bashEnv"), s.update(mouse=False)), "extra key mouse"),
 ])
 def test_check_copilot_home_names_a_differing_settings_key(change, named, copilot_home):
     path = copilot_home / "settings.json"
@@ -1306,6 +1310,25 @@ def test_check_copilot_home_names_a_differing_settings_key(change, named, copilo
     assert problem is not None
     assert named in problem.cause
     assert "uv run poe host-login copilot --reset" in problem.remedy
+
+
+@pytest.mark.parametrize("change", [
+    lambda _s: None,  # as seeded since the first canary: `bashEnv` false
+    lambda s: s.pop("bashEnv"),  # seeded before it: the key absent
+    lambda s: s.update(bashEnv=False),  # what `--no-bash-env` writes on every -p start
+], ids=["seeded", "seeded-before-the-key", "written-by-prompt-mode"])
+def test_the_settings_prompt_mode_writes_need_no_reset(change, copilot_home):
+    """testing-harness spec: Copilot settings rewritten by prompt mode — the
+    seed carries `bashEnv: false`, which the client's `--no-bash-env` writes
+    again at each start (the first canary, 2026-10-07); a home seeded before
+    lacks it, and both read clean. Key order does not matter."""
+    path = copilot_home / "settings.json"
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    assert settings["bashEnv"] is False
+    change(settings)
+    path.write_text(json.dumps(dict(reversed(settings.items()))), encoding="utf-8")
+    assert host_login.check_copilot_home(copilot_home) is None
+    assert host_login.CLIENT_WRITTEN_SETTINGS == {"bashEnv": False}
 
 
 LAUNCHED = "2026-01-01T00:00:00.000Z"  # the shape of the client's `firstLaunchAt`

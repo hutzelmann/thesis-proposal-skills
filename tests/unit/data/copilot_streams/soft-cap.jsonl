@@ -4,7 +4,7 @@
 {"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"skill","arguments":{"skill":"proposal-check"}}}
 {"type":"tool.execution_complete","data":{"toolCallId":"t1","success":true}}
 {"type":"tool.execution_start","data":{"toolCallId":"t2","toolName":"bash","arguments":{"command":"python3 .agents/skills/proposal-check/scripts/check.py broken-format.md"}}}
-{"type":"tool.execution_complete","data":{"toolCallId":"t2","success":true,"sandboxed":true}}
+{"type":"tool.execution_complete","data":{"toolCallId":"t2","success":true,"sandboxed":true,"result":{"content":"<shellId: 1 completed with exit code 0>","detailedContent":"<shellId: 1 completed with exit code 0>"},"shellExecution":{"exitCode":0},"toolTelemetry":{"properties":{"sandboxApplied":"true"}}}}
 {"type":"assistant.turn_end","data":{"turnId":"1"}}
 {"type":"session_limits_exhausted.requested","data":{"requestId":"r1","usedAiCredits":31.4,"maxAiCredits":30}}
 {"type":"session.error","data":{"errorType":"query","errorCode":"ai_credit_soft_cap_exhausted","message":"The session reached its AI credit limit."}}

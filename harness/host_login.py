@@ -571,15 +571,25 @@ def deny_list(home_dir: Path, account: Path, uid: int | None = None) -> list[str
     return [*deny, str(token_path(home_dir))]
 
 
+# Settings keys the 1.0.91 client writes into `settings.json` itself, from a
+# flag a run passes, on every prompt-mode start (app.js startup path:
+# `e.bashEnv!==void 0&&(await b.userSettingsWriteKey("bashEnv",…))`; Decision
+# 3, revised after the first canary, 2026-10-07): the seed carries the value
+# `--no-bash-env` writes, and the clean check reads a missing key as that value,
+# since a home seeded before the key was pinned lacks it until its first run
+CLIENT_WRITTEN_SETTINGS: Mapping[str, object] = {"bashEnv": False}
+
+
 def pinned_settings(home_dir: Path, account: Path, uid: int | None = None) -> dict:
     """The Copilot home's `settings.json` (Decision 3): auto-update, the switch
-    to automatic model selection, hooks, memory, editor auto-connect and
-    experimental features off, custom agents local, a file token store, and
-    the OS sandbox pinned — enabled, no bypass, no developer-tool grants, no
-    git or gh credentials — with the deny list at the key path the 1.0.91
-    package reads, `sandbox.userPolicy.filesystem.deniedPaths`."""
+    to automatic model selection, hooks, memory, editor auto-connect,
+    experimental features and the shell's start-up file (`bashEnv`, which
+    `--no-bash-env` also writes there) off, custom agents local, a file token
+    store, and the OS sandbox pinned — enabled, no bypass, no developer-tool
+    grants, no git or gh credentials — with the deny list at the key path the
+    1.0.91 package reads, `sandbox.userPolicy.filesystem.deniedPaths`."""
     return {
-        "autoUpdate": False, "continueOnAutoMode": False,
+        "autoUpdate": False, **CLIENT_WRITTEN_SETTINGS, "continueOnAutoMode": False,
         "customAgents": {"defaultLocalOnly": True}, "disableAllHooks": True,
         "experimental": False, "ide": {"autoConnect": False}, "memory": False,
         "storeTokenPlaintext": True,
@@ -1198,9 +1208,13 @@ def _timestamp(value: object) -> bool:
 
 
 def _settings_offender(home_dir: Path, account: Path) -> list[str]:
+    """`settings.json` against `pinned_settings`, by key path. A key the client
+    writes from the run's own flag (CLIENT_WRITTEN_SETTINGS) reads as its
+    pinned value when absent; present, it must equal that value exactly."""
     actual = _json_object(home_dir / COPILOT_SETTINGS)
     difference = (actual if isinstance(actual, str)
-                  else _first_difference(actual, pinned_settings(home_dir, account)))
+                  else _first_difference({**CLIENT_WRITTEN_SETTINGS, **actual},
+                                         pinned_settings(home_dir, account)))
     return [f"{COPILOT_SETTINGS} ({difference})"] if difference else []
 
 

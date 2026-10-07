@@ -11,7 +11,11 @@ the pinned CLI, `@github/copilot` 1.0.91, as the V-pass read it (design, "Facts 
   4738767 and the `result` writer at 4739749);
 - `schemas/session-events.schema.json` — the event shapes: `tool.execution_start`
   (`toolCallId`, `toolName`, `arguments`, `mcpServerName`, `mcpToolName`,
-  `parentToolCallId`), `tool.execution_complete` (`success`, `sandboxed`, `result`),
+  `parentToolCallId`), `tool.execution_complete` (`success`, `sandboxed`, `result`;
+  since the first canary, 2026-10-07, a shell completion that ran also carries
+  `result.detailedContent`, `shellExecution.exitCode` and
+  `toolTelemetry.properties.sandboxApplied`, as the recorded run showed, and a
+  call the client's permission check refused carries `error` and no `result`),
   `assistant.message` (`content`, `model`, `parentToolCallId`), `subagent.started`,
   `session.error` (`errorType`, `errorCode`), `session.warning`,
   `session_limits_exhausted.requested`, the ephemeral `session.skills_loaded` and

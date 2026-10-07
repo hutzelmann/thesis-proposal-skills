@@ -41,10 +41,12 @@ spec: Dev-runner host adapters):
   workspaces lie in the Copilot work directory, never in the system
   temporary directory, which its sandbox denies. The pseudo-scenario `canary`
   (Copilot only, exactly `--max-ai-credits 30`) is the first model call after
-  the operator's go: an empty workspace, the shell alone and the confinement
-  probe's commands as the whole prompt, passing only when the client reports
-  every shell call sandboxed, every row reads as the probe requires, its
-  network namespace is its own and nothing else ran; it is no eval scenario,
+  the operator's go: the shell alone, the confinement probe's commands in one
+  script the harness writes into the workspace and one fixed command that
+  runs it as the whole prompt, passing only when the client reports every
+  shell call sandboxed, that command ran to its end, every row is answered
+  and reads as the probe requires, its network namespace is its own and
+  nothing else ran; it is no eval scenario,
   and a canary that does not pass leaves the skill run refused (and, after
   its child, records a stop).
 
@@ -1719,7 +1721,8 @@ def canary_summary(args: argparse.Namespace, events: list[dict],
                    failure: RunnerFailure | None, ws: Path) -> dict:
     """The canary's summary: the run's identity and telemetry (K5's
     `events_seen` among it), the outcome, every row with its word and sandbox
-    report, the unanswered rows and the extra shell calls."""
+    report, the unanswered rows, the state of the canary's one call and the
+    extra shell calls."""
     host = HOSTS["copilot"]
     view = host.read(events, args)
     status = failure.status if failure else EXIT_PASS
@@ -1733,11 +1736,12 @@ def canary_summary(args: argparse.Namespace, events: list[dict],
 
 def copilot_canary(args: argparse.Namespace) -> int:
     """`poe dev canary --host copilot --model <id> --max-ai-credits 30` (D-c):
-    an empty workspace in the Copilot work directory, the checks before the
-    lock, then `copilot_cli.run_copilot(…, canary=True)`, whose prompt is the
-    confinement probe's commands and whose assessment passes only on
-    confirmed confinement. Exit 0 when it passed, 3 untested (a stop is then
-    recorded), 4 a runner failure. The summary prints whatever ended it."""
+    a workspace in the Copilot work directory, the checks before the lock,
+    then `copilot_cli.run_copilot(…, canary=True)`, which writes the
+    confinement probe's commands into the workspace's script, prompts the one
+    command that runs it, and passes only on confirmed confinement. Exit 0
+    when it passed, 3 untested (a stop is then recorded), 4 a runner failure.
+    The summary prints whatever ended it."""
     try:
         ws = new_workspace(HOSTS["copilot"], CANARY)
     except RunnerFailure as failure:
@@ -1908,8 +1912,9 @@ def build_parser() -> argparse.ArgumentParser:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("scenario", nargs="?", choices=sorted([*SCENARIOS, CANARY]),
                         help=f"the scenario to run; `{CANARY}` (--host copilot only) is the "
-                             "Copilot canary: the confinement probe's commands as the whole "
-                             "prompt, no skill, the shell alone, the minimum credit cap")
+                             "Copilot canary: the confinement probe's commands in one script, "
+                             "run by one fixed command that is the whole prompt, no skill, the "
+                             "shell alone, the minimum credit cap")
     parser.add_argument("--host", choices=sorted(HOSTS), default="claude",
                         help="the host CLI that runs the model under test (default claude); "
                              "codex runs in the Codex harness home on the ChatGPT plan quota, "
