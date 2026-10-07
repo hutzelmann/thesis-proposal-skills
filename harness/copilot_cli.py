@@ -104,7 +104,10 @@ probe's commands (`canary_commands`) in one script the harness writes into
 the workspace under the lock (`canary_script`, `write_canary_script`), and
 one fixed command that runs it as the whole prompt (`CANARY_RUN`,
 `canary_prompt`), which the client's lexical path check lets through and the
-model has nothing in to re-escape (the first canary, 2026-10-07). Its rows
+model has nothing in to re-escape (the first canary, 2026-10-07). Before
+its child, the confinement probe runs that script once in its own sandboxed
+session (`script_trial`, `trial_problem`), so the script's mechanics are
+checked at $0. Its rows
 come from the client's own completion of that one call, accepted only when
 it ran to its end (`canary_rows`); it passes only when that command ran once
 and nothing else, the script kept its digest, every row is answered and
@@ -114,7 +117,9 @@ completion is reported sandboxed and the billing guard passes after it
 stop, and a canary that does not pass leaves the go's skill run refused. A
 shell completion counts as the sandbox's report only when it ran
 (`shell_ran`): the client's own permission refusal (`shell_refused`) reports
-`sandboxed` too. Every run's telemetry carries K5's parts (`events_seen`):
+`sandboxed` too; one that ran counts as sandboxed only with the sandbox
+reported applied (`reported_sandboxed`), in every run as in the canary.
+Every run's telemetry carries K5's parts (`events_seen`):
 where each listed event type arrived, stdout or the session file.
 
 Copilot tool events map to the canonical tool names (`copilot_tool_calls`), so
@@ -512,16 +517,36 @@ def scrub_events(events: list[dict], token: str | None) -> tuple[list[dict], boo
     return cleaned, hit
 
 
+def _rewrite(path: Path, fd: int, data: bytes) -> None:
+    """Write `data` over the file at `path`, opened again without following a
+    link; a file closed to writing (0400, as the canary's script is) is
+    opened to its owner through `fd`, the descriptor it was read through,
+    and given its mode back afterwards."""
+    mode = stat.S_IMODE(os.fstat(fd).st_mode)
+    opened = hasattr(os, "fchmod") and not mode & stat.S_IWUSR
+    if opened:
+        os.fchmod(fd, mode | stat.S_IWUSR)
+    try:
+        flags = os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        with os.fdopen(os.open(path, flags), "wb") as fh:
+            fh.write(data)
+    finally:
+        if opened:
+            os.fchmod(fd, mode)
+
+
 def _scrub_file(path: Path, needle: bytes) -> bool:
     """Replace the token's value in one regular file, opened without following
-    a link at its name; whether it held the value."""
+    a link at its name; whether it held the value. A file that held it counts
+    even when its rewrite fails (revised 2026-10-07, review of task 8.0a):
+    the hit, not the rewrite, decides the scrub's stop."""
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     with os.fdopen(os.open(path, os.O_RDONLY | nofollow), "rb") as fh:
         data = fh.read()
-    if needle not in data:
-        return False
-    with os.fdopen(os.open(path, os.O_WRONLY | os.O_TRUNC | nofollow), "wb") as fh:
-        fh.write(data.replace(needle, SCRUBBED.encode("utf-8")))
+        if needle not in data:
+            return False
+        with suppress(OSError):
+            _rewrite(path, fh.fileno(), data.replace(needle, SCRUBBED.encode("utf-8")))
     return True
 
 
@@ -1700,11 +1725,14 @@ UNAPPLIED_REPORT = ("report it, and leave every Copilot run refused: the client'
 class Probe:
     """What the confinement probe found (Decision 13): the host's sandbox
     support, why the pinned sandbox block was not applied to the probe's
-    session (None when it was), and each command's result."""
+    session (None when it was), each command's result, and, for a canary,
+    its script run once in the same session (`script_trial`; None for a
+    skill run)."""
 
     supported: object = None
     unapplied: str | None = None
     results: tuple[ProbeResult, ...] = ()
+    trial: Trial | None = None
 
 
 def probe_problem(results: Sequence[ProbeResult], supported: object = True,
@@ -1890,9 +1918,10 @@ def _probe_rows(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float,
 
 def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float) -> Probe:
     """The block the client reads, which must be the pinned one, before any
-    session exists; then the session, the block applied to it, and the fixed
-    commands. A block that was not applied runs no command; the session is
-    deleted whatever happened after its creation."""
+    session exists; then the session, the block applied to it, the fixed
+    commands and, for a canary, its script once (`script_trial`). A block
+    that was not applied runs no command; the session is deleted whatever
+    happened after its creation."""
     block, why = _client_sandbox(rpc, run, deadline)
     if why:
         return Probe(True, why)
@@ -1906,7 +1935,9 @@ def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: floa
         if why:
             return Probe(True, why)
         with probe_host() as host:
-            return Probe(True, None, _probe_rows(rpc, run, session_id, pid, deadline, host))
+            rows = _probe_rows(rpc, run, session_id, pid, deadline, host)
+            trial = script_trial(rpc, run, session_id, deadline, host) if run.is_canary else None
+            return Probe(True, None, rows, trial)
     finally:
         rpc.call("session.delete", {"sessionId": session_id}, deadline)
 
@@ -1968,11 +1999,16 @@ def _roster_check(run: Run) -> Check:
 
 
 def _probe_check(run: Run) -> Check:
+    """The confinement probe's row; for a canary, its script's trial run in
+    the probe's session (`trial_problem`) too, once the rows pass."""
     probe = confinement_probe(run)
     detail = ", ".join(f"{r.name} {r.output}{'' if r.sandboxed else ' (not sandboxed)'}"
                        for r in probe.results) or probe.unapplied or "no results"
-    return Check("confinement_probe",
-                 probe_problem(probe.results, probe.supported, probe.unapplied), detail)
+    problem = probe_problem(probe.results, probe.supported, probe.unapplied)
+    if probe.trial is not None:
+        detail += f"; {trial_detail(probe.trial)}"
+        problem = problem or trial_problem(probe.trial)
+    return Check("confinement_probe", problem, detail)
 
 
 def _reads_clean_check(run: Run) -> Check:
@@ -2549,6 +2585,19 @@ def shell_refused(done: Mapping) -> bool:
             and not shell_ran(done))
 
 
+def reported_sandboxed(done: Mapping) -> bool:
+    """Whether a shell completion reports the sandbox: `sandboxed` true and,
+    for one that ran (`shell_ran`), `toolTelemetry.properties.sandboxApplied`
+    "true" as well, which every completion that ran at the first canary
+    carried and which the canary requires of its own call (revised
+    2026-10-07, review of task 8.0a: the canary's standard for every run).
+    A refusal ran nothing and is read by `sandboxed` alone. Pure."""
+    if done.get("sandboxed") is not True:
+        return False
+    applied = _obj(_obj(done.get("toolTelemetry")).get("properties")).get("sandboxApplied")
+    return not shell_ran(done) or applied == "true"
+
+
 def _shell_completions(events: list[dict]) -> list[dict | None]:
     """Each shell call's completion, None for a call without one, in order."""
     done = _done(events)
@@ -2556,12 +2605,17 @@ def _shell_completions(events: list[dict]) -> list[dict | None]:
             for s in _starts(events, top_level=False) if s.get("toolName") in SHELL_TOOLS]
 
 
+def _all_refused(completions: Sequence[dict | None]) -> bool:
+    return bool(completions) and all(done is not None and shell_refused(done)
+                                     for done in completions)
+
+
 def _unconfirmed(completions: Sequence[dict | None]) -> str | None:
     """Why no shell completion reports the sandbox active, or None: a report
     counts only from a completion that ran (`shell_ran`)."""
     if any(done is not None and shell_ran(done) for done in completions):
         return None
-    if completions and all(done is not None and shell_refused(done) for done in completions):
+    if _all_refused(completions):
         return ("the stream carries no report that the sandbox is active: the client's permission "
                 "check refused every shell call before any shell ran it")
     if completions:
@@ -2569,25 +2623,36 @@ def _unconfirmed(completions: Sequence[dict | None]) -> str | None:
     return "the stream carries no report that the sandbox is active (no shell call)"
 
 
+# what a run whose every shell call the client refused points to (revised
+# 2026-10-07, review of task 8.0a: this finding leads `assess`, so a remedy
+# given only further down, such as the canary's, never reached the user)
+PERMISSION_RECORDS = ("the kept events' copilot.permission records name what the client's own "
+                      "permission check, not the sandbox, refused")
+
+
 def sandbox_after(events: list[dict], stderr: str = "") -> RunProblem | None:
     """The client's warning that the sandbox did not engage (stream, session
-    file or stderr), or no report that it did: a shell completion whose
-    `sandboxed` is not true, refused or not, or no shell completion that ran
-    (`_unconfirmed`) — whatever ended the run, a session error included
-    (design Decision 13: until a recorded run confirms the report, its absence
-    stops). Untested for isolation; the caller records an isolation stop."""
+    file or stderr), or no report that it did: a shell completion not
+    reported sandboxed (`reported_sandboxed`), refused or not, or no shell
+    completion that ran (`_unconfirmed`) — whatever ended the run, a session
+    error included (design Decision 13: until a recorded run confirms the
+    report, its absence stops). A run whose every shell call the client
+    refused points to the kept permission records (PERMISSION_RECORDS).
+    Untested for isolation; the caller records an isolation stop."""
     warnings = _notices(events, "sandbox") + [line for line in stderr.splitlines()
                                               if sandbox_warned(line)]
     completions = _shell_completions(events)
     why = ("the client warned that the sandbox did not engage" if warnings else
            "a shell call was not reported as sandboxed"
-           if any(_obj(done).get("sandboxed") is not True for done in completions)
+           if any(not reported_sandboxed(_obj(done)) for done in completions)
            else _unconfirmed(completions))
     if why is None:
         return None
+    read = f"read the run's findings ({PERMISSION_RECORDS})" if _all_refused(completions) else (
+        "read the run's findings")
     return RunProblem(refusal(_problem(f"{why}; the sandbox's confinement is not confirmed",
-                                       f"read the run's findings, then run "
-                                       f"`{host_login.CLEAR_STOP_COMMAND}`", "isolation")),
+                                       f"{read}, then run `{host_login.CLEAR_STOP_COMMAND}`",
+                                       "isolation")),
                       True, "isolation")
 
 
@@ -2638,17 +2703,17 @@ def _start_breach(data: Mapping, shells: set[str], ws: Path | None) -> str | Non
 def breach_of(event: object, shells: set[str], ws: Path | None = None) -> str | None:
     """One step of the run's live watch over its stdout events (Decision 13):
     a shell tool's start is noted in `shells`; the completion of a noted call
-    whose `sandboxed` is not true, or a sandbox warning, is a breach; given the
-    workspace, so is a file tool's start whose path leaves it
-    (`leaves_workspace`, which resolves links on the harness's side). Pure but
-    for `shells` and that resolution."""
+    not reported sandboxed (`reported_sandboxed`), or a sandbox warning, is a
+    breach; given the workspace, so is a file tool's start whose path leaves
+    it (`leaves_workspace`, which resolves links on the harness's side). Pure
+    but for `shells` and that resolution."""
     if not isinstance(event, dict):
         return None
     kind, data = event.get("type"), _data(event)
     if kind == "tool.execution_start":
         return _start_breach(data, shells, ws)
     call = str(data.get("toolCallId"))
-    if kind == "tool.execution_complete" and call in shells and data.get("sandboxed") is not True:
+    if kind == "tool.execution_complete" and call in shells and not reported_sandboxed(data):
         return UNCONFINED_CALL
     if kind in NOTICE_TYPES and sandbox_warned(str(data.get("message") or "")):
         return SANDBOX_NOTICE
@@ -2923,14 +2988,28 @@ def write_canary_script(ws: Path, commands: Sequence[tuple[str, str]]) -> str:
 
 def script_digest(ws: Path) -> str | None:
     """The sha256 of the canary's script as it is now, read by its fixed name
-    without following a link; None when it cannot be read. Called only after
-    the workspace check found nothing (`canary_record`)."""
+    without following a link or blocking; None when it cannot be read or is
+    no regular file (a directory at its name included, which the workspace
+    check does not flag: revised 2026-10-07, review of task 8.0a, where one
+    raised inside `_settle`). The descriptor is closed on every path. Called
+    only after the workspace check found nothing (`canary_record`)."""
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+             | getattr(os, "O_BINARY", 0))
     try:
-        fd = os.open(ws / CANARY_SCRIPT, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(ws / CANARY_SCRIPT, flags)
     except OSError:
         return None
-    with os.fdopen(fd, "rb") as fh:
-        return hashlib.sha256(fh.read()).hexdigest()
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        digest = hashlib.sha256()
+        while chunk := os.read(fd, 1 << 16):
+            digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
 
 
 def canary_prompt() -> str:
@@ -2951,6 +3030,105 @@ def script_words(text: str) -> tuple[dict[str, str], bool]:
     words = {name: got[0] for name, got in seen.items()
              if len(got) == 1 and PROBE_WORD.match(got[0])}
     return words, CANARY_END in lines
+
+
+# The trial (added 2026-10-07, review of task 8.0a): the canary's script run
+# once through the confinement probe's sandboxed session before the canary's
+# child, so that its syntax under the sandbox's `sh`, `tail` there, a 0400
+# file read under bwrap's user namespace and its run time are first checked
+# at $0, not in the paid canary. That call is user-requested and skips the
+# client's own permission checks, so it says nothing about them.
+TRIAL_LIMIT_S = 20.0  # under the bash tool's 30 s `commandTimeout` (1.0.91, measured)
+TRIAL_WAIT_S = 30.0  # how long the trial's call is waited for at least
+TRIAL_REPORT = ("report it: the canary would leave its rows unanswered (a change to the canary "
+                "goes through openspec-update-change)")
+
+
+@dataclass(frozen=True)
+class Trial:
+    """The canary's script run once with CANARY_RUN in the probe's session
+    (Decision 13, the trial): its rows' names, the call's output and sandbox
+    report, how long the call took, whether the `tmp_write` file reached
+    the host; or why it could not be written or run (`failed`)."""
+
+    names: tuple[str, ...] = ()
+    output: str = ""
+    sandboxed: object = None
+    seconds: float = 0.0
+    tmp_seen: bool = False
+    failed: str | None = None
+
+
+def script_trial(rpc: Rpc, run: Run, session_id: str, deadline: float,
+                 host: ProbeHost) -> Trial:
+    """Write the canary's own script (`canary_for`, with the probe's host
+    side) into the workspace, run CANARY_RUN once through the probe's
+    sandboxed session, timed, and remove the script again, so the canary's
+    exclusive write finds its name free (one that cannot be removed fails
+    that write, before any child)."""
+    commands = canary_for(run, host)
+    names = tuple(name for name, _ in commands)
+    try:
+        write_canary_script(run.ws, commands)  # type: ignore[arg-type]
+    except OSError as exc:
+        return Trial(names, failed=f"its script could not be written ({exc.__class__.__name__})")
+    try:
+        begun = time.monotonic()
+        reply = rpc.call("session.shell.executeUserRequested",
+                         {"sessionId": session_id, "requestId": uuid.uuid4().hex,
+                          "command": CANARY_RUN}, max(deadline, begun + TRIAL_WAIT_S))
+        seconds = time.monotonic() - begun
+        result = _obj(reply.get("result") if isinstance(reply, dict) else None)
+        call = str(result.get("toolCallId") or "")
+        if call:
+            rpc.drain(lambda: call in _completions(rpc.notes), time.monotonic() + 5)
+        return Trial(names, str(result.get("output") or ""),
+                     _completions(rpc.notes).get(call, {}).get("sandboxed"), seconds,
+                     bool(host.marker is not None and os.path.lexists(host.marker)))
+    finally:
+        with suppress(OSError):
+            (run.ws / CANARY_SCRIPT).unlink()  # type: ignore[operator]
+
+
+def _trial_failure(trial: Trial, words: Mapping[str, str], closed: bool) -> str | None:
+    if trial.failed:
+        return trial.failed
+    if not closed:
+        return "it did not reach its closing line"
+    missing = [name for name in trial.names if name not in words]
+    if missing:
+        return f"it printed no tagged line with a probe word for {', '.join(missing)}"
+    if trial.seconds > TRIAL_LIMIT_S:
+        return (f"it took {trial.seconds:.0f}s, more than the {TRIAL_LIMIT_S:g}s the canary "
+                "allows under the bash tool's 30s limit")
+    return None
+
+
+def trial_problem(trial: Trial) -> LoginProblem | None:
+    """Pure over the trial (Decision 13, the trial): a script that could not
+    be written or run, did not reach its closing line, left a row without
+    its tagged line or took longer than TRIAL_LIMIT_S refuses the canary as
+    a precondition; its rows then go through `probe_problem`, `tmp_write`
+    judged on the host and each row's sandbox report the call's."""
+    words, closed = script_words(trial.output)
+    why = _trial_failure(trial, words, closed)
+    if why:
+        return _problem(f"the canary's script, run once in the confinement probe's sandboxed "
+                        f"session, failed: {why}", TRIAL_REPORT, "precondition")
+    seen = {"tmp_seen": trial.tmp_seen}
+    rows = [ProbeResult(name, _canary_word(name, words, seen), trial.sandboxed is True)
+            for name in trial.names]
+    return probe_problem(rows, what="the canary's trial script")
+
+
+def trial_detail(trial: Trial) -> str:
+    """The trial as `--preflight-only` prints it: never a row's output."""
+    if trial.failed:
+        return f"canary script: {trial.failed}"
+    words, closed = script_words(trial.output)
+    return (f"canary script: {len(words)} of {len(trial.names)} rows answered, "
+            f"{'closing line' if closed else 'no closing line'}, {trial.seconds:.1f}s"
+            f"{'' if trial.sandboxed is True else ', not sandboxed'}")
 
 
 def _completion_problem(done: Mapping | None) -> str | None:
