@@ -305,25 +305,33 @@ async def run_child(command: Sequence[str], stdin_text: str, env: Mapping[str, s
     """Run one child to completion: write `stdin_text`, read both streams. On
     the time limit, or on cancellation, the child is first asked to terminate
     and killed only after the grace, then reaped (testing-harness spec:
-    Harness-owned host logins)."""
+    Harness-owned host logins).
+
+    The process is closed on every path, after it is reaped, so its pipes
+    are closed here rather than left to the garbage collector. A stopped
+    child's reads can still be pending when the event loop closes — on Windows
+    after a plain termination, anywhere while a grandchild holds the pipes —
+    and an unclosed pipe then outlives the loop as an open descriptor and an
+    "unclosed transport" ResourceWarning (Windows CI run 38388692453)."""
     process = await anyio.open_process(
         list(command), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         cwd=cwd, env=dict(env))
     out: list[bytes] = []
     err: list[bytes] = []
-    try:
-        with anyio.fail_after(timeout):
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(_drain, process.stdout, out)
-                tg.start_soon(_drain, process.stderr, err)
-                await _feed(process.stdin, stdin_text)
-            await process.wait()
-    except TimeoutError:
-        raise SubscriptionUnavailable(
-            f"the call timed out after {timeout:g}s; the child was stopped") from None
-    finally:
-        if process.returncode is None:
-            await _stop(process)
+    async with process:
+        try:
+            with anyio.fail_after(timeout):
+                async with anyio.create_task_group() as tg:
+                    tg.start_soon(_drain, process.stdout, out)
+                    tg.start_soon(_drain, process.stderr, err)
+                    await _feed(process.stdin, stdin_text)
+                await process.wait()
+        except TimeoutError:
+            raise SubscriptionUnavailable(
+                f"the call timed out after {timeout:g}s; the child was stopped") from None
+        finally:
+            if process.returncode is None:
+                await _stop(process)
     return (process.returncode or 0, b"".join(out).decode("utf-8", "replace"),
             b"".join(err).decode("utf-8", "replace"))
 

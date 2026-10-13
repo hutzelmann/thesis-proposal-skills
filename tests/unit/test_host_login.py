@@ -244,18 +244,41 @@ def test_claim_is_released_once_the_refresh_is_written_back(linked):
 
 @pytest.mark.usefixtures("fast")
 def test_waiter_proceeds_with_the_refreshed_login(linked, monkeypatch):
-    source, _ = linked
+    """The holder writes back through `settle`, as its keeper does, and only
+    once the waiter has found the claim taken. Until 2026-10-13 the holder
+    rewrote the stored login in place after a sleep: a waiter polling between
+    the truncation and the write read no expiry, stopped waiting, and found an
+    empty file (CI run 38388692453). The harness's own write-back replaces the
+    file atomically, so the waiter sees the old login or the new one."""
+    source, link = linked
     store(source, now_ms() - 1000)
     claim = source.parent / CLAIM_NAME
     claim.write_text("mark-holder", encoding="utf-8")
     monkeypatch.setattr(host_login, "CLAIM_WAIT_S", 5)
+    waiting = threading.Event()
+    take_claim = host_login.take_claim
+
+    def observed_take_claim(path, mark):
+        taken = take_claim(path, mark)
+        if not taken:
+            waiting.set()
+        return taken
+
+    monkeypatch.setattr(host_login, "take_claim", observed_take_claim)
+    written = []
 
     def holder_writes_back():
-        time.sleep(0.1)
-        store(source, now_ms() + 8 * HOUR_MS, refresh="refresh-1")
+        if waiting.wait(timeout=5):
+            host_refresh(link, now_ms() + 8 * HOUR_MS)
+            written.append(settle(link, source))
 
-    threading.Thread(target=holder_writes_back).start()
-    assert acquire_claim(source, "mark-waiter") is None
+    holder = threading.Thread(target=holder_writes_back)
+    holder.start()
+    try:
+        assert acquire_claim(source, "mark-waiter") is None
+    finally:
+        holder.join(timeout=10)
+    assert written == [True], "the holder wrote back only after the waiter found the claim"
     assert refresh_token(source) == "refresh-1"
     assert claim.read_text(encoding="utf-8") == "mark-holder"
 
