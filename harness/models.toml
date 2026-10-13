@@ -134,9 +134,9 @@ enabled = true
 id = "openrouter/deepseek/deepseek-v4-pro-0813"
 family = "open-weight"
 tier = "cheap"
-input_price = 1.32
-output_price = 3.96
-cache_read_price = 0.044
+input_price = 0.66
+output_price = 1.98
+cache_read_price = 0.022
 enabled = true
 
 [[models]]
