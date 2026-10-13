@@ -389,6 +389,9 @@ def session_text(name: str, ws: Path = WS) -> str:
             lines.append({"type": "session.start", "data": {**data, "sessionId": "x"}})
         elif kind == "copilot.skill_invoked":
             lines.append({"type": "skill.invoked", "data": {**data, "content": "body"}})
+        elif kind == "copilot.skill_context":
+            lines.append({"type": data["event"], "data": {"source": data["source"],
+                                                          "contentId": "sha256:0"}})
         elif kind == "copilot.shutdown":
             lines.append({"type": "session.shutdown", "data": data})
         elif kind == "copilot.model_change":
@@ -1344,6 +1347,10 @@ def test_the_command_matches_decision_8_for_every_scenario(name):
     assert argv[argv.index("--auth-token-env") + 1] == COPILOT.token_env  # task 7.4b
     assert argv[argv.index("--max-ai-credits") + 1] == "30"
     assert flag_values(argv, "--deny-tool") == list(copilot_cli.DENIED_TOOLS)
+    # task 8.1a: the client's file and search tools refuse the workspace under
+    # its denied ancestor, so no scenario offers one
+    assert not set(offered) & copilot_cli.FILE_TOOLS
+    assert {"bash", "skill"} <= set(offered)
     assert "--reasoning-effort" not in argv
     assert "--effort" not in argv
     assert argv[argv.index("--model") + 1] == "copilot-fixture-a"
@@ -1370,6 +1377,8 @@ def test_the_three_scenarios_of_the_spec():
     assert "task" in tools["supervise"]
     assert "web_fetch" in tools["served"]
     assert copilot_cli.url_hosts(served) == ["127.0.0.1"]
+    for offered in tools.values():  # none offers the client's own file or search tools
+        assert not {"view", "create", "edit", "apply_patch", "glob", "grep", "rg"} & set(offered)
 
 
 _HOST = re.compile(r"https?://([A-Za-z0-9.-]+)")
@@ -2073,6 +2082,39 @@ def test_reduce_session_drops_system_text_and_extra_fields():
     assert set(records[-1]) == {"type", *copilot_cli.SHUTDOWN_KEYS}
 
 
+def test_every_skill_record_is_kept_by_name_and_source_only():
+    """design Decision 9 (added 2026-10-13, task 8.1a): `skill.invoked_ref` is
+    read as `skill.invoked`; `skill.context_delivered` and its receipt keep
+    their event and source, never the delivered wrapper or its id (1.0.91
+    `session-events.schema.json`, the shapes the first skill run recorded)."""
+    lines = [json.dumps(line) for line in (
+        {"type": "skill.invoked_ref", "data": {
+            "name": "proposal-check", "path": "/ws/.agents/skills/proposal-check/SKILL.md",
+            "source": "project", "trigger": "agent-invoked", "contentId": "sha256:ab",
+            "contentLength": 9}},
+        {"type": "skill.context_delivered", "data": {
+            "content": "SKILL WRAPPER TEXT", "source": "skill-proposal-check",
+            "interactionId": "i1"}},
+        {"type": "skill.context_delivered_ref", "data": {
+            "contentId": "sha256:cd", "prefix": "PREFIX TEXT", "suffix": "SUFFIX TEXT",
+            "source": "skill-proposal-check"}},
+        {"type": "skill.context_delivered_ref", "data": {"contentId": "sha256:ef"}})]
+    records = copilot_cli.reduce_session(lines)
+    assert records == [
+        {"type": "copilot.skill_invoked", "name": "proposal-check",
+         "path": "/ws/.agents/skills/proposal-check/SKILL.md", "source": "project",
+         "trigger": "agent-invoked"},
+        {"type": "copilot.skill_context", "event": "skill.context_delivered",
+         "source": "skill-proposal-check"},
+        {"type": "copilot.skill_context", "event": "skill.context_delivered_ref",
+         "source": "skill-proposal-check"},
+        {"type": "copilot.skill_context", "event": "skill.context_delivered_ref", "source": None}]
+    text = json.dumps(records)
+    for dropped in ("SKILL WRAPPER TEXT", "PREFIX TEXT", "SUFFIX TEXT", "sha256:", "i1"):
+        assert dropped not in text
+    assert set(copilot_cli.SKILL_RECORDS) <= set(copilot_cli.SESSION_REDUCERS)
+
+
 def test_the_permission_records_are_kept_without_the_command_and_scrubbed(tmp_path):
     """testing-harness spec: Invocation on Copilot — the session file's
     `permission.requested` and `permission.completed` (1.0.91 schema:
@@ -2126,6 +2168,152 @@ def test_isolation_findings_after_the_run(name, named):
     assert assessment.problem.kind == "isolation"
     assert named in assessment.problem.message
     assert not assessment.stops
+
+
+# ---------- 8.1a: the loaded skills without the report (the first skill run, 2026-10-13) ----
+
+
+def test_a_run_without_the_report_is_confirmed_by_its_roster_and_records():
+    """testing-harness spec: Loaded skills confirmed without the report — the
+    shape the first skill run recorded: no `session.skills_loaded` anywhere,
+    the roster and the staged names in the runner's record, the session file
+    read, an invocation and a context receipt naming the staged skill."""
+    events = stream("skills-by-roster")
+    assert not [e for e in events if e.get("type") == "session.skills_loaded"]
+    assert copilot_cli.isolation_findings(events, copilot_cli.harness_record(events)) == []
+    assert copilot_cli.run_problem(events) is None
+
+
+def _harness_with(events: list[dict], **fields) -> list[dict]:
+    """The stream with its runner's record changed (a key set to None is dropped)."""
+    harness = {**copilot_cli.harness_record(events), **fields}
+    harness = {key: value for key, value in harness.items() if value is not None}
+    return [*(e for e in events if e.get("type") != "copilot.harness"), harness]
+
+
+def _without(events: list[dict], kind: str) -> list[dict]:
+    return [e for e in events if e.get("type") != kind]
+
+
+def _types(events: list[dict], *extra: str) -> list[dict]:
+    record = copilot_cli._last(events, "copilot.session_types")
+    return [*_without(events, "copilot.session_types"),
+            {**record, "types": [*record["types"], *extra]}]
+
+
+def _skill_record(events: list[dict], **record) -> list[dict]:
+    at = next(i for i, e in enumerate(events) if e.get("type") == "copilot.shutdown")
+    return [*events[:at], record, *events[at:]]
+
+
+BUNDLED = list(copilot_cli.BUILTIN_SKILLS)
+
+
+@pytest.mark.parametrize(("change", "named"), [
+    (lambda e: _harness_with(e, roster=None), "no skill listing recorded before the child"),
+    (lambda e: _harness_with(e, roster=[]), "no skill listing recorded before the child"),
+    (lambda e: _harness_with(e, staged=None), "no skill listing recorded before the child"),
+    (lambda e: _harness_with(e, roster=[*BUNDLED, "proposal-check", "proposal-review"]),
+     "is not the staged skills (proposal-check)"),
+    (lambda e: _harness_with(e, roster=BUNDLED), "is not the staged skills"),
+    (lambda e: _harness_with(e, roster=["personal-skill", "proposal-check"]),
+     "is not the staged skills"),
+    (lambda e: _without(e, "copilot.session_start"), "the session file was not read"),
+    (lambda e: _without(e, "copilot.session_types"), "the session file was not read"),
+    (lambda e: _types(e, "skill.preloaded"), "skill records the runner cannot check "
+                                             "(skill.preloaded)"),
+    (lambda e: _skill_record(e, type="copilot.skill_context",
+                             event="skill.context_delivered_ref", source="skill-foreign"),
+     "skill context delivered from skill-foreign"),
+    (lambda e: _skill_record(e, type="copilot.skill_context",
+                             event="skill.context_delivered_ref", source=None),
+     "skill context delivered from an unnamed source"),
+    (lambda e: _skill_record(e, type="copilot.skill_invoked", name="proposal-check",
+                             path="/elsewhere/proposal-check/SKILL.md", source="project",
+                             trigger="agent-invoked"),
+     "invoked from source project (/elsewhere/proposal-check/SKILL.md)"),
+    (lambda e: _skill_record(e, type="copilot.skill_invoked", name="proposal-review",
+                             path=str(WS / ".agents/skills/proposal-review/SKILL.md"),
+                             source="project", trigger="agent-invoked"),
+     "skill proposal-review invoked from source project"),
+    (lambda e: _skill_record(e, type="copilot.skill_invoked", name="discover-resources",
+                             path="/pkg/builtin-skills/discover-resources/SKILL.md",
+                             source="builtin", trigger="agent-invoked"),
+     "skill discover-resources invoked from source builtin"),
+    (lambda e: _skill_record(e, type="copilot.skill_invoked", name="helper",
+                             path="/home/x/.agents/skills/helper/SKILL.md",
+                             source="personal-agents", trigger="agent-invoked"),
+     "invoked from source personal-agents"),
+], ids=["no-roster", "empty-roster", "no-staged", "roster-beyond", "roster-short",
+        "roster-foreign", "no-session-start", "no-session-types", "unread-type",
+        "foreign-context", "unnamed-context", "project-elsewhere", "project-unstaged",
+        "builtin-unlisted", "personal"])
+def test_the_loaded_skills_stay_unconfirmed_without_positive_evidence(change, named):
+    """testing-harness spec: Loaded skills unreported; Loaded skills not
+    confirmed by the record — every part of the evidence must be there and
+    match; an absence never passes."""
+    events = change(stream("skills-by-roster"))
+    problem = copilot_cli.assess(events).problem
+    assert (problem.untested, problem.kind) == (True, "isolation")
+    assert named in problem.message
+
+
+def test_a_bundled_skill_the_roster_listed_may_be_invoked():
+    events = _skill_record(stream("skills-by-roster"), type="copilot.skill_invoked",
+                           name="github-pr-media", path="/pkg/builtin/github-pr-media/SKILL.md",
+                           source="builtin", trigger="agent-invoked")
+    events = _skill_record(events, type="copilot.skill_context",
+                           event="skill.context_delivered_ref", source="skill-github-pr-media")
+    assert copilot_cli.run_problem(events) is None
+    # a roster without it: listed bundled names only
+    events = _harness_with(events, roster=["customize-cloud-agent", "proposal-check"])
+    assert "github-pr-media invoked from source builtin" in copilot_cli.run_problem(
+        events).message
+
+
+def test_a_report_that_arrives_is_still_compared_with_the_roster():
+    """The report, when present, is positive evidence of its own and must name
+    the roster; the skill records are checked either way."""
+    events = stream("success")
+    assert copilot_cli.run_problem(events) is None
+    loaded = copilot_cli._last(events, "session.skills_loaded")
+    loaded["data"]["skills"] = loaded["data"]["skills"][:1]
+    assert "differ from the listing" in copilot_cli.run_problem(events).message
+    events = _skill_record(stream("success"), type="copilot.skill_context",
+                           event="skill.context_delivered", source="skill-foreign")
+    assert "skill context delivered from skill-foreign" in copilot_cli.run_problem(
+        events).message
+
+
+def test_a_canary_records_the_confirmation_rather_than_requiring_it(tmp_path):
+    """The canary stages no skill: its roster is the bundled names alone, and
+    its own record turns the requirement off (Decision 13, passing)."""
+    events = canary_events(tmp_path)
+    assert copilot_cli.isolation_findings(events, copilot_cli.harness_record(events),
+                                          loaded=False) == []
+    assert copilot_cli.assess(events).problem is None
+
+
+@POSIX
+def test_a_skill_run_without_the_report_passes_end_to_end(home, tmp_path, monkeypatch):
+    """task 8.1a, end to end through the fake client: the runner records the
+    staged names beside the roster, reduces the context receipt from the
+    session file, and confirms the loaded skills without the report."""
+    skip_scan(monkeypatch)
+    fake_copilot(tmp_path, monkeypatch, run="skills-by-roster")
+    ws = staged_ws(tmp_path)
+    events = copilot_cli.run_copilot(ws, "Please check my proposal broken-format.md.",
+                                     model="copilot-fixture-a", effort=None, cap=30,
+                                     timeout=30, home=home,
+                                     scenario=claude_runner.SCENARIOS["check_report"])
+    harness = copilot_cli.harness_record(events)
+    assert harness["staged"] == ["proposal-check"]
+    assert set(harness["roster"]) == {*BUNDLED, "proposal-check"}
+    assert {"type": "copilot.skill_context", "event": "skill.context_delivered_ref",
+            "source": "skill-proposal-check"} in events
+    assert "skill.context_delivered_ref" in copilot_cli._last(
+        events, "copilot.session_types")["types"]
+    assert copilot_cli.isolation_findings(events, harness) == []
 
 
 @pytest.mark.parametrize(("name", "named"), [

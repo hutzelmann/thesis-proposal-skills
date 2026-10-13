@@ -634,7 +634,7 @@ The client's internal bookkeeping tools are not tool calls. A tool name that is 
 - run the client's prompt mode with its JSON event stream, streaming off and colour off. It starts a new session under an identifier the harness chooses, for which no session folder may already exist in the home. The workspace is the working directory and lies outside any git repository;
 - carry the client's AI-credit cap (requirement: Copilot plan billing guard) and the flag that runs its shell in the OS sandbox;
 - offer only an allowlisted tool set, chosen per scenario:
-  - every run gets the shell, file, search and skill tools and the client's internal bookkeeping tools;
+  - every run gets the shell and skill tools and the client's internal bookkeeping tools, and none of the client's own file or search tools: at the pinned version those refuse every path under an entry of the sandbox's deny list, the workspace included, which always lies under one, and a grant for the workspace does not lift that refusal. Every file read, search and write goes through the sandboxed shell, which the sandbox grants the workspace;
   - the task and agent tools are offered only to scenarios that declare a helper allowance;
   - the web-fetch tool is offered only to scenarios that need the network, the same scenarios the Codex invocation grants network access. It comes with a URL approval for each host the scenario needs: a served fixture's local host, and the hosts its skills' scripts contact. No run approves every URL;
 - approve every offered tool without prompting, and deny memory, the built-in GitHub MCP server, the GitHub CLI in the shell, and `git push`;
@@ -669,8 +669,8 @@ Before the run, and without a model call, it SHALL be refused as untested in any
 
 After the run, it SHALL count as untested in any of these cases:
 
-- its stream carries no loaded-skills report, or a report that differs from the listing. Until a recorded stream shows whether that report reaches the stream, its absence counts;
-- a skill invocation in its session record names a source other than the workspace's project skills or the client's bundled skills, or a file outside the workspace's skill directory;
+- the skills it loaded cannot be confirmed. A loaded-skills report that reaches its stream SHALL equal the listing. The pinned version emits that report before its prompt mode's stream starts and never records it, so without it the confirmation SHALL rest on positive evidence the run recorded, never on the report's absence: the skill listing taken before the run (above), recorded with the staged skills, names every staged skill and nothing but staged and bundled skills; the session record was read; and it carries no skill record of a kind the runner does not read. A missing listing or session record SHALL say that the loaded skills could not be confirmed;
+- a skill record in its session record, an invocation or a delivery of skill context, names no skill of the listing, or names a source other than the workspace's project skills or the client's bundled skills, or a project skill's file other than its own `SKILL.md` in the workspace's skill directory;
 - its stream shows an MCP tool call, or reports an MCP server as connected;
 - its session record shows a hook event.
 
@@ -698,7 +698,7 @@ Limiting the sandboxed shell's network per scenario is not part of this requirem
 - prompt the model to run one fixed command, which runs that script by a name relative to the workspace and carries no absolute path, quoting, escaping, variable or line break, exactly once with the shell tool, and nothing else;
 - read each row from the client's own completion of that one shell call, never from the model's reply. The completion counts only when the client reports that the call ran to its end: successful, with no error, a result and an exit code of zero. A row counts as answered only when that completion carries its tagged line exactly once, with a word of the probe's vocabulary, and the closing line; any other row is unanswered and never passes. An answered row's sandbox report is the completion's, true only when the completion is reported as sandboxed with the sandbox applied, and a row not so reported fails the canary for isolation. The write into the host's shared temporary directory is judged on the host, and only once its row is answered.
 
-It SHALL pass only when the run has no finding a skill run's checks would make, apart from the loaded-skills report, which it records instead; when the fixed command ran exactly once, verbatim, and no other shell call ran, because a canary that ran anything else measured something else; when the script still has, after the run's workspace check, the digest recorded before its child started; when every row is answered and reads as the probe requires; when its shell's network namespace reads as its own, not the harness's, a shared, unknown or unanswered namespace failing it until a network rule has been decided through a reviewed change; when every shell completion is reported as sandboxed; when no sandbox warning appeared other than the client's notice that its sandbox flag is ignored; and when the billing guard still passes on the status read after the run. Any outcome after its child started other than a pass is untested and records a stop (requirement: Copilot plan billing guard) naming the finding: a billing stop for a billing finding, an isolation stop otherwise, which names the network-namespace reading when that reading failed it and, for an unanswered one, why it is unanswered. A canary refused before its child starts records no stop, and its go's canary stays unpassed. A fixed command the model skipped or altered leaves every row unanswered, and so does a completion the client refused before any shell ran it. The summary SHALL name each row with its result and its sandbox report, the fixed command's state (ran; refused by the client's permission check before any shell ran it; or not run to its end, and why), each shell call that matched no fixed command or repeated one (its command, cut short), whether the ignored-flag notice appeared, and, for the client's loaded-skills, loaded-servers, session-start, result, shutdown, skill-invocation and tool-completion events, whether each reached the stream, the session record, both or neither.
+It SHALL pass only when the run has no finding a skill run's checks would make, apart from the confirmation of its loaded skills, which it records instead; when the fixed command ran exactly once, verbatim, and no other shell call ran, because a canary that ran anything else measured something else; when the script still has, after the run's workspace check, the digest recorded before its child started; when every row is answered and reads as the probe requires; when its shell's network namespace reads as its own, not the harness's, a shared, unknown or unanswered namespace failing it until a network rule has been decided through a reviewed change; when every shell completion is reported as sandboxed; when no sandbox warning appeared other than the client's notice that its sandbox flag is ignored; and when the billing guard still passes on the status read after the run. Any outcome after its child started other than a pass is untested and records a stop (requirement: Copilot plan billing guard) naming the finding: a billing stop for a billing finding, an isolation stop otherwise, which names the network-namespace reading when that reading failed it and, for an unanswered one, why it is unanswered. A canary refused before its child starts records no stop, and its go's canary stays unpassed. A fixed command the model skipped or altered leaves every row unanswered, and so does a completion the client refused before any shell ran it. The summary SHALL name each row with its result and its sandbox report, the fixed command's state (ran; refused by the client's permission check before any shell ran it; or not run to its end, and why), each shell call that matched no fixed command or repeated one (its command, cut short), whether the ignored-flag notice appeared, and, for the client's loaded-skills, loaded-servers, session-start, result, shutdown, skill-invocation and tool-completion events, whether each reached the stream, the session record, both or neither.
 
 **Scope.**
 
@@ -795,7 +795,7 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 
 #### Scenario: Copilot tools by scenario
 - **WHEN** the command is built for three scenarios: one with no helper allowance and no network need, a supervise scenario, and a scenario that serves a fixture
-- **THEN** the first offers neither the task tools nor the web-fetch tool, and the second offers the task tools. The third offers the web-fetch tool, with a URL approval for the fixture's local host only. None approves every URL. Every one of them:
+- **THEN** the first offers neither the task tools nor the web-fetch tool, and the second offers the task tools. The third offers the web-fetch tool, with a URL approval for the fixture's local host only. None approves every URL, and none offers the client's own file or search tools. Every one of them:
   - denies memory, the GitHub MCP server, the GitHub CLI in the shell and `git push`;
   - disables the built-in MCP servers, custom instructions, remote sessions, login from stored credentials and auto-update;
   - carries the sandbox flag and the credit cap
@@ -809,8 +809,16 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 - **THEN** the run is refused as untested, the message names the skill, and no prompt-mode child starts
 
 #### Scenario: Loaded skills unreported
-- **WHEN** a Copilot stream carries no loaded-skills report
+- **WHEN** a Copilot stream carries no loaded-skills report, and the run recorded no skill listing from before the run or no session record
 - **THEN** the run is untested, and the message says that the loaded skills could not be confirmed
+
+#### Scenario: Loaded skills confirmed without the report
+- **WHEN** a Copilot stream carries no loaded-skills report, the listing recorded before the run names every staged skill and nothing but staged and bundled skills, the session record was read, and each of its skill invocations and deliveries of skill context names a staged skill from its own file in the workspace's skill directory or a listed bundled skill
+- **THEN** no isolation finding is made for the loaded skills
+
+#### Scenario: Loaded skills not confirmed by the record
+- **WHEN** a Copilot stream carries no loaded-skills report, and the recorded listing names a skill beyond the staged and bundled ones or omits a staged one, or the session record carries a skill record of a kind the runner does not read, or a delivery of skill context naming a skill outside the listing
+- **THEN** the run is untested for isolation, and the message names what did not match
 
 #### Scenario: Foreign skill invoked on Copilot
 - **WHEN** a Copilot session record shows a skill invocation from a personal or inherited source

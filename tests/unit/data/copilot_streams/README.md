@@ -32,7 +32,8 @@ the pinned CLI, `@github/copilot` 1.0.91, as the V-pass read it (design, "Facts 
 A stream file is a saved event list as the runner keeps it: the stdout events,
 then the reduced `copilot.*` records it reads from the session file, then the
 runner's own `copilot.harness` record (the status snapshots before and after,
-the cap, the roster, the scenario's helper and network flags). `__WS__` stands
+the cap, the roster and, since 2026-10-13, the staged names it was checked
+against, the scenario's helper and network flags). `__WS__` stands
 for the workspace and is filled in by the tests. Each stream is `success.jsonl`
 with the one change its name says, so every other check in it passes. The model
 names are synthetic (`copilot-fixture-a`, the requested one, and
@@ -51,7 +52,8 @@ needs no exemption for them. Every fake token is short and obviously synthetic
 | `mcp-call.jsonl` | synthetic, from @github/copilot 1.0.91 `mcpServerName`/`mcpToolName` | an MCP tool call: untested for isolation, `mcp__docs__publish` |
 | `mcp-connected.jsonl` | synthetic, from @github/copilot 1.0.91 `session.mcp_servers_loaded` | a server reported `connected`: untested for isolation |
 | `foreign-skill.jsonl` | synthetic, from @github/copilot 1.0.91 `skill.invoked` | a skill invoked from source `inherited`, outside the workspace: untested for isolation |
-| `skills-unreported.jsonl` | synthetic, from @github/copilot 1.0.91 `session-events.schema.json` (`session.skills_loaded`, ephemeral) | no `session.skills_loaded`: untested, the loaded skills not confirmed |
+| `skills-unreported.jsonl` | synthetic, from @github/copilot 1.0.91 `session-events.schema.json` (`session.skills_loaded`, ephemeral) | no `session.skills_loaded` and no session-file types recorded: untested, the loaded skills not confirmed |
+| `skills-by-roster.jsonl` | synthetic, from @github/copilot 1.0.91 `session-events.schema.json` (`skill.context_delivered_ref`), in the shape the first skill run showed (2026-10-13: which event types arrived where; no value of that run) | no `session.skills_loaded` anywhere, the roster and the staged names in the runner's record, the session file's types (`skill.invoked`, `skill.context_delivered_ref`, `system.message` among them), an invocation of the staged skill from its own `SKILL.md` and a context receipt naming it: the loaded skills confirmed without the report, no finding |
 | `hook-event.jsonl` | synthetic, from @github/copilot 1.0.91 `hook.*` | a hook event in the session file: untested for isolation |
 | `sandbox-ignored.jsonl` | synthetic, from @github/copilot 1.0.91 `runtime.node` byte 6939584 | the "Sandboxing is enabled but is not supported on this host" warning: untested for isolation, isolation stop |
 | `sandbox-unreported.jsonl` | synthetic, from @github/copilot 1.0.91 `tool.execution_complete.sandboxed` | a shell completion without `sandboxed`: the sandbox not reported active, isolation stop; played by the fake client before a hang, the live watch stops the run at that completion |

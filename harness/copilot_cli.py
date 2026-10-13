@@ -132,7 +132,14 @@ Every run's telemetry carries K5's parts (`events_seen`):
 where each listed event type arrived, stdout or the session file.
 
 Copilot tool events map to the canonical tool names (`copilot_tool_calls`), so
-the shared verdicts and the route reader work unchanged. Copilot reports AI
+the shared verdicts and the route reader work unchanged. Since the first skill
+run (2026-10-13) a run offers none of the client's own file or search tools
+(`BASE_TOOLS`): they refuse the workspace under its denied ancestor, so the
+model works on files through the sandboxed shell. The loaded skills are
+confirmed from the roster recorded before the child and the session file's
+skill records (`_loaded_findings`, `_skill_record_findings`), because the
+client's loaded-skills report never reaches a prompt-mode run; an absence
+never passes. Copilot reports AI
 credits, not money: the summary's cost is absent, with the credits at one cent
 each as a notional figure labelled as not billed (`copilot_read`).
 
@@ -262,10 +269,17 @@ NOT_CONTACTED: Mapping[str, str] = {
 }
 LOCAL_FIXTURE_HOST = "127.0.0.1"  # where claude_runner binds its fixture server
 
-# the tool set of design Decision 8 (`--available-tools`)
-BASE_TOOLS = ("bash", "read_bash", "write_bash", "stop_bash", "list_bash", "view", "create",
-              "edit", "apply_patch", "glob", "grep", "rg", "skill", "report_intent",
-              "update_todo")
+# the tool set of design Decision 8 (`--available-tools`). No file or search
+# tool of the client's own (revised 2026-10-13, the first skill run): at 1.0.91
+# `view`, `create`, `edit`, `apply_patch`, `glob`, `grep` and `rg` check their
+# paths against the sandbox's deny list with the deny taking precedence, so
+# they refuse the workspace, which lies under a deny entry in every layout,
+# and a `readwritePaths` grant for it does not lift that (measured); the
+# search tools also run the bundled ripgrep from the denied package cache.
+# Files are read, searched and written through the sandboxed shell, which the
+# sandbox grants the workspace.
+BASE_TOOLS = ("bash", "read_bash", "write_bash", "stop_bash", "list_bash", "skill",
+              "report_intent", "update_todo")
 HELPER_TOOLS = ("task", "read_agent", "list_agents", "write_agent")
 NETWORK_TOOLS = ("web_fetch",)
 DENIED_TOOLS = ("memory", "github-mcp-server", "shell(gh:*)", "shell(git push)")
@@ -1463,6 +1477,9 @@ class Run:
     cap: int = MIN_AI_CREDITS
     before: Status | None = None
     roster: list[str] = field(default_factory=list)
+    # the staged skill names the roster was checked against, recorded beside it
+    # for the loaded-skills confirmation after the run (Decision 10)
+    staged: list[str] = field(default_factory=list)
     # the workspace directory's device and inode before any child starts in it
     ws_id: tuple[int, int] | None = None
     # the session the prompt-mode child is told to create (`--session-id`)
@@ -2205,7 +2222,8 @@ def _roster_check(run: Run) -> Check:
     mcps = _listing(["mcp", "list"], run)
     run.roster = sorted(str(e.get("name")) for e in skills if isinstance(e, dict)) if isinstance(
         skills, list) else []
-    return Check("rosters", roster_problem(skills, mcps, staged_names(run.ws)),  # type: ignore[arg-type]
+    run.staged = staged_names(run.ws)  # type: ignore[arg-type]
+    return Check("rosters", roster_problem(skills, mcps, run.staged),
                  ", ".join(run.roster))
 
 
@@ -2396,12 +2414,33 @@ def _reduce_permission(kind_: str, data: dict) -> list[dict]:
              "decisionSource": _text(data.get("decisionSource"))}]
 
 
+def _reduce_invoked(_kind: str, data: dict) -> list[dict]:
+    """`skill.invoked` and `skill.invoked_ref`: name, path, source and trigger,
+    never the SKILL.md text."""
+    return [{"type": "copilot.skill_invoked",
+             **{key: data.get(key) for key in ("name", "path", "source", "trigger")}}]
+
+
+def _reduce_context(kind_: str, data: dict) -> list[dict]:
+    """`skill.context_delivered` and its receipt `skill.context_delivered_ref`
+    (added 2026-10-13, the first skill run): the event and its `source`
+    (`skill-<invocation-name>`), never the delivered wrapper or its id."""
+    source = _text(data.get("source"))
+    return [{"type": "copilot.skill_context", "event": kind_,
+             "source": source[:PERMISSION_PATH_CHARS] if source else None}]
+
+
+# the session file's skill records at 1.0.91 (`session-events.schema.json`),
+# every one of which the reduction keeps; another `skill.*` type is one the
+# loaded-skills confirmation could not check (design Decision 10)
+SKILL_RECORDS = ("skill.invoked", "skill.invoked_ref", "skill.context_delivered",
+                 "skill.context_delivered_ref")
+
 SESSION_REDUCERS: dict[str, Callable[[str, dict], list[dict]]] = {
     "session.start": lambda _k, d: [{"type": "copilot.session_start",
                                      "copilotVersion": d.get("copilotVersion")}],
-    "skill.invoked": lambda _k, d: [{"type": "copilot.skill_invoked",
-                                     **{key: d.get(key) for key in ("name", "path", "source",
-                                                                    "trigger")}}],
+    "skill.invoked": _reduce_invoked, "skill.invoked_ref": _reduce_invoked,
+    "skill.context_delivered": _reduce_context, "skill.context_delivered_ref": _reduce_context,
     "session.shutdown": lambda _k, d: [{"type": "copilot.shutdown",
                                         **{key: d.get(key) for key in SHUTDOWN_KEYS}}],
     "session.model_change": lambda _k, d: [{"type": "copilot.model_change",
@@ -2416,6 +2455,7 @@ SESSION_REDUCERS: dict[str, Callable[[str, dict], list[dict]]] = {
 def reduce_session(lines: Iterable[str]) -> list[dict]:
     """Only the fields the readers use (Decision 9): the CLI version, each skill
     invocation's name, path, source and trigger (never its SKILL.md text),
+    each delivery of skill context by its source alone (`_reduce_context`),
     the shutdown's consumption, model changes, the type alone of each hook
     event, the sandbox and effort notices, and each permission request and
     its outcome (`_reduce_permission`). `system.message`, prompts and unknown
@@ -3013,32 +3053,91 @@ def planted_after(planted: object) -> RunProblem | None:
                       True, "isolation")
 
 
-def _inside(path: str, root: str) -> bool:
-    return bool(root) and (path == root or path.startswith(root.rstrip("/") + "/"))
+NOT_CONFIRMED_SKILLS = "the loaded skills could not be confirmed"
+# a delivery of skill context names its skill as `skill-<invocation-name>`
+CONTEXT_PREFIX = "skill-"
 
 
-def _loaded_findings(events: list[dict], roster: Iterable[str]) -> list[str]:
+def _names(value: object) -> set[str] | None:
+    """A recorded list of names as a set; None for anything but a list."""
+    return {str(name) for name in value} if isinstance(value, list) else None
+
+
+def _roster_evidence(events: list[dict], roster: set[str] | None,
+                     staged: set[str] | None) -> list[str]:
+    """Without the loaded-skills report (Decision 10, revised 2026-10-13): the
+    roster recorded before the child against the staged and bundled names, the
+    session file read, and no skill record of a type the runner cannot check.
+    Never passes on an absence: each part needs its record."""
+    if not roster or staged is None:
+        return [f"{NOT_CONFIRMED_SKILLS} (no loaded-skills report, and no skill listing "
+                "recorded before the child)"]
+    if staged - roster or roster - staged - set(BUILTIN_SKILLS):
+        return [f"{NOT_CONFIRMED_SKILLS}: the skill listing before the child "
+                f"({', '.join(sorted(roster))}) is not the staged skills "
+                f"({', '.join(sorted(staged)) or 'none'}) and bundled ones"]
+    types = _last(events, "copilot.session_types")
+    if not _last(events, "copilot.session_start") or not types:
+        return [f"{NOT_CONFIRMED_SKILLS} (no loaded-skills report, and the session file was "
+                "not read)"]
+    unread = sorted({str(kind) for kind in types.get("types") or []
+                     if str(kind).startswith("skill.") and kind not in SKILL_RECORDS})
+    return [f"the session file carries skill records the runner cannot check "
+            f"({', '.join(unread)})"] if unread else []
+
+
+def _loaded_findings(events: list[dict], roster: set[str] | None,
+                     staged: set[str] | None) -> list[str]:
+    """The loaded-skills confirmation (Decision 10): the client's report when
+    it arrived, which must name the roster; otherwise `_roster_evidence`."""
     loaded = _last(events, "session.skills_loaded")
+    if not loaded:
+        return _roster_evidence(events, roster, staged)
     names = sorted(str(s.get("name")) for s in _data(loaded).get("skills") or []
                    if isinstance(s, dict))
-    if not loaded:
-        return ["the loaded skills could not be confirmed (no loaded-skills report)"]
-    if set(names) != set(roster):
+    if set(names) != (roster or set()):
         return [f"the loaded skills {', '.join(names)} differ from the listing "
-                f"{', '.join(sorted(roster))}"]
+                f"{', '.join(sorted(roster or ()))}"]
     return []
 
 
-def isolation_findings(events: list[dict], roster: Iterable[str], skill_root: str,
-                       loaded: bool = True) -> list[str]:
-    """Loaded skills unconfirmed or off the roster (unless `loaded` is off: the
-    canary records that report rather than requiring it), a foreign skill, an
-    MCP call or connected server, a hook event (Decision 10)."""
-    found = _loaded_findings(events, roster) if loaded else []
-    found += [f"skill {r.get('name')} invoked from source {r.get('source')} ({r.get('path')})"
-              for r in events if r.get("type") == "copilot.skill_invoked"
-              and not (r.get("source") == "builtin" or (
-                  r.get("source") == "project" and _inside(str(r.get("path")), skill_root)))]
+def _own_file(record: Mapping, skill_root: str, staged: set[str]) -> bool:
+    """A project skill's invocation from its own staged `SKILL.md`. Pure."""
+    name = str(record.get("name"))
+    return (bool(skill_root) and record.get("source") == "project" and name in staged
+            and str(record.get("path")) == str(PurePath(skill_root, name, "SKILL.md")))
+
+
+def _skill_record_findings(events: list[dict], roster: set[str], staged: set[str],
+                           skill_root: str) -> list[str]:
+    """Every skill record of the session file names a listed skill (Decision
+    10): an invocation a staged project skill from its own file or a listed
+    bundled one; a delivery of skill context a listed skill. Pure."""
+    found = []
+    for r in events:
+        if r.get("type") == "copilot.skill_invoked" and not (
+                _own_file(r, skill_root, staged) or (
+                    r.get("source") == "builtin" and r.get("name") in BUILTIN_SKILLS
+                    and r.get("name") in roster)):
+            found.append(f"skill {r.get('name')} invoked from source {r.get('source')} "
+                         f"({r.get('path')})")
+        source = str(r.get("source") or "")
+        if r.get("type") == "copilot.skill_context" and not (
+                source.startswith(CONTEXT_PREFIX) and source[len(CONTEXT_PREFIX):] in roster):
+            found.append(f"skill context delivered from {source or 'an unnamed source'}")
+    return found
+
+
+def isolation_findings(events: list[dict], harness: Mapping, loaded: bool = True) -> list[str]:
+    """Loaded skills unconfirmed (unless `loaded` is off: the canary records
+    the confirmation rather than requiring it), a skill record naming no listed
+    skill, an MCP call or connected server, a hook event (Decision 10). The
+    roster, the staged names and the skill directory come from the runner's
+    record (`harness`)."""
+    roster, staged = _names(harness.get("roster")), _names(harness.get("staged"))
+    found = _loaded_findings(events, roster, staged) if loaded else []
+    found += _skill_record_findings(events, roster or set(), staged or set(),
+                                    str(harness.get("skill_root") or ""))
     found += [f"an MCP tool call {name}" for name, _ in copilot_tool_calls(events)
               if name.startswith("mcp__")]
     found += [f"an MCP tool call on server {s.get('mcpServerName')}"
@@ -3051,9 +3150,9 @@ def isolation_findings(events: list[dict], roster: Iterable[str], skill_root: st
                     if r.get("type") == "copilot.hook"]
 
 
-def isolation_after(events: list[dict], roster: Iterable[str], skill_root: str,
+def isolation_after(events: list[dict], harness: Mapping,
                     loaded: bool = True) -> RunProblem | None:
-    found = isolation_findings(events, roster, skill_root, loaded)
+    found = isolation_findings(events, harness, loaded)
     if not found:
         return None
     return RunProblem(f"untested: {'; '.join(found)}. The run's isolation did not hold", True,
@@ -3654,8 +3753,7 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
     problems = [scrubbed, _logged_after(harness), stopped_after(harness.get("confinement_breach")),
                 planted_after(harness.get("workspace_breach")), failure,
                 session_problem(events), billing, sandbox,
-                isolation_after(events, harness.get("roster") or [],
-                                str(harness.get("skill_root") or ""), loaded=not canary),
+                isolation_after(events, harness, loaded=not canary),
                 *own,
                 model_after(events, harness.get("model"), bool(harness.get("helpers")),
                             harness.get("effort")),
@@ -3766,6 +3864,7 @@ def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun:
             "session_id": session_id, "cap": run.cap, "model": run.model, "effort": run.effort,
             "helpers": int(run.scenario.get("helpers") or 0),
             "network": needs_network(run.scenario), "roster": run.roster,
+            "staged": run.staged,
             "tools": list(offered_tools(run.scenario, run.canary is not None)),
             "skill_root": str(run.ws / ".agents" / "skills"),  # type: ignore[operator]
             "scrub_hit": hit, "log_findings": logged, "before": snapshot_record(run.before),
