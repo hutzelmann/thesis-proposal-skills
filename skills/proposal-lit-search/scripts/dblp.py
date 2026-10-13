@@ -5,6 +5,9 @@ API base URL: https://dblp.org/search/publ/api (q, format=json, h=limit).
 Key policy: no API key required; DBLP is open but rate-limited, so requests
 are throttled via common.http_json politeness (min_interval 1.0s) and 429s
 retry with backoff. No abstracts and no citation graph are available.
+Since 2026-10 DBLP answers scripted requests with an Anubis verification page;
+common.http_json passes its refresh tier once per call and otherwise raises a
+SourceError of kind "challenge", which search.py turns into a browser hint.
 """
 
 from __future__ import annotations

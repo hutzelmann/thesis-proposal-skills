@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from helpers import is_fixture_proposal
 
 REPO = Path(__file__).resolve().parents[2]
 CHECK = REPO / "skills" / "proposal-check" / "scripts" / "check.py"
@@ -29,8 +30,17 @@ def fixture_proposals(fixture_dir: Path) -> list[Path]:
     one-proposal-per-fixture invariant holds across both levels."""
     return [
         p for p in sorted(fixture_dir.glob("*.md")) + sorted(fixture_dir.glob("*/*.md"))
-        if p.name not in ("guidelines.md",) and not p.name.endswith("-handout.md")
+        if is_fixture_proposal(p)
     ]
+
+
+def test_review_beside_its_proposal_is_not_a_proposal(tmp_path: Path):
+    """w09 stages an earlier round's `<slug>-review.md`; a proposal whose own
+    slug ends in `-review` (f00) must still count."""
+    (tmp_path / "ml-code-review.md").write_text("# T\n", encoding="utf-8")
+    (tmp_path / "agents.md").write_text("# T\n", encoding="utf-8")
+    (tmp_path / "agents-review.md").write_text("Verdict\n", encoding="utf-8")
+    assert [p.name for p in fixture_proposals(tmp_path)] == ["agents.md", "ml-code-review.md"]
 
 
 @pytest.mark.parametrize("oracle_path", ORACLES, ids=fixture_id)

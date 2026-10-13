@@ -13,7 +13,7 @@ import json
 
 import check
 import pytest
-from helpers import FIXTURES, REPO, run_check
+from helpers import FIXTURES, REPO, is_fixture_proposal, run_check
 
 STRUCTURE = json.loads((REPO / "shared" / "structure.json").read_text(encoding="utf-8"))
 
@@ -53,7 +53,7 @@ def test_every_emitted_identifier_is_declared():
     """The inverse: a rule may not invent an identifier outside the closed set."""
     emitted = set()
     for proposal in sorted(FIXTURES.glob("*/*.md")):
-        if proposal.name in ("README.md", "guidelines.md"):
+        if not is_fixture_proposal(proposal):
             continue
         findings = check.check_findings(
             proposal, STRUCTURE, check.load_overrides(proposal, None)

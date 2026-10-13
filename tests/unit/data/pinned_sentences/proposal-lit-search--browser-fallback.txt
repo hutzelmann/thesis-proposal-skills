@@ -1,0 +1,1 @@
+Browser success does not unblock the script: never copy browser cookies into it, install challenge solvers, rotate proxies, change the user agent, or disable certificate checks.

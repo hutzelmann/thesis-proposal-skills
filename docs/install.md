@@ -169,9 +169,10 @@ Your proposal text is never sent to them, only search terms and paper identifier
 | Antigravity | Allow the command to run outside the sandbox when asked, or allow the six domains in its permission settings. |
 | Cursor | Approve the command when asked, or add the six domains to its sandbox network settings. |
 
-Two other causes:
+Three other causes:
 - **On a Mac with Python from python.org:** run **Install Certificates.command** once (Applications › Python 3.x). Until then Python cannot check the services' certificates. The installer tells you when it noticed this.
 - **A university network that filters traffic.** Try another network once to tell it apart from the app's setting.
+- **Only `dblp.org`, with a note about browser verification.** DBLP sometimes answers with a short browser check instead of data. The search passes it by itself; when it cannot, your agent says so and may offer to look DBLP up in a browser. Your app's network settings are not the cause.
 
 ## Updating
 

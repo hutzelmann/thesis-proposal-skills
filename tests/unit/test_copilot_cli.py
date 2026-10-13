@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -96,6 +97,10 @@ def subcommand(args):
 
 CMD = subcommand(ARGS)
 HEADER = "// User settings belong in settings.json.\n// This file is managed automatically.\n"
+
+def placed(text):
+    # the workspace path put into JSON text: escaped, as helpers.json_path does
+    return text.replace("__WS__", json.dumps(os.getcwd())[1:-1])
 
 def start_writes(kind):
     # what the 1.0.91 client writes when it starts (task 7.4a, measured): its
@@ -327,8 +332,7 @@ def run():
         CONFIG["stream"] = canary_stream(ARGS[ARGS.index("-p") + 1])
     folder = pathlib.Path(os.environ["COPILOT_HOME"], "session-state", session)
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "events.jsonl").write_text(CONFIG["session"].replace("__WS__", os.getcwd()),
-                                         encoding="utf-8")
+    (folder / "events.jsonl").write_text(placed(CONFIG["session"]), encoding="utf-8")
     for name in CONFIG.get("write", []):  # a relative name lands in the workspace
         pathlib.Path(name).write_text(CONFIG.get("write_body", "") + CONFIG["token"],
                                       encoding="utf-8")
@@ -346,7 +350,7 @@ def run():
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         pathlib.Path(CONFIG["background"]).write_text(str(child.pid), encoding="utf-8")
-    sys.stdout.write(CONFIG["stream"].replace("__WS__", os.getcwd())
+    sys.stdout.write(placed(CONFIG["stream"])
                      .replace("11111111-1111-4111-8111-111111111111", session))
     sys.stdout.flush()
     sys.stderr.write(CONFIG.get("stderr", ""))
@@ -360,7 +364,7 @@ if CMD[:1] == ["--version"]:
     print(CONFIG.get("version", "GitHub Copilot CLI 1.0.91."))
 elif CMD[:2] == ["skill", "list"]:
     record("skills")
-    print(json.dumps(CONFIG["skills"]).replace("__WS__", os.getcwd()))
+    print(placed(json.dumps(CONFIG["skills"])))
 elif CMD[:2] == ["mcp", "list"]:
     record("mcp")
     print(json.dumps(CONFIG["mcp"]))
@@ -1931,14 +1935,19 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
     # and session bus, so a configured credential helper is reached unless the
     # sandbox denies it; the child's scratch home holds none
     git = commands["git_credential"]
-    for needle in (f"HOME={account}", f"XDG_CONFIG_HOME={account / '.config'}",
-                   f"GH_CONFIG_DIR={account / '.config' / 'gh'}", "unix:path=/run/user/1000/bus",
+
+    def quoted(path: Path) -> str:  # a path as the shell command spells it
+        return shlex.quote(str(path))
+
+    for needle in (f"HOME={quoted(account)}", f"XDG_CONFIG_HOME={quoted(account / '.config')}",
+                   f"GH_CONFIG_DIR={quoted(account / '.config' / 'gh')}",
+                   "unix:path=/run/user/1000/bus",
                    "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/false", "GCM_INTERACTIVE=never",
                    ">/dev/null 2>&1; echo $?"):
         assert needle in git, needle
     assert "'net:[4026531840]'" in commands["net_ns"]
     assert commands["net_ns"].count("echo ") == 3  # unknown, shared, private
-    assert commands["tmp_write"] == f": > {host.marker} 2>/dev/null; echo $?"
+    assert commands["tmp_write"] == f": > {quoted(host.marker)} 2>/dev/null; echo $?"
     # without a host side, the host rows are left out (the /tmp ones then read
     # as no answer, test_the_host_tmp_rows_refuse_unless_denied)
     bare = dict(copilot_cli.probe_commands(token_file=tmp_path / "t",

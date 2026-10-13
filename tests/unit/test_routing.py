@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,11 +49,14 @@ from routing import (
     outcome_label,
     previous_isolation,
     previous_score,
+    previous_served,
     render_report,
     report_due,
     route_from_events,
+    served_set,
     stage_workspace,
     tool_calls,
+    void,
 )
 
 STREAMS = Path(__file__).parent / "data" / "routing_streams"
@@ -685,6 +689,72 @@ def test_a_report_read_before_the_route_stops_the_case_at_the_route(monkeypatch,
     assert host.read == len(ROUTE)
 
 
+# ---------- served model (testing-harness spec: Routing reported as a confusion
+# matrix) ------------------------------------------------------------------------
+
+# what `route-before-report.jsonl`'s `init` reports serving: the recorded 2.1.284 route
+RECORDED_SERVED = "claude-sonnet-5-5"
+# a synthetic served ID and its predecessor behind one alias: the
+# model-identifier guard would read a real ID no roster entry pins as stale
+SERVED = "claude-fixture-5-5"
+EARLIER_SERVED = "claude-fixture-4-5"
+# a route with its rate-limit report and no `init`: billing holds, the model is unreported
+NO_INIT_ROUTE = [rate(), *events("routed-check")]
+
+
+def test_a_case_records_the_served_model_and_cli_version_from_its_own_stream():
+    """Served model recorded per case: read from `init`, since the case is
+    stopped at its report, before the result event carries any usage."""
+    outcome = case_result(REVIEW_CASE, LATE_REPORT[:AT_REPORT], None)
+    assert outcome.passed
+    assert (outcome.served_model, outcome.cli_version) == (RECORDED_SERVED, "2.1.284")
+
+
+def test_a_stream_without_init_records_neither():
+    """Stream without a served model: the case still counts, with both empty."""
+    outcome = case_result(CHECK_CASE, NO_INIT_ROUTE, None)
+    assert (outcome.route, outcome.error) == ("proposal-check", None)
+    assert (outcome.served_model, outcome.cli_version) == (None, None)
+
+
+def test_an_init_without_a_model_records_only_the_cli_version():
+    """2.1.207's `init` named no model (`reported-route.jsonl`)."""
+    outcome = case_result(CHECK_CASE, events("reported-route"), None)
+    assert (outcome.served_model, outcome.cli_version) == (None, "2.1.207")
+
+
+def test_an_errored_case_still_records_what_served_it():
+    outcome = case_result(REVIEW_CASE, SKILL_RESULT_UNREPORTED, "timed out after 90s")
+    assert outcome.error is not None
+    assert (outcome.served_model, outcome.cli_version) == (RECORDED_SERVED, "2.1.284")
+
+
+def test_a_voided_result_keeps_its_served_model_and_cli_version():
+    outcome = case_result(REVIEW_CASE, LATE_REPORT[:AT_REPORT], None)
+    [kept] = void([outcome], "A billing signal voids every case.")
+    assert kept.error == "A billing signal voids every case."
+    assert (kept.route, kept.served_model, kept.cli_version) == (
+        "proposal-review", RECORDED_SERVED, "2.1.284")
+
+
+def test_a_raw_result_written_before_the_fields_still_loads():
+    raw = {"case_id": "a", "expected": "proposal-check", "kind": "canonical",
+           "route": "proposal-check", "error": None}
+    loaded = Result(**raw)
+    assert loaded.passed
+    assert (loaded.served_model, loaded.cli_version) == (None, None)
+
+
+def test_without_init_the_model_that_produced_the_output_stands_in():
+    """The shared reader (`served_model`, design D1): `modelUsage` is the
+    fallback, the producing model first, with a note saying so."""
+    stream = [{"type": "result", "modelUsage": {
+        "claude-fixture-2-0": {"outputTokens": 5}, "claude-fixture-1-0": {"outputTokens": 900}}}]
+    assert routing.served_model(stream) == (
+        "claude-fixture-1-0", "no init event; taken from modelUsage")
+    assert routing.served_model([]) == (None, None)
+
+
 # ---------- classification ---------------------------------------------------
 
 
@@ -830,6 +900,90 @@ def test_partial_failure_renders_as_a_rate():
     assert "(1/3 epochs)" in render_report(results, classify(results), "sonnet")
 
 
+def served(model: str | None, cli: str | None = "2.1.296", error: str | None = None) -> Result:
+    return Result(case_id="a", expected="proposal-check", kind="canonical",
+                  route="proposal-check", error=error, served_model=model, cli_version=cli)
+
+
+def header(results: list[Result], **kwargs) -> str:
+    return render_report(results, classify(results), "haiku", "deadbee", **kwargs)
+
+
+def test_report_names_the_alias_beside_the_served_model_and_cli_version():
+    """Run provenance recorded: requested alias, served ID and CLI version
+    with their counts, the measured total."""
+    text = header([served(SERVED)] * 2)
+    assert f"- model: `haiku`\n- served: `{SERVED}` (2)\n- host CLI: 2.1.296 (2)\n" in text
+    assert "- measurements: 2 (2 correct)" in text
+
+
+def test_report_lists_each_served_model_of_a_sweep_with_its_count():
+    """Alias re-pointed within a sweep: both IDs, the more frequent first."""
+    text = header([served(EARLIER_SERVED, "2.1.284"), served(SERVED), served(SERVED)])
+    assert f"- served: `{SERVED}` (2), `{EARLIER_SERVED}` (1)\n" in text
+    assert "- host CLI: 2.1.296 (2), 2.1.284 (1)\n" in text
+
+
+def test_report_counts_measurements_whose_stream_reported_no_model():
+    """Stream without a served model: counted as not reported, never as the alias."""
+    assert "- served: not reported (2)\n- host CLI: not reported (2)\n" in header(
+        [served(None, None)] * 2)
+    text = header([served(SERVED), served(None, None)])
+    assert f"- served: `{SERVED}` (1), not reported (1)\n" in text
+
+
+def test_report_counts_the_served_model_over_error_free_measurements_only():
+    text = header([served(SERVED), served(EARLIER_SERVED, error="timed out after 90s")])
+    assert f"- served: `{SERVED}` (1)\n" in text
+    assert EARLIER_SERVED not in text.split("## Per kind")[0]
+
+
+def test_a_report_from_a_log_that_predates_the_served_model_says_not_recorded():
+    text = header([served(None, None)], served_recorded=False)
+    assert "- served: not recorded\n- host CLI: not recorded\n" in text
+    assert "`haiku` (" not in text
+
+
+def test_previous_served_reads_the_ids_and_nothing_else(tmp_path):
+    report = tmp_path / "skill-routing.md"
+    report.write_text(header([served(SERVED), served(EARLIER_SERVED), served(None)]),
+                      encoding="utf-8")
+    assert previous_served(report) == frozenset({SERVED, EARLIER_SERVED})
+    for outgoing in (EARLIER_REPORT, "- served: not recorded\n", "- served: not reported (3)\n"):
+        report.write_text(outgoing, encoding="utf-8")
+        assert previous_served(report) is None
+    assert previous_served(tmp_path / "absent.md") is None
+
+
+def test_the_served_set_ignores_counts_errors_and_unreported_streams():
+    results = [served(SERVED), served(SERVED), served(None),
+               served(EARLIER_SERVED, error="no events")]
+    assert served_set(results) == frozenset({SERVED})
+
+
+@pytest.mark.parametrize("fields", [False, True], ids=["old-log", "new-log"])
+def test_render_rebuilds_the_served_lines_from_the_raw_log(fields, tmp_path, monkeypatch, capsys):
+    """Report rebuilt from an older raw log: "not recorded", not the alias."""
+    report = tmp_path / "skill-routing.md"
+    monkeypatch.setattr(routing, "REPORT_FILE", report)
+    monkeypatch.setattr(routing, "REPO", tmp_path)
+    raw = {"case_id": "a", "expected": "proposal-check", "kind": "canonical",
+           "route": "proposal-check", "error": None}
+    if fields:
+        raw.update(served_model=SERVED, cli_version="2.1.296")
+    log = tmp_path / "run.json"
+    log.write_text(json.dumps({"model": "haiku", "skills_revision": "deadbee",
+                               "results": [raw]}), encoding="utf-8")
+    assert routing.main(["--render", str(log)]) == 0
+    text = report.read_text(encoding="utf-8")
+    assert "- model: `haiku`\n" in text
+    if fields:
+        assert f"- served: `{SERVED}` (1)\n- host CLI: 2.1.296 (1)\n" in text
+    else:
+        assert "- served: not recorded\n- host CLI: not recorded\n" in text
+    assert "report rebuilt from" in capsys.readouterr().out
+
+
 # ---------- run outcome ------------------------------------------------------
 
 EARLIER_REPORT = "measurements: 120 (119 correct), 3 epochs per case\n"
@@ -852,9 +1006,7 @@ def offline_rig(tmp_path, monkeypatch):
         queue = iter(outcomes)
 
         def measure(case: Case, *_args) -> Result:
-            outcome = next(queue)
-            return Result(case_id=case.id, expected=case.expected, kind=case.kind,
-                          route=outcome.route, error=outcome.error)
+            return replace(next(queue), case_id=case.id, expected=case.expected, kind=case.kind)
 
         monkeypatch.setattr(routing, "measure", measure)
         return report
@@ -886,7 +1038,8 @@ def test_a_clean_run_succeeds(offline_rig):
     assert status == 0
 
 
-ROUTED = Result(case_id="", expected="", kind="", route="proposal-review")
+ROUTED = Result(case_id="", expected="", kind="", route="proposal-review",
+                served_model=SERVED, cli_version="2.1.296")
 
 
 def raw_payload(tmp_path: Path) -> dict:
@@ -1027,27 +1180,111 @@ def test_a_billing_signal_voids_the_sweep_and_starts_no_further_case(offline_rig
     assert classify([Result(**raw) for raw in results]).totals == (0, 0)
 
 
-@pytest.mark.parametrize("outgoing", [
-    EARLIER_REPORT,
-    EARLIER_REPORT + "- isolation: ambient claude.ai surfaces open\n",
-], ids=["no-isolation-line", "other-isolation"])
-def test_other_isolation_conditions_are_not_comparable_without_the_flag(
-        offline_rig, outgoing):
-    report = offline_rig(ROUTED)
+SAME_ISOLATION = f"- isolation: {ISOLATION_CONDITIONS}\n"
+SAME_SERVED = f"- served: `{SERVED}` (120)\n"
+
+
+def compared(offline_rig, outgoing: str, *outcomes: Result) -> str:
+    """The report a one-epoch run writes over `outgoing`, with no conditions
+    change declared."""
+    report = offline_rig(*(outcomes or (ROUTED,)))
     report.write_text(outgoing, encoding="utf-8")
     assert routing.main(["--case", "review-canonical", "--epochs", "1"]) == 0
-    text = report.read_text(encoding="utf-8")
+    return report.read_text(encoding="utf-8")
+
+
+def assert_not_comparable(text: str) -> None:
     assert "measured under different conditions, not comparable: 119/120" in text
     assert "supersedes" not in text
 
 
+@pytest.mark.parametrize("outgoing", [
+    EARLIER_REPORT + SAME_SERVED,
+    EARLIER_REPORT + "- isolation: ambient claude.ai surfaces open\n" + SAME_SERVED,
+], ids=["no-isolation-line", "other-isolation"])
+def test_other_isolation_conditions_are_not_comparable_without_the_flag(
+        offline_rig, outgoing):
+    assert_not_comparable(compared(offline_rig, outgoing))
+
+
 def test_the_same_isolation_conditions_supersede(offline_rig):
-    report = offline_rig(ROUTED)
-    report.write_text(f"{EARLIER_REPORT}- isolation: {ISOLATION_CONDITIONS}\n", encoding="utf-8")
-    assert routing.main(["--case", "review-canonical", "--epochs", "1"]) == 0
-    text = report.read_text(encoding="utf-8")
+    """Same isolation conditions: and the same served model IDs."""
+    text = compared(offline_rig, EARLIER_REPORT + SAME_ISOLATION + SAME_SERVED)
     assert "supersedes: 119/120" in text
     assert "not comparable" not in text
+
+
+def test_an_alias_served_by_another_model_is_not_comparable_without_the_flag(offline_rig):
+    """Alias resolves to a different model: the outgoing report's alias was
+    the same, its served model was not."""
+    outgoing = EARLIER_REPORT + SAME_ISOLATION + f"- served: `{EARLIER_SERVED}` (120)\n"
+    text = compared(offline_rig, outgoing)
+    assert_not_comparable(text)
+    assert f"- served: `{SERVED}` (1)\n" in text
+
+
+@pytest.mark.parametrize("served_line", ["", "- served: not recorded\n"],
+                         ids=["no-served-line", "served-not-recorded"])
+def test_an_earlier_report_without_a_served_model_is_not_comparable(offline_rig, served_line):
+    """Earlier report records no served model: today's tracked report, whose
+    served model is only inferred, reads so at the next sweep (design D4)."""
+    assert_not_comparable(compared(offline_rig, EARLIER_REPORT + SAME_ISOLATION + served_line))
+
+
+def test_the_same_served_model_on_a_newer_cli_supersedes(offline_rig):
+    """Same served model on a newer CLI: the version is recorded, never compared."""
+    outgoing = EARLIER_REPORT + SAME_ISOLATION + SAME_SERVED + "- host CLI: 2.1.284 (120)\n"
+    text = compared(offline_rig, outgoing)
+    assert "supersedes: 119/120" in text
+    assert "not comparable" not in text
+    assert "- host CLI: 2.1.296 (1)\n" in text
+
+
+def test_a_declared_conditions_change_still_applies_with_everything_recorded_equal(
+        offline_rig):
+    report = offline_rig(ROUTED)
+    report.write_text(EARLIER_REPORT + SAME_ISOLATION + SAME_SERVED, encoding="utf-8")
+    assert routing.main(["--case", "review-canonical", "--epochs", "1",
+                         "--conditions-changed"]) == 0
+    assert_not_comparable(report.read_text(encoding="utf-8"))
+
+
+def test_an_alias_re_pointed_within_a_sweep_shows_per_case_and_in_the_report(
+        offline_rig, tmp_path):
+    """Alias re-pointed within a sweep: the raw results show which case each
+    model served, and the report lists both with their counts."""
+    report = offline_rig(replace(ROUTED, served_model=EARLIER_SERVED, cli_version="2.1.284"),
+                         ROUTED)
+    assert routing.main(["--case", "review-canonical", "--epochs", "2", "--jobs", "1"]) == 0
+    assert [(raw["served_model"], raw["cli_version"]) for raw in raw_payload(tmp_path)[
+        "results"]] == [(EARLIER_SERVED, "2.1.284"), (SERVED, "2.1.296")]
+    text = report.read_text(encoding="utf-8")
+    assert f"- served: `{EARLIER_SERVED}` (1), `{SERVED}` (1)\n" in text
+    assert "- host CLI: 2.1.284 (1), 2.1.296 (1)\n" in text
+
+
+def test_the_closing_line_names_what_served_an_all_errored_sweep(offline_rig, capsys):
+    offline_rig(replace(DEAD_LOGIN, served_model=SERVED))
+    assert routing.main(["--case", "review-canonical", "--epochs", "1", "--no-report"]) == 1
+    assert f"0/0 correct, 1 errored; requested sonnet, served {SERVED} (1)" in (
+        capsys.readouterr().out)
+
+
+def test_the_raw_results_carry_each_cases_served_model_and_cli_version(
+        offline_rig, tmp_path, monkeypatch, capsys):
+    """Served model recorded per case, through the real `measure`: only the
+    host is faked, with the recorded 2.1.284 `Skill` route. The run's alias
+    stays the payload's `model`, and the closing line names both."""
+    assert offline_rig
+    monkeypatch.setattr(routing, "follow_stream",
+                        lambda _command, **kwargs: followed(LATE_REPORT, kwargs["stop"]))
+    assert routing.main(["--case", "review-canonical", "--epochs", "2", "--jobs", "1",
+                         "--model", "haiku", "--no-report"]) == 0
+    payload = raw_payload(tmp_path)
+    assert payload["model"] == "haiku"
+    assert [(raw["served_model"], raw["cli_version"]) for raw in payload["results"]] == [
+        (RECORDED_SERVED, "2.1.284")] * 2
+    assert f"requested haiku, served {RECORDED_SERVED} (2)" in capsys.readouterr().out
 
 
 # ---------- staging ----------------------------------------------------------

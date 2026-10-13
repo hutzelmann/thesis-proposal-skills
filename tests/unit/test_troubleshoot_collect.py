@@ -424,6 +424,21 @@ def test_two_keys_with_one_spelling_resolve_to_nothing(tmp_path):
     assert resolve_model("claude-haiku-4-5-20251001", both) == (None, {})
 
 
+def test_a_dated_snapshot_shares_its_version_s_verdict_and_nothing_more(tmp_path):
+    """The accepted snapshot assumption (clarify-troubleshoot-model-subject,
+    design D4): a full date is ignored in either direction, two dated snapshots
+    of one version collide, and a short snapshot token stays part of the name."""
+    dated = write_support(tmp_path / "dated.json", ["lab/example-4.5-20251001"])
+    assert resolve_model("example-4-5", dated)[0] == "lab/example-4.5-20251001"
+    two = write_support(
+        tmp_path / "two.json", ["lab/example-4.5-20250101", "lab/example-4.5-20251001"]
+    )
+    assert resolve_model("example-4-5", two) == (None, {})
+    token = write_support(tmp_path / "token.json", ["lab/example-pro-0813"])
+    assert resolve_model("example-pro-0813", token)[0] == "lab/example-pro-0813"
+    assert resolve_model("example-pro", token) == (None, {})
+
+
 def test_resolve_model_returns_nothing_for_an_unknown_model():
     """Absence must not resolve to some neighbouring model's verdict."""
     key, record = resolve_model("some-model-we-never-measured")

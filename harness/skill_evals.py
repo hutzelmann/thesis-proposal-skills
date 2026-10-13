@@ -53,7 +53,10 @@ from l1_checks import (
     verdict_repaired_draft,
     verdict_reverse,
     verdict_review,
+    verdict_review_converged,
+    verdict_review_dependency,
     verdict_review_localized,
+    verdict_review_ready,
     verdict_seed,
     verdict_supervise_closing,
     verdict_supervise_feedback,
@@ -63,6 +66,7 @@ from l1_checks import (
     verdict_supervise_no_personal_data,
     verdict_supervise_pointers,
     verdict_supervise_points,
+    verdict_supervise_ready_block,
     verdict_supervise_substance_only,
     verdict_supervise_tier,
     verdict_title_alarm,
@@ -465,6 +469,84 @@ def review_hollow(baseline: bool = False) -> Task:
         [review_hollow_l1(), review_hollow_l2(), no_spurious_offer()],
         baseline=baseline,
     )
+
+
+# ---------- tasks: readiness, overblocking and underblocking -----------------
+#
+# A minimal pair and a convergence workspace over one proposal text (testing-
+# harness spec: readiness coverage): f28 is viable with bounded execution
+# decisions open, f29 changes one paragraph so RQ3 rests on partner access still
+# to be negotiated, and w09 stages an earlier review whose blockers f28's text
+# resolves. On demand (models.toml `extended`); their L1 includes review_fixture's
+# byte-identity probe, which the Inspect agent loop is known to break.
+
+READINESS_PROPOSAL = "ci-repair-agent-configurations.md"
+READINESS_REVIEW = "ci-repair-agent-configurations-review.md"
+READINESS_REQUEST = (f"Please review my proposal ws/{READINESS_PROPOSAL} — "
+                     "is it ready for my supervisor?")
+
+
+async def readiness_l1(fixture: str, verdict) -> tuple[bool, str]:
+    original = (FIXTURES / fixture / READINESS_PROPOSAL).read_text(encoding="utf-8")
+    return verdict(original, await read_ws(READINESS_PROPOSAL),
+                   await read_ws(READINESS_REVIEW), READINESS_REVIEW)
+
+
+async def readiness_l2(task: str, fixture: str) -> tuple[bool, str]:
+    oracle = json.loads((FIXTURES / fixture / "expected.json").read_text(encoding="utf-8"))
+    return await judge("readiness.txt", "; ".join(oracle["semantic"]),
+                       await read_ws(READINESS_REVIEW) or "", CRITERIA[(task, f"{task}_l2")])
+
+
+@verdict_scorer("review_ready_l1")
+async def review_ready_l1(_state: TaskState) -> tuple[bool, str]:
+    return await readiness_l1("f28-open-decisions", verdict_review_ready)
+
+
+@verdict_scorer("review_ready_l2")
+async def review_ready_l2(_state: TaskState) -> tuple[bool, str]:
+    return await readiness_l2("review_ready", "f28-open-decisions")
+
+
+@task
+def review_ready(baseline: bool = False) -> Task:
+    return proposal_task("proposal-review", "f28-open-decisions", READINESS_REQUEST,
+                         [review_ready_l1(), review_ready_l2()], baseline=baseline)
+
+
+@verdict_scorer("review_dependency_l1")
+async def review_dependency_l1(_state: TaskState) -> tuple[bool, str]:
+    return await readiness_l1("f29-doubtful-dependency", verdict_review_dependency)
+
+
+@verdict_scorer("review_dependency_l2")
+async def review_dependency_l2(_state: TaskState) -> tuple[bool, str]:
+    return await readiness_l2("review_dependency", "f29-doubtful-dependency")
+
+
+@task
+def review_dependency(baseline: bool = False) -> Task:
+    return proposal_task("proposal-review", "f29-doubtful-dependency", READINESS_REQUEST,
+                         [review_dependency_l1(), review_dependency_l2()], baseline=baseline)
+
+
+@verdict_scorer("review_converge_l1")
+async def review_converge_l1(_state: TaskState) -> tuple[bool, str]:
+    return await readiness_l1("w09-revised-round", verdict_review_converged)
+
+
+@verdict_scorer("review_converge_l2")
+async def review_converge_l2(_state: TaskState) -> tuple[bool, str]:
+    return await readiness_l2("review_converge", "w09-revised-round")
+
+
+@task
+def review_converge(baseline: bool = False) -> Task:
+    return proposal_task(
+        "proposal-review", "w09-revised-round",
+        f"I revised ws/{READINESS_PROPOSAL} after your last review — please review it "
+        "again. Is it ready for my supervisor now?",
+        [review_converge_l1(), review_converge_l2()], baseline=baseline)
 
 
 # ---------- task: title alarm on a tool-shaped title -------------------------
@@ -1111,4 +1193,29 @@ def supervise_feedback(baseline: bool = False) -> Task:
         extra_skill_files={
             f"ws/{S01_SUBMISSION}": str(FIXTURES / "s01-raw-email" / S01_SUBMISSION),
         },
+    )
+
+
+@verdict_scorer("supervise_ready_l1_block")
+async def supervise_ready_l1_block(_state: TaskState) -> tuple[bool, str]:
+    return verdict_supervise_ready_block(await supervise_feedback_text(),
+                                         load_closing_note(SKILLS))
+
+
+@task
+def supervise_ready(baseline: bool = False) -> Task:
+    # the overblocking control on the supervisor side: f28 is already in the
+    # standard format, so the feedback's tier, its zero points and its
+    # clarify-early block are what is measured
+    return proposal_task(
+        "proposal-supervise", "f28-open-decisions",
+        f"A student sent me this thesis proposal — I saved it as ws/{READINESS_PROPOSAL}. "
+        "Prepare my feedback: the draft I can send back. If the verdict turns out "
+        "borderline, do not ask me — take the needs-revision path. Do not make any network "
+        "lookups — no claim checks and no literature — and I cannot answer any further "
+        "question.",
+        [supervise_l1_feedback(), supervise_l1_points(), supervise_l1_tier(),
+         supervise_l1_pointers(), supervise_l1_closing(), supervise_l1_markup(),
+         supervise_ready_l1_block()],
+        baseline=baseline,
     )

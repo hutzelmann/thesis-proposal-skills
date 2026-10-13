@@ -1,0 +1,24 @@
+#!/bin/sh
+# A push to main releases to every installer and plugin user, so a push needs
+# a person at a terminal. An agent's shell has no controlling terminal and is
+# refused; the maintainer's terminal asks once.
+# One-time activation per clone: git config core.hooksPath .githooks (poe setup).
+remote="$1"
+refs=""
+while read -r local_ref _ remote_ref _; do
+  [ -n "$local_ref" ] && refs="$refs ${remote_ref#refs/heads/}"
+done
+[ -n "$refs" ] || exit 0
+# a subshell: a failed redirection on a special built-in would end the hook itself
+if ! (: </dev/tty) 2>/dev/null; then
+  echo "pre-push: refused: no terminal. A push releases to every user;" \
+    "the maintainer pushes from their own terminal." >&2
+  exit 1
+fi
+printf 'Push%s to %s? This releases to every user. [y/N] ' "$refs" "$remote" >/dev/tty
+read -r answer </dev/tty
+case "$answer" in
+  y | Y | yes) exit 0 ;;
+esac
+echo "pre-push: push cancelled" >&2
+exit 1

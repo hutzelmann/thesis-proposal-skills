@@ -1,0 +1,1 @@
+Applying findings is a writing step: never start it here, and leave the proposal untouched until the user approves it.

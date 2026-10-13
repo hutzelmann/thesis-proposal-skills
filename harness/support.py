@@ -872,6 +872,10 @@ def render_summary(
     timestamp: str,
     skills: dict[str, str] | None = None,
 ) -> str:
+    """The README table: current models only. A disabled registry row keeps its
+    verdict in the grid document and the exported data, which
+    proposal-troubleshoot reads, but most readers want the models they can pick
+    today, so it has no README row."""
     lines = [
         f"Model support, measured by the metered eval matrix on **{timestamp}** "
         f"(3 epochs per cell unless noted; details in docs/model-support.md):",
@@ -879,12 +883,10 @@ def render_summary(
         "| Model (pinned version) | Verdict | Notes |",
         "|---|---|---|",
     ]
-    for m in models:
+    for m in (m for m in models if m.enabled):
         v = verdicts.get(m.id, Verdict("untested"))
         label, notes = _verdict_text(v, skills or {})
         short = m.id.removeprefix("openrouter/")
-        if not m.enabled:
-            notes = (notes + "; " if notes else "") + "disabled in registry"
         if m.note:
             notes = (notes + "; " if notes else "") + m.note
         lines.append(f"| `{short}` | {label} | {notes} |")
@@ -1063,7 +1065,7 @@ def render_grid(
         sep,
     ]
     for m in models:
-        row = [f"`{m.id.removeprefix('openrouter/')}`"]
+        row = [f"`{m.id.removeprefix('openrouter/')}`" + ("" if m.enabled else " (disabled)")]
         for task in tasks:
             cell = cells.get((m.id, task))
             if cell is None or cell.classification == "untested":

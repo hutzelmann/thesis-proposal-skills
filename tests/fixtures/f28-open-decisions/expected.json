@@ -1,0 +1,20 @@
+{
+  "fixture": "f28-open-decisions",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "no proposal blocker: the research questions, the within-model contribution, the method, the scope, the benchmark and the compute budget with its subsampling fallback are clear, so the verdict is ready",
+    "the unnamed model versions are not a blocker, because the methodology states a selection rule (the most recent release of one open-weight and one hosted family, documented with identifiers and access dates); listing them as a clarify-early item is acceptable, demanding them before approval is not",
+    "the industry-partner ratings are optional and RQ3 is answered from the student's own audit, so reviewer capacity and company agreements for them are not conditions of acceptance",
+    "the audit sample size is not a blocker, because it is fixed after the stated pilot audit of twenty patches",
+    "unstated execution details such as the handling of crashed or timed-out runs, what each run logs, or the test used per failure category are at most clarify-early items, each with its deferral record"
+  ]
+}

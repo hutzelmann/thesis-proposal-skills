@@ -115,6 +115,9 @@ FENCE_RE = re.compile(r"^```[ \t]*$", re.MULTILINE)
 # section; its absence is not drift (skill-packaging spec).
 REPORTER = "proposal-troubleshoot"
 OFFER_HEADING = "## When this run fails"
+# Every skill, the reporter included, opens this section with the shared handoff
+# block; the skill's own routes follow it in paragraphs of their own.
+HANDOFF_HEADING = "## Handing over"
 # Positions the skill-packaging spec fixes and test_skill_header_pattern.py
 # already enforces. Anchoring here rather than on inserted markers keeps the
 # rendered page free of banners and keeps the anchor something a contributor
@@ -160,15 +163,54 @@ def _lines_with_offsets(text: str):
         pos += len(line)
 
 
+def section_span(body: str, heading: str, paragraphs: int = 1) -> tuple[int, int]:
+    """Span of the first `paragraphs` paragraphs after a section's heading. A
+    span that would run into the next heading is an anchor error, never a
+    region that swallows it."""
+    marker = f"\n{heading}\n"
+    if marker not in body:
+        raise AnchorError(f"no {heading!r} section")
+    after = body.index(marker) + len(marker) - 1
+    rest = body[after:]
+    start = end = after + len(rest) - len(rest.lstrip("\n"))
+    for _ in range(paragraphs):
+        if end != start:
+            end += 2
+        end = body.index("\n\n", end) if "\n\n" in body[end:] else len(body.rstrip("\n"))
+    if "\n## " in body[start:end] or body[start:end].startswith("## "):
+        raise AnchorError(f"the {paragraphs} paragraph(s) after {heading!r} run into a heading")
+    return start, end
+
+
 def offer_span(body: str) -> tuple[int, int]:
     """Span of the first paragraph after the closing section's heading."""
-    if OFFER_HEADING not in body:
-        raise AnchorError(f"no {OFFER_HEADING!r} section")
-    after = body.index(OFFER_HEADING) + len(OFFER_HEADING)
-    rest = body[after:]
-    start = after + len(rest) - len(rest.lstrip("\n"))
-    end = body.index("\n\n", start) if "\n\n" in body[start:] else len(body.rstrip("\n"))
-    return start, end
+    return section_span(body, OFFER_HEADING)
+
+
+# The paragraph count of shared/blocks/handoff.md, fixed here rather than read from
+# the source: the region in each SKILL.md is the block as last materialized, and a
+# source that grew a paragraph would otherwise swallow the first route paragraph of
+# every skill. Changing the count is a migration — the source, this number and the
+# eleven sections move together in one commit.
+HANDOFF_PARAGRAPHS = 3
+
+
+def handoff_block() -> str:
+    block = (BLOCKS / "handoff.md").read_text(encoding="utf-8").strip()
+    if block.count("\n\n") + 1 != HANDOFF_PARAGRAPHS:
+        raise AnchorError(f"shared/blocks/handoff.md has {block.count(chr(10) * 2) + 1} "
+                          f"paragraphs, HANDOFF_PARAGRAPHS says {HANDOFF_PARAGRAPHS}: change "
+                          "both, and every skill's Handing over section, in one commit")
+    return block
+
+
+def handoff_span(body: str) -> tuple[int, int]:
+    """Span of the shared handoff block: the first HANDOFF_PARAGRAPHS paragraphs
+    after the section's heading, so the skill's own routes after it stay its own."""
+    here, offer = f"\n{HANDOFF_HEADING}\n", f"\n{OFFER_HEADING}\n"
+    if here in body and offer in body and body.index(here) > body.index(offer):
+        raise AnchorError(f"{HANDOFF_HEADING!r} follows {OFFER_HEADING!r}")
+    return section_span(body, HANDOFF_HEADING, HANDOFF_PARAGRAPHS)
 
 
 def workflow_line(skill: str) -> str:
@@ -190,6 +232,7 @@ def render_skill_md(skill_dir: Path) -> str:
     replacements = {
         spans[WORKFLOW_INDEX]: workflow_line(skill_dir.name),
         spans[VOICE_INDEX]: (BLOCKS / "voice.md").read_text(encoding="utf-8").strip(),
+        handoff_span(body): handoff_block(),
     }
     if skill_dir.name != REPORTER:
         replacements[offer_span(body)] = (

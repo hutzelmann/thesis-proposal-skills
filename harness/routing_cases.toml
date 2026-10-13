@@ -128,6 +128,19 @@ expected = "proposal-ideate"
 kind = "collision"
 lang = "en"
 
+# the paper-foundation entry path. It sits between lit-search (a paper is
+# literature) and negative-paper-summary (a paper the student only has to
+# present); what makes it ideate's is that the thesis does not exist yet. No link:
+# on 2026-10-05 a DOI with Crossref's test prefix made haiku object to the
+# placeholder and route nowhere (0/6), while sonnet routed it 3/3 — the link
+# measured the identifier, not the description.
+[[cases]]
+id = "ideate-paper-oblique"
+utterance = "I just read a paper I really like, and I'd like to write my thesis on something similar to it."
+expected = "proposal-ideate"
+kind = "oblique"
+lang = "en"
+
 # ---------- proposal-lit-search ----------------------------------------------
 
 [[cases]]
@@ -299,6 +312,30 @@ expected = "proposal-troubleshoot"
 kind = "collision"
 lang = "en"
 
+# the troubleshoot_model_rung request (harness/skill_evals.py), minus the
+# sentence naming the model: this file may carry no model ID
+# (tests/unit/test_model_ids.py, Rule A), and the selection does not depend on
+# it. It names write and a draft, but it asks whether a skill is broken. On
+# 2026-10-05 haiku answered it without loading a skill
+# (fix-troubleshoot-model-match, task 6.1).
+[[cases]]
+id = "troubleshoot-report-collision"
+utterance = "The write skill produced a draft that ignored half of what I told it. I have already updated the skills by pasting the install prompt again, and it still happens. Is this a bug I should report?"
+expected = "proposal-troubleshoot"
+kind = "collision"
+lang = "en"
+
+# self-contained on purpose: an earlier wording ("the second time the tool did
+# the opposite of what I asked") pointed at a past event that a fresh session
+# cannot see, and on 2026-10-05 both sonnet and haiku answered it by saying so
+# — correct behaviour, scored as a routing failure
+[[cases]]
+id = "troubleshoot-report-oblique"
+utterance = "I asked the proposal assistant to leave my research questions exactly as they are, and it rewrote them anyway — twice now. Is that a bug I should report?"
+expected = "proposal-troubleshoot"
+kind = "oblique"
+lang = "en"
+
 # ---------- negatives --------------------------------------------------------
 
 [[cases]]
@@ -372,3 +409,86 @@ utterance = "Ein Student hat mir diese Themenskizze geschickt (submission-email.
 expected = "proposal-supervise"
 kind = "canonical"
 lang = "de"
+
+# ---------- stage handoff ----------------------------------------------------
+# The status moment (check owns it, trigger_terms.json) and the continuation
+# phrases the handoffs suggest. A handoff names the step, never the skill, so the
+# phrase it offers must reach the skill that owns the step from the
+# descriptions alone (skill-packaging spec: stage handoff at stopping points).
+
+[[cases]]
+id = "status-canonical"
+utterance = "Where does my proposal stand, and what should I do next?"
+expected = "proposal-check"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "status-oblique"
+utterance = "I've been working on this proposal for weeks and lost track of where it is. What's the next step?"
+expected = "proposal-check"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "status-de"
+utterance = "Wo steht mein Exposé gerade, und was ist der nächste Schritt?"
+expected = "proposal-check"
+kind = "oblique"
+lang = "de"
+
+[[cases]]
+id = "continue-fresh-review"
+utterance = "Review my proposal — review only, no edits."
+expected = "proposal-review"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-apply-blockers"
+utterance = "Apply the two blockers from the review."
+expected = "proposal-write"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-draft-from-seed"
+utterance = "Write the full draft from data-drift-detection.md."
+expected = "proposal-write"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-more-sources"
+utterance = "Find more sources for my proposal."
+expected = "proposal-lit-search"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-final-check"
+utterance = "Check my proposal before I hand it in."
+expected = "proposal-check"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-handin-export"
+utterance = "Make a hand-in export of my proposal."
+expected = "proposal-publish"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-rework-idea"
+utterance = "Let's go back to my thesis idea and rework it from the start."
+expected = "proposal-ideate"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "continue-move-markers"
+utterance = "Move the three execution-detail TODOs from my proposal into my notes."
+expected = "proposal-write"
+kind = "oblique"
+lang = "en"

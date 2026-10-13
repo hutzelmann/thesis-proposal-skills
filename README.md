@@ -86,12 +86,14 @@ Whichever skill is running, six rules apply:
 | `proposal-write` | Turns your material into proposal prose following proven structure and writing rules. Thin material becomes a TODO, never invented filler. |
 | `proposal-import` | Converts an existing proposal (usually a PDF) into the workable format and strips personal data. |
 | `proposal-reverse` | Derives the proposal a finished thesis should have had — for a thesis whose proposal was never filed, or for a supervisor turning a thesis they supervised into an exemplar. Writes the plan the thesis started from, without the results it ended with. |
-| `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs, estimated length. |
+| `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs, estimated length. Also the place to ask where your proposal stands and what comes next. |
 | `proposal-review` | Supervisor-style content review: a verdict on whether there is a thesis here (ready / needs revision / no viable thesis core), then every weak point with a concrete suggestion. |
 | `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. Where your program prescribes its own document, a build script in your folder takes over instead. A plain markdown hand-in is fine too. |
 | `proposal-customize` | Adapts everything to your supervisor's requirements ("detailed work plan required", "max 3 pages", a methodology the defaults do not carry). |
 | `proposal-supervise` | For supervisors: turns a raw student submission into curated, paste-ready draft feedback. Drafts only, never sends. |
 | `proposal-troubleshoot` | Diagnoses a skill that misbehaved, and assembles a bug report if it really is a defect. Most problems turn out not to be. |
+
+**You do not need to know these names.** Every step ends by saying where your proposal stands — seeded idea, complete draft, ready for supervisor discussion, handed in — what still blocks the next stage, and one recommended next step, which you approve with a "yes" or a sentence the skill suggests. Nothing is applied, built or sent until you say so, and a review that no longer matches your text leads to a fresh one, never to a longer task list.
 
 Your proposal itself lives in **one self-contained file**: readable text on top, literature entries at the bottom. A companion `<slug>.notes.md` beside it keeps the working knowledge the hand-in cannot carry, such as decisions, open points and rejected literature. Many proposals can sit side by side in one folder.
 
@@ -145,11 +147,11 @@ If the problem survives that, the skill works through the likely causes in order
 ## Model support
 
 <!-- model-support:start -->
-Model support, measured by the metered eval matrix on **2026-08-10** (3 epochs per cell unless noted; details in docs/model-support.md):
+Model support, measured by the metered eval matrix on **2026-08-06** (3 epochs per cell unless noted; details in docs/model-support.md):
 
 | Model (pinned version) | Verdict | Notes |
 |---|---|---|
-| `anthropic/claude-haiku-4.5` | ❌ not recommended | fails: proposal-customize, proposal-review, proposal-write; with all skills installed, polishing and editing requests are not reliably routed to proposal-write (0/3 on the routing rig, 2026-10-05) — use sonnet or opus for such passes |
+| `anthropic/claude-haiku-5.5` | ❔ untested | with all skills installed, polishing and editing requests are not reliably routed to proposal-write (2/3 on the routing rig, 2026-10-13) — use sonnet or opus for such passes; questions about a misbehaving skill or a bug to report often go unanswered by proposal-troubleshoot (3/6 on the routing rig, 2026-10-13) — invoke it by name (/proposal-troubleshoot in Claude Code) or use sonnet or opus |
 | `anthropic/claude-sonnet-5.5` | ❔ untested |  |
 | `anthropic/claude-opus-5.5` | ❔ untested |  |
 | `openai/gpt-6-luna` | ❔ untested | the eval harness could not drive the previous luna pin (Azure strict tool schemas reject Inspect's tools); this pin is not yet re-probed — untested is a harness limitation, not a quality signal |
@@ -168,14 +170,15 @@ The skills encode conservative academic guidance: analytical research questions 
 
 Bachelor's and Master's proposals are held to different bars, not different documents. Structure, section list and check are identical at both levels; the level — read from the subtitle, never guessed — changes only what the skills ask for. A Bachelor's proposal may close its contribution with a competent application or evaluation in a named setting, a novelty claim welcome but not required; a Master's proposal has to name what will be new and for whom; demanding a novelty claim from the one is the same error as accepting its absence from the other. Where the research questions come from, the weight established literature may carry and the scope the available months allow grade the same way. A subtitle that leaves the level open gets a level-neutral review with one line saying so. Anything stricter per level — a Master-only reference floor, a different page limit — is a rule you write into the `guidelines.md` described below, because programs weight the difference differently and the defaults stay portable. [docs/degree-level-sources.md](docs/degree-level-sources.md) records the qualification frameworks, curricula and assessment literature behind the grading.
 
-Substance is judged, not assumed. The review skill applies six named tests (delta, falsifiability, swap, necessity, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. The student decides what to do about it; the tools advise and never block.
+Substance is judged, not assumed. The review skill applies six named tests (delta, falsifiability, swap, necessity, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. It is just as plain about the other direction. A proposal is ready when it supports a decision to supervise, not when its execution protocol is finished, so open execution decisions such as exact model versions or a pilot-fixed sample size become an agenda for the first weeks of the thesis, not new conditions for approval. The student decides what to do about it; the tools advise and never block.
 
 Feedback on incoming submissions has a skill of its own. `proposal-supervise` takes whatever a student sent — PDF, Word export, pasted email — and normalizes it with personal data stripped. It judges the submission against the same check and review rules your students' tools use, and checks whether the plan fits the months it has.
 
 It then drafts the feedback:
 - a verdict;
 - when the plan is too large, two or three lettered ways to cut it to one core, with the choice left to the student;
-- the three to five most pressing points, each with its reason;
+- up to five points that block approval, each with its reason, and none when the proposal is ready;
+- up to five decisions to settle once the thesis starts, marked as no condition for resubmission;
 - what to keep;
 - a plain-language note that an AI assistant prepared it.
 

@@ -29,6 +29,14 @@ SEARCH_SOURCES = {
     "openalex": openalex,
 }
 
+# appended to a note only for a verification page the script could not pass;
+# the route itself is documented in SKILL.md, not here
+BROWSER_HINT = (
+    'A normal browser may still pass it (see "If a source asks for browser verification" '
+    "in the skill); this script stays blocked either way. "
+    "This run continues without {source} results."
+)
+
 
 def federate(query: str, limit: int, sources: list[str]) -> list[dict]:
     collected: list[dict] = []
@@ -40,7 +48,10 @@ def federate(query: str, limit: int, sources: list[str]) -> list[dict]:
             collected.extend(results)
             contributed.append(f"{name}({len(results)})")
         except common.SourceError as exc:
-            print(f"note: source degraded — {exc}", file=sys.stderr)
+            note = f"note: source degraded — {exc}"
+            if exc.kind == "challenge":
+                note += ". " + BROWSER_HINT.format(source=name)
+            print(note, file=sys.stderr)
         except Exception as exc:  # a broken source must never block the search
             print(f"note: source failed unexpectedly — {name}: {exc}", file=sys.stderr)
     print(f"sources: {', '.join(contributed) or 'none'}", file=sys.stderr)

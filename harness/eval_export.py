@@ -67,6 +67,21 @@ EXPECTED_OUTPUTS = {
         "certificate consequence and abstracted alternatives; the title itself "
         "left to the student."
     ),
+    "review_ready": (
+        "A review opening ready on a viable proposal that leaves bounded execution "
+        "decisions open: no proposal blocker, the open decisions filed as "
+        "clarify-early items with their deferral records; the proposal untouched."
+    ),
+    "review_dependency": (
+        "A review opening with needs revision whose blocker names the "
+        "indispensable, doubtful partner access and why it cannot wait; the "
+        "proposal untouched."
+    ),
+    "review_converge": (
+        "A second-round review that carries the earlier round over, marks its "
+        "blockers resolved, keeps the unchanged clarify-early item deferred, "
+        "and opens ready; the proposal untouched."
+    ),
     "ideate_longrun": (
         "A Socratic ideation dialogue across the persona's phases: durable notes "
         "early, no premature proposal file, a seed written only at convergence, "
@@ -128,6 +143,11 @@ EXPECTED_OUTPUTS = {
         "submission's personal data, and any literature woven into the points "
         "rather than listed."
     ),
+    "supervise_ready": (
+        "Paste-ready feedback opening ready on a viable proposal: no numbered "
+        "points, the open execution decisions in a labelled clarify-early block "
+        "of at most five items, and no promise of a meeting."
+    ),
 }
 
 
@@ -147,6 +167,9 @@ def _l1_assertions():
         "review_l1": c.verdict_review,
         "review_de_l1": c.verdict_review_localized,
         "review_hollow_l1": c.verdict_hollow_review,
+        "review_ready_l1": c.verdict_review_ready,
+        "review_dependency_l1": c.verdict_review_dependency,
+        "review_converge_l1": c.verdict_review_converged,
         "title_l1": c.verdict_title_alarm,
         "ideate_l1_seed": c.verdict_seed,
         "ideate_l1_notes_progress": c.verdict_notes_progress,
@@ -169,6 +192,7 @@ def _l1_assertions():
         "supervise_l1_substance_only": c.verdict_supervise_substance_only,
         "supervise_l1_markup": c.verdict_supervise_markup,
         "supervise_l1_locators": c.verdict_supervise_locators,
+        "supervise_ready_l1_block": c.verdict_supervise_ready_block,
         "no_spurious_offer": c.verdict_no_spurious_offer,
     }
 

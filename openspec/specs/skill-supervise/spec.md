@@ -23,7 +23,9 @@ The skill SHALL accept a raw student submission in any form it is handed — PDF
 
 ### Requirement: Findings reused from check and review, curated to pressing points
 
-The skill SHALL derive findings from the same sources the student-facing skills use — the mechanical check and the content-level review rubric, judged against the workspace guidelines override where one exists — and SHALL NOT introduce a separate quality rubric of its own; choosing which findings reach the student is curation, not a separate bar. For the feedback, the skill SHALL curate the combined findings to the three to five points that most block a viable thesis, each phrased as a direction rather than a prescribed fix.
+The skill SHALL derive findings from the same sources the student-facing skills use — the mechanical check and the content-level review rubric, judged against the workspace guidelines override where one exists — and SHALL NOT introduce a separate quality rubric of its own; choosing which findings reach the student is curation, not a separate bar. The review file SHALL classify every finding as the guidance's readiness classification and the review skill do — proposal blockers, clarify early in the thesis, optional refinements, each blocker with its reason for being settled before approval and each clarify-early item with its deferral record. The feedback's numbered points SHALL be blockers only: at most five, the ones that most block a viable thesis, each phrased as a direction rather than a prescribed fix, and none when no blocker stands.
+
+Clarify-early items MAY reach the feedback in one short unnumbered block placed after the points and before the strengths, in ready and needs-revision feedback alike and never at idea stage: a run-in label — "Clarify early in the thesis" in English, "Früh in der Arbeit zu klären" in German — then at most five items, one line each, stated as settled once the thesis starts and not as conditions for resubmission or acceptance. The block SHALL NOT promise a meeting or any other supervisor action. Optional refinements SHALL stay in the review.
 
 Findings about format and the toolchain's document conventions — author, supervisor or company data, a work plan or Gantt chart, a chapter outline, the length of the timeline, page counts, section names, the style of reference links — SHALL stay in the professor-side review file and SHALL NOT reach the feedback, unless the workspace guidelines explicitly ask for them in the feedback. Language quality SHALL become a point only when it blocks understanding of the substance.
 
@@ -31,7 +33,15 @@ Each point SHALL locate what it addresses in the proposal, say why it matters fo
 
 #### Scenario: Many findings, few points
 - **WHEN** check and review together yield a dozen findings
-- **THEN** the feedback carries at most five curated points, ranked by how much each blocks a viable thesis, and the remaining findings appear only in the professor-side review file
+- **THEN** the feedback carries at most five curated points, all of them blockers, ranked by how much each blocks a viable thesis, and the remaining findings appear only in the professor-side review file or in the clarify-early block
+
+#### Scenario: Execution details not raised as points
+- **WHEN** the review classifies the exact model versions and the audit sample size as clarify-early items
+- **THEN** neither appears as a numbered point; each may appear as one line in the clarify-early block, stated as settled once the thesis starts
+
+#### Scenario: Clarify-early block promises nothing
+- **WHEN** the feedback carries the clarify-early block
+- **THEN** it carries at most five one-line items and no promise of a meeting or other supervisor action
 
 #### Scenario: Supervisor override respected
 - **WHEN** the workspace carries a guidelines override with the professor's own requirements
@@ -58,13 +68,17 @@ Each point SHALL locate what it addresses in the proposal, say why it matters fo
 - **THEN** the contradiction is resolved before hand-over, so the student reads one judgement of that part
 
 ### Requirement: Verdict expressed as proposal state
-The feedback SHALL open with a verdict expressed as the state of the proposal and never as a commitment on the professor's behalf. The student-facing tiers are: **ready**, phrased as requiring no substantial revisions; **needs revision**, directing the student to address the enumerated points and resubmit; and **idea stage** (German: Ideenphase), stating that the material is an idea that has not yet reached the proposal stage. The idea-stage tier SHALL couple the standard a proposal must meet with an assurance anchored in a named, true strength of the submission and a feed-forward to ideation as the designed next step — never framed as failure, never softened into revision advice. The statement that revision alone will not produce a proposal SHALL be composed in the feedback's own words and grounded in what the specific submission is missing; it SHALL NOT render the skill's instruction wording as feedback text and SHALL NOT refer to the proposal standard's elements by count or as an enumerated list. The professor-side review file SHALL keep the review skill's blunt three-tier vocabulary unchanged.
+The feedback SHALL open with a verdict expressed as the state of the proposal and never as a commitment on the professor's behalf. The student-facing tiers are: **ready**, phrased as requiring no substantial revisions; **needs revision**, directing the student to address the enumerated points and resubmit; and **idea stage** (German: Ideenphase), stating that the material is an idea that has not yet reached the proposal stage. The tier SHALL follow the review's blocker list: ready when no blocker stands, so a ready feedback carries no numbered points. The idea-stage tier SHALL couple the standard a proposal must meet with an assurance anchored in a named, true strength of the submission and a feed-forward to ideation as the designed next step — never framed as failure, never softened into revision advice. The statement that revision alone will not produce a proposal SHALL be composed in the feedback's own words and grounded in what the specific submission is missing; it SHALL NOT render the skill's instruction wording as feedback text and SHALL NOT refer to the proposal standard's elements by count or as an enumerated list. The professor-side review file SHALL keep the review skill's blunt three-tier vocabulary unchanged.
 
 The idea-stage tier SHALL only be assigned automatically when the failure is evidence-clear: at least three of the six substance tests fail decisively, each with a stated reason why no single revision round can repair it. A necessity-test failure SHALL NOT count toward that bar: material that serves no research question is removable in place, so it never evidences a missing thesis core. When the internal review reaches no-viable-core without meeting that bar, the verdict decision SHALL be deferred to the professor rather than taken by the skill. The skill SHALL NOT promise meetings, approvals, deadlines, or any other supervisor action.
 
 #### Scenario: Ready without commitment
-- **WHEN** the submission passes review with no substantial findings
-- **THEN** the feedback states that no substantial revisions are needed from the reviewer's side and leaves the next step to the professor
+- **WHEN** the submission's review holds no blocker
+- **THEN** the feedback states that no substantial revisions are needed from the reviewer's side, carries no numbered points, and leaves the next step to the professor
+
+#### Scenario: Ready with open execution decisions
+- **WHEN** the review holds no blocker and lists clarify-early items
+- **THEN** the feedback opens with the ready tier and may name up to five of those items in the clarify-early block
 
 #### Scenario: Evidence-clear idea stage
 - **WHEN** at least three substance tests fail decisively and no single revision round could repair them
@@ -86,7 +100,7 @@ The idea-stage tier SHALL only be assigned automatically when the failure is evi
 
 The feedback SHALL be the only student-facing artifact: a paste-ready draft, written professor-side as a feedback file named after the proposal slug, that the professor delivers as text through their own channel — an email reply or a learning platform's feedback field. The skill SHALL NOT assemble a send-package and SHALL NOT ask the professor to attach any file. The feedback SHALL be written in the language of the submitted proposal; when the message that accompanied the submission is written in another language, the chat wrap-up SHALL offer a version in that language. The feedback SHALL name for each curated point the skill that addresses it, as a plain word.
 
-The feedback SHALL carry light markup at most — bold runs and plain numbered or lettered lists — and SHALL carry no heading, no blockquote and no code markup, because the paste channel renders none of them reliably.
+The feedback SHALL carry light markup at most — bold runs, plain numbered or lettered lists, and the plain dash list of the clarify-early block — and SHALL carry no heading, no blockquote and no code markup, because the paste channel renders none of them reliably.
 
 Every source the feedback names that the submitted proposal does not already cite SHALL carry a locator that resolved in this run: a `https://doi.org/` URL for a paper, and the issuing body's official page for a standard or a regulation. A source the proposal already cites needs no locator. Locators SHALL NOT count toward the feedback's length.
 
@@ -109,6 +123,10 @@ Literature in the feedback is governed by the requirement "Literature grounded b
 #### Scenario: Point steers to a skill
 - **WHEN** a curated point concerns thin literature grounding
 - **THEN** the point names the literature-search skill as the way to address it, as a plain word without code markup
+
+#### Scenario: Ready feedback owes no pointer
+- **WHEN** the feedback opens ready and carries no numbered point
+- **THEN** it need name no skill
 
 #### Scenario: Markup stays light
 - **WHEN** the feedback is assembled
@@ -175,7 +193,7 @@ When the internal review reaches no-viable-core but the evidence bar is not met,
 - **THEN** the feedback takes the needs-revision path
 
 ### Requirement: Level-calibrated feedback bar
-The drafted feedback SHALL be calibrated to the degree level the submission's subtitle states: a Master's proposal missing a statement of what will be new is always asked for one; a Bachelor's proposal is never asked for a novelty claim, and one it makes is engaged on its merits rather than removed. The same calibration applies to research-question origin, literature stance, and scope-for-the-months. When the submission does not state a level, the draft SHALL apply the level-independent bar and note the unset level once — as a point for the student, not a guess.
+The drafted feedback SHALL be calibrated to the degree level the submission's subtitle states: a Master's proposal missing a statement of what will be new is always asked for one; a Bachelor's proposal is never asked for a novelty claim, and one it makes is engaged on its merits rather than removed. The same calibration applies to research-question origin, literature stance, and scope-for-the-months. When the submission does not state a level, the draft SHALL apply the level-independent bar and note the unset level once — in one line for the student outside the numbered points, which carry blockers only, not a guess.
 
 #### Scenario: Master submission missing the delta
 - **WHEN** a submission subtitled as a Master's thesis promises only competent application in its contribution close
@@ -244,7 +262,7 @@ The search SHALL derive one query per literature-grounding finding that the feed
 
 No paper SHALL enter the feedback, the review, or the notes file without a record returned in this run by the sibling's scripts or its sanctioned read-only fallback — a paper the agent knows from memory included; relevance SHALL be judged on abstract and metadata, not on title overlap.
 
-The feedback SHALL carry at most three papers, each inside the curated point or the strengths block where it does work — naming what is already answered, showing the worked shape of a question, confirming the student's own framing, or mapping thin coverage — and SHALL carry no standalone literature list or block; a verified paper that fits no point SHALL be dropped and recorded as rejected. Only candidates carrying a DOI qualify. The first mention of a paper SHALL give authors, year, title, venue, and its DOI as a `https://doi.org/` URL; later mentions SHALL use author and year. A woven paper is reading the student did not plan, so it SHALL count against the net-workload budget like any other ask. The curated points remain three to five directions.
+The feedback SHALL carry at most three papers, each inside the curated point or the strengths block where it does work — naming what is already answered, showing the worked shape of a question, confirming the student's own framing, or mapping thin coverage — and SHALL carry no standalone literature list or block; a verified paper that fits no point SHALL be dropped and recorded as rejected. Only candidates carrying a DOI qualify. The first mention of a paper SHALL give authors, year, title, venue, and its DOI as a `https://doi.org/` URL; later mentions SHALL use author and year. A woven paper is reading the student did not plan, so it SHALL count against the net-workload budget like any other ask. The curated points remain at most five blocker directions.
 
 The normalized proposal SHALL stay the faithful record of the submission: found entries SHALL NOT be merged into its references. The notes file SHALL record each woven entry as CSL-YAML under a section of its own, with one line naming the point it serves, and rejected candidates under its Excluded Literature section; a run that has no notes file yet SHALL create one before recording. The chat wrap-up SHALL name the woven papers and the notes file that records them.
 
@@ -357,9 +375,9 @@ Judgement and advice are not fact claims and SHALL be phrased as the reviewer's 
 
 ### Requirement: Workload volume check
 
-Before the tier is decided, the skill SHALL judge whether the submitted plan fits the time available at the declared degree level, and SHALL record the judgement in the review file as a work-package table: each package that the method and any work plan describe, what it depends on, what drives its size, and a coarse estimate in weeks marked as an estimate. A work plan or Gantt chart moved out of the proposal during normalization SHALL be read as evidence for this table. A size the plan depends on but does not state — a number of items to process, of participants, of systems, a start date that hinges on a pending registration — SHALL be named as an unknown and become a question for the student, asked in the scope paragraph when there is one and otherwise inside the point it bears on. The total SHALL be set against the months the student's own plan states and the degree-level scope expectation of the guidelines, and SHALL yield one of three verdicts: fits, tight, or over-scoped. The skill SHALL NOT take workload figures from shipped constants: credits and durations belong to the program.
+Before the tier is decided, the skill SHALL judge whether the submitted plan fits the time available at the declared degree level, and SHALL record the judgement in the review file as a work-package table: each package that the method and any work plan describe, what it depends on, what drives its size, and a coarse estimate in weeks marked as an estimate. A work plan or Gantt chart moved out of the proposal during normalization SHALL be read as evidence for this table. A size the plan depends on but does not state — a number of items to process, of participants, of systems, a start date that hinges on a pending registration — SHALL be named as an unknown. An unknown that could move the scope verdict SHALL become a question for the student, asked in the scope paragraph when there is one and otherwise inside the blocker point it bears on; an unknown the plan absorbs whatever its value — a sample size fixed by a pilot inside a bounded package — SHALL be a clarify-early item with its deferral record. The total SHALL be set against the months the student's own plan states and the degree-level scope expectation of the guidelines, and SHALL yield one of three verdicts: fits, tight, or over-scoped. The skill SHALL NOT take workload figures from shipped constants: credits and durations belong to the program.
 
-When the verdict is over-scoped and the tier is not idea stage, the feedback SHALL say so directly after the verdict and before the points, and SHALL offer two or three alternative cuts — each stating what it keeps, what it drops, and what it costs — labelled with letters rather than numbers, with the choice left explicitly to the student; a point whose demand depends on the cut SHALL say for which option it holds. When the verdict is tight, the feedback SHALL name the riskiest package and a fallback in one or two sentences. When the verdict is fits, the feedback carries no scope paragraph. Idea-stage feedback carries no scope paragraph and no cut options whatever the workload verdict, because there is no core to cut to; the table stays in the review. An over-scoped plan SHALL NOT receive the ready tier and SHALL NOT count toward the idea-stage evidence bar: scope is repairable in place.
+When the verdict is over-scoped and the tier is not idea stage, the feedback SHALL say so directly after the verdict and before the points, and SHALL offer two or three alternative cuts — each stating what it keeps, what it drops, and what it costs — labelled with letters rather than numbers, with the choice left explicitly to the student; a point whose demand depends on the cut SHALL say for which option it holds. When the verdict is tight, the feedback SHALL name the riskiest package and a fallback in one or two sentences. When the verdict is fits, the feedback carries no scope paragraph. Idea-stage feedback carries no scope paragraph and no cut options whatever the workload verdict, because there is no core to cut to; the table stays in the review. An over-scoped plan SHALL be recorded among the review's proposal blockers under the executability test, so it SHALL NOT receive the ready tier; in the feedback the scope paragraph carries that blocker, so a feedback whose only blocker is the over-scope MAY carry no numbered point. An over-scoped plan SHALL NOT count toward the idea-stage evidence bar: scope is repairable in place.
 
 The feedback's own asks SHALL respect a net-workload budget: every request that adds work to the student's plan — another evaluation, another standard to map, another body of literature to read — SHALL name what it replaces, be marked optional, or belong to one of the offered cuts. A request that restates an obligation the degree level already sets is not added work. Before hand-over the skill SHALL check that the plan, with every point followed, still fits the verdict it stated.
 
@@ -368,8 +386,12 @@ The feedback's own asks SHALL respect a net-workload budget: every request that 
 - **THEN** the review's work-package table records the verdict over-scoped, and the feedback names this after the verdict and offers lettered cut options, each with what it keeps and drops, leaving the choice to the student
 
 #### Scenario: Unknown input size becomes a question
-- **WHEN** the effort of a package scales with the number of items in an existing catalogue the proposal never counts
+- **WHEN** the effort of a package scales with the number of items in an existing catalogue the proposal never counts, and that number decides whether the plan fits
 - **THEN** the table names that count as an unknown, and the feedback asks the student for it
+
+#### Scenario: Absorbed unknown is deferred
+- **WHEN** a manual audit's sample size is unstated but the package holding it is bounded in weeks whatever the size
+- **THEN** the table names the unknown and the review lists it as a clarify-early item, not as a question attached to a point
 
 #### Scenario: Gantt chart read as evidence
 - **WHEN** normalization moved a phase-by-phase Gantt chart into the notes file
@@ -385,7 +407,7 @@ The feedback's own asks SHALL respect a net-workload budget: every request that 
 
 #### Scenario: Fitting plan stays quiet
 - **WHEN** the table's verdict is fits
-- **THEN** the feedback carries no scope paragraph, and any unknown the table names is asked inside the point it bears on
+- **THEN** the feedback carries no scope paragraph, and any unknown the table names is asked inside the blocker point it bears on or listed in the clarify-early block
 
 #### Scenario: Idea stage gets no cut options
 - **WHEN** the tier is idea stage and the plan is also over-scoped
@@ -393,11 +415,11 @@ The feedback's own asks SHALL respect a net-workload budget: every request that 
 
 #### Scenario: Over-scoped is never ready
 - **WHEN** the substance tests pass but the plan is over-scoped
-- **THEN** the tier is needs revision, and the over-scope does not count toward the idea-stage bar
+- **THEN** the review lists the over-scope among its blockers, the tier is needs revision, and the over-scope does not count toward the idea-stage bar
 
 ### Requirement: Resubmission intake
 
-When the professor says the submission is a revised version, or the professor-side locations already hold a review or feedback file for the same idea, the skill SHALL read the earlier review and feedback before judging the new version. Matching SHALL rest on the content — title, research questions, method — and never on student identity. The review file SHALL carry an earlier-round section stating for each earlier curated point whether it is resolved, partly resolved, or open, and the feedback SHALL add one sentence after the verdict naming what the revision addressed and what stays open. A point that is new in this round SHALL be marked as new; a point the earlier round settled SHALL NOT be raised again. Before an earlier review or feedback file is overwritten, its points SHALL be carried into the new review's earlier-round section, and an existing notes file for the same idea SHALL be extended rather than recreated, so its literature records survive. When the professor indicates an earlier round but none is found, the chat SHALL say so in one line and the run SHALL proceed as a first intake.
+When the professor says the submission is a revised version, or the professor-side locations already hold a review or feedback file for the same idea, the skill SHALL read the earlier review and feedback before judging the new version. Matching SHALL rest on the content — title, research questions, method — and never on student identity. The review file SHALL carry an earlier-round section stating for each earlier blocker and curated point whether it is resolved, partly resolved, or open, judged against what it asked for rather than against a bar raised since, and the feedback SHALL add one sentence after the verdict naming what the revision addressed and what stays open. Classification across rounds SHALL be monotone as the guidance defines it: a finding about text the revision left unchanged SHALL NOT move to a higher class than the earlier round gave it, so an earlier clarify-early item never returns as a point. A point that is new in this round SHALL be marked as new and SHALL either concern text the revision introduced or changed, or be recorded in the review as missed in the earlier round with the flaw it exposes stated; a point the earlier round settled SHALL NOT be raised again, and newly noticed execution details SHALL enter the clarify-early block rather than the points. Before an earlier review or feedback file is overwritten, its points SHALL be carried into the new review's earlier-round section, and an existing notes file for the same idea SHALL be extended rather than recreated, so its literature records survive. When the professor indicates an earlier round but none is found, the chat SHALL say so in one line and the run SHALL proceed as a first intake.
 
 #### Scenario: Earlier round found
 - **WHEN** the workspace holds a review and feedback for a proposal with the same research questions under the same slug
@@ -414,3 +436,19 @@ When the professor says the submission is a revised version, or the professor-si
 #### Scenario: Settled point not raised again
 - **WHEN** the earlier feedback asked for a change the revision made
 - **THEN** the new feedback does not ask for it again, and any new point is marked as new
+
+#### Scenario: Resubmission does not escalate
+- **WHEN** the revision resolves every earlier point and the new round notices that capture conventions for the runs are unstated
+- **THEN** the feedback opens with the ready tier and the capture conventions appear, if at all, in the clarify-early block
+
+### Requirement: Handoff stays in chat
+
+The stage handoff (skill-packaging) of a supervise run SHALL address the professor in chat and SHALL NOT enter the feedback file, whose closing note stays the only closing text the student receives. Its `Where it stands:` line SHALL carry the verdict tier and the number of numbered points; the recommended step is the professor's own — edit and send the draft through their own channel — and a resubmission is named as the next run, which reads this round as its earlier one. The handoff SHALL NOT promise a meeting, an approval or any other commitment on the professor's behalf.
+
+#### Scenario: Feedback drafted
+- **WHEN** a needs-revision feedback with two numbered points is written
+- **THEN** the chat closes with a handoff naming the tier and the two points and recommending that the professor edit and send the draft, and the feedback file contains no handoff lines
+
+#### Scenario: Ready feedback
+- **WHEN** the feedback is ready with no numbered point
+- **THEN** the handoff names the ready tier and recommends sending the draft, and promises nothing on the professor's behalf

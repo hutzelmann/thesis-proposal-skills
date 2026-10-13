@@ -15,6 +15,8 @@ with them byte for byte, and `tests/unit/test_eval_wiring.py` asserts that
 | `review_quality.txt` | `harness/rubrics/review_quality.txt` |
 | `title_alarm.txt` | `harness/rubrics/title_alarm.txt` |
 | `socratic.txt` | `harness/rubrics/socratic.txt` |
+| `readiness.txt` | `harness/rubrics/readiness.txt` — new in `proportionate-readiness-review`, recorded 2026-10-13 from `l2_rubrics.judge_prompt` with the same inputs; nothing shipped before it |
+| `handoff.txt` | `harness/rubrics/handoff.txt` — new in `add-stage-handoffs`, recorded 2026-10-13 from `l2_rubrics.judge_prompt` with the same inputs; dev-runner only, nothing shipped before it |
 
 - **Inputs:** `inputs.json` holds the synthetic `question`, `answer` and
   `criterion`; `instructions` was `skill_evals.JUDGE_INSTRUCTIONS`. The values

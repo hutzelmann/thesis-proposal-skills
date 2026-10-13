@@ -2,7 +2,9 @@
 
 ## Purpose
 Imports an existing proposal (usually PDF) into the standard single-file format, stripping personal data and marking gaps.
+
 ## Requirements
+
 ### Requirement: Import to standard format
 
 Given an existing proposal document, the skill SHALL produce one proposal file in the standard format (body restructured toward the canonical sections, references converted to CSL-YAML), with unmappable or missing information marked as `[TODO: …]`.
@@ -151,22 +153,22 @@ The import skill SHALL create `<slug>.notes.md` beside the imported proposal and
 - **THEN** the notes Next Focus section names the gaps to close first, and the markers themselves remain in the proposal
 
 ### Requirement: Import names the continuation path
-The import summary SHALL close by naming the next step, chosen by the class of gap the import left rather than by a fixed pointer: prose gaps that the source did not fill go to the write skill, a reference shortfall goes to the literature-search skill, and absent research questions or an absent method go to the ideation skill. The summary SHALL state that the `[TODO: …]` markers are the work queue and that the notes file's Next Focus ranks them. Import remains a single pass: naming the next skill SHALL NOT start it, and no gap is filled in the import run.
+The import summary SHALL close with the stage handoff (skill-packaging), whose recommended step is chosen by the class of gap the import left rather than by a fixed pointer: prose gaps that the source did not fill lead to a writing pass, a reference shortfall leads to a literature search, and absent research questions or an absent method lead back to developing the idea. Where several classes apply, the one that blocks the most leads and one other may be an alternative. The summary SHALL state that the `[TODO: …]` markers are the work queue and that the notes file's Next Focus ranks them. Import remains a single pass: naming the next step SHALL NOT start it, and no gap is filled in the import run.
 
 #### Scenario: Import leaves prose gaps
 - **WHEN** the import completes with `[TODO: …]` markers for content the source did not supply
-- **THEN** the summary names the write skill as the way to close them, and says the markers are the work queue with the notes file's Next Focus ranking them
+- **THEN** the handoff recommends a writing pass to close them, without naming a skill, and the summary says the markers are the work queue with the notes file's Next Focus ranking them
 
 #### Scenario: Import leaves a reference shortfall
 - **WHEN** the mechanical check reports fewer references than the guidelines require
-- **THEN** the summary names the literature-search skill for that gap, rather than pointing the shortfall at the write skill
+- **THEN** the handoff names a literature search for that gap, rather than pointing the shortfall at a writing pass
 
 #### Scenario: Source supplied no research questions
 - **WHEN** the source carried no research questions or no method, so those sections hold only markers
-- **THEN** the summary says the gap is idea substance and names the ideation skill for it
+- **THEN** the summary says the gap is idea substance and the handoff recommends developing the idea before any writing pass
 
 #### Scenario: Naming the next skill does not start it
-- **WHEN** the summary names a continuation skill
+- **WHEN** the handoff recommends a continuation step
 - **THEN** the import run ends there and no gap is filled, no further skill runs, and the user decides what happens next
 
 ### Requirement: Output lands in the workspace
@@ -204,4 +206,3 @@ An import SHALL be performed by one agent in one context: the same agent reads t
 #### Scenario: Section survives a rewrite
 - **WHEN** a change rewords any part of the execution-shape section or moves it below another section, without updating its pinned copy
 - **THEN** the offline suite fails naming the skill and the difference
-

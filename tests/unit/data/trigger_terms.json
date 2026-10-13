@@ -16,7 +16,10 @@
     "",
     "The supervisor-readiness moment is split by intent (2026-10-05): a request to",
     "change the text so it is ready ('get it ready for a supervisor') is write's; the",
-    "question whether it is ready ('ready for their supervisor') stays review's."
+    "question whether it is ready ('ready for their supervisor') stays review's.",
+    "",
+    "The status moment ('where their proposal stands', 2026-10-13) is check's: a",
+    "read-only placement on the milestone ladder with the next step, never a review."
   ],
   "owned": {
     "before handing it to a supervisor": "proposal-review",
@@ -25,6 +28,7 @@
     "feedback to return": "proposal-supervise",
     "receives a thesis proposal": "proposal-supervise",
     "quick gate": "proposal-check",
+    "where their proposal stands": "proposal-check",
     "forbidden content": "proposal-check",
     "already published": "proposal-lit-search",
     "citation snowballing": "proposal-lit-search",

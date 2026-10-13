@@ -1,0 +1,18 @@
+{
+  "fixture": "f29-doubtful-dependency",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "proposal blocker under the executability or method-fit test: RQ3's maintainability judgement rests entirely on an industry partner's engineers and guidelines whose access is still to be negotiated, with no other rater planned, so RQ3 cannot be answered if access fails — which is why it must be settled before approval",
+    "apart from that dependency the proposal is the overblocking control's text, so the unnamed model versions, the compute budget and other execution details are not blockers",
+    "the verdict is needs revision, not no viable thesis core: the dependency is repairable in place, for example by an audit the student runs"
+  ]
+}

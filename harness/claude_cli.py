@@ -12,7 +12,9 @@ A login that no longer serves is named with the one remedy for the login the
 run linked (`host_login.login_remedy`): the harness login command, `/login`
 under the operator's opt-in, or a new long-lived token. The stream's billing
 checks (`billing_problem`, `billing_signals`, `rate_refusal`) live in `routing`,
-which the rig shares, and are re-exported here for the dev runner.
+which the rig shares, and are re-exported here for the dev runner. The stream
+readers both instruments share (`served_model`, `host_cli_version`,
+`output_tokens`) live there too.
 
 The call fails closed (testing-harness spec: Subscription text roles). A stream
 that shows an error, no output, no notional cost, billing other than the
@@ -45,8 +47,9 @@ from l2_rubrics import read_grade
 from routing import (
     billing_problem,
     error_result_reason,
-    init_event,
+    host_cli_version,
     model_usage,
+    output_tokens,
     rate_limit_infos,
     result_event,
     version_label,
@@ -150,11 +153,6 @@ def parse_events(stdout: str) -> list[dict]:
     return events
 
 
-def output_tokens(usage: Mapping | None) -> int:
-    """One `modelUsage` entry's output tokens; 0 when the entry or count is absent."""
-    return int((usage or {}).get("outputTokens") or 0)
-
-
 def rate_limit(events: list[dict]) -> RateLimit | None:
     """The last rate-limit report: its status, window and utilization."""
     infos = rate_limit_infos(events)
@@ -233,7 +231,7 @@ def parse_stream(events: list[dict], requested: str, effort: str,
     return JudgeCall(
         text=result["result"],
         model=requested,
-        cli_version=init_event(events).get("claude_code_version"),
+        cli_version=host_cli_version(events),
         effort=effort,
         thinking_tokens=int(usage.get("thinkingTokens") or 0),
         notional_usd=_notional_cost(result) or 0.0,  # check 2 ensured a number

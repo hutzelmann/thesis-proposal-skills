@@ -122,7 +122,17 @@ The check's hindsight warning is the one aimed at this skill. Every hit is a sen
 
 Report: which parts of the thesis you read, what the harvest record holds, the sections you produced, references kept against references dropped and why, what you stripped, and what the check still says. State that the proposal was derived from a finished thesis.
 
-Then name the next step. This is one pass and it certifies nothing: the review skill judges whether the proposal is any good, and a document derived this way earns that reading more than most.
+Then close with the handoff lines from Handing over below — `Where it stands:`, `Next:`, at most two `Or:`.
+
+## Handing over
+
+At a stopping point — a stage finished, a verdict given, or the user asking what now — close the message with a handoff, also when the user said they cannot answer, and do not repeat it unasked while nothing has changed. Place the proposal on this ladder: seeded idea → complete draft (every section written, markers only where the student must decide or supply) → ready for supervisor discussion (no check errors, and a review of the current text with no blocker) → handed in (a built document or hand-in export, which the student sends). Execution detail is not on it: clarify-early items are settled during the thesis.
+
+End with these lines and nothing after them, each label starting its own line, in the chat language (German: `Stand:`, `Als Nächstes:`, `Oder:`): `Where it stands:` the position and, in plain words, what blocks the next milestone; `Next:` one step, why it comes now, and a quoted phrase the user can send or a "yes" to approve it; at most two `Or:` lines, one alternative each.
+
+Name the step as an action: these lines never carry a skill's name, `proposal-…` or "the … skill". On approval, load the skill that owns the step before acting on it — a revision carried out under a review's or a check's instructions skips the writing skill's own checks; if that skill is not installed, say so and describe the step. Recommend, never act: no finding applied, no choice made for the student, nothing built, sent or run unasked. When the next step is a choice only the student can make, the `Next:` line quotes the passage it concerns, says what the choice changes, offers at most three options taken from their own material, and ends with "or something else" — never a bare question, and a recommendation never replaces the options. For example: `Next: RQ2 asks whether the oracles "improve test quality", which no result could prove wrong; your methodology already measures mutation score and faults found — which result would you stand behind? Reply "mutation score", "faults found", "both", or something else.` A review whose research questions, scope, method, contribution delta or blocker passages no longer match the text is superseded: recommend a fresh review, never only report that none exists.
+
+This is one pass and it certifies nothing: a review judges whether the proposal is any good, and a document derived this way earns that reading more than most. Once the check reports no errors, the step is that review; otherwise it is the step that resolves the leading gap — a writing pass for the check's errors, a literature search for a reference shortfall the escalation above could not close.
 
 ## When this run fails
 

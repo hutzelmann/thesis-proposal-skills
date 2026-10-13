@@ -1,0 +1,1 @@
+Only when lookups were declined or no matching record was found is it a line in the notes file instead, with no TODO marker; either way the notes file names it as the closest prior work.

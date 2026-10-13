@@ -1,6 +1,6 @@
 ---
 name: proposal-write
-description: Write a thesis proposal from scratch or refine an existing one, following the proposal guidelines and grounding claims in the literature. Use when the user wants a draft, wants sections improved, wants bullet points turned into prose, asks to apply review findings, or asks for a writing, editing or polishing pass — any request to change the proposal's text, including to get it ready for a supervisor. Not a readiness verdict — for whether it is ready, use proposal-review.
+description: Write a thesis proposal from scratch or refine one, grounded in the proposal guidelines and the literature. Use when the user wants a draft, wants sections improved, wants bullet points turned into prose, asks to apply review findings or blockers, wants open TODOs moved to the notes file, or asks for a writing, editing or polishing pass — any request to change the proposal's text, including to get it ready for a supervisor. Not a readiness verdict — for whether it is ready, use proposal-review.
 license: MIT
 ---
 
@@ -40,7 +40,7 @@ A proposal may have a companion working file, `<slug>.notes.md`, with five secti
 
 If the target proposal has one, read it before drafting. Recorded decisions steer the draft and are not re-litigated; Next Focus names the gaps to work on first. Decisions this session produces go into its Decisions section. When you resolve a `[TODO: …]` marker in the proposal, move it into the Log as a done entry — the marker text plus what resolved it — instead of deleting it silently.
 
-Proposal TODOs are for submission-blocking gaps only. Working knowledge that does not block submission — rationale, rejected alternatives, non-blocking open points, next steps — belongs in the notes file, not the proposal. Without a notes file, work as before; create one only when you have decisions to record, never as an empty skeleton.
+Proposal TODOs are for submission-blocking gaps only. Working knowledge that does not block submission — rationale, rejected alternatives, non-blocking open points, next steps — belongs in the notes file, not the proposal. Without a notes file, work as before; create one only when you have decisions, clarify-early items from an applied review, or markers the user approved moving to record, never as an empty skeleton.
 
 ## From scratch
 
@@ -48,7 +48,7 @@ Proposal TODOs are for submission-blocking gaps only. Working knowledge that doe
 2. Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — opening with the title as its `# ` line and the subtitle paragraph, then the five canonical sections at `##` in order (subsections at `###`, the references heading last) and the methodology matching the user's method — exactly one from the closed set. Read that set from `references/structure.json` **after** applying any workspace `guidelines.md`: it may add branches, replace them, or disable ones the program does not accept, and a workspace branch carries its own per-subsection guidance which is the contract you fill — never substitute a shipped branch's contract because the names look alike. The order is checked, not just the presence of each section. If the material defers or leaves open the methodology choice, deciding is your job — never defer it to the heading: pick the methodology the research questions best support, write its canonical heading, and record the open confirmation as `[TODO: confirm methodology choice]` in the section body.
 3. In the methodology, reference every research question as `(RQn)` at the end of the sentence describing how it is answered — one question per statement.
 4. Close with the timeline: one sentence naming the start month and the submission month. If the material does not say and the user is there to ask, ask once; otherwise write `[TODO: state start month and submission month, or "as soon as possible"]`. Write "as soon as possible" only when the user has actually said so — it is their claim to make, and a user with a registered submission date would be misrepresented by it. Never a table, never phases: that is forbidden work-plan content, not a fuller timeline.
-5. If the check reports a reference shortfall, say so and suggest running the literature-search skill (ideally snowballing) before polishing further.
+5. If the check reports a reference shortfall, say so; the handoff routes it to a literature search (ideally snowballing) below.
 
 ## Substance and density
 
@@ -72,7 +72,7 @@ A named technology stays only when the student can say it is the object of study
 ## Refining
 
 - Minimal, surgical edits: preserve the author's substance and voice; touch only what the request or the review finding requires.
-- "Apply the review": work through `<slug>-review.md` item by item, reporting per item what changed or why it was skipped.
+- "Apply the review": work through `<slug>-review.md` item by item, reporting per item what changed or why it was skipped. Blockers and refinements are edits to the proposal. Clarify-early items are not: record each, with its deferral record, under the notes file's Open Points, and write one into the proposal only when the author asks for that item there — never as a new section, a work plan, or protocol detail the next review would then audit.
 - Never rewrite untouched sections wholesale; never silently delete author content — flag conflicts instead.
 
 ## Language
@@ -93,7 +93,7 @@ Fix every error it reports — except the three findings below, the first of whi
 
 Three findings you must **not** "fix":
 
-- **Too few references.** Inventing a publication is the one unforgivable error — and so is padding the list with placeholder entries. Report the shortfall and suggest the literature-search skill.
+- **Too few references.** Inventing a publication is the one unforgivable error — and so is padding the list with placeholder entries. Report the shortfall; the handoff routes it to a literature search.
 - **Open `[TODO: …]` markers.** They are the honest record of what the material did not supply. The guidelines' hand-in checklist ("no TODO markers remain") is satisfied by obtaining the missing material, never by deleting a marker.
 - **A finding you can demonstrate is wrong.** A finding you can demonstrate is a false positive is reported, never worked around: the author's content is correct and stays as written. Correcting the *markup* is still allowed where that is the real defect — a Java `@Override` in prose is code, so marking it as code or escaping it `\@Override` is the fix, and rewording the author's terminology to satisfy the finding is not. Never delete a reference, a citation or a sentence to silence a finding you believe is wrong — that trades a wrong finding for a real defect. Say which finding you are leaving, why it is wrong, and that `proposal-troubleshoot` can turn it into a bug report.
 
@@ -105,7 +105,19 @@ One warning is binding: **a repeated citation.** `citation-repeated` marks a sen
 
 ## Finishing a pass
 
-State what you changed, what the check still reports, which TODOs remain, and which sections rest on thin material — pointing to the ideation skill when idea substance is missing and to the review skill for the substance verdict. Do not run publish unasked.
+State what you changed, what the check still reports, which TODOs remain, and which sections rest on thin material, then close with the handoff lines from Handing over below — `Where it stands:`, `Next:`, at most two `Or:` — after every pass, a requested single edit included.
+
+## Handing over
+
+At a stopping point — a stage finished, a verdict given, or the user asking what now — close the message with a handoff, also when the user said they cannot answer, and do not repeat it unasked while nothing has changed. Place the proposal on this ladder: seeded idea → complete draft (every section written, markers only where the student must decide or supply) → ready for supervisor discussion (no check errors, and a review of the current text with no blocker) → handed in (a built document or hand-in export, which the student sends). Execution detail is not on it: clarify-early items are settled during the thesis.
+
+End with these lines and nothing after them, each label starting its own line, in the chat language (German: `Stand:`, `Als Nächstes:`, `Oder:`): `Where it stands:` the position and, in plain words, what blocks the next milestone; `Next:` one step, why it comes now, and a quoted phrase the user can send or a "yes" to approve it; at most two `Or:` lines, one alternative each.
+
+Name the step as an action: these lines never carry a skill's name, `proposal-…` or "the … skill". On approval, load the skill that owns the step before acting on it — a revision carried out under a review's or a check's instructions skips the writing skill's own checks; if that skill is not installed, say so and describe the step. Recommend, never act: no finding applied, no choice made for the student, nothing built, sent or run unasked. When the next step is a choice only the student can make, the `Next:` line quotes the passage it concerns, says what the choice changes, offers at most three options taken from their own material, and ends with "or something else" — never a bare question, and a recommendation never replaces the options. For example: `Next: RQ2 asks whether the oracles "improve test quality", which no result could prove wrong; your methodology already measures mutation score and faults found — which result would you stand behind? Reply "mutation score", "faults found", "both", or something else.` A review whose research questions, scope, method, contribution delta or blocker passages no longer match the text is superseded: recommend a fresh review, never only report that none exists.
+
+Route by what the pass changed, first match wins. A decision the pass could not settle, which the student owes the proposal: that decision as an anchored choice, since a review would only raise it again. It changed research questions, scope, method, the contribution delta, or a passage a blocker in `<slug>-review.md` cites: that review now describes an earlier text — say so and recommend a fresh review. A complete draft with no review beside it: a review. Wording only, beside a review that still covers the text with no blocker: the final check before the hand-in build. A reference shortfall: a literature search — the step when it is what blocks the milestone, else an alternative. Missing idea substance: back to developing the idea. Never run a review, a build or a publish within the pass.
+
+Sort the open `[TODO: …]` markers in the handoff. Decisions the student owes the proposal — a research question, the method, the timeframe, an indispensable dependency, a source only they have — block the next milestone: name at most three, then a count, and put them as anchored choices. A marker whose answer the text already constrains — a stated selection rule, a pilot that fixes it, a format or tooling choice — is an execution detail: its deferral record (the guidelines' Readiness section) can be filled, and it may be proposed for the notes file. Move one only on the user's approval: the marker leaves the proposal, its deferral record enters Open Points, and the Log records the move.
 
 ## When this run fails
 

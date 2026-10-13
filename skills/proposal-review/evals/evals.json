@@ -4,6 +4,33 @@
   "evals": [
     {
       "id": 1,
+      "task": "review_converge",
+      "prompt": "I revised ws/ci-repair-agent-configurations.md after your last review — please review it again. Is it ready for my supervisor now?",
+      "files": [
+        "ws/ci-repair-agent-configurations-review.md",
+        "ws/ci-repair-agent-configurations.md"
+      ],
+      "expected_output": "A second-round review that carries the earlier round over, marks its blockers resolved, keeps the unchanged clarify-early item deferred, and opens ready; the proposal untouched.",
+      "assertions": [
+        "review_converge: a later round carries the earlier one over, marks the blockers the revision resolved, and does not promote the earlier clarify-early item about an unchanged passage (skill-review spec: review rounds converge).",
+        "Carries the earlier round over, marks the earlier blockers resolved against what they asked for, moves no finding about unchanged text to a higher class (the unchanged clarify-early item stays deferred or is settled), raises no new blocker, and opens ready."
+      ]
+    },
+    {
+      "id": 2,
+      "task": "review_dependency",
+      "prompt": "Please review my proposal ws/ci-repair-agent-configurations.md — is it ready for my supervisor?",
+      "files": [
+        "ws/ci-repair-agent-configurations.md"
+      ],
+      "expected_output": "A review opening with needs revision whose blocker names the indispensable, doubtful partner access and why it cannot wait; the proposal untouched.",
+      "assertions": [
+        "review_dependency: an indispensable resource whose availability is in doubt stays a blocker (guidance: dependency safeguard) — the review opens with needs revision and one of its blockers concerns that resource.",
+        "Opens with needs revision and carries a blocker on the doubtful, indispensable access, naming its test and why it cannot wait; every other blocker it raises is a genuine substance-test failure with its reason."
+      ]
+    },
+    {
+      "id": 3,
       "task": "review_fixture",
       "prompt": "Please review my proposal ws/microservice-technical-debt.md — is it ready for my supervisor?",
       "files": [
@@ -17,7 +44,7 @@
       ]
     },
     {
-      "id": 2,
+      "id": 4,
       "task": "review_fixture_de",
       "prompt": "Bitte begutachte mein Exposé ws/zero-trust-referenzmodell.md — ist es bereit für die Abgabe?",
       "files": [
@@ -30,7 +57,7 @@
       ]
     },
     {
-      "id": 3,
+      "id": 5,
       "task": "review_hollow",
       "prompt": "Please review my proposal ws/software-quality-ml.md — is it ready for my supervisor?",
       "files": [
@@ -44,7 +71,20 @@
       ]
     },
     {
-      "id": 4,
+      "id": 6,
+      "task": "review_ready",
+      "prompt": "Please review my proposal ws/ci-repair-agent-configurations.md — is it ready for my supervisor?",
+      "files": [
+        "ws/ci-repair-agent-configurations.md"
+      ],
+      "expected_output": "A review opening ready on a viable proposal that leaves bounded execution decisions open: no proposal blocker, the open decisions filed as clarify-early items with their deferral records; the proposal untouched.",
+      "assertions": [
+        "review_ready: on a viable proposal that leaves bounded execution decisions open, the review opens ready, lists no blocker, and files the open decisions as clarify-early items — the agenda (guidance: readiness classification). A blocker here is overblocking, whatever it names.",
+        "Opens ready, raises no proposal blocker and no conditional or hedged one, and gives every item it defers its deferral record."
+      ]
+    },
+    {
+      "id": 7,
       "task": "title_alarm",
       "prompt": "Please review my proposal ws/kubernetes-build-dashboard.md — is it ready for my supervisor?",
       "files": [

@@ -17,20 +17,19 @@ from pathlib import Path
 
 import publish
 import pytest
+from helpers import is_fixture_proposal
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures"
 
-# a fixture's proposal is its markdown file; guidelines.md is a workspace
-# override that w02 ships alongside one, and README.md documents the corpus
-NOT_PROPOSALS = {"README.md", "guidelines.md"}
-# a harvest record is what the reverse skill reads out of a finished thesis, so
-# it stands where the thesis would: an input to a skill, never a document to build.
+# a fixture's proposal is its markdown file; what else sits beside one — a
+# workspace override, a harvest record, an earlier round's review — is an input
+# to a skill, never a document to build (helpers.is_fixture_proposal).
 # w07 keeps its proposal one level down, in the subdirectory its workspace
 # guidelines.md configures — the corpus covers both layouts.
 PROPOSALS = sorted(
     p for p in list(FIXTURES.glob("*/*.md")) + list(FIXTURES.glob("*/proposals/*.md"))
-    if p.name not in NOT_PROPOSALS and not p.name.endswith(".harvest.md")
+    if is_fixture_proposal(p)
 )
 
 

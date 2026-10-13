@@ -28,14 +28,34 @@ FIXTURES = REPO / "tests" / "fixtures"
 MODEL_CATALOG = REPO / "tests" / "unit" / "data" / "model_catalog"
 REGISTRY_PATH = REPO / "harness" / "models.toml"
 
-# markdown that sits beside a fixture proposal without being one
+# markdown that sits beside a fixture proposal without being one: the corpus
+# README and workspace overrides by name; by suffix, a handout and a harvest
+# record (w06) — inputs to a skill, never documents to check or build
 NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
+# .notes.md: the companion working file (w10 is the first fixture to carry one)
+NON_PROPOSAL_SUFFIXES = ("-handout.md", ".harvest.md", ".notes.md")
+REVIEW_SUFFIX = "-review.md"
 # the draft the dev-runner tests place in a workspace as a run's produced draft
 CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
 # the Copilot host's synthetic fixtures (README there) and the synthetic token
 # every Copilot test writes into a token file or hands to a child
 COPILOT_STREAMS = REPO / "tests" / "unit" / "data" / "copilot_streams"
 COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
+
+
+def is_fixture_proposal(path: Path) -> bool:
+    """Whether a markdown file in the fixture corpus is a proposal. One
+    predicate for every corpus walker, so a new kind of companion file is
+    excluded everywhere at once rather than wherever someone remembered.
+
+    An earlier round's review (w09) is `<slug>-review.md` beside `<slug>.md`;
+    the suffix alone would also match a proposal slugged `…-review`
+    (f00's `ml-code-review.md`), so the sibling decides."""
+    name = path.name
+    if name in NON_PROPOSAL_MARKDOWN or name.endswith(NON_PROPOSAL_SUFFIXES):
+        return False
+    stem = name.removesuffix(REVIEW_SUFFIX)
+    return stem == name or not path.with_name(f"{stem}.md").is_file()
 
 
 @dataclass(frozen=True)
@@ -64,10 +84,7 @@ def run_check(proposal: Path, *extra: str) -> CheckRun:
 
 def fixture_proposal(fixture: str) -> Path:
     """The one proposal markdown file in a fixture directory."""
-    return next(
-        p for p in sorted((FIXTURES / fixture).glob("*.md"))
-        if p.name not in NON_PROPOSAL_MARKDOWN and not p.name.endswith("-handout.md")
-    )
+    return next(p for p in sorted((FIXTURES / fixture).glob("*.md")) if is_fixture_proposal(p))
 
 
 def shipped_registry() -> support.Registry:
@@ -90,13 +107,28 @@ def followed(events: list[dict], stop: Callable[[list[dict]], bool], *, returnco
     return Followed(seen, returncode, stderr, stopped=False, timed_out=timed_out)
 
 
+def json_path(path: Path | str) -> str:
+    """`path` as it is written inside a JSON string. A raw Windows path put
+    into JSON text turns its backslashes into escapes JSON rejects
+    ("Invalid \\escape"), so every in-process `__WS__` substitution goes
+    through here; the fake host scripts, which cannot import this module,
+    spell out the same `json.dumps(...)[1:-1]`."""
+    return json.dumps(str(path))[1:-1]
+
+
+def saved_stream(path: Path, ws: Path | str | None = None) -> list[dict]:
+    """A saved JSON-lines event list, its `__WS__` placeholder replaced by `ws`
+    (JSON-escaped, `json_path`) when one is given."""
+    text = path.read_text(encoding="utf-8")
+    if ws is not None:
+        text = text.replace("__WS__", json_path(ws))
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
 def copilot_stream(name: str, ws: Path | str | None = None) -> list[dict]:
     """A saved Copilot event list from COPILOT_STREAMS, its `__WS__` placeholder
     replaced by `ws` when one is given."""
-    text = (COPILOT_STREAMS / f"{name}.jsonl").read_text(encoding="utf-8")
-    if ws is not None:
-        text = text.replace("__WS__", str(ws))
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
+    return saved_stream(COPILOT_STREAMS / f"{name}.jsonl", ws)
 
 
 def copilot_reply(name: str) -> object:

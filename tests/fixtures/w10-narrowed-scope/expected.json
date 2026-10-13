@@ -1,0 +1,19 @@
+{
+  "fixture": "w10-narrowed-scope",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "the proposal is a complete draft, mechanically valid, with three research questions and one benchmark; the notes file records that the student narrowed it after the review",
+    "the review on file judged the earlier, broader version: both of its blockers quote passages the current text no longer carries (RQ4 on cost-effectiveness, the second issue-resolution benchmark), so it is superseded and does not tell whether the narrowed draft is ready",
+    "the right step is a fresh review of the narrowed draft, recommended with a phrase the student can send — not merely the statement that no current review exists, and not a review run unasked",
+    "nothing is written during the status answer, and no skill is named in the handoff"
+  ]
+}

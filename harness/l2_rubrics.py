@@ -45,6 +45,20 @@ CITATION_SYNTHESIS = (
     "single source."
 )
 
+# The stage-handoff scenarios run on the dev runner only (no Inspect twin yet), and
+# share one criterion: what differs between them is the situation, which the
+# question carries.
+HANDOFF_SCENARIOS = ("handoff_review_feedback", "handoff_superseded",
+                     "handoff_after_revision", "handoff_direct_revision", "handoff_ready",
+                     "handoff_todos")
+HANDOFF = (
+    "The final reply closes with a handoff that places the proposal accurately, "
+    "recommends the step that unblocks the next milestone with its reason, recommends a "
+    "fresh review wherever the review on file no longer covers the text, puts any choice "
+    "only the student can make as an anchored choice, and takes no step the student did "
+    "not ask for."
+)
+
 # L2 rubric criteria, keyed (task, scorer). One table instead of inline strings
 # so the eval projection (harness/eval_export.py) exports the exact text the
 # judge receives — a criterion edited here flows into the projection, and a
@@ -69,6 +83,18 @@ CRITERIA: dict[tuple[str, str], str] = {
         "tests by name for defects that are actually present, states what kind of "
         "work would change the verdict, and never softens it into needs-revision "
         "phrasing.",
+    ("review_ready", "review_ready_l2"):
+        "Opens ready, raises no proposal blocker and no conditional or hedged one, "
+        "and gives every item it defers its deferral record.",
+    ("review_dependency", "review_dependency_l2"):
+        "Opens with needs revision and carries a blocker on the doubtful, "
+        "indispensable access, naming its test and why it cannot wait; every other "
+        "blocker it raises is a genuine substance-test failure with its reason.",
+    ("review_converge", "review_converge_l2"):
+        "Carries the earlier round over, marks the earlier blockers resolved against "
+        "what they asked for, moves no finding about unchanged text to a higher class "
+        "(the unchanged clarify-early item stays deferred or is settled), raises no "
+        "new blocker, and opens ready.",
     ("title_alarm", "title_l2_alarm"):
         "Title raised as its own finding, certificate consequence named, one to "
         "three abstracted alternatives offered, decision left with the student.",
@@ -104,6 +130,7 @@ CRITERIA: dict[tuple[str, str], str] = {
         "sits outside the given scope; after the student insists it keeps "
         "ideating constructively, and the seeded file carries no trace of "
         "the fit concern.",
+    **{(name, f"{name}_l2"): HANDOFF for name in HANDOFF_SCENARIOS},
 }
 
 _GRADE_LINE = re.compile(r"GRADE:\s*([CI])")
@@ -161,6 +188,11 @@ DEV_RUBRICS: dict[str, tuple[DevCriterion, ...]] = {
         DevCriterion(("review_fixture", "review_l2_quality"), "review_quality.txt", "oracle"),),
     "review_hollow": (
         DevCriterion(("review_hollow", "review_hollow_l2"), "review_quality.txt", "oracle"),),
+    **{name: (DevCriterion((name, f"{name}_l2"), "readiness.txt", "oracle"),)
+       for name in ("review_ready", "review_dependency", "review_converge")},
+    # graded over the conversation transcript, not a file
+    **{name: (DevCriterion((name, f"{name}_l2"), "handoff.txt", "oracle"),)
+       for name in HANDOFF_SCENARIOS},
 }
 
 

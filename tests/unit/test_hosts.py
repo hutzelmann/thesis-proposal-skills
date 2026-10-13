@@ -34,7 +34,7 @@ from claude_runner import (
     stage,
     summary,
 )
-from helpers import CLEAN_DRAFT, COPILOT_TOKEN, REPO, copilot_stream
+from helpers import CLEAN_DRAFT, COPILOT_TOKEN, REPO, copilot_stream, saved_stream
 from host_login import CLAUDE, CODEX, CREDENTIALS, STATE_VAR, LoginProblem, refusal
 
 STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
@@ -45,8 +45,7 @@ LOCKS = pytest.mark.skipif(host_login.fcntl is None,
 
 
 def stream(name: str, ws: Path) -> list[dict]:
-    text = (STREAMS / f"{name}.jsonl").read_text(encoding="utf-8").replace("__WS__", str(ws))
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
+    return saved_stream(STREAMS / f"{name}.jsonl", ws)
 
 
 def logged(path: Path) -> list[dict]:
@@ -219,6 +218,29 @@ def test_a_codex_run_is_summarized_and_labelled(codex_home, tmp_path, monkeypatc
     assert run["staged"] == ["proposal-check"]
     assert run["scenario"] is SCENARIOS["check_report"]
     assert "outcome" in line
+
+
+@LOCKS
+@pytest.mark.usefixtures("codex_home")
+def test_follow_up_turns_are_untested_on_codex_and_never_sent_to_claude(tmp_path, monkeypatch):
+    """Only the Claude host resumes a session: a scenario with follow-up turns
+    is untested on Codex after its first turn, never a first turn graded as the
+    whole conversation, and no follow-up is sent to `claude`."""
+    runs = fake_codex_run(monkeypatch)
+
+    def no_claude(*_args, **_kwargs):
+        raise AssertionError("a follow-up turn was sent to claude")
+
+    monkeypatch.setattr(claude_runner, "run_claude", no_claude)
+    assert SCENARIOS["handoff_review_feedback"]["followups"]
+    log = tmp_path / "log.jsonl"
+    argv = ["handoff_review_feedback", "--host", "codex", "--model", "gpt-fixture-a",
+            "--summary-log", str(log)]
+    assert main(argv) == EXIT_UNTESTED
+    [line] = logged(log)
+    assert line["host"] == "codex"
+    assert "follow-up turns" in line["why"]
+    assert len(runs) == 1
 
 
 @LOCKS

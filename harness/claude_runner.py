@@ -186,13 +186,21 @@ from hosts import Host, JudgeBackend, RunView
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
+    assistant_text,
     feedback_body_words,
     load_closing_note,
     select_draft,
+    tool_result_text,
     verdict_check_report,
     verdict_cited_draft,
     verdict_customize_override,
     verdict_draft,
+    verdict_handoff,
+    verdict_handoff_after_revision,
+    verdict_handoff_ready,
+    verdict_handoff_review_feedback,
+    verdict_handoff_superseded,
+    verdict_handoff_untouched,
     verdict_hollow_review,
     verdict_ideate_scoped,
     verdict_import,
@@ -200,12 +208,17 @@ from l1_checks import (
     verdict_install_prompt_installed,
     verdict_l2_grades,
     verdict_offtopic_reference,
+    verdict_paper_foundation,
     verdict_repaired_draft,
     verdict_review,
+    verdict_review_converged,
+    verdict_review_dependency,
+    verdict_review_ready,
     verdict_scoping_containment,
     verdict_seed,
     verdict_single_context,
     verdict_supervise_feedback_contract,
+    verdict_supervise_ready_block,
     verdict_supervise_review_sections,
     verdict_supervise_scope_options,
     verdict_supervise_verification_declared,
@@ -216,8 +229,10 @@ from routing import (
     OUTWARD_TOOLS,
     error_result_reason,
     follow_stream,
+    host_cli_version,
     isolated_config,
     result_event,
+    served_model,
     tool_calls,
 )
 from sources import MESSY_REQUEST
@@ -235,6 +250,17 @@ OUTCOMES = {EXIT_PASS: "PASS", EXIT_FAIL: "FAIL", EXIT_UNTESTED: "UNTESTED",
             EXIT_RUNNER: "RUNNER FAILURE"}
 JUDGE_LABEL = "dev-runner L2, not comparable to matrix"
 DEFAULT_MAX_NOTIONAL = 5.00
+
+
+def all_but(skill: str) -> tuple[str, ...]:
+    """Every other shipped skill: a handoff scenario installs the full set, so
+    the host routes an approval or a follow-up as a student's install would."""
+    return tuple(sorted(d.name for d in SKILLS.iterdir()
+                        if d.is_dir() and d.name.startswith("proposal-") and d.name != skill))
+
+
+# the incident's own words, after a review (testing-harness spec: handoff coverage)
+WHAT_NOW = "What do we do now with that feedback?"
 
 SCENARIOS = {
     "check_report": {
@@ -258,6 +284,49 @@ SCENARIOS = {
         "proposal": "software-quality-ml.md",
         "request": "Please review my proposal software-quality-ml.md — "
                    "is it ready for my supervisor?",
+    },
+    # readiness, both directions (testing-harness spec: readiness coverage). f28
+    # is viable with bounded execution decisions open, so any blocker is
+    # overblocking; f29 differs in one paragraph that makes RQ3 depend on
+    # partner access still to be negotiated, so ready is underblocking; w09 is
+    # f28's text beside an earlier review whose blockers it resolves
+    "review_ready": {
+        "fixture": "f28-open-decisions",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": "Please review my proposal ci-repair-agent-configurations.md — "
+                   "is it ready for my supervisor?",
+    },
+    "review_dependency": {
+        "fixture": "f29-doubtful-dependency",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": "Please review my proposal ci-repair-agent-configurations.md — "
+                   "is it ready for my supervisor?",
+    },
+    "review_converge": {
+        "fixture": "w09-revised-round",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": "I revised ci-repair-agent-configurations.md after your last review — "
+                   "please review it again. Is it ready for my supervisor now?",
+    },
+    # supervisor side of the overblocking control: a standard-format proposal
+    # used as-is, so normalization is a no-op and the feedback's tier, points
+    # and clarify-early block are what is measured
+    "supervise_ready": {
+        "fixture": "f28-open-decisions",
+        "skill": "proposal-supervise",
+        "proposal": "ci-repair-agent-configurations.md",
+        "feedback": True,
+        "ready": True,
+        "helpers": 1,
+        "request": "A student sent me this thesis proposal — I saved it as "
+                   "ci-repair-agent-configurations.md. Prepare my feedback: the draft "
+                   "I can send back. If the verdict turns out borderline, do not ask "
+                   "me — take the needs-revision path. Do not make any network "
+                   "lookups — no claim checks and no literature — and I cannot answer "
+                   "any further question.",
     },
     "write_from_seed": {
         "fixture": "w01-ideate-seed",
@@ -460,6 +529,122 @@ SCENARIOS = {
     # (run_install_probe; nothing is staged)
     "install_prompt": {"install": True},
     "install_prompt_answered": {"install": True, "answered": True},
+    # the paper-foundation path's first turn: preamble pre-answered with lookups
+    # declined, and no axis named, so the right turn reads the paper's framing
+    # slice, says which sections it read and asks what would change. Unlike
+    # `ideate_scoped` the request carries no "seed now" cue: the first turn is
+    # what is measured, and a seed there is itself a failure. Judged by
+    # verdict_paper_foundation over the chat, the tool results and the workspace.
+    "ideate_paper_foundation": {
+        "skill": "proposal-ideate",
+        "fixture": "p01-published-paper",
+        "paper": True,
+        "request": (
+            "I came across a paper I really like and I'd like to write my thesis on "
+            "something similar. It's saved here as quieter-pagers.txt. To answer your "
+            "usual questions up front: I'm in the M.Sc. Computer Science program. I don't "
+            "have a supervisor or research group yet. It's a Master's thesis, the "
+            "proposal should be in English, I have about five months, and no, please "
+            "don't look anything up online in this session."
+        ),
+    },
+    # the stage handoff (testing-harness spec: handoff coverage). Each installs every
+    # skill, so the host routes the request — and the follow-up — itself; `skill`
+    # names the one expected to answer. The verdicts read the final turn and the
+    # workspace; the rubric reads the whole transcript against `semantic`, or the
+    # fixture's own list where the scenario carries none.
+    "handoff_review_feedback": {
+        "fixture": "f05-slr-interviews",
+        "skill": "proposal-review",
+        "siblings": all_but("proposal-review"),
+        "proposal": "microservice-technical-debt.md",
+        "handoff": "review_feedback",
+        "request": "Please review my proposal microservice-technical-debt.md — is it ready "
+                   "for my supervisor?",
+        "followups": (WHAT_NOW,),
+        "semantic": [
+            "the first turn is a review whose verdict and blockers are its own; what is graded "
+            "is how the second reply turns that review into a path, not which blockers it found",
+            "asked what to do with the feedback, the reply states the remaining path in a few "
+            "sentences — one revision of the blockers, one fresh review, then the final check "
+            "and the hand-in — and adds no further work",
+            "the reply recommends one step: revising the blockers, or, where a blocker needs "
+            "the student's choice such as which of the two methods the thesis keeps, an "
+            "anchored choice that quotes the proposal, says what the choice changes and offers "
+            "options from the student's own material plus a way out — never a bare open question",
+            "the proposal is not edited before the student approves, and no skill is named in "
+            "the handoff",
+        ],
+    },
+    "handoff_superseded": {
+        "fixture": "w10-narrowed-scope",
+        "skill": "proposal-check",
+        "siblings": all_but("proposal-check"),
+        "proposal": "ci-repair-agent-configurations.md",
+        "handoff": "superseded",
+        "request": "I narrowed the scope of my proposal after the review. Where does it stand "
+                   "now, and what should I do next?",
+    },
+    # the handoff's own flow: a status answer recommends revising the blocker,
+    # the student approves with the decision it needs, and the revision must run
+    # under the writing skill — a direct request ("apply the blocker …") was
+    # carried out as a bare edit by sonnet and haiku alike in rounds 1 and 2
+    "handoff_after_revision": {
+        "fixture": "w11-blocker-revision",
+        "skill": "proposal-write",
+        "siblings": all_but("proposal-write"),
+        "proposal": "ci-repair-agent-configurations.md",
+        "handoff": "after_revision",
+        "request": "Where does my proposal ci-repair-agent-configurations.md stand, and what "
+                   "should I do next?",
+        "followups": (
+            "Yes, go ahead with the revision. My decision: RQ3 is answered from my own "
+            "audit of a random sample of accepted patches against the published "
+            "patch-quality rubric of Chen26Repair, which is already in my references, "
+            "with the sample size fixed after a pilot of twenty patches; ratings by the "
+            "partner's engineers become optional.",),
+    },
+    # the cold direct request rounds 1 and 2 carried out as a bare edit: kept
+    # as its own measurement of whether the writing skill loads without a handoff
+    # having led there (the description names "apply review findings or blockers")
+    "handoff_direct_revision": {
+        "fixture": "w11-blocker-revision",
+        "skill": "proposal-write",
+        "siblings": all_but("proposal-write"),
+        "proposal": "ci-repair-agent-configurations.md",
+        "handoff": "direct_revision",
+        "request": "Please apply the blocker from the review to "
+                   "ci-repair-agent-configurations.md. My decision: RQ3 is answered from my "
+                   "own audit of a random sample of accepted patches against the published "
+                   "patch-quality rubric of Chen26Repair, which is already in my references, "
+                   "with the sample size fixed after a pilot of twenty patches; ratings by the "
+                   "partner's engineers become optional.",
+        "semantic": [
+            "the request applies the review's one blocker with the decision that resolves "
+            "it, so the revision runs under the writing skill's instructions",
+            "the pass rewrites the RQ3 passage the blocker cites and leaves the review file "
+            "as it is; because that passage changed, the review on file describes an earlier "
+            "text and the right step is a fresh review, recommended rather than run",
+            "no skill is named in the handoff",
+        ],
+    },
+    "handoff_ready": {
+        "fixture": "w12-ready-current",
+        "skill": "proposal-check",
+        "siblings": all_but("proposal-check"),
+        "proposal": "ci-repair-agent-configurations.md",
+        "handoff": "ready",
+        "request": "My review says the proposal is ready. What should I do next?",
+    },
+    "handoff_todos": {
+        "fixture": "f30-open-markers",
+        "skill": "proposal-check",
+        "siblings": all_but("proposal-check"),
+        "proposal": "ci-repair-agent-configurations.md",
+        "handoff": "todos",
+        "request": "Where does my proposal ci-repair-agent-configurations.md stand, and what "
+                   "should I do next?",
+    },
 }
 
 # Scenarios whose verdict is scoping containment rather than the default.
@@ -470,6 +655,9 @@ DRAFT_SCENARIOS = ("write_from_seed", "write_rich_seed", "write_repair_citations
 REVIEW_VERDICTS = {
     "review_fixture": verdict_review,
     "review_hollow": verdict_hollow_review,
+    "review_ready": verdict_review_ready,
+    "review_dependency": verdict_review_dependency,
+    "review_converge": verdict_review_converged,
 }
 
 
@@ -642,10 +830,12 @@ def stage(scenario: dict, ws: Path, install_skill: bool = True,
         shutil.copytree(SKILLS / sibling, skills / sibling, ignore=no_evals)
 
 
-def host_command(request: str, model: str, budget: float | None = None) -> list[str]:
+def host_command(request: str, model: str, budget: float | None = None,
+                 resume: str | None = None) -> list[str]:
     """The headless invocation: stream-json emits events only with --verbose,
     the outward-facing tools are denied because permission prompts are skipped,
-    and the budget cap is added only when one was given."""
+    the budget cap is added only when one was given, and a follow-up turn
+    resumes the session its first turn opened."""
     command = [
         "claude", "-p", request, "--model", model, "--dangerously-skip-permissions",
         "--output-format", "stream-json", "--verbose",
@@ -653,6 +843,8 @@ def host_command(request: str, model: str, budget: float | None = None) -> list[
     ]
     if budget is not None:
         command += ["--max-budget-usd", str(budget)]
+    if resume is not None:
+        command += ["--resume", resume]
     return command
 
 
@@ -737,7 +929,7 @@ def surface_failure(leaks: list[SurfaceLeak], events: list[dict],
 
 def run_claude(ws: Path, request: str, model: str, timeout: int,
                budget: float | None = None, config: Path | None = None,
-               home: Path | None = None) -> list[dict]:
+               home: Path | None = None, resume: str | None = None) -> list[dict]:
     """Run the host headless and return its stream-json events.
 
     The stream, not the plain text, is what a run is judged on: the final
@@ -766,7 +958,7 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
         env.update(HOME=str(home), USERPROFILE=str(home))
     isolated = config is not None
     source = host_login.login_source(config, os.environ)
-    seen = follow_stream(host_command(request, model, budget), cwd=ws, env=env,
+    seen = follow_stream(host_command(request, model, budget, resume), cwd=ws, env=env,
                          timeout=timeout,
                          stop=lambda events: bool(stream_surfaces(events[-1:], isolated)))
     events = seen.events
@@ -833,14 +1025,65 @@ def final_text(events: list[dict]) -> str:
     return text if isinstance(text, str) else ""
 
 
-def telemetry(events: list[dict]) -> dict:
-    """Cost, turns, duration and tokens from the result event; None where absent.
+def turn_texts(events: list[dict]) -> list[str]:
+    """Every turn's final text, in order — one per `result` event, so a
+    scenario with follow-up turns yields one entry per user turn."""
+    return [e["result"] for e in events
+            if e.get("type") == "result" and isinstance(e.get("result"), str)]
 
-    `tokens_in` is the uncached input only; the bulk of a run's input is the
-    cache pair, and the 2026-09-02 fan-out was a cache-write story (~45K per
-    helper), so both cache counts travel too.
-    """
-    result = result_event(events)
+
+def session_id(events: list[dict]) -> str | None:
+    """The session the latest turn ran in, from its `init` event."""
+    return next((e.get("session_id") for e in reversed(events)
+                 if e.get("type") == "system" and e.get("subtype") == "init"), None)
+
+
+def transcript(scenario: dict, events: list[dict]) -> str:
+    """The conversation a handoff rubric grades: each user turn beside the
+    final text the host answered it with."""
+    asked = [scenario["request"], *scenario.get("followups", ())]
+    return "\n\n".join(f"USER: {question}\n\nASSISTANT: {answer}"
+                       for question, answer in zip(asked, turn_texts(events), strict=False))
+
+
+def follow_up(args: argparse.Namespace, scenario: dict, ws: Path, events: list[dict],
+              config: Path | None) -> list[dict]:
+    """Send the scenario's follow-up turns to the session the first turn opened
+    (testing-harness spec: handoff coverage), each under the same budget cap
+    and the same billing and surface checks; the events of every turn, in
+    order. A stream without a session id cannot be resumed, and a turn that
+    reports another session than the one it resumed did not continue the
+    conversation: both are runner failures, never a multi-turn pass. The budget
+    cap applies to the session's running total, which the host reports.
+
+    Only the Claude host resumes a session here: on any other host a scenario
+    with follow-up turns is untested, never a first turn graded as the whole
+    conversation and never a follow-up sent to `claude`."""
+    followups = scenario.get("followups", ())
+    host = host_for(args).name
+    if followups and host != "claude":
+        raise RunnerFailure(f"untested: {args.scenario} sends follow-up turns, which the dev "
+                            f"runner resumes on the Claude host only, not on --host {host}",
+                            untested=True, events=events)
+    for text in followups:
+        session = session_id(events)
+        if not session:
+            raise RunnerFailure("the first turn's stream carries no session id, which a "
+                                "follow-up turn needs", events=events)
+        try:
+            turn = run_claude(ws, text, args.model, args.timeout,
+                              budget=args.max_budget_usd, config=config, resume=session)
+        except RunnerFailure as failure:
+            failure.events = events + failure.events
+            raise
+        events = events + turn
+        if session_id(turn) != session:
+            raise RunnerFailure(f"the follow-up turn ran in session {session_id(turn)!r}, "
+                                f"not the resumed {session!r}", events=events)
+    return events
+
+
+def _result_figures(result: dict) -> dict:
     usage = result.get("usage") or {}
     return {
         "cost_usd": result.get("total_cost_usd"),
@@ -853,30 +1096,37 @@ def telemetry(events: list[dict]) -> dict:
     }
 
 
-def served_model(events: list[dict]) -> tuple[str | None, str | None]:
-    """The model the host served, by its full ID — from the `init` event,
-    checked against the result's per-model usage — and a note when the two
-    disagree. A full session may list an auxiliary model beside the main one,
-    so only the init model's absence from the usage is a discrepancy."""
-    reported = claude_cli.init_event(events).get("model")
-    usage = claude_cli.model_usage(events)
-    if reported and (not usage or reported in usage):
-        return reported, None
-    if reported:
-        return reported, f"init reports {reported}, modelUsage lists {', '.join(sorted(usage))}"
-    producing = sorted(usage, key=lambda m: -claude_cli.output_tokens(usage[m]))
-    if producing:
-        return producing[0], "no init event; taken from modelUsage"
-    return None, None
+def telemetry(events: list[dict]) -> dict:
+    """Cost, turns, duration and tokens from the result event; None where absent.
+    A run with follow-up turns has one result event per turn. Turns, duration
+    and tokens are per turn there and are summed; `total_cost_usd` is the
+    session's running total (recorded 2026-10-13: 0.191 after the first turn,
+    0.202 after a one-turn follow-up), so the last one is the cost.
+    `conversation_turns` counts the turns.
+
+    `tokens_in` is the uncached input only; the bulk of a run's input is the
+    cache pair, and the 2026-09-02 fan-out was a cache-write story (~45K per
+    helper), so both cache counts travel too.
+    """
+    results = [e for e in events if e.get("type") == "result"]
+    if len(results) < 2:
+        return _result_figures(result_event(events))
+    figures = [_result_figures(r) for r in results]
+    summed = {key: sum(f[key] for f in figures if f[key] is not None)
+              if any(f[key] is not None for f in figures) else None
+              for key in figures[0]}
+    return {**summed, "cost_usd": figures[-1]["cost_usd"], "conversation_turns": len(results)}
 
 
-def claude_read(events: list[dict], args: argparse.Namespace) -> RunView:
+def claude_read(events: list[dict], args: argparse.Namespace | None) -> RunView:
     """The Claude host's readers: the result event's text, the served full ID
-    (checked against the per-model usage), the CLI version, the telemetry."""
+    (checked against the per-model usage) and the CLI version — read by
+    `routing.served_model` and `routing.host_cli_version`, the readers the
+    routing rig shares — and the telemetry. Codex and Copilot keep readers of
+    their own (`codex_cli.codex_read`, `copilot_cli.copilot_read`)."""
     model, note = served_model(events)
-    return RunView(final_text(events), args.model, model,
-                   claude_cli.init_event(events).get("claude_code_version"), telemetry(events),
-                   note)
+    return RunView(final_text(events), getattr(args, "model", None), model,
+                   host_cli_version(events), telemetry(events), note)
 
 
 def _identity(args: argparse.Namespace, view: RunView) -> dict:
@@ -904,6 +1154,7 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
     view = host.read(events, args)
     names = [name for name, _ in tool_calls(events)]
     single, single_why = verdict_single_context(names, allowed)
+    handed, handed_why = verdict_handoff(view.final_text)
     return {
         **_identity(args, view),
         "host": host.name, "label": host.run_label,
@@ -916,6 +1167,9 @@ def summary(args: argparse.Namespace, passed: bool, why: str, events: list[dict]
         **view.telemetry,
         "helper_calls": [name for name in names if name in HELPER_TOOLS],
         "single_context": f"{'PASS' if single else 'FAIL'}: {single_why}",
+        # advisory like single_context: the stage-handoff format of the final
+        # chat, reported on every run and never part of the exit status
+        "handoff": f"{'PASS' if handed else 'FAIL'}: {handed_why}",
         **(extra or {}),
     }
 
@@ -1046,6 +1300,9 @@ def supervise_verdict(scenario: dict, ws: Path,
         results += [verdict_supervise_scope_options(first_text(ws, "*-feedback.md"),
                                                     load_closing_note(SKILLS)),
                     verdict_supervise_review_sections(review)]
+    if scenario.get("ready"):
+        results.append(verdict_supervise_ready_block(first_text(ws, "*-feedback.md"),
+                                                     load_closing_note(SKILLS)))
     failed = [reason for ok, reason in results if not ok]
     if failed:
         return False, "; ".join(failed)
@@ -1130,10 +1387,81 @@ def import_verdict(ws: Path) -> tuple[bool, str]:
     return verdict_import(read(ws / produced), run_check(ws, produced), produced)
 
 
+def workspace_changes(scenario: dict, ws: Path) -> tuple[list[str], list[str]]:
+    """Which staged files a run changed and which files it added, by path
+    relative to the workspace. Hidden paths — the installed skills under
+    `.claude/`, the saved event stream — and bytecode caches are the
+    harness's and the interpreter's, not the run's."""
+    fixture = FIXTURES / scenario["fixture"]
+    staged = {f.name: f.read_bytes() for f in fixture.iterdir()
+              if f.is_file() and f.suffix in (".md", ".txt")}
+    staged.update({f.relative_to(fixture).as_posix(): f.read_bytes()
+                   for f in (fixture / "img").rglob("*") if f.is_file()})
+    changed = sorted(name for name, data in staged.items()
+                     if not (ws / name).is_file() or (ws / name).read_bytes() != data)
+    present = (p.relative_to(ws).as_posix() for p in ws.rglob("*") if p.is_file())
+    new = sorted(rel for rel in present if rel not in staged and not any(
+        part.startswith(".") or part == "__pycache__" for part in rel.split("/")))
+    return changed, new
+
+
+def skills_invoked(events: list[dict], after_turns: int = 0) -> list[str]:
+    """The skills the run loaded through the Skill tool, skipping the first
+    `after_turns` turns — so an approval turn shows whether the step it
+    approved ran under its own skill's instructions."""
+    seen, turn = [], 0
+    for event in events:
+        if event.get("type") == "result":
+            turn += 1
+        elif turn >= after_turns:
+            seen += [str(args["skill"]) for name, args in tool_calls([event])
+                     if name == "Skill" and isinstance(args, dict) and args.get("skill")]
+    return seen
+
+
+EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+
+def first_turn_edits(events: list[dict]) -> list[str]:
+    """The files the first turn wrote with an edit tool, by name — a status
+    answer that edits anything has acted before any approval."""
+    first = events[:next((i for i, e in enumerate(events) if e.get("type") == "result"),
+                         len(events))]
+    return sorted({Path(str(args.get("file_path", ""))).name
+                   for name, args in tool_calls(first)
+                   if name in EDIT_TOOLS and isinstance(args, dict)})
+
+
+def handoff_verdict(scenario: dict, ws: Path, chat: str,
+                    events: list[dict]) -> tuple[bool, str]:
+    """The scenario's handoff verdict over the final turn and the workspace."""
+    changed, new = workspace_changes(scenario, ws)
+    proposal = scenario["proposal"]
+    review = proposal.replace(".md", "-review.md")
+    kind = scenario["handoff"]
+    if kind == "review_feedback":
+        return verdict_handoff_review_feedback(changed, new, chat, proposal, review)
+    if kind == "superseded":
+        return verdict_handoff_superseded(changed, new, chat)
+    if kind in ("after_revision", "direct_revision"):
+        # a direct request has no status turn whose edits would come unasked
+        edits = first_turn_edits(events) if kind == "after_revision" else []
+        return verdict_handoff_after_revision(changed, new, chat, run_check(ws, proposal),
+                                              proposal, review, skills_invoked(events), edits)
+    if kind == "ready":
+        return verdict_handoff_ready(changed, new, chat)
+    return verdict_handoff_untouched(changed, new, chat)
+
+
 def verdict(name: str, scenario: dict, ws: Path, chat: str,
             request: str = "", events: list[dict] | None = None) -> tuple[bool, str]:
+    if scenario.get("handoff"):
+        return handoff_verdict(scenario, ws, chat, events or [])
     if name in CONTAINMENT_SCENARIOS:
         return containment_verdict(ws, request, chat, events or [])
+    if scenario.get("paper"):
+        return verdict_paper_foundation(assistant_text(events or []) or chat,
+                                        tool_result_text(events or []), workspace_markdown(ws))
     if scenario.get("feedback"):
         return supervise_verdict(scenario, ws, events)
     if name == "ideate_scoped":
@@ -1200,7 +1528,10 @@ def resolve_judge(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
 
 def l2_artifact(name: str, scenario: dict, ws: Path) -> str | None:
     """What the judge grades, selected as the scenario's L1 verdict selects it:
-    the review file, or the produced draft (which may be a fresh `<slug>.md`)."""
+    the review file, or the produced draft (which may be a fresh `<slug>.md`) —
+    or, for a handoff scenario, the conversation saved with the run."""
+    if scenario.get("handoff"):
+        return transcript(scenario, load_events(ws)) or None
     if name in REVIEW_VERDICTS:
         return read(ws / scenario["proposal"].replace(".md", "-review.md")) or None
     original = (FIXTURES / scenario["fixture"] / scenario["proposal"]).read_text(encoding="utf-8")
@@ -1209,6 +1540,11 @@ def l2_artifact(name: str, scenario: dict, ws: Path) -> str | None:
 
 
 def fixture_oracle(scenario: dict) -> dict:
+    """The fixture's oracle — or the scenario's own `semantic` list, where the
+    fixture's describes something else (f05's lists the review's defects, not
+    what a reply to "what now?" should say)."""
+    if scenario.get("semantic"):
+        return {"semantic": list(scenario["semantic"])}
     path = FIXTURES / scenario["fixture"] / "expected.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
@@ -1478,7 +1814,7 @@ JUDGE = JudgeBackend(
 SUPPORT_LOGS = REPO / "logs" / "evals"
 
 
-def host_for(args: argparse.Namespace) -> Host:
+def host_for(args: argparse.Namespace | None) -> Host:
     """The run's host; a namespace without one (the tests' ARGS) is Claude."""
     return HOSTS[getattr(args, "host", None) or "claude"]
 
@@ -1653,6 +1989,7 @@ def dev_run(args: argparse.Namespace, judge: Judge | None) -> int:
             stage(scenario, ws, install_skill=not args.no_skill, skill_dir=host.skill_dir)
             request = served_request(scenario, stack)
             events = host.run(ws, request, args, config)
+            events = follow_up(args, scenario, ws, events, config)
             save_events(events, ws)
             chat = host.read(events, args).final_text
             out, status = completed_run(args, judge, scenario, ws, request, events, config)
@@ -1780,13 +2117,32 @@ def load_events(ws: Path) -> list[dict]:
     return parse_events(path.read_text(encoding="utf-8")) if path.exists() else []
 
 
+def kept_identity(ws: Path, args: argparse.Namespace | None = None) -> dict:
+    """What served a kept run: the served model and the CLI version from the
+    stream saved in its workspace, read by the host that produced it (`--host`;
+    Claude without one), each as that host's reader reports a stream that does
+    not say (None on Claude). A stream that cannot be read says nothing, so a
+    crashed re-grade's lines still carry both fields."""
+    try:
+        kept = load_events(ws)
+    except (OSError, UnicodeDecodeError):
+        kept = []
+    view = host_for(args).read(kept, args)
+    return {"model": view.model, "cli_version": view.cli_version}
+
+
 def rejudge_lines(args: argparse.Namespace, judge: Judge,
                   workspaces: list[Path]) -> list[dict]:
     """One summary per kept workspace. One invocation: one isolated config,
     one warm-up, and the batch projection before the fan-out; a config that
-    cannot be prepared leaves every criterion untested. The served model is
-    read by the host that produced the workspace (`--host`); no model under
-    test runs, on any host."""
+    cannot be prepared leaves every criterion untested. No model under test
+    runs, on any host.
+
+    Each line names the kept run's served model and CLI version, read from
+    the stream saved in its workspace by the host that produced it (`--host`;
+    `kept_identity`), beside the judge's own inside `l2`. It names no
+    requested alias: the workspace does not record one, and `--model`
+    defaults to `haiku`, so a re-grade of a sonnet run would be labelled haiku."""
     scenario = SCENARIOS[args.scenario]
     host = host_for(args)
     plans = [(ws, *judge_criteria(args.scenario, scenario, ws, scenario["request"]))
@@ -1800,10 +2156,11 @@ def rejudge_lines(args: argparse.Namespace, judge: Judge,
     grades = iter(run.grades)
     lines = []
     for ws, criteria, not_judged in plans:
-        served = host.read(load_events(ws), args).model
-        l2, status = l2_report(judge, [next(grades) for _ in criteria], not_judged, served)
+        kept = kept_identity(ws, args)
+        l2, status = l2_report(judge, [next(grades) for _ in criteria], not_judged,
+                               kept["model"])
         lines.append({"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
-                      "host": host.name, "label": host.run_label, "model": served, **l2,
+                      "host": host.name, "label": host.run_label, **kept, **l2,
                       "outcome": OUTCOMES[status], "exit_status": status})
     return lines
 
@@ -1823,8 +2180,8 @@ def rejudge(args: argparse.Namespace, judge: Judge) -> int:
         traceback.print_exc()
         failure = RunnerFailure(f"runner crashed: {exc!r}")
         lines = [{"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
-                  "outcome": OUTCOMES[failure.status], "exit_status": failure.status,
-                  "why": failure.message} for ws in workspaces]
+                  **kept_identity(ws, args), "outcome": OUTCOMES[failure.status],
+                  "exit_status": failure.status, "why": failure.message} for ws in workspaces]
     for line in lines:
         emit(line, args.summary_log)
     return aggregate_status([line["exit_status"] for line in lines])

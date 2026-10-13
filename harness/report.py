@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 import support
@@ -108,19 +109,25 @@ def model_costs(logs: dict[tuple[str, str], object],
     }
 
 
+def newest_day(starts: Iterable[str]) -> str:
+    """The newest of some log start stamps as its date, or "never"."""
+    newest = max((s for s in starts if s), default="")
+    return newest[:10] if newest else "never"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--log-dir", default="logs/evals")
     args = parser.parse_args(argv)
 
     registry = support.parse_registry(REGISTRY.read_text(encoding="utf-8"))
-    models = list(registry.models)  # spec: one row per registry model, disabled included
+    models = list(registry.models)  # grid and data: every registry model; README: enabled only
     tasks = list(registry.tasks.matrix)
     logs, baseline_logs = newest_logs(Path(args.log_dir), registry)
 
     cells: dict[tuple[str, str], support.Cell] = {}
     durations: dict[str, float] = {}
-    newest_stamp = ""
+    stamps: dict[str, str] = {}  # per model: the newest log's start
     for (model_id, task), log in logs.items():
         if task not in registry.tasks.matrix:
             continue  # extended-task logs feed only the delta view below
@@ -140,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             reduced=0 < len(passes) < support.DEFAULT_EPOCHS,
         )
         if log.stats is not None:
-            newest_stamp = max(newest_stamp, log.stats.started_at or "")
+            stamps[model_id] = max(stamps.get(model_id, ""), log.stats.started_at or "")
             span = support.duration_seconds(log.stats.started_at, log.stats.completed_at)
             if span is not None:
                 durations[model_id] = durations.get(model_id, 0.0) + span
@@ -160,9 +167,10 @@ def main(argv: list[str] | None = None) -> int:
         for m in models
     }
     costs = model_costs(logs, registry)
-    timestamp = newest_stamp[:10] if newest_stamp else "never"
-
-    summary = support.render_summary(models, verdicts, timestamp, registry.tasks.skills)
+    timestamp = newest_day(stamps.values())
+    # the README shows enabled models only, so its date is theirs
+    shown = newest_day(stamps.get(m.id, "") for m in models if m.enabled)
+    summary = support.render_summary(models, verdicts, shown, registry.tasks.skills)
     README.write_text(
         support.splice_readme(README.read_text(encoding="utf-8"), summary), encoding="utf-8"
     )

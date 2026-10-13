@@ -12,15 +12,33 @@
       "expected_output": "Paste-ready feedback: verdict tier stated up front, at most five curated points, skill pointers that resolve, none of the submission's personal data, and any literature woven into the points rather than listed.",
       "assertions": [
         "supervise: a feedback draft exists as the slug-named feedback file and is not empty.",
-        "supervise: the feedback carries a numbered points list of at most five entries (skill-supervise spec: curated to pressing points).",
+        "supervise: the feedback's numbered points are blockers only — at most five, and none only when no point is owed (skill-supervise spec: curated to pressing points). Lettered cut options and the clarify-early dash list are not numbered, so they never count.",
         "supervise: the feedback opens with one of the three verdict tiers, English or German, case-insensitive like every prose-relaying verdict. Word-bounded where the tier is a single word (\"already\" must not count as \"ready\").",
         "supervise: no personal-data token from the submission survives anywhere in the student-facing feedback (skill-supervise spec: intake strips identity). `artifacts` maps file names to contents.",
-        "supervise: the feedback steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set.",
+        "supervise: the feedback steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set. A skill is owed per point, so a feedback that opens ready with no numbered points owes none (sonnet dev run over f28, 2026-10-13).",
         "supervise: the feedback carries the shared closing note verbatim, in the language it was written in (skill-supervise spec: the closing note is quoted whole). Paraphrase is the failure this exists to catch — it is the path by which the disclosure acquires a claim it is forbidden to make.",
         "supervise: literature the feedback cites is woven, not listed — every `https://doi.org/` URL sits in a prose block (a numbered point or the strengths block: never on a bulleted line, with a few dozen words around it; a paragraph holding several DOI lines is judged line by line), every cited DOI is recorded in the companion notes file, and at most three distinct papers are cited. A feedback that cites no DOI passes: literature is conditional on the professor's approval and the findings. A DOI the normalized proposal already carries is the student's own reference, discussed rather than woven in, so it is not counted.",
         "supervise: the feedback carries no format lecture — no sentence that pairs one of the toolchain's document conventions (cover data, a Gantt chart or work plan, a chapter outline, page counts, reference link style, the timeline's length) with an instruction to remove, shorten or restyle it. Naming the Gantt chart as scope evidence is not a lecture and passes.",
         "supervise: the feedback's markup stays light — bold runs and plain lists are fine, but a heading line, a blockquote line or a backtick reaches a plain-text channel as a literal character.",
         "supervise: every standard or regulation the feedback names that the normalized proposal does not already carry has a URL in the paragraph of its first mention (skill-supervise spec: a locator for every source not in the proposal). Papers are the literature verdict's business; this one sees designations."
+      ]
+    },
+    {
+      "id": 2,
+      "task": "supervise_ready",
+      "prompt": "A student sent me this thesis proposal — I saved it as ws/ci-repair-agent-configurations.md. Prepare my feedback: the draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path. Do not make any network lookups — no claim checks and no literature — and I cannot answer any further question.",
+      "files": [
+        "ws/ci-repair-agent-configurations.md"
+      ],
+      "expected_output": "Paste-ready feedback opening ready on a viable proposal: no numbered points, the open execution decisions in a labelled clarify-early block of at most five items, and no promise of a meeting.",
+      "assertions": [
+        "supervise: a feedback draft exists as the slug-named feedback file and is not empty.",
+        "supervise: the feedback's numbered points are blockers only — at most five, and none only when no point is owed (skill-supervise spec: curated to pressing points). Lettered cut options and the clarify-early dash list are not numbered, so they never count.",
+        "supervise: the feedback opens with one of the three verdict tiers, English or German, case-insensitive like every prose-relaying verdict. Word-bounded where the tier is a single word (\"already\" must not count as \"ready\").",
+        "supervise: the feedback steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set. A skill is owed per point, so a feedback that opens ready with no numbered points owes none (sonnet dev run over f28, 2026-10-13).",
+        "supervise: the feedback carries the shared closing note verbatim, in the language it was written in (skill-supervise spec: the closing note is quoted whole). Paraphrase is the failure this exists to catch — it is the path by which the disclosure acquires a claim it is forbidden to make.",
+        "supervise: the feedback's markup stays light — bold runs and plain lists are fine, but a heading line, a blockquote line or a backtick reaches a plain-text channel as a literal character.",
+        "supervise_ready: on a viable proposal with open execution decisions the feedback opens ready, carries no numbered point, names the decisions in a labelled clarify-early block of one to five items, and promises no meeting (skill-supervise spec: verdict expressed as proposal state). The closing note is the shared snippet and is left out of the promise search."
       ]
     }
   ]

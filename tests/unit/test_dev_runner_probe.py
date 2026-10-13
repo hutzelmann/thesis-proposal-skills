@@ -714,11 +714,12 @@ class FakeJudge:
 
     def __init__(self, grade="C", cost=0.05):
         self.grade, self.cost, self.prompts = grade, cost, []
+        self.cli_version = "2.1.284"
 
     async def __call__(self, prompt, **kwargs):
         self.prompts.append(prompt)
         return JudgeCall(text=f"Reasoned.\nGRADE: {self.grade}", model=kwargs["model"],
-                         cli_version="2.1.284", effort=kwargs["effort"], thinking_tokens=100,
+                         cli_version=self.cli_version, effort=kwargs["effort"], thinking_tokens=100,
                          notional_usd=self.cost, rate_limit=RateLimit("allowed", "five_hour", 0.2))
 
 
@@ -1154,6 +1155,38 @@ def test_rejudge_grades_kept_workspaces_without_a_model_run(monkeypatch, tmp_pat
 
 
 @pytest.mark.usefixtures("isolated")
+def test_rejudge_names_the_kept_runs_served_model_and_cli_version(monkeypatch, tmp_path, judge):
+    """testing-harness spec: Re-grade names the kept run's model — from the
+    workspace's saved stream, beside the judge's own, and no requested alias:
+    the workspace records none, and `--model` would default to haiku."""
+    no_model_run(monkeypatch)
+    judge.cli_version = "2.1.296"  # the judge runs on a newer host than the kept run did
+    ws = kept_workspace(tmp_path, "a")
+    log = tmp_path / "log.jsonl"
+    assert main(["write_from_seed", "--rejudge", str(ws), "--summary-log", str(log)]) == EXIT_PASS
+    [line] = logged(log)
+    assert (line["model"], line["cli_version"]) == (MODEL_UNDER_TEST, "2.1.284")
+    assert (line["l2"]["judge_served"], line["l2"]["cli_version"]) == (ROLES.dev_judge, "2.1.296")
+    assert "model_requested" not in line
+
+
+@pytest.mark.usefixtures("isolated", "judge")
+def test_rejudge_of_a_stream_without_init_records_the_cli_version_as_none(monkeypatch, tmp_path):
+    """testing-harness spec: Kept stream without an initialization event —
+    empty, rather than omitted or taken from the judge."""
+    no_model_run(monkeypatch)
+    ws = kept_workspace(tmp_path, "a")
+    save_events(model_stream()[1:], ws)
+    log = tmp_path / "log.jsonl"
+    main(["write_from_seed", "--rejudge", str(ws), "--summary-log", str(log)])
+    [line] = logged(log)
+    assert "cli_version" in line
+    assert line["cli_version"] is None
+    assert line["l2"]["cli_version"] == "2.1.284"
+    assert line["model"] == MODEL_UNDER_TEST  # the result's usage stands in for `init`
+
+
+@pytest.mark.usefixtures("isolated")
 def test_rejudge_projection_over_the_cap_stops_the_batch(monkeypatch, tmp_path, judge, capsys):
     no_model_run(monkeypatch)
     judge.cost = 1.0
@@ -1214,7 +1247,17 @@ def test_rejudge_crash_is_a_runner_failure_per_workspace(crash, monkeypatch, tmp
     assert [(line["workspace"], line["outcome"]) for line in lines] == [
         (str(first), "RUNNER FAILURE"), (str(second), "RUNNER FAILURE")]
     assert all(line["why"].startswith("runner crashed: ") for line in lines)
+    # a crashed re-grade still names what served each kept run
+    assert all((line["model"], line["cli_version"]) == (MODEL_UNDER_TEST, "2.1.284")
+               for line in lines)
     assert "Traceback" in capsys.readouterr().err
+
+
+def test_a_kept_stream_that_cannot_be_read_names_no_served_model(tmp_path):
+    ws = tmp_path / "a"
+    ws.mkdir()
+    (ws / EVENTS_FILE).write_bytes(b"\xff\xfe not UTF-8\n")
+    assert claude_runner.kept_identity(ws) == {"model": None, "cli_version": None}
 
 
 # ---------- --summary-log and --summarize -------------------------------------

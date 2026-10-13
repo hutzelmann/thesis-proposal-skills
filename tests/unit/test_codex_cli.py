@@ -32,7 +32,7 @@ import host_login
 import pytest
 import routing
 import workspace_guard
-from helpers import REGISTRY_PATH
+from helpers import REGISTRY_PATH, json_path, saved_stream
 from host_login import CODEX, LoginProblem, refusal
 from l1_checks import verdict_single_context, verdict_supervise_verifier
 
@@ -50,8 +50,7 @@ CODEX_NOTE = "Your own Codex login is not affected"
 
 
 def stream(name: str, ws: Path = WS) -> list[dict]:
-    text = (STREAMS / f"{name}.jsonl").read_text(encoding="utf-8").replace("__WS__", str(ws))
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
+    return saved_stream(STREAMS / f"{name}.jsonl", ws)
 
 
 def answer(name: str) -> dict:
@@ -650,9 +649,14 @@ def test_failure_reason_carries_codex_message_or_the_missing_turn():
 
 # ---------- 2.5: the command, the readers and the canonical tool calls -------------------
 
+# the handoff scenarios install every shipped skill (`all_but`), import,
+# literature search and reverse among them, so each needs the network; derived
+# from that install rather than listed, so a new handoff scenario needs no edit
+FULL_INSTALL = {name for name, scenario in claude_runner.SCENARIOS.items()
+                if scenario.get("siblings") == claude_runner.all_but(scenario.get("skill", ""))}
 NETWORK_SCENARIOS = {"import_messy", "supervise_feedback", "supervise_literature",
                      "supervise_scope", "ideate_scoped", "ideate_scoped_adjacent",
-                     "ideate_scoped_partial"}
+                     "ideate_scoped_partial"} | FULL_INSTALL
 
 
 def test_the_command_template():
@@ -1201,7 +1205,8 @@ elif verb == "exec":
     day.mkdir(parents=True, exist_ok=True)
     thread = "0199a0f0-0000-7000-8000-000000000001"
     (day / f"rollout-2026-10-06T10-00-00-{thread}.jsonl").write_text(
-        (here / "rollout.jsonl").read_text(encoding="utf-8").replace("__WS__", os.getcwd()),
+        (here / "rollout.jsonl").read_text(encoding="utf-8")
+        .replace("__WS__", json.dumps(os.getcwd())[1:-1]),
         encoding="utf-8")
     # what the sandboxed shell may leave in the workspace (design Decision 16)
     plant = here / "plant.json"
@@ -1246,7 +1251,7 @@ def fake_run(tmp_path: Path, *, cloud_tool: bool = True) -> tuple[dict, Path, Pa
     rollout = [line for line in (STREAMS / "rollout-success.jsonl").read_text(
         encoding="utf-8").splitlines() if cloud_tool or '"namespace":"skills"' not in line]
     (bindir / "rollout.jsonl").write_text(
-        "\n".join(rollout).replace("/tmp/devrun-check_report-fixture", str(ws)) + "\n",
+        "\n".join(rollout).replace("/tmp/devrun-check_report-fixture", json_path(ws)) + "\n",
         encoding="utf-8")
     exec_events = [e for e in stream("success") if not e["type"].startswith("codex.")]
     (bindir / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in exec_events),
