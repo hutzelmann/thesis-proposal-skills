@@ -1,0 +1,20 @@
+{
+  "fixture": "f32-tool-as-object",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "Mendwright is the object of study and passes the swap test: the contribution close makes Mendwright's own four configurations, its shipped default among them, the object of the evaluation for the teams that run it, so replacing the name with a comparable framework would change the expected contribution",
+    "no proposal blocker and no finding of any class treats Mendwright as replaceable or decorative, whether under the swap test or under another test's name",
+    "no proposal blocker: the research questions, the contribution, the method, the scope, the benchmark and the compute budget with its subsampling fallback are clear, so the verdict is ready",
+    "the title naming Mendwright is not a finding, because Mendwright is what the research questions and the contribution are about; a title item about the name is at most an optional refinement",
+    "the unnamed model versions, the audit sample size fixed after the pilot and the optional industry-partner ratings are not blockers, as in f28-open-decisions; listing them as clarify-early items is acceptable"
+  ]
+}

@@ -95,6 +95,20 @@ CRITERIA: dict[tuple[str, str], str] = {
         "what they asked for, moves no finding about unchanged text to a higher class "
         "(the unchanged clarify-early item stays deferred or is settled), raises no "
         "new blocker, and opens ready.",
+    # dev-runner L2 only: the swap-test pair has no Inspect twin
+    ("review_swap_decorative", "review_swap_decorative_l2"):
+        "Opens with needs revision and carries one swap-test blocker on the named "
+        "framework that lists where it stands, states that a comparable framework "
+        "would leave the research questions, the method and the contribution "
+        "unchanged, gives both repairs (state what the research depends on in it, or "
+        "generalize), and says why it cannot wait; the title's naming of it is not "
+        "reported again as a separate item; every other blocker is a genuine "
+        "substance-test failure with its reason.",
+    ("review_swap_anchored", "review_swap_anchored_l2"):
+        "Raises no finding, under any test's name, that treats the named framework as "
+        "replaceable or decorative, because the contribution makes the framework's own "
+        "configurations the object of the evaluation; opens ready, and every blocker "
+        "it raises is a genuine substance-test failure with its reason.",
     ("title_alarm", "title_l2_alarm"):
         "Title raised as its own finding, certificate consequence named, one to "
         "three abstracted alternatives offered, decision left with the student.",
@@ -189,7 +203,8 @@ DEV_RUBRICS: dict[str, tuple[DevCriterion, ...]] = {
     "review_hollow": (
         DevCriterion(("review_hollow", "review_hollow_l2"), "review_quality.txt", "oracle"),),
     **{name: (DevCriterion((name, f"{name}_l2"), "readiness.txt", "oracle"),)
-       for name in ("review_ready", "review_dependency", "review_converge")},
+       for name in ("review_ready", "review_dependency", "review_converge",
+                    "review_swap_decorative", "review_swap_anchored")},
     # graded over the conversation transcript, not a file
     **{name: (DevCriterion((name, f"{name}_l2"), "handoff.txt", "oracle"),)
        for name in HANDOFF_SCENARIOS},

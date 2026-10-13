@@ -1,0 +1,21 @@
+{
+  "fixture": "f31-decorative-tool",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "Mendwright is decorative and fails the swap test: the title, the purpose statement, the research focus, RQ1 and RQ2 name it, but the contribution claims a within-model estimate of configuration effects in general, for teams choosing between configurations, so a comparable agent framework would leave the research questions, the method and the expected contribution unchanged",
+    "the decorative name is one proposal blocker that cites the swap test, lists where the name stands, says what stays unchanged under replacement, and offers both repairs: state what the research depends on in Mendwright, or generalize the title and research questions to agent configurations; either repair changes a research question or the contribution, which is why it cannot wait for the thesis",
+    "the title's naming of Mendwright is reported once, as that swap-test blocker with the certificate consequence and one to three abstracted alternatives, never as a second title item among the refinements",
+    "the methodology's sentence taking both architectures from Mendwright is an implementation choice and is not judged by the swap test",
+    "no other proposal blocker: the within-model contribution, the method, the scope, the benchmark and the compute budget with its subsampling fallback are clear, so the verdict is needs revision on the swap test alone",
+    "the unnamed model versions, the audit sample size fixed after the pilot and the optional industry-partner ratings are not blockers, as in f28-open-decisions"
+  ]
+}

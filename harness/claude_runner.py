@@ -188,6 +188,7 @@ from hosts import Host, JudgeBackend, RunView
 from l1_checks import (
     HELPER_TOOLS,
     NOTES_SUFFIX,
+    SWAP_PAIR_TOOL,
     assistant_text,
     feedback_body_words,
     load_closing_note,
@@ -217,6 +218,8 @@ from l1_checks import (
     verdict_review_converged,
     verdict_review_dependency,
     verdict_review_ready,
+    verdict_review_swap_anchored,
+    verdict_review_swap_decorative,
     verdict_scoping_containment,
     verdict_seed,
     verdict_single_context,
@@ -224,6 +227,8 @@ from l1_checks import (
     verdict_supervise_ready_block,
     verdict_supervise_review_sections,
     verdict_supervise_scope_options,
+    verdict_supervise_swap_question,
+    verdict_supervise_swap_quiet,
     verdict_supervise_verification_declared,
     verdict_supervise_verifier,
 )
@@ -264,6 +269,17 @@ def all_but(skill: str) -> tuple[str, ...]:
 
 # the incident's own words, after a review (testing-harness spec: handoff coverage)
 WHAT_NOW = "What do we do now with that feedback?"
+# One request per side across the readiness controls and the swap-test pair, so
+# a verdict difference between them can only come from the fixture's text.
+READINESS_REVIEW_REQUEST = ("Please review my proposal ci-repair-agent-configurations.md — "
+                            "is it ready for my supervisor?")
+READINESS_SUPERVISE_REQUEST = (
+    "A student sent me this thesis proposal — I saved it as "
+    "ci-repair-agent-configurations.md. Prepare my feedback: the draft "
+    "I can send back. If the verdict turns out borderline, do not ask "
+    "me — take the needs-revision path. Do not make any network "
+    "lookups — no claim checks and no literature — and I cannot answer "
+    "any further question.")
 
 SCENARIOS = {
     "check_report": {
@@ -297,15 +313,31 @@ SCENARIOS = {
         "fixture": "f28-open-decisions",
         "skill": "proposal-review",
         "proposal": "ci-repair-agent-configurations.md",
-        "request": "Please review my proposal ci-repair-agent-configurations.md — "
-                   "is it ready for my supervisor?",
+        "request": READINESS_REVIEW_REQUEST,
     },
     "review_dependency": {
         "fixture": "f29-doubtful-dependency",
         "skill": "proposal-review",
         "proposal": "ci-repair-agent-configurations.md",
-        "request": "Please review my proposal ci-repair-agent-configurations.md — "
-                   "is it ready for my supervisor?",
+        "request": READINESS_REVIEW_REQUEST,
+    },
+    # the swap test's check of named choices, both directions (testing-harness
+    # spec: swap-test anchor coverage). f31 names Mendwright in its title and
+    # RQs while the contribution claims configuration effects in general, so a
+    # swap-test blocker on it is expected; f32 differs only in the contribution
+    # close, which makes Mendwright's own configurations the object, so any
+    # swap-test finding is overblocking. f28 (review_ready) is the no-name control
+    "review_swap_decorative": {
+        "fixture": "f31-decorative-tool",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": READINESS_REVIEW_REQUEST,
+    },
+    "review_swap_anchored": {
+        "fixture": "f32-tool-as-object",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": READINESS_REVIEW_REQUEST,
     },
     "review_converge": {
         "fixture": "w09-revised-round",
@@ -324,12 +356,28 @@ SCENARIOS = {
         "feedback": True,
         "ready": True,
         "helpers": 1,
-        "request": "A student sent me this thesis proposal — I saved it as "
-                   "ci-repair-agent-configurations.md. Prepare my feedback: the draft "
-                   "I can send back. If the verdict turns out borderline, do not ask "
-                   "me — take the needs-revision path. Do not make any network "
-                   "lookups — no claim checks and no literature — and I cannot answer "
-                   "any further question.",
+        "request": READINESS_SUPERVISE_REQUEST,
+    },
+    # supervisor side of the swap-test pair: the decorative name reaches the
+    # student as a question without the test's name; the anchored one raises
+    # nothing, so the feedback opens ready with no numbered point
+    "supervise_swap_decorative": {
+        "fixture": "f31-decorative-tool",
+        "skill": "proposal-supervise",
+        "proposal": "ci-repair-agent-configurations.md",
+        "feedback": True,
+        "swap": "decorative",
+        "helpers": 1,
+        "request": READINESS_SUPERVISE_REQUEST,
+    },
+    "supervise_swap_anchored": {
+        "fixture": "f32-tool-as-object",
+        "skill": "proposal-supervise",
+        "proposal": "ci-repair-agent-configurations.md",
+        "feedback": True,
+        "swap": "anchored",
+        "helpers": 1,
+        "request": READINESS_SUPERVISE_REQUEST,
     },
     "write_from_seed": {
         "fixture": "w01-ideate-seed",
@@ -665,6 +713,8 @@ REVIEW_VERDICTS = {
     "review_ready": verdict_review_ready,
     "review_dependency": verdict_review_dependency,
     "review_converge": verdict_review_converged,
+    "review_swap_decorative": partial(verdict_review_swap_decorative, tool=SWAP_PAIR_TOOL),
+    "review_swap_anchored": partial(verdict_review_swap_anchored, tool=SWAP_PAIR_TOOL),
 }
 
 
@@ -1361,6 +1411,12 @@ def supervise_verdict(scenario: dict, ws: Path,
     if scenario.get("ready"):
         results.append(verdict_supervise_ready_block(first_text(ws, "*-feedback.md"),
                                                      load_closing_note(SKILLS)))
+    if scenario.get("swap") == "decorative":
+        results.append(verdict_supervise_swap_question(first_text(ws, "*-feedback.md"),
+                                                       SWAP_PAIR_TOOL, load_closing_note(SKILLS)))
+    elif scenario.get("swap") == "anchored":
+        results.append(verdict_supervise_swap_quiet(first_text(ws, "*-feedback.md"),
+                                                    SWAP_PAIR_TOOL))
     failed = [reason for ok, reason in results if not ok]
     if failed:
         return False, "; ".join(failed)

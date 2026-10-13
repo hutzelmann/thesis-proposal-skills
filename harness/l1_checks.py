@@ -912,6 +912,83 @@ def verdict_review_converged(original: str, current: str | None, review: str | N
     return True, f"converged: ready, {resolved} earlier blocker(s) resolved, nothing promoted"
 
 
+# The swap test's check of named choices (testing-harness spec: swap-test anchor
+# coverage) over the minimal pair f31/f32. The verdicts match the test's name and
+# the tool's name only: whether a finding treats the tool as replaceable under
+# another test's name is the L2 criterion's question, not a pattern's.
+SWAP_PAIR_TOOL = "Mendwright"
+_SWAP = re.compile(r"\bswap", re.IGNORECASE)
+_SWAP_TEST = re.compile(r"swap[- ]test", re.IGNORECASE)
+# a sentence that mentions the swap test only to say a name passes it, or that
+# no swap finding applies, is not a swap-test finding
+_SWAP_NEGATED = re.compile(r"\b(?:no|not|never|without)\s+(?:\w+\s+){0,2}swap", re.IGNORECASE)
+_SWAP_FAIL = r"\b(?:fail\w*|decorative|replaceable|interchangeable)\b"
+_SWAP_PASS = re.compile(r"\b(?:pass(?:es|ed)?|satisf\w*|survives?)\b", re.IGNORECASE)
+_SENTENCE_END = re.compile(r"(?<=[.;!?])\s+")
+
+
+def swap_failure_cited(item: str) -> bool:
+    """Whether an enumerated finding cites the swap test as failed. A sentence
+    naming the test counts unless it negates the test ("no swap-test finding",
+    "does not fail the swap test") or says the name passes it without an
+    unnegated failure cue — so a bare "Swap test — Mendwright" heading counts."""
+    for sentence in _SENTENCE_END.split(item):
+        if not _SWAP.search(sentence) or _SWAP_NEGATED.search(sentence):
+            continue
+        lowered = sentence.lower()
+        if first_unnegated(lowered, _SWAP_FAIL):
+            return True
+        if not (_SWAP_PASS.search(sentence) or re.search(_SWAP_FAIL, lowered)):
+            return True
+    return False
+
+
+def verdict_review_swap_decorative(original: str, current: str | None, review: str | None,
+                                   review_name: str, tool: str = SWAP_PAIR_TOOL
+                                   ) -> tuple[bool, str]:
+    """review_swap_decorative: a tool named in the title and the research
+    questions that nothing in the research depends on fails the swap test — the
+    review opens with needs revision and one of its blockers cites the swap
+    test and names the tool."""
+    ok, why, sections = _review_shape(original, current, review, review_name,
+                                      "needs revision")
+    if not ok:
+        return False, why
+    blockers = enumerated_items(sections["blockers"])
+    hit = next((b for b in blockers
+                if swap_failure_cited(b) and tool.lower() in b.lower()), None)
+    if not hit:
+        return False, (f"{len(blockers)} blocker(s), none citing the swap test on {tool}")
+    return True, f"needs revision, swap-test blocker on {tool}: {hit[:120]}"
+
+
+def verdict_review_swap_anchored(original: str, current: str | None, review: str | None,
+                                 review_name: str, tool: str = SWAP_PAIR_TOOL
+                                 ) -> tuple[bool, str]:
+    """review_swap_anchored: the same tool, made the object of study by the
+    contribution close, passes the swap test — no enumerated finding in any
+    class cites it as failed (an item saying the name passes it is fine). The
+    verdict line is outside the sections, so a ready verdict
+    listing the swap test among the passing tests does not count. The tier and
+    the blockers are reported, not asserted: f32's research questions carry the
+    tool's name, so any blocker quoting them would name it too."""
+    ok, why = verdict_review(original, current, review, review_name)
+    if not ok:
+        return False, why
+    sections = review_sections(review)
+    if "blockers" not in sections:
+        return False, "no proposal-blockers section"
+    for key in ("blockers", "early", "refinements"):
+        hit = next((i for i in enumerated_items(sections.get(key, ""))
+                    if swap_failure_cited(i)), None)
+        if hit:
+            return False, f"swap-test finding under {key}: {hit[:120]}"
+    blockers = enumerated_items(sections["blockers"])
+    naming = sum(1 for b in blockers if tool.lower() in b.lower())
+    return True, (f"no swap-test finding; opens {review_tier(review) or 'with no tier'}, "
+                  f"{len(blockers)} blocker(s), {naming} naming {tool}")
+
+
 def verdict_litsearch_expanded(text: str | None, before: int = 3) -> tuple[bool, str]:
     """lit-search: the reference list grew and carries no duplicate ids.
 
@@ -1212,6 +1289,114 @@ def verdict_supervise_ready_block(feedback: str | None,
     if promise:
         return False, f"promises supervisor action: {promise.group(0)!r}"
     return True, f"ready, no points, {len(items)} clarify-early item(s), no meeting promised"
+
+
+_POINT_START = re.compile(r"^\s*\d+[.)]\s")
+# a question sentence, and the contrast that makes it the replacement question
+# rather than a research question quoted verbatim (f31's RQ1 and RQ2 both name
+# the tool and end in "?")
+_QUESTION = re.compile(r"[^.?!]*\?")
+# the same question asked indirectly, as an imperative to consider it ("ask
+# yourself what … would change if another … stood in its place", "überlegen
+# Sie, was sich ändern würde, wenn …"): the pinned skill sentence reads that way,
+# and a sonnet run wrote it so (sharpen-swap-test-anchors, task 5.2)
+_SENTENCE = re.compile(r"[^.?!]+[.?!]?")
+_INDIRECT_QUESTION = re.compile(
+    r"\b(?:ask (?:yourself|yourselves)|consider|think about|reflect on|imagine)"
+    r"\s+(?:\w+\s+){0,2}?(?:what|whether|how|if|which)\b"
+    r"|\b(?:überlegen Sie(?: sich)?|fragen Sie sich|prüfen Sie|stellen Sie sich vor)"
+    r",?\s+(?:\w+\s+){0,2}?(?:was|ob|wie|welche\w*)\b",
+    re.IGNORECASE)
+_CONTRAST = re.compile(
+    r"\b(?:comparabl\w*|another|instead|in (?:its|their) place|stood in|stands? in"
+    r"|replac\w*|swapp\w*|alternative\w*|(?:any )?other (?:framework|tool|one)\w*"
+    r"|vergleichbar\w*|stattdessen|an (?:seiner|dessen|ihrer) stelle|ersetz\w*)",
+    re.IGNORECASE)
+
+
+def numbered_points(feedback: str | None) -> list[str]:
+    """The feedback's numbered points, each with its wrapped or indented
+    continuation; a point ends at the next point, or at the first unindented
+    line after a blank one — the clarify-early label, a strength paragraph."""
+    points: list[str] = []
+    after_blank = False
+    for line in (feedback or "").splitlines():
+        if _POINT_START.match(line):
+            points.append(line.strip())
+            after_blank = False
+        elif not line.strip():
+            after_blank = True
+        elif points and not (after_blank and not line[:1].isspace()):
+            points[-1] += " " + line.strip()
+            after_blank = False
+        elif points:
+            break
+    return points
+
+
+def _without_closing(feedback: str, closing: dict[str, str] | None) -> str:
+    """The feedback, whitespace-collapsed, with the shared closing note removed:
+    the note names the tools by design and is never the skill's own wording."""
+    body = _collapse(feedback)
+    for snippet in (closing or {}).values():
+        body = body.replace(_collapse(snippet), "")
+    return body
+
+
+def replacement_questions(point: str) -> list[str]:
+    """The sentences of a point that ask the replacement question: a direct
+    question, or an indirect one ("ask yourself what …", "consider whether …",
+    "überlegen Sie, was …"), carrying a contrast cue in the same sentence. A
+    quoted research question naming the tool carries no contrast cue, so it
+    is not one."""
+    asked = _QUESTION.findall(point)
+    asked += [s for s in _SENTENCE.findall(point)
+              if not s.rstrip().endswith("?") and _INDIRECT_QUESTION.search(s)]
+    return [q for q in asked if _CONTRAST.search(q)]
+
+
+def verdict_supervise_swap_question(feedback: str | None, tool: str = SWAP_PAIR_TOOL,
+                                    closing: dict[str, str] | None = None
+                                    ) -> tuple[bool, str]:
+    """supervise_swap_decorative: a decorative tool reaches the student as a
+    question — the feedback opens with needs revision, a numbered point names
+    the tool and asks a question, direct or indirect ("ask yourself what …
+    would change if …"), carrying a contrast cue ("a comparable framework",
+    "in its place", "instead"), so a point that only quotes a research
+    question naming the tool does not pass, and the swap test's name stays
+    professor-side (skill-supervise spec: decorative names reach the student
+    as a question)."""
+    tier = supervise_opening_tier(feedback)
+    if tier != "needs revision":
+        return False, f"feedback opens with {tier or 'no tier'}, expected needs revision"
+    named = _SWAP_TEST.search(_without_closing(feedback or "", closing))
+    if named:
+        return False, f"test name reaches the student: {named.group(0)!r}"
+    points = numbered_points(feedback)
+    on_tool = [p for p in points if tool.lower() in p.lower()]
+    if not on_tool:
+        return False, f"{len(points)} point(s), none naming {tool}"
+    asked = next((q for p in on_tool for q in replacement_questions(p)), None)
+    if not asked:
+        return False, (f"the point on {tool} asks no replacement question: "
+                       f"{on_tool[0][:120]}")
+    return True, f"needs revision, replacement question on {tool}: {asked.strip()[:120]}"
+
+
+def verdict_supervise_swap_quiet(feedback: str | None, tool: str = SWAP_PAIR_TOOL
+                                 ) -> tuple[bool, str]:
+    """supervise_swap_anchored: a tool the contribution makes the object of
+    study raises nothing — the feedback opens ready and carries no numbered
+    point (skill-supervise spec: decorative names reach the student as a
+    question, the anchored case)."""
+    tier = supervise_opening_tier(feedback)
+    if tier != "ready":
+        return False, f"feedback opens with {tier or 'no tier'}, expected ready"
+    points = numbered_points(feedback)
+    if points:
+        return False, f"{len(points)} numbered point(s) on a ready feedback: {points[0][:120]}"
+    mentions = (feedback or "").lower().count(tool.lower())
+    return True, f"ready, no points; {tool} mentioned {mentions} time(s)"
 
 
 def verdict_supervise_tier(feedback: str | None) -> tuple[bool, str]:

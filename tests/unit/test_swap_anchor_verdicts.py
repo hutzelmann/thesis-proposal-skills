@@ -1,0 +1,449 @@
+"""L0: the swap-test anchor verdicts (testing-harness spec: swap-test anchor
+coverage) on crafted review and feedback texts — no model call.
+
+The fixtures under test are a minimal pair (`tests/fixtures/f31-decorative-tool`,
+`f32-tool-as-object`): the same text naming the fictitious framework Mendwright
+in its title and research questions, differing only in the contribution's
+close. The verdicts read what the review and supervise skills write beside
+them, so these tests hand them texts written the way a passing and a failing run
+would write them — and pin that the pair stays minimal.
+"""
+
+from __future__ import annotations
+
+import difflib
+from pathlib import Path
+
+import pytest
+from helpers import fixture_proposal
+from l1_checks import (
+    SWAP_PAIR_TOOL,
+    numbered_points,
+    swap_failure_cited,
+    verdict_review_swap_anchored,
+    verdict_review_swap_decorative,
+    verdict_supervise_swap_question,
+    verdict_supervise_swap_quiet,
+)
+
+DECORATIVE = fixture_proposal("f31-decorative-tool").read_text(encoding="utf-8")
+ANCHORED = fixture_proposal("f32-tool-as-object").read_text(encoding="utf-8")
+NAME = "ci-repair-agent-configurations-review.md"
+CLOSING = {"English": "This feedback was drafted with AI tools; the swap test is one of them."}
+
+DECORATIVE_REVIEW = """\
+**Verdict: needs revision** — one blocker under the swap test.
+
+## Proposal blockers
+
+1. **Mendwright is decorative (swap test).** Title, purpose statement, RQ1 and RQ2
+   name Mendwright, but the contribution claims configuration effects in general;
+   any comparable framework leaves the research questions, the method and the
+   contribution unchanged. State what the research depends on in Mendwright, or
+   generalize the title and RQs to agent configurations. Either repair changes a
+   research question or the contribution, so it cannot wait for the thesis.
+
+## Clarify early in the thesis
+
+1. **Exact model versions.** Selection rule stated; pick the release before the first run.
+
+## Optional refinements
+
+None.
+"""
+
+ANCHORED_REVIEW = """\
+**Verdict: ready** — delta, falsifiability, swap, method-fit and executability pass.
+
+## Proposal blockers
+
+None.
+
+## Clarify early in the thesis
+
+1. **Exact model versions.** Selection rule stated; pick the release before the first run.
+2. **Audit sample size.** Fixed after the pilot of twenty patches.
+
+## Optional refinements
+
+1. RQ1 could name Mendwright's default configuration explicitly.
+"""
+
+QUESTION_FEEDBACK = """\
+**Needs revision** — address the points below and resubmit.
+
+1. **Why Mendwright?** Your title and RQ1 and RQ2 name Mendwright. What in your
+   thesis would change if a comparable framework stood in its place? Either say
+   what your research depends on in it, or state the claim for agent
+   configurations in general. proposal-write
+
+**Clarify early in the thesis** — settled once the thesis starts:
+
+- Exact model versions.
+
+**What to keep:** the within-model design.
+
+This feedback was drafted with AI tools; the swap test is one of them.
+"""
+
+QUIET_FEEDBACK = """\
+**Ready** — no substantial revisions are needed from my side.
+
+**Clarify early in the thesis** — settled once the thesis starts:
+
+- Exact model versions.
+- Audit sample size after the pilot.
+
+**What to keep:** evaluating Mendwright's own default is a clear object.
+
+This feedback was drafted with AI tools; the swap test is one of them.
+"""
+
+
+# ---------- review_swap_decorative -----------------------------------------------
+
+
+def test_decorative_blocker_passes():
+    ok, why = verdict_review_swap_decorative(DECORATIVE, DECORATIVE, DECORATIVE_REVIEW, NAME)
+    assert ok, why
+    assert SWAP_PAIR_TOOL in why
+
+
+def test_decorative_ready_review_fails():
+    ok, why = verdict_review_swap_decorative(DECORATIVE, DECORATIVE, ANCHORED_REVIEW, NAME)
+    assert not ok
+    assert "expected needs revision" in why
+
+
+@pytest.mark.parametrize("drop", ["Mendwright", "swap test"])
+def test_decorative_blocker_without_tool_or_test_fails(drop):
+    review = DECORATIVE_REVIEW.replace(drop, "the framework" if drop == "Mendwright"
+                                       else "delta test")
+    ok, why = verdict_review_swap_decorative(DECORATIVE, DECORATIVE, review, NAME)
+    assert not ok
+    assert "none citing the swap test" in why
+
+
+def test_decorative_swap_finding_outside_the_blockers_fails():
+    review = DECORATIVE_REVIEW.replace(
+        "## Proposal blockers\n\n1.", "## Proposal blockers\n\n1. Thin literature.\n\n"
+        "## Optional refinements\n\n1.")
+    ok, why = verdict_review_swap_decorative(DECORATIVE, DECORATIVE, review, NAME)
+    assert not ok, why
+
+
+def test_decorative_edited_proposal_fails():
+    ok, why = verdict_review_swap_decorative(DECORATIVE, DECORATIVE + "x",
+                                             DECORATIVE_REVIEW, NAME)
+    assert not ok
+    assert "modified the proposal" in why
+
+
+# ---------- review_swap_anchored -------------------------------------------------
+
+
+def test_anchored_ready_review_passes_though_the_verdict_names_swap():
+    ok, why = verdict_review_swap_anchored(ANCHORED, ANCHORED, ANCHORED_REVIEW, NAME)
+    assert ok, why
+    assert "ready" in why
+
+
+@pytest.mark.parametrize(("section", "item"), [
+    ("## Proposal blockers\n\nNone.",
+     "## Proposal blockers\n\n1. Mendwright fails the swap test: generalize the RQs."),
+    ("2. **Audit sample size.** Fixed after the pilot of twenty patches.",
+     "2. **Swap check on the name.** Confirm Mendwright is needed."),
+    ("1. RQ1 could name Mendwright's default configuration explicitly.",
+     "1. The title name is close to a swap-test failure; consider generalizing."),
+])
+def test_anchored_swap_finding_in_any_class_fails(section, item):
+    review = ANCHORED_REVIEW.replace(section, item)
+    ok, why = verdict_review_swap_anchored(ANCHORED, ANCHORED, review, NAME)
+    assert not ok
+    assert "swap-test finding" in why
+    assert why.split(": ", 1)[1][:10] in item
+
+
+def test_anchored_refinement_saying_the_name_passes_the_swap_test_passes():
+    review = ANCHORED_REVIEW.replace(
+        "1. RQ1 could name Mendwright's default configuration explicitly.",
+        "1. The title names Mendwright, which passes the swap test as the object of study;\n"
+        "   it still reaches the certificate, so check it reads as intended.")
+    ok, why = verdict_review_swap_anchored(ANCHORED, ANCHORED, review, NAME)
+    assert ok, why
+
+
+def test_decorative_blocker_saying_the_name_passes_does_not_count():
+    review = DECORATIVE_REVIEW.replace(
+        "1. **Mendwright is decorative (swap test).**",
+        "1. **Thin literature.** Mendwright passes the swap test, but the delta is thin.")
+    review = review.replace("under the swap test", "under the delta test")
+    ok, why = verdict_review_swap_decorative(DECORATIVE, DECORATIVE, review, NAME)
+    assert not ok
+    assert "none citing the swap test" in why
+
+
+@pytest.mark.parametrize(("item", "cited"), [
+    ("1. **Swap test — Mendwright.** Any comparable framework would do.", True),
+    ("1. Mendwright fails the swap test, though it passes the delta test.", True),
+    ("1. Mendwright is decorative (swap test).", True),
+    ("1. Mendwright passes the swap test as the object of study.", False),
+    ("1. Mendwright does not fail the swap test: the close evaluates it.", False),
+    ("1. No swap-test finding on Mendwright; the title is long.", False),
+    ("1. The delta is thin.", False),
+])
+def test_swap_failure_cited(item, cited):
+    assert swap_failure_cited(item) is cited
+
+
+def test_anchored_reports_blockers_without_asserting_the_tier():
+    review = DECORATIVE_REVIEW.replace("(swap test)", "(delta test)").replace(
+        "under the swap test", "under the delta test")
+    ok, why = verdict_review_swap_anchored(ANCHORED, ANCHORED, review, NAME)
+    assert ok, why
+    assert "needs revision" in why
+    assert "1 naming Mendwright" in why
+
+
+def test_anchored_review_without_sections_fails():
+    ok, why = verdict_review_swap_anchored(ANCHORED, ANCHORED, "Ready.\n\n1. Fine.\n", NAME)
+    assert not ok
+    assert "blockers section" in why
+
+
+# ---------- supervise_swap_decorative --------------------------------------------
+
+
+def test_question_feedback_passes_with_the_closing_note_excluded():
+    ok, why = verdict_supervise_swap_question(QUESTION_FEEDBACK, closing=CLOSING)
+    assert ok, why
+
+
+def test_test_name_outside_the_closing_note_fails():
+    feedback = QUESTION_FEEDBACK.replace("Why Mendwright?", "Swap test on Mendwright?")
+    ok, why = verdict_supervise_swap_question(feedback, closing=CLOSING)
+    assert not ok
+    assert "test name reaches the student" in why
+
+
+def test_closing_note_counts_when_not_stripped():
+    ok, why = verdict_supervise_swap_question(QUESTION_FEEDBACK)
+    assert not ok
+    assert "swap test" in why
+
+
+def test_tool_point_without_a_question_fails():
+    feedback = QUESTION_FEEDBACK.replace("Why Mendwright?", "Mendwright.").replace(
+        "in its place?", "in its place.")
+    ok, why = verdict_supervise_swap_question(feedback, closing=CLOSING)
+    assert not ok
+    assert "asks no replacement question" in why
+
+
+def test_point_quoting_a_research_question_is_not_the_replacement_question():
+    """f31's RQ1 names the tool and ends in "?": a point on another issue that
+    quotes it verbatim asks the student no replacement question."""
+    rq1 = next(line for line in DECORATIVE.splitlines() if line.startswith("1. To what degree"))
+    assert SWAP_PAIR_TOOL in rq1
+    assert rq1.endswith("?")
+    feedback = QUESTION_FEEDBACK.replace(
+        QUESTION_FEEDBACK[QUESTION_FEEDBACK.index("1. **Why"):QUESTION_FEEDBACK.index("**Clarify")],
+        f"1. **RQ1 and RQ3 overlap.** RQ1 asks: \"{rq1[3:]}\" RQ3 asks the same for patch\n"
+        "   size. Fold them or say what each adds. proposal-write\n\n")
+    ok, why = verdict_supervise_swap_question(feedback, closing=CLOSING)
+    assert not ok
+    assert "asks no replacement question" in why
+
+
+@pytest.mark.parametrize("question", [
+    "What would change if another framework were used instead?",
+    "Would anything in your thesis differ if Mendwright were replaced?",
+])
+def test_replacement_question_variants_pass(question):
+    feedback = QUESTION_FEEDBACK.replace(
+        "What in your\n   thesis would change if a comparable framework stood in its place?",
+        question)
+    ok, why = verdict_supervise_swap_question(feedback, closing=CLOSING)
+    assert ok, why
+
+
+# The point sonnet wrote on f31 in the 2026-10-13 dev run (task 5.2), verbatim:
+# it asks the replacement question indirectly, and carries no "?" at all.
+SONNET_POINT = (
+    "1. **The name Mendwright carries claims the research does not depend on.** It appears in "
+    "the title (\"Effects of Mendwright Agent Configurations on Automated Repair of Failing "
+    "Continuous Integration Builds\"), in the purpose that closes the introduction, in the "
+    "research focus and in RQ1 (\"Mendwright's single-agent and planner–executor "
+    "configurations\"). Yet your contribution is stated for a wider group: \"What will be new "
+    "is a within-model estimate of configuration effects on build repair, for teams and tool "
+    "builders who choose between configurations rather than between models.\" The setup "
+    "describes Mendwright only as the place the two architectures come from: \"Both "
+    "architectures are taken from Mendwright, an open-source agent framework that implements "
+    "them\". Please ask yourself what in the thesis would change if another framework "
+    "implementing the same two architectures, with the same switch between a truncated and a "
+    "full build log, stood in its place. If the answer is \"nothing in the questions, the "
+    "method or the data\", the title and the questions currently promise a result about one "
+    "framework while the contribution claims it for configurations in general. There are two "
+    "ways to resolve this. You can state what the research depends on in Mendwright, for "
+    "example that it is the only framework exposing both architectures and the log-context "
+    "switch, and then claim the result for Mendwright. Or you can state the questions for "
+    "their class, single-agent versus planner–executor configurations with truncated versus "
+    "full build log, and keep Mendwright in the experimental setup as the instrument. The "
+    "title reaches your certificate and outlives the framework, so it should name the class "
+    "in the second case, for instance \"Effects of Agent Architecture and Build-Log Context on "
+    "Automated Repair of Failing Continuous Integration Builds\". The choice is yours. Skill: "
+    "proposal-write.")
+SONNET_FEEDBACK = (
+    "**Needs revision.** The core of the proposal is in place. One point blocks it from being "
+    "ready.\n\n" + SONNET_POINT + "\n\n**Clarify early in the thesis.** These are settled once "
+    "the thesis starts.\n- The exact release of the agent framework and the benchmark commit "
+    "used.\n\nThis feedback was drafted with AI tools; the swap test is one of them.\n")
+POINT_QUESTION = ("What in your\n   thesis would change if a comparable framework stood in its "
+                  "place?")
+
+
+def test_sonnet_indirect_replacement_question_passes():
+    assert "?" not in SONNET_POINT
+    ok, why = verdict_supervise_swap_question(SONNET_FEEDBACK, closing=CLOSING)
+    assert ok, why
+    assert "ask yourself what in the thesis would change if another framework" in why
+
+
+@pytest.mark.parametrize("question", [
+    "Consider what would change if another framework stood in its place.",
+    "Ask yourself whether anything would differ if Mendwright were replaced.",
+    "Überlegen Sie, was sich ändern würde, wenn ein vergleichbares Framework an seiner "
+    "Stelle stünde.",
+    "Fragen Sie sich, ob ein vergleichbares Framework dieselben Ergebnisse liefern würde.",
+])
+def test_indirect_replacement_question_variants_pass(question):
+    feedback = QUESTION_FEEDBACK.replace(POINT_QUESTION, question)
+    ok, why = verdict_supervise_swap_question(feedback, closing=CLOSING)
+    assert ok, why
+
+
+@pytest.mark.parametrize("question", [
+    "Please ask yourself what in the thesis depends on Mendwright.",
+    "Überlegen Sie, was Ihre Arbeit von Mendwright braucht.",
+    "Ask yourself what depends on it. Another option is to generalize.",
+])
+def test_indirect_question_without_a_contrast_fails(question):
+    """The contrast cue must sit in the sentence that asks; a contrast word in
+    a neighbouring sentence does not make a question of it."""
+    feedback = QUESTION_FEEDBACK.replace(POINT_QUESTION, question)
+    ok, why = verdict_supervise_swap_question(feedback, closing=CLOSING)
+    assert not ok
+    assert "asks no replacement question" in why
+
+
+def test_indirect_cue_before_a_quoted_research_question_is_not_the_replacement_question():
+    rq1 = next(line for line in DECORATIVE.splitlines() if line.startswith("1. To what degree"))
+    feedback = QUESTION_FEEDBACK.replace(
+        QUESTION_FEEDBACK[QUESTION_FEEDBACK.index("1. **Why"):QUESTION_FEEDBACK.index("**Clarify")],
+        f"1. **RQ1 and RQ3 overlap.** Consider what RQ1 asks: \"{rq1[3:]}\" Then ask yourself\n"
+        "   whether RQ3 asks the same for patch size. proposal-write\n\n")
+    ok, why = verdict_supervise_swap_question(feedback, closing=CLOSING)
+    assert not ok
+    assert "asks no replacement question" in why
+
+
+def test_no_point_on_the_tool_fails():
+    feedback = QUESTION_FEEDBACK.replace("Mendwright", "the framework")
+    ok, why = verdict_supervise_swap_question(feedback, closing=CLOSING)
+    assert not ok
+    assert "none naming Mendwright" in why
+
+
+def test_question_feedback_opening_ready_fails():
+    ok, why = verdict_supervise_swap_question(QUIET_FEEDBACK, closing=CLOSING)
+    assert not ok
+    assert "expected needs revision" in why
+
+
+# ---------- supervise_swap_anchored ----------------------------------------------
+
+
+def test_quiet_feedback_passes():
+    ok, why = verdict_supervise_swap_quiet(QUIET_FEEDBACK)
+    assert ok, why
+
+
+def test_anchored_feedback_opening_needs_revision_fails():
+    ok, why = verdict_supervise_swap_quiet(QUESTION_FEEDBACK)
+    assert not ok
+    assert "needs revision" in why
+
+
+def test_anchored_feedback_carrying_a_point_fails_and_quotes_it():
+    feedback = QUIET_FEEDBACK.replace(
+        "**Clarify early", "1. Why Mendwright and not another framework?\n\n**Clarify early")
+    ok, why = verdict_supervise_swap_quiet(feedback)
+    assert not ok
+    assert "Why Mendwright" in why
+
+
+# ---------- numbered points --------------------------------------------------------
+
+
+def test_points_fold_continuations_and_stop_at_the_next_paragraph():
+    points = numbered_points(QUESTION_FEEDBACK)
+    assert len(points) == 1
+    assert points[0].endswith("proposal-write")
+    assert "Clarify" not in points[0]
+
+
+def test_points_split_on_each_number():
+    assert len(numbered_points("Intro.\n\n1. One.\n   more\n2) Two?\n\nAfter.\n")) == 2
+
+
+# ---------- the pair stays minimal ------------------------------------------------
+
+
+CLOSE_LINES = 3
+
+
+def contribution_close_problems(a: str, b: str, close_lines: int = CLOSE_LINES) -> list[str]:
+    """Why two proposal texts are not a minimal pair: every differing line must
+    sit among the last `close_lines` sentence-lines of the contribution
+    section, and the pair must differ somewhere."""
+    lines_a = a.splitlines()
+    start = next(i for i, line in enumerate(lines_a)
+                 if line.startswith("## Contribution to the State-of-the-Art"))
+    end = next(i for i in range(start + 1, len(lines_a)) if lines_a[i].startswith("## "))
+    body_end = max(i for i in range(start, end) if lines_a[i].strip()) + 1
+    close = range(body_end - close_lines, body_end)
+    matcher = difflib.SequenceMatcher(a=lines_a, b=b.splitlines(), autojunk=False)
+    changed = [(tag, i1, i2) for tag, i1, i2, _, _ in matcher.get_opcodes() if tag != "equal"]
+    if not changed:
+        return ["the pair is identical"]
+    return [f"line {i1 + 1}: {tag} outside the contribution close"
+            for tag, i1, i2 in changed
+            if not (i1 >= close.start and max(i2, i1 + 1) <= close.stop)]
+
+
+def test_the_pair_differs_only_in_the_contribution_close():
+    assert contribution_close_problems(DECORATIVE, ANCHORED) == []
+
+
+def test_the_pair_check_catches_an_edit_elsewhere(tmp_path: Path):
+    edited = tmp_path / "ci-repair-agent-configurations.md"
+    edited.write_text(ANCHORED.replace("either Mendwright configuration",
+                                       "either configuration"), encoding="utf-8")
+    problems = contribution_close_problems(DECORATIVE, edited.read_text(encoding="utf-8"))
+    assert problems
+    assert "outside the contribution close" in problems[0]
+
+
+def test_the_pair_check_catches_an_identical_copy(tmp_path: Path):
+    copy = tmp_path / "ci-repair-agent-configurations.md"
+    copy.write_text(DECORATIVE, encoding="utf-8")
+    assert contribution_close_problems(DECORATIVE, copy.read_text(encoding="utf-8"))
+
+
+def test_both_halves_name_the_tool_where_the_design_puts_it():
+    """Title, purpose statement, research focus, RQ1, RQ2 and the method sentence."""
+    for text in (DECORATIVE, ANCHORED):
+        assert text.splitlines()[0].startswith(f"# Effects of {SWAP_PAIR_TOOL} ")
+        assert text.count(SWAP_PAIR_TOOL) >= 6
+    assert "configuration effects on build repair, for teams and tool builders" in DECORATIVE
+    assert f"evaluates {SWAP_PAIR_TOOL} itself" in ANCHORED
