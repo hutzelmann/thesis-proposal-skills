@@ -38,6 +38,10 @@ dev = "python harness/claude_runner.py"
 # model currency vs OpenRouter's public catalog: networked, read-only, no key;
 # not part of `test` (L0 replays tests/unit/data/model_catalog/ instead)
 models = "python3 harness/model_currency.py"
+# one live DBLP query through the shipped script: networked, read-only, no key;
+# exits 1 when DBLP's verification page can no longer be passed. Not part of
+# `test` or CI, so an external block never makes the suite flaky
+lit-live = "python3 skills/proposal-lit-search/scripts/search.py pentest --sources dblp --limit 3"
 # skill selection, not skill behaviour: needs a host install and a subscription,
 # so it stays out of `test` and out of CI. Its verdict logic is covered there.
 routing = "python harness/routing.py"

@@ -202,16 +202,23 @@ def test_no_absolute_posix_path_literal(path):
 TEXT_IO = {"read_text", "write_text", "open"}
 
 
+def is_url_opener(func: ast.expr) -> bool:
+    """`<name>opener.open(...)`: urllib's `OpenerDirector.open` is a network
+    request, takes no encoding, and returns bytes (lit-search `common.py`)."""
+    return (isinstance(func, ast.Attribute) and func.attr == "open"
+            and isinstance(func.value, ast.Name) and func.value.id.lower().endswith("opener"))
+
+
 def unencoded_text_io(tree: ast.AST) -> list[int]:
     """Line numbers where text is read or written without fixing an encoding.
 
     Python resolves the default from the locale, so the same call produces UTF-8
     here and cp1252 on a Windows host. Binary `open` modes are exempt: an
-    encoding is illegal there.
+    encoding is illegal there; so are urllib openers, which read no text.
     """
     hits = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
+        if not isinstance(node, ast.Call) or is_url_opener(node.func):
             continue
         if isinstance(node.func, ast.Attribute):
             name = node.func.attr
@@ -250,6 +257,17 @@ def test_text_io_fixes_an_encoding(path):
         "`encoding=`, so the codec is whatever the host's locale says — pass "
         '`encoding="utf-8"`, or open in binary mode where the bytes are what matter'
     )
+
+
+def test_only_url_openers_are_exempt_from_the_encoding_scan():
+    source = (
+        "_OPENER.open(request, timeout=5)\n"     # 1: urllib, exempt
+        "path.open()\n"                          # 2: text, flagged
+        "opener_path.open()\n"                   # 3: not an opener name, flagged
+        "self.opener.open('x')\n"                # 4: attribute receiver, flagged
+        "open(name)\n"                           # 5: builtin, flagged
+    )
+    assert unencoded_text_io(ast.parse(source)) == [2, 3, 4, 5]
 
 
 # ---------- verdict coverage --------------------------------------------------

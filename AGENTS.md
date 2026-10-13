@@ -71,6 +71,7 @@ uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # mo
 uv run poe cache-probe [--estimate-only]   # metered prompt-caching check, cost-gated
 uv run poe report                  # regenerate README model-support summary + docs/model-support.md from logs
 uv run poe models                  # model currency vs the public OpenRouter catalog (networked, read-only)
+uv run poe lit-live                # one live DBLP query through search.py: exit 1 = its verification page can no longer be passed
 uv run poe audit                   # pre-publish gate: local Snyk Agent Scan (needs SNYK_TOKEN)
 uv run poe audit-status            # post-publish: skills.sh verdicts vs audit-baseline.json
 uv run poe install-check           # README npx command + install.py vs tracked tree (networked; own CI workflow + weekly)
