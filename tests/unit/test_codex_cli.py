@@ -668,6 +668,7 @@ def test_the_command_template():
     disabled = [argv[i + 1] for i, a in enumerate(argv) if a == "--disable"]
     assert set(codex_cli.DISABLED_FEATURES) <= set(disabled)
     assert "multi_agent" in disabled
+    assert "code_mode_host" not in disabled  # the tool host (task 7.3 attempt 1)
     for forbidden in ("--ephemeral", "--ignore-user-config",
                       "--dangerously-bypass-approvals-and-sandbox"):
         assert forbidden not in argv
@@ -835,6 +836,33 @@ def test_the_0160_listing_after_the_run_flags_passes():
     assert "multi_agent" in refused.cause
 
 
+OTHER_CODE_MODE = ("code_mode", "code_mode_only", "code_mode_interrupt", "code_mode_prewarm")
+
+
+def test_the_code_mode_host_is_allowed_and_nothing_else_of_code_mode():
+    """Task 7.3 attempt 1 (2026-10-13): 0.160 serves the plan's models
+    code-mode-only, so with `code_mode_host` disabled every tool call failed
+    closed. The host moves to the allowlist; the code-mode features that are
+    off by default stay outside it, so one reading enabled still refuses."""
+    assert "code_mode_host" in codex_cli.ALLOWED_FEATURES
+    assert "code_mode_host" not in codex_cli.DISABLED_FEATURES
+    assert "code_mode_host" not in codex_cli.feature_flags(claude_runner.SCENARIOS["check_report"])
+    plain = listing("0160-ok")
+    rows, _ = codex_cli.parse_features(plain)
+    assert rows["code_mode_host"] == ("stable", True)
+    code_mode = {name: on for name, (_, on) in rows.items() if name.startswith("code_mode")}
+    assert code_mode == {"code_mode_host": True, "code_mode_buffered_exec": False,
+                         **dict.fromkeys(OTHER_CODE_MODE, False)}
+    assert codex_cli.features_problem(plain, codex_cli.ALLOWED_FEATURES) is None
+    for name in OTHER_CODE_MODE:
+        assert name not in codex_cli.ALLOWED_FEATURES
+        row = next(line for line in plain.splitlines() if line.split()[0] == name)
+        problem = codex_cli.features_problem(plain.replace(row, row.replace("false", "true")),
+                                             codex_cli.ALLOWED_FEATURES)
+        assert problem is not None
+        assert name in problem.cause
+
+
 def test_codex_tool_calls_map_each_item_to_its_canonical_name():
     """design Decision 11, each row."""
     calls = codex_cli.codex_tool_calls(stream("skill-read"))
@@ -885,7 +913,8 @@ def test_codex_read_reports_the_run_without_a_cost(monkeypatch):
     assert view.final_text == ("The check reports errors in broken-format.md "
                                "(synthetic final answer).")
     assert (view.model_requested, view.model, view.cli_version) == (
-        "gpt-fixture-a", "unreported", "0.160.0")
+        "gpt-fixture-a", "gpt-fixture-a", "0.160.0")
+    assert view.model_check is None
     t = view.telemetry
     assert t["cost_usd"] is None
     assert (t["notional_usd"], t["notional_basis"]) == (None, "unpriced")
@@ -899,7 +928,35 @@ def test_codex_read_reports_the_run_without_a_cost(monkeypatch):
     assert "placeholder-not-a-key" not in json.dumps(t)
     rerouted = codex_cli.codex_read(stream("model-rerouted"), args_for())
     assert rerouted.model == "gpt-fixture-b"
+    assert rerouted.model_check == "served gpt-fixture-b, requested gpt-fixture-a"
     assert codex_cli.codex_read([], args_for()).final_text == ""
+
+
+def test_the_served_model_and_effort_come_from_the_turn_context():
+    """Task 7.3 attempt 1 (2026-10-13): the session record carried
+    `turn_context` with the model and a null effort, and the summary read
+    "unreported". The turn context fills both; "unreported" is left only
+    where it names none, and a turn model other than the requested name is
+    noted."""
+    harness = {"type": "codex.harness", "duration_ms": 30022, "exit_code": 0}
+    attempt = [{"type": "codex.turn_context", "model": "gpt-fixture-a", "effort": None},
+               harness]
+    view = codex_cli.codex_read(attempt, args_for())
+    assert (view.model, view.model_check) == ("gpt-fixture-a", None)
+    assert view.telemetry["effort_served"] == "unreported"
+    assert view.telemetry["effort_requested"] is None
+    bare = codex_cli.codex_read([harness], args_for())
+    assert (bare.model, bare.model_check) == ("unreported", None)
+    assert bare.telemetry["effort_served"] == "unreported"
+    other = [{"type": "codex.turn_context", "model": "gpt-fixture-b", "effort": "high"}]
+    view = codex_cli.codex_read(other, args_for(effort="high"))
+    assert view.model == "gpt-fixture-b"
+    assert view.model_check == "served gpt-fixture-b, requested gpt-fixture-a"
+    assert view.telemetry["effort_served"] == "high"
+    # the last turn context counts, as for the effort check
+    later = [*attempt, {"type": "codex.turn_context", "model": "gpt-fixture-b", "effort": "low"}]
+    assert codex_cli.served_model(later) == "gpt-fixture-b"
+    assert codex_cli.codex_read(later, args_for()).telemetry["effort_served"] == "low"
 
 
 def test_a_roster_priced_name_gets_a_notional_figure():
@@ -973,6 +1030,78 @@ def test_a_failed_run_with_a_billing_or_isolation_signal_is_untested(name, kind,
     assert (problem.billing is not None) is (kind == "subscription")
 
 
+# a user-scope skill directory outside the workspace, native on every platform; never created
+HOME_ROOT = str(Path(tempfile.gettempdir()) / "devrun-home-fixture" / ".agents" / "skills")
+CHECK = "proposal-check/SKILL.md"
+GRILL = "grill-me/SKILL.md"
+UP = "../../../etc/x/SKILL.md"
+
+
+@pytest.mark.parametrize(("roots", "files", "outside", "unresolved"), [
+    ({"r0": str(SKILL_ROOT)}, [f"r0/{CHECK}"], [], []),
+    (None, [str(SKILL_ROOT / CHECK)], [], []),  # an absolute locator, a record without roots
+    (None, [f"r0/{CHECK}"], [], [f"r0/{CHECK}"]),  # the kept record of task 7.3 attempt 1
+    ({"r0": str(SKILL_ROOT)}, [f"r1/{CHECK}"], [], [f"r1/{CHECK}"]),  # an alias the table lacks
+    ({"r0": ".agents/skills"}, [f"r0/{CHECK}"], [], [f"r0/{CHECK}"]),  # a relative root
+    ({"r0": str(SKILL_ROOT)}, [CHECK], [], [CHECK]),  # a bare relative locator
+    ({"r0": str(SKILL_ROOT)}, ["r0"], [], ["r0"]),  # an alias with nothing after it
+    ({"r0": HOME_ROOT}, [f"r0/{GRILL}"],
+     [f"{Path(HOME_ROOT, GRILL)} (r0/{GRILL})"], []),  # a root outside
+    ({"r0": str(SKILL_ROOT)}, [f"r0/{UP}"], [f"{Path(SKILL_ROOT, UP)} (r0/{UP})"], []),
+    (None, [str(Path(HOME_ROOT, GRILL))], [str(Path(HOME_ROOT, GRILL))], []),
+], ids=["alias-inside", "absolute-inside", "attempt-1-no-table", "unknown-alias",
+        "relative-root", "bare-relative", "alias-only", "root-outside", "traversal",
+        "absolute-outside"])
+def test_offered_skills_resolve_against_their_own_root_table(roots, files, outside, unresolved):
+    """Task 7.3 attempt 1 (2026-10-13): codex-cli 0.160 offers skills as
+    `rN/…` locators under a `### Skill roots` table. A locator resolves only
+    through its own record's table to an absolute root; anything else is
+    unresolved, and both an unresolved locator and one outside the
+    workspace's skill directory make the run untested for isolation."""
+    record = {"type": "codex.skills", "files": files, **({"roots": roots} if roots else {})}
+    assert codex_cli.offered_skills([record], SKILL_ROOT) == (outside, unresolved)
+    problem = codex_cli.isolation_problem([record], SKILL_ROOT)
+    if not outside and not unresolved:
+        assert problem is None
+        return
+    assert problem is not None
+    assert (problem.untested, problem.kind) == (True, "isolation")
+    for named in [*outside, *unresolved]:
+        assert named in problem.message
+    assert ("does not resolve" in problem.message) is bool(unresolved)
+    assert (f"outside {SKILL_ROOT}" in problem.message) is bool(outside)
+
+
+def developer_message(*texts: str) -> str:
+    return json.dumps({"type": "response_item", "payload": {
+        "type": "message", "role": "developer",
+        "content": [{"type": "input_text", "text": text} for text in texts]}})
+
+
+def test_the_skills_block_reduces_to_its_own_root_table():
+    """The 0.160 rendering (`codex debug prompt-input`, read offline): the
+    table and the locators of one message form one record; an alias another
+    message defines, or one the table names twice, stays unresolved."""
+    block = (f"### Skill roots\n- `r0` = `{HOME_ROOT}`\n- `r1` = `{SKILL_ROOT}`\n"
+             f"### Available skills\n- proposal-check: Synthetic. (file: r1/{CHECK})\n"
+             f"- grill-me: Synthetic. (file: r0/{GRILL})\n")
+    [record] = codex_cli.reduce_rollout([developer_message("<skills_instructions>", block)])
+    assert record == {"type": "codex.skills", "roots": {"r0": HOME_ROOT, "r1": str(SKILL_ROOT)},
+                      "files": [f"r1/{CHECK}", f"r0/{GRILL}"]}
+    assert codex_cli.offered_skills([record], SKILL_ROOT) == (
+        [f"{Path(HOME_ROOT, GRILL)} (r0/{GRILL})"], [])
+    table_only = f"### Skill roots\n- `r0` = `{SKILL_ROOT}`\n"
+    update = f"## Skills update\n- proposal-check: Synthetic. (file: r0/{CHECK})\n"
+    records = codex_cli.reduce_rollout([developer_message(table_only), developer_message(update)])
+    assert records == [{"type": "codex.skills", "roots": {}, "files": [f"r0/{CHECK}"]}]
+    assert codex_cli.offered_skills(records, SKILL_ROOT) == ([], [f"r0/{CHECK}"])
+    twice = (f"### Skill roots\n- `r0` = `{SKILL_ROOT}`\n- `r0` = `{HOME_ROOT}`\n"
+             f"### Available skills\n- proposal-check: Synthetic. (file: r0/{CHECK})\n")
+    [ambiguous] = codex_cli.reduce_rollout([developer_message(twice)])
+    assert ambiguous["roots"] == {}
+    assert codex_cli.offered_skills([ambiguous], SKILL_ROOT) == ([], [f"r0/{CHECK}"])
+
+
 @pytest.mark.parametrize(("problem", "kind"), [
     (host_login.check_codex_version((0, 133, 0)), "precondition"),
     (host_login.check_codex_version(None), "precondition"),
@@ -1002,8 +1131,9 @@ def test_capture_rollout_reduces_and_deletes_the_session_record(tmp_path):
         "codex.token_count"]
     assert records[0] == {"type": "codex.session", "id": thread, "cli_version": "0.160.0",
                           "model_provider": "openai"}
-    assert records[1]["files"] == [
-        "/tmp/devrun-check_report-fixture/.agents/skills/proposal-check/SKILL.md"]
+    assert records[1] == {"type": "codex.skills",
+                          "roots": {"r0": "/tmp/devrun-check_report-fixture/.agents/skills"},
+                          "files": ["r0/proposal-check/SKILL.md"]}
     assert records[3] == {"type": "codex.tool", "name": "skills.load"}
     text = json.dumps(records)
     assert "SYNTHETIC" not in text

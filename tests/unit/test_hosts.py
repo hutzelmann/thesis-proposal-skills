@@ -209,7 +209,8 @@ def test_a_codex_run_is_summarized_and_labelled(codex_home, tmp_path, monkeypatc
     assert line["cost_usd"] is None
     assert line["notional_basis"] == "unpriced"
     assert (line["model_requested"], line["model"], line["cli_version"]) == (
-        "gpt-fixture-a", "unreported", "0.160.0")
+        "gpt-fixture-a", "gpt-fixture-a", "0.160.0")  # the session record's turn model
+    assert "model_check" not in line
     assert line["quota_before"]["primary"]["used_percent"] == 12.0
     assert line["quota_after"]["primary"]["used_percent"] == 14.0
     [run] = runs

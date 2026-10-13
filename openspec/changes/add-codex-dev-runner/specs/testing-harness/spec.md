@@ -34,7 +34,7 @@ Five parts SHALL differ per host, each behind one adapter per host: the host's c
 - A Codex run SHALL require the model on the command line and pass it on unchanged. It SHALL refuse a provider-qualified identifier before staging.
 - The registry SHALL hold no Codex role, the runner SHALL supply no default model, and the model-currency check SHALL raise no alert for Codex.
 - A reasoning effort MAY be requested, from the host's explicit levels, but never the level that hands work to subagents.
-- The effort the host served SHALL be recorded. A requested effort that the host did not serve SHALL make the run untested.
+- The effort the host served SHALL be recorded, as the session record's turn context names it, and as "unreported" where it names none. A requested effort that the host did not serve SHALL make the run untested.
 
 **Invocation.** A Codex run SHALL:
 
@@ -47,7 +47,7 @@ Five parts SHALL differ per host, each behind one adapter per host: the host's c
 
 **Isolation.** A Codex run SHALL see only the skills under test, installed in the workspace where Codex discovers repository skills. Its home directory and XDG base directories SHALL be scratch directories belonging to the run, so the operator's user-scope skills, shell start-up files and key files are not visible to it. After the run, it SHALL count as untested in either of these cases:
 
-- its session record lists a skill outside the workspace's skill directory, or shows a call of the host's cloud-skill tools;
+- its session record lists a skill outside the workspace's skill directory, or one whose location it does not resolve, or shows a call of the host's cloud-skill tools. A location given as a root alias resolves only through the root table of the same skills block, and only to an absolute directory. A location given as an absolute path is read as it is. Any other location counts as unresolved;
 - its stream shows an MCP tool call. The home configures no MCP server, so any call is foreign.
 
 After the run, before the runner reads or writes anything in the workspace, it SHALL check that the workspace is still the directory the run started in and holds no link, no FIFO, socket or device, and no file with a second name elsewhere: the sandbox lets the run write the workspace, and a link it makes there never touches its target, so the runner, which is not sandboxed, would otherwise act on the target. The check SHALL fail closed: the workspace and every directory in it must still be open to their owner for reading, writing and search, and every entry must be examinable, because a directory the runner cannot list would hide a link from the check while the runner could still open a fixed name in it. Each such entry SHALL be removed without being followed, a directory closed to its owner is left as it is and never reopened, and the run SHALL be untested for isolation with an isolation stop recorded in the Codex home; no verdict reads its files. While that stop is recorded, every later Codex run SHALL be refused as untested for isolation before any Codex process starts, naming the stop's cause and its one remedy: reading the run's findings, then clearing the stop with the login command's clear option (requirement: Harness-owned host logins). A stop record that cannot be read SHALL count as a recorded stop. The status command reports the stop and is not refused by it.
@@ -110,6 +110,10 @@ After the run, before the runner reads or writes anything in the workspace, it S
 #### Scenario: Foreign skill offered
 - **WHEN** a Codex session record lists a skill whose file lies outside the workspace's skill directory
 - **THEN** the run is untested, names the skill's path, and no verdict is computed
+
+#### Scenario: Skill offered through a root alias
+- **WHEN** a Codex session record's skills block offers a skill as a root alias such as `r0/proposal-check/SKILL.md`
+- **THEN** the alias is resolved through the root table of the same block. The run is not untested on that account when the table names the workspace's skill directory for the alias. The run is untested for isolation, naming the location, when the table names a directory outside it, when the table names a relative directory, when the table names the alias twice, or when no table in the block names it
 
 #### Scenario: Install scenario on Codex
 - **WHEN** an install-prompt scenario is requested on Codex
@@ -593,7 +597,7 @@ This holds wherever a runner installs a skill: the host's skill directory in the
 
 The dev runner SHALL read the host's event stream rather than its plain text output, and SHALL save that stream into the run's workspace, so that a kept workspace carries the run's tool calls and narration for later reading. On Codex, the stream is the JSON event stream together with the records the runner reads from the host's session record, saved in the same file. Beside each run's L1 verdict, the runner SHALL report:
 
-- the model the host served, by the full ID the host reports, beside the name the run requested, and the host CLI version. On Codex, the served model reads "unreported" unless the host reports a reroute, and the CLI version comes from the session record;
+- the model the host served, by the full ID the host reports, beside the name the run requested, and the host CLI version. On Codex, the served model is the reroute's target where the host reports a reroute. Otherwise it is the model the session record's turn context names, noted where it differs from the requested name, and "unreported" where the record names none. The CLI version comes from the session record;
 - the run's cost, number of turns and duration. Codex reports no cost. On Codex the cost SHALL be absent, never zero. A notional figure is given only where the registry's roster prices the same model name under OpenAI's provider; otherwise the run is labelled unpriced;
 - the input and output token counts, with the cache read and cache write counts. On Codex, the input count excludes the cached input, and the reasoning token count is added;
 - on Codex, each plan quota window's usage before and after the run;
@@ -794,7 +798,7 @@ The telemetry and final-text readers SHALL be pinned against a recorded result e
 
 #### Scenario: Codex run reports no cost
 - **WHEN** a Codex run completes on a model name the roster does not price under OpenAI's provider
-- **THEN** the summary carries no cost, labels the run unpriced, reports the uncached input, cached input, output and reasoning token counts and the quota windows before and after, and records the served model as unreported
+- **THEN** the summary carries no cost, labels the run unpriced, and reports the uncached input, cached input, output and reasoning token counts and the quota windows before and after. It records the served model and effort as the session record's turn context names them, and as unreported where it names none
 
 #### Scenario: Budget cap refused on Codex
 - **WHEN** a Codex run is requested with a budget cap

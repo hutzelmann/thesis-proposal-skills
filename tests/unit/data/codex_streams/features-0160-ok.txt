@@ -8,7 +8,12 @@ auth_elicitation                         stable             false
 browser_use                              stable             false
 browser_use_external                     stable             false
 browser_use_full_cdp_access              stable             false
-code_mode_host                           stable             false
+code_mode                                under development  false
+code_mode_buffered_exec                  removed            false
+code_mode_host                           stable             true
+code_mode_interrupt                      under development  false
+code_mode_only                           under development  false
+code_mode_prewarm                        under development  false
 collaboration_modes                      removed            true
 compaction_image_budget                  stable             true
 computer_use                             stable             false

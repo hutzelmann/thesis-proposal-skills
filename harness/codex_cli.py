@@ -35,10 +35,12 @@ backstop, failing closed:
   (`capture_rollout`); its provider, plan report, credits, limit state and
   reroutes are checked (`billing_problem`), with the refresh failures and the
   login restriction (`failure_reason`), the isolation (`isolation_problem`:
-  a skill outside the workspace, a cloud-skill tool, any MCP call) and the
-  served effort (`effort_problem`). Before any of that, right after the
-  child, the workspace is checked (`workspace_breach`, design Decision 16,
-  shared with Copilot through `workspace_guard`): the sandbox lets the run
+  a skill outside the workspace — an `rN/` locator resolved against the
+  skills block's own root table, one it cannot resolve refused — a
+  cloud-skill tool, any MCP call) and the served effort (`effort_problem`).
+  Before any of that, right after the child, the workspace is checked
+  (`workspace_breach`, design Decision 16, shared with Copilot through
+  `workspace_guard`): the sandbox lets the run
   write it, so a link, FIFO, socket, device or hard link left there, or the
   workspace replaced, is removed unfollowed, makes the run untested for
   isolation (`planted_problem`) and records an isolation stop in the home
@@ -49,9 +51,11 @@ Every refusal is untested and uses the one refusal template
 (`host_login.refusal`). Codex items map to the canonical tool names
 (`codex_tool_calls`: `Bash`, `Skill` for a shell read of a `proposal-*`
 `SKILL.md`, `Edit`, `Agent`, `mcp__<server>__<tool>`, `WebSearch`), so the
-shared verdicts and the route reader work unchanged. Codex reports no cost:
-the summary's cost is absent, with a notional figure only where the roster
-prices the same name under OpenAI's provider (`codex_read`).
+shared verdicts and the route reader work unchanged. The served model and
+effort are the session record's turn context (a reroute's target first),
+"unreported" where it names none. Codex reports no cost: the summary's cost
+is absent, with a notional figure only where the roster prices the same name
+under OpenAI's provider (`codex_read`).
 
 Imports `host_login`, the shape module `hosts` and `workspace_guard` only —
 never `routing` or `claude_cli` — so `routing.tool_calls` can use it without a
@@ -101,7 +105,7 @@ DISABLED_FEATURES = (
     "computer_use",
     # default-on at 0.160 (X7): surface or reach beyond the shell and the workspace
     "daemon_auto_start", "remote_plugin", "skill_search", "mentions_v2", "worktrees",
-    "browser_use_full_cdp_access", "code_mode_host", "realtime_conversation", "in_app_chat",
+    "browser_use_full_cdp_access", "realtime_conversation", "in_app_chat",
     "in_app_dictation", "in_app_local_automation", "in_app_updates", "auth_elicitation",
     "tool_call_mcp_elicitation", "write_stdin_approval",
 )
@@ -112,6 +116,11 @@ SUBAGENT_FEATURE = "multi_agent"
 ALLOWED_FEATURES = (
     "shell_tool",  # the shell is how the run reads its skill and works the workspace
     "unified_exec",  # the shell tool's execution backend
+    # the tool host: 0.160's catalog gives every plan model `tool_mode: code_mode_only`, so
+    # each tool call runs as a cell in the local `codex-code-mode-host` (stdio, shipped in
+    # the CLI package) and reaches the shell through the same tool router; disabled, every
+    # tool call fails closed ("code-mode host is disabled", task 7.3 attempt 1, 2026-10-13)
+    "code_mode_host",
     # plumbing, default-on at 0.160 (X7): no tool, surface or reach of its own
     "shell_snapshot",  # caches the shell's start-up environment between commands
     "unified_exec_tty",  # gives the shell tool's commands a terminal
@@ -684,7 +693,15 @@ def features_problem(listing: str, allowed: Sequence[str]) -> LoginProblem | Non
 # ---------- the session record (design Decision 10) -------------------------------------------
 
 SESSIONS = "sessions"
+# The skills block (codex-cli 0.160, rendered offline with `codex debug prompt-input`):
+#   ### Skill roots
+#   - `r0` = `/abs/…/.agents/skills`
+#   ### Available skills
+#   - proposal-check: … (file: r0/proposal-check/SKILL.md)
+# A locator is either absolute or `rN/<rest>`, the alias named in the same block's table.
 _SKILL_FILE = re.compile(r"\(file: ([^)\n]+?SKILL\.md)\)")
+_SKILL_ROOT = re.compile(r"^- `(r\d+)` = `([^`\n]+)`$", re.MULTILINE)
+_ALIASED = re.compile(r"(r\d+)/(.+)")
 CLOUD_SKILLS = "skills."
 
 
@@ -711,10 +728,15 @@ def _event_msg(payload: dict) -> list[dict]:
 
 def _response_item(payload: dict) -> list[dict]:
     if payload.get("type") == "message":
-        texts = [block.get("text", "") for block in payload.get("content") or []
-                 if isinstance(block, dict)]
-        files = [match for text in texts for match in _SKILL_FILE.findall(text)]
-        return [{"type": "codex.skills", "files": files}] if files else []
+        text = "\n".join(str(block.get("text") or "") for block in payload.get("content") or []
+                         if isinstance(block, dict))
+        files = _SKILL_FILE.findall(text)
+        # this message's table only, never merged across messages; an alias the table
+        # names twice is left out, so its locators stay unresolved (fail-closed)
+        table = _SKILL_ROOT.findall(text)
+        aliases = [alias for alias, _ in table]
+        roots = {alias: path for alias, path in table if aliases.count(alias) == 1}
+        return [{"type": "codex.skills", "roots": roots, "files": files}] if files else []
     if payload.get("type") == "function_call":
         name = str(payload.get("name") or "")
         namespace = payload.get("namespace")
@@ -835,6 +857,7 @@ def codex_tool_calls(events: list[dict]) -> list[tuple[str, dict]]:
 # ---------- readers and telemetry (design Decision 12) -------------------------------------------
 
 _REROUTE = re.compile(r"model rerouted: (\S+) -> (\S+)")
+UNREPORTED = "unreported"
 
 
 @dataclass(frozen=True)
@@ -876,7 +899,8 @@ def _messages(events: list[dict]) -> list[str]:
 
 def rerouted(events: list[dict]) -> tuple[str, str] | None:
     """(requested, served) when the host rerouted the model; only the error
-    item counts — `turn_context.model` is the requested model."""
+    item counts — `turn_context.model` is the model the turn was set up with,
+    so a swap by the server shows there only through this item."""
     for text in _messages(events):
         match = _REROUTE.search(text)
         if match:
@@ -936,23 +960,32 @@ def codex_telemetry(events: list[dict], args: argparse.Namespace,
         "tokens_cache_write": usage["cache_write_input_tokens"],
         "tokens_reasoning": usage["reasoning_output_tokens"],
         "effort_requested": getattr(args, "effort", None),
-        "effort_served": _last(events, "codex.turn_context").get("effort"),
+        "effort_served": _last(events, "codex.turn_context").get("effort") or UNREPORTED,
         "quota_before": harness.get("quota_before"),
         "quota_after": _quota_after(events),
         "ignored_env": ignored_env(os.environ),
     }
 
 
+def served_model(events: list[dict]) -> str:
+    """The model the run was served: a reroute's target where the host
+    reported one, else the session record's turn model, else "unreported"."""
+    reroute = rerouted(events)
+    return reroute[1] if reroute else (
+        _last(events, "codex.turn_context").get("model") or UNREPORTED)
+
+
 def codex_read(events: list[dict], args: argparse.Namespace,
                rates: Rates | None = None) -> RunView:
     """The Codex host's `RunView`: the last agent message, the requested model
-    beside the served one ("unreported" unless a reroute names it), the CLI
-    version from the session record, and the telemetry."""
-    reroute = rerouted(events)
-    return RunView(final_text(events), getattr(args, "model", None),
-                   reroute[1] if reroute else "unreported",
+    beside the served one (`served_model`), with a note where they differ, the
+    CLI version from the session record, and the telemetry."""
+    requested, served = getattr(args, "model", None), served_model(events)
+    check = (f"served {served}, requested {requested}"
+             if requested and served not in (requested, UNREPORTED) else None)
+    return RunView(final_text(events), requested, served,
                    _last(events, "codex.session").get("cli_version"),
-                   codex_telemetry(events, args, rates))
+                   codex_telemetry(events, args, rates), check)
 
 
 # ---------- failures, the billing guard after the run, isolation, effort --------------------------
@@ -1055,21 +1088,58 @@ def explicit_billing(events: list[dict]) -> LoginProblem | None:
     return next((problem for check in EXPLICIT_BILLING if (problem := check(events))), None)
 
 
-def _inside(path: str, root: Path) -> bool:
-    return Path(path).resolve().is_relative_to(root.resolve())
+def _inside(path: Path, root: Path) -> bool:
+    return path.resolve().is_relative_to(root.resolve())
+
+
+def skill_path(locator: str, roots: Mapping[str, str]) -> Path | None:
+    """A skills-block locator as an absolute path: an absolute locator as it
+    is, `rN/<rest>` joined to the absolute path its record's root table names
+    for `rN`. None for anything else — an alias the table lacks, a relative
+    root, a bare relative path — so the caller refuses it (fail-closed)."""
+    if PurePath(locator).is_absolute():
+        return Path(locator)
+    aliased = _ALIASED.fullmatch(locator)
+    root = roots.get(aliased[1]) if aliased else None
+    if not isinstance(root, str) or not PurePath(root).is_absolute():
+        return None
+    return Path(root, aliased[2])
+
+
+def offered_skills(events: list[dict], skill_root: Path) -> tuple[list[str], list[str]]:
+    """(outside, unresolved): the offered skills whose resolved path lies
+    outside `skill_root` (named as resolved, with the locator where it was an
+    alias), and the locators no root table resolves. A record without a
+    `roots` table — one kept before roots were read — resolves only absolute
+    locators."""
+    outside: list[str] = []
+    unresolved: list[str] = []
+    for record in events:
+        if record.get("type") != "codex.skills":
+            continue
+        roots = record.get("roots") if isinstance(record.get("roots"), dict) else {}
+        for locator in map(str, record.get("files") or []):
+            path = skill_path(locator, roots)
+            if path is None:
+                unresolved.append(locator)
+            elif not _inside(path, skill_root):
+                outside.append(locator if str(path) == locator else f"{path} ({locator})")
+    return outside, unresolved
 
 
 def isolation_problem(events: list[dict], skill_root: Path) -> RunProblem | None:
-    """A skill offered from outside the workspace's skill directory, a call of
-    the host's cloud-skill tools, or any MCP call (the home configures no MCP
-    server): untested for isolation."""
-    foreign = [path for record in events if record.get("type") == "codex.skills"
-               for path in record.get("files") or [] if not _inside(path, skill_root)]
+    """A skill offered from outside the workspace's skill directory, or from a
+    location the session record does not resolve, a call of the host's
+    cloud-skill tools, or any MCP call (the home configures no MCP server):
+    untested for isolation."""
+    foreign, unresolved = offered_skills(events, skill_root)
     cloud = [str(r.get("name")) for r in events if r.get("type") == "codex.tool"
              and str(r.get("name")).startswith(CLOUD_SKILLS)]
     mcp = [name for name, _ in codex_tool_calls(events) if name.startswith("mcp__")]
     parts = [*([f"the run offered skills outside {skill_root}: {', '.join(foreign)}"]
                if foreign else []),
+             *([f"the run offered skills whose root the session record does not resolve: "
+                f"{', '.join(unresolved)}"] if unresolved else []),
              *([f"the run called the host's cloud-skill tools: {', '.join(cloud)}"]
                if cloud else []),
              *([f"the run made MCP tool calls, and the home configures no MCP server: "
