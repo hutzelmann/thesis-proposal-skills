@@ -113,6 +113,43 @@ def test_search_rejects_unknown_source(tmp_path):
     assert "must never be imported" not in result.stderr + result.stdout
 
 
+def spy_reads(monkeypatch) -> list[Path]:
+    """Record every file `Path.read_text` is asked to open during the test."""
+    opened: list[Path] = []
+    original = Path.read_text
+
+    def recording(self, *args, **kwargs):
+        opened.append(Path(self))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", recording)
+    return opened
+
+
+def test_l0_never_opens_a_real_key_file(monkeypatch):
+    """The developer's own key files stay out of L0 (`_lit_keys_offline` in
+    conftest): neither the user-global file nor `api-keys.env` where pytest
+    runs is opened by a key lookup, the user agent, or a keyless source."""
+    import openalex
+    import pytest
+
+    real = {Path.home() / ".config" / "thesis-proposal" / common.KEY_FILE,
+            Path.cwd() / common.KEY_FILE}
+    assert common.GLOBAL_KEY_FILE not in real
+    opened = spy_reads(monkeypatch)
+    assert common.get_key("OPENALEX_API_KEY") is None
+    assert "mailto:" not in common.user_agent()
+    with pytest.raises(common.SourceError, match="no OPENALEX_API_KEY"):
+        openalex.search("anything", 1)
+    assert not real & set(opened), f"L0 opened a real key file: {sorted(real & set(opened))}"
+
+
+def test_l0_key_reader_opens_nothing_outside_the_test_temp_root(monkeypatch):
+    opened = spy_reads(monkeypatch)
+    assert common._read_key(REPO / "pyproject.toml", "name") is None
+    assert opened == []
+
+
 def test_get_key_explicit_path_overrides_and_resolves_per_key(tmp_path, monkeypatch):
     override = tmp_path / "elsewhere" / "keys.env"
     override.parent.mkdir()

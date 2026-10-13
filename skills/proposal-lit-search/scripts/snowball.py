@@ -31,26 +31,35 @@ GRAPH_SOURCES = {
 
 def expand(seeds: list[str], limit: int, direction: str) -> list[dict]:
     collected: list[dict] = []
+    noted: set[str] = set()
+
+    def note(text: str) -> None:
+        """Each distinct note once per run, however many seeds and directions
+        hit the same failure (a missing key used to print once per call)."""
+        if text not in noted:
+            noted.add(text)
+            print(text, file=sys.stderr)
+
     for name, module in GRAPH_SOURCES.items():
         for seed in seeds:
             doi = common.clean_doi(seed)
             if not doi:
-                print(f"note: `{seed}` is not a DOI, skipped", file=sys.stderr)
+                note(f"note: `{seed}` is not a DOI, skipped")
                 continue
-            for kind in ("references", "citations", "recommendations"):
-                if direction == "backward" and kind != "references":
+            for edge in ("references", "citations", "recommendations"):
+                if direction == "backward" and edge != "references":
                     continue
-                if direction == "forward" and kind == "references":
+                if direction == "forward" and edge == "references":
                     continue
-                func = getattr(module, kind, None)
+                func = getattr(module, edge, None)
                 if func is None:
                     continue
                 try:
                     collected.extend(func(doi, limit))
                 except common.SourceError as exc:
-                    print(f"note: source degraded — {exc}", file=sys.stderr)
-                except Exception as exc:
-                    print(f"note: {name}.{kind} failed — {exc}", file=sys.stderr)
+                    note(f"note: source degraded — {exc}")
+                except Exception as exc:  # the type only: its text can carry server output
+                    note(f"note: {name}.{edge} failed — {type(exc).__name__}")
     return common.dedupe(collected)
 
 

@@ -21,6 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,6 +32,8 @@ RETRY_CODES = (429, 500, 502, 503)
 MAX_BODY = 16 * 1024 * 1024  # a larger answer is refused, never read whole
 SCAN_LIMIT = 64 * 1024  # verification markers are searched in this prefix only
 MAX_PASS_DELAY = 10  # seconds a verification page may ask the script to wait
+MAX_XML_DEPTH = 32  # an Atom feed nests four deep; deeper is refused, not parsed
+XML_CHUNK = 64 * 1024  # fed at a time, so a refused depth stops the parse early
 
 _last_call: dict[str, float] = {}
 
@@ -38,10 +41,12 @@ _last_call: dict[str, float] = {}
 class SourceError(Exception):
     """A source is unavailable (network, quota, missing key, unusable answer).
 
-    `http_json` classifies its failures in `kind` — "challenge" (a verification
-    page that was not passed), "unexpected" (HTML or other non-JSON content),
-    "malformed_json", "http", "network" — so an orchestrator acts on the cause
-    without parsing the message. Other raisers leave `kind` None.
+    `http_json` and `http_xml` classify their failures in `kind` — "challenge"
+    (a verification page that was not passed), "unexpected" (HTML, other XML or
+    other content than the document asked for), "malformed" (a document that
+    does not parse; the message names the format), "http", "network" — so an
+    orchestrator acts on the cause without parsing the message. Other raisers
+    leave `kind` None.
     """
 
     def __init__(self, message: str, *, kind: str | None = None, status: int | None = None,
@@ -126,26 +131,47 @@ def http_json(url: str, params: dict | None = None, headers: dict | None = None,
     message names only the source, the status and the media type — never the
     URL, the query, cookies or any text the server chose.
     """
-    if params:
-        url = f"{url}?{urllib.parse.urlencode(params)}"
+    return _request(_Call(_with_params(url, params), headers or {}, source, _JSON), min_interval)
+
+
+def http_xml(url: str, params: dict | None = None, source: str = "",
+             min_interval: float = 1.0, *, root: str) -> ET.Element:
+    """GET an XML document (arXiv's Atom feed) under the same rules as
+    `http_json`, and return its root element, which must be `root` (Clark
+    notation, e.g. "{http://www.w3.org/2005/Atom}feed").
+
+    A body is parsed only when its first markup is that root element, so no
+    document type declaration — and no entity definition — reaches the parser.
+    """
+    return _request(_Call(_with_params(url, params), {}, source, _Xml(root)), min_interval)
+
+
+def _with_params(url: str, params: dict | None) -> str:
+    return f"{url}?{urllib.parse.urlencode(params)}" if params else url
+
+
+def _request(call: _Call, min_interval: float):
+    """Throttle, fetch and retry by cause; every failure leaves as a classified
+    SourceError."""
+    source = call.source
     wait = _last_call.get(source, 0) + min_interval - time.monotonic()
     if wait > 0:
         time.sleep(wait)
-    call = _Call(url, {"User-Agent": user_agent(), **(headers or {})}, source)
+    call.headers = {"User-Agent": user_agent(), **call.headers}
     last_error: BaseException | None = None
     for attempt in range(RETRIES + 1):
         try:
-            return _fetch_json(call)
+            return _fetch(call)
         except urllib.error.HTTPError as exc:
-            exc.close()
+            exc.close()  # its reason phrase is the server's text: only the code is kept
             if exc.code not in RETRY_CODES or attempt == RETRIES:
                 raise SourceError(f"{source}: HTTP {exc.code}", kind="http",
                                   status=exc.code) from exc
             time.sleep(BACKOFF_SECONDS * (attempt + 1))
         except SourceError as exc:
             # a truncated transfer may succeed on retry; a page the server
-            # chose to send instead of JSON will not
-            if exc.kind != "malformed_json" or attempt == RETRIES:
+            # chose to send instead of the document will not
+            if exc.kind != "malformed" or attempt == RETRIES:
                 raise
             time.sleep(BACKOFF_SECONDS)
         except (OSError, http.client.HTTPException) as exc:  # URLError, timeouts, resets
@@ -247,11 +273,128 @@ def reset_session() -> None:
     _last_call.clear()
 
 
+# ---------- document formats ---------------------------------------------------
+#
+# A body is parsed only when it starts as the document asked for; such a body
+# is never taken for a verification page, whatever its records quote. Anything
+# else is classified by `_decode`, and each format names what it saw.
+
+_HTML_TYPES = ("text/html", "application/xhtml+xml")
+
+
+def _unwrapped(body: bytes) -> bytes:
+    """The body without a UTF-8 BOM and leading whitespace."""
+    return body.removeprefix(b"\xef\xbb\xbf").lstrip()
+
+
+class _OtherDocument(Exception):
+    """Well-formed, but another document than the one asked for."""
+
+
+class _Json:
+    name = "JSON"
+
+    @staticmethod
+    def start(body: bytes) -> bytes | None:
+        text = _unwrapped(body)
+        return text if text[:1] in (b"{", b"[") else None
+
+    @staticmethod
+    def parse(text: bytes):
+        return json.loads(text)
+
+    @staticmethod
+    def other(body: bytes, media_type: str) -> tuple[str, str]:
+        if body.lstrip()[:1] == b"<" or media_type in _HTML_TYPES:
+            return "returned an HTML page", ", not JSON"
+        return "returned non-JSON content", ""
+
+
+# the first start tag's local name, any prefix; matched on a bounded prefix only
+_START_TAG = re.compile(rb"<(?:[A-Za-z_][\w.-]{0,63}:)?([A-Za-z_][\w.-]{0,63})[\s/>]")
+
+
+class _Xml:
+    name = "XML"
+
+    def __init__(self, root: str) -> None:
+        self.root = root
+        self.local = root.rpartition("}")[2].encode()
+
+    @staticmethod
+    def _first_markup(body: bytes) -> bytes:
+        """The body from its first markup, past an XML declaration — one that
+        holds no markup of its own, as a real declaration never does."""
+        text = _unwrapped(body)
+        end = text.find(b"?>", 0, 1024) if text.startswith(b"<?xml") else -1
+        if end >= 0 and b"<" not in text[1:end]:
+            return text[end + 2:].lstrip()
+        return text
+
+    def start(self, body: bytes) -> bytes | None:
+        """The body, if its first markup is the root element's start tag: a
+        document type declaration would precede it, so none gets through."""
+        match = _START_TAG.match(self._first_markup(body)[:256])
+        return _unwrapped(body) if match and match.group(1) == self.local else None
+
+    def parse(self, text: bytes) -> ET.Element:
+        """The document, built in chunks so that a depth past MAX_XML_DEPTH
+        ends the parse within one chunk: expat keeps its own tag stack, which
+        a hostile depth would otherwise grow by hundreds of MiB."""
+        parser = ET.XMLParser(target=_DepthLimited())
+        try:
+            for offset in range(0, len(text), XML_CHUNK):
+                parser.feed(text[offset:offset + XML_CHUNK])
+            document = parser.close()
+        except ET.ParseError as exc:  # a SyntaxError, not a ValueError
+            raise ValueError("malformed XML") from exc
+        if document.tag != self.root:
+            raise _OtherDocument
+        return document
+
+    def other(self, body: bytes, media_type: str) -> tuple[str, str]:
+        head = self._first_markup(body)[:16].lower()
+        if head.startswith((b"<!doctype html", b"<html")) or media_type in _HTML_TYPES:
+            return "returned an HTML page", ", not XML"
+        if head[:1] == b"<":
+            return "returned XML other than the expected document", ""
+        return "returned non-XML content", ""
+
+
+class _DepthLimited:
+    """An XMLParser target: the standard tree builder, refusing nesting deeper
+    than MAX_XML_DEPTH with a ValueError (classified as malformed)."""
+
+    def __init__(self) -> None:
+        self.builder = ET.TreeBuilder()
+        self.depth = 0
+
+    def start(self, tag: str, attrs: dict) -> ET.Element:
+        self.depth += 1
+        if self.depth > MAX_XML_DEPTH:
+            raise ValueError("XML nested too deep")
+        return self.builder.start(tag, attrs)
+
+    def end(self, tag: str) -> ET.Element:
+        self.depth -= 1
+        return self.builder.end(tag)
+
+    def data(self, data: str) -> None:
+        self.builder.data(data)
+
+    def close(self) -> ET.Element:
+        return self.builder.close()
+
+
+_JSON = _Json()
+
+
 @dataclass
 class _Call:
     url: str
     headers: dict
     source: str
+    fmt: _Json | _Xml
     may_pass: bool = field(default=True)
 
 
@@ -260,25 +403,25 @@ class _Reply:
     request: urllib.request.Request
     response: http.client.HTTPResponse
     body: bytes
+    fmt: _Json | _Xml
 
     @property
     def status(self) -> int:
         return self.response.status
 
-    def json_text(self) -> bytes | None:
-        """The body without BOM and leading whitespace, if it starts like JSON."""
-        text = self.body.removeprefix(b"\xef\xbb\xbf").lstrip()
-        return text if text[:1] in (b"{", b"[") else None
+    def document(self) -> bytes | None:
+        """The body to parse, if it starts as the document asked for."""
+        return self.fmt.start(self.body)
 
 
 def _get(call: _Call) -> _Reply:
     request = urllib.request.Request(call.url, headers=call.headers)
     _last_call[call.source] = time.monotonic()
     with _OPENER.open(request, timeout=TIMEOUT) as response:
-        return _Reply(request, response, response.read(MAX_BODY + 1))
+        return _Reply(request, response, response.read(MAX_BODY + 1), call.fmt)
 
 
-def _fetch_json(call: _Call):
+def _fetch(call: _Call):
     reply = _get(call)
     host = urllib.parse.urlsplit(call.url).hostname
     if call.may_pass and host not in _UNPASSABLE and _is_challenge(reply):
@@ -319,7 +462,7 @@ def _pass_url(base: str, target: str) -> str | None:
 
 
 def _is_challenge(reply: _Reply) -> bool:
-    if reply.json_text() is not None:
+    if reply.document() is not None:  # a record quoting the markup is still data
         return False
     head = reply.body[:SCAN_LIMIT]
     if any(marker in head for marker in _CHALLENGE_MARKERS):
@@ -369,7 +512,8 @@ def _media_type(raw: str | None) -> str:
 
 
 def _decode(reply: _Reply, source: str):
-    """The JSON document, or a SourceError naming what came back instead."""
+    """The document, or a SourceError naming what came back instead."""
+    fmt = reply.fmt
     media_type = _media_type(reply.response.headers.get("Content-Type"))
 
     def unusable(kind: str, what: str, suffix: str = "") -> SourceError:
@@ -378,41 +522,20 @@ def _decode(reply: _Reply, source: str):
 
     if len(reply.body) > MAX_BODY:
         raise unusable("unexpected", "response exceeded 16 MiB")
-    if (text := reply.json_text()) is not None:
+    if (text := reply.document()) is not None:
         try:
-            return json.loads(text)
+            return fmt.parse(text)
+        except _OtherDocument:
+            raise unusable("unexpected",
+                           f"returned {fmt.name} other than the expected document") from None
         except (ValueError, RecursionError) as exc:
-            raise unusable("malformed_json", "returned malformed JSON") from exc
+            raise unusable("malformed", f"returned malformed {fmt.name}") from exc
     if _is_challenge(reply):
         raise unusable("challenge", "returned an Anubis browser-verification page",
-                       ", not JSON, and automatic verification did not pass")
+                       f", not {fmt.name}, and automatic verification did not pass")
     if not reply.body.strip():
         raise unusable("unexpected", "returned an empty body")
-    if reply.body.lstrip()[:1] == b"<" or media_type in ("text/html", "application/xhtml+xml"):
-        raise unusable("unexpected", "returned an HTML page", ", not JSON")
-    raise unusable("unexpected", "returned non-JSON content")
-
-
-def http_text(url: str, params: dict | None = None, source: str = "",
-              min_interval: float = 1.0) -> str:
-    """GET a text document (arXiv Atom XML) with the same politeness rules."""
-    if params:
-        url = f"{url}?{urllib.parse.urlencode(params)}"
-    wait = _last_call.get(source, 0) + min_interval - time.monotonic()
-    if wait > 0:
-        time.sleep(wait)
-    request = urllib.request.Request(url, headers={"User-Agent": user_agent()})
-    for attempt in range(RETRIES + 1):
-        try:
-            _last_call[source] = time.monotonic()
-            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-                return response.read().decode("utf-8", errors="replace")
-        except (urllib.error.URLError, TimeoutError) as exc:
-            if attempt < RETRIES:
-                time.sleep(BACKOFF_SECONDS)
-                continue
-            raise SourceError(f"{source}: {exc}") from exc
-    raise SourceError(f"{source}: unreachable")
+    raise unusable("unexpected", *fmt.other(reply.body, media_type))
 
 
 # ---------- normalization ----------------------------------------------------

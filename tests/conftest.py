@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import common
 import copilot_cli
 import host_login
 import model_currency
@@ -126,6 +127,31 @@ def _model_catalog_offline(monkeypatch):
     the error the gate already handles keeps such tests free of any knowledge
     of the catalog."""
     monkeypatch.setattr(model_currency, "fetch_json", failing_fetch("network disabled in L0 tests"))
+
+
+@pytest.fixture(autouse=True)
+def _lit_keys_offline(monkeypatch, tmp_path_factory, _absent_state_root):
+    """L0 never reads the developer's own literature-search keys
+    (classify-arxiv-answers design D11). `common` computes its user-global key
+    file from the real home at import, consults `api-keys.env` wherever pytest
+    runs, and `user_agent()` looks up CONTACT_EMAIL on every request; a real
+    key there would turn a keyless test into a live, keyed one. So the global
+    file lies in a temporary directory, the key variables a developer's shell
+    may export are dropped, and the key-file reader opens nothing outside
+    pytest's temporary root: tests that need a key file write it under
+    `tmp_path` and point the working directory or THESIS_PROPOSAL_KEYS at it.
+    `import common` is the lit-search source for every test, so the vendored
+    `validate_refs.py` callers are covered too."""
+    root = tmp_path_factory.getbasetemp().resolve()
+    read = common._read_key
+
+    def read_test_files_only(path: Path, name: str) -> str | None:
+        return read(path, name) if Path(path).resolve().is_relative_to(root) else None
+
+    monkeypatch.setattr(common, "_read_key", read_test_files_only)
+    monkeypatch.setattr(common, "GLOBAL_KEY_FILE", _absent_state_root / common.KEY_FILE)
+    for name in (common.KEY_FILE_ENV, "OPENALEX_API_KEY", "CONTACT_EMAIL", "OPENCITATIONS_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture

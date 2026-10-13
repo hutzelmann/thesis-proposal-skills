@@ -53,7 +53,9 @@ def federate(query: str, limit: int, sources: list[str]) -> list[dict]:
                 note += ". " + BROWSER_HINT.format(source=name)
             print(note, file=sys.stderr)
         except Exception as exc:  # a broken source must never block the search
-            print(f"note: source failed unexpectedly — {name}: {exc}", file=sys.stderr)
+            # the type only: an error's own text can carry what a server sent
+            print(f"note: source failed unexpectedly — {name}: {type(exc).__name__}",
+                  file=sys.stderr)
     print(f"sources: {', '.join(contributed) or 'none'}", file=sys.stderr)
     return common.dedupe(collected)
 

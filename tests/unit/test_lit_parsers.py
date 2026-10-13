@@ -60,9 +60,11 @@ def test_crossref_references(monkeypatch):
 
 
 def test_arxiv_search(monkeypatch):
+    import xml.etree.ElementTree as ET
+
     import arxiv
-    xml = (DATA / "arxiv_search_sample.xml").read_text(encoding="utf-8")
-    monkeypatch.setattr(common, "http_text", lambda *_a, **_k: xml)
+    feed = ET.fromstring((DATA / "arxiv_search_sample.xml").read_bytes())
+    monkeypatch.setattr(common, "http_xml", lambda *_a, **_k: feed)
     items = arxiv.search("code review", 3)
     assert_entries(items)
     assert any(i.get("abstract") for i in items)
