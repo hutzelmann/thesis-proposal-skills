@@ -111,22 +111,54 @@ The methodology section must reference every research question explicitly with `
 ## Substance Tests
 
 A proposal that satisfies every structural rule can still be empty.
-Six tests define the substance bar; agents judging a proposal cite them by these names, and a proposal that fails them is not ready no matter how cleanly it checks:
+Six tests define the substance bar; agents judging a proposal cite them by these names, and a proposal that fails any of them but necessity is not ready no matter how cleanly it checks:
 
 - **Delta test** — the proposal states precisely what the thesis adds beyond the work it cites: what it confirms, refutes, or extends. A contribution section that reads as a feature list or restates the field fails; confirming or refuting a published finding under new conditions passes, because extending is not the only admissible delta.
 - **Falsifiability test** — the research questions can come out negative. A question whose every conceivable outcome counts as success fails.
 - **Swap test** — the proposal's core statements could not equally describe ten other theses in the area. Text that stays plausible after swapping the topic noun fails as generic.
 - **Necessity test** — every sentence, citation and technical term serves a research question, the delta, or the method. Material that is true, specific and well-sourced still fails if removing it would not weaken the argument. This is the swap test's mirror: the swap test catches text that could belong to any thesis in the area, the necessity test catches text that belongs to a different one.
 - **Method-fit test** — the methodology concretely answers each research question. Method prose that never touches the questions is boilerplate and fails.
-- **Executability test** — the proposal gives concrete, actionable goals: it names the objects of study (dataset, system, population, corpus), states a concrete evaluation, is feasible in the stated months, and makes clear what the student would actually do first.
+- **Executability test** — the proposal gives concrete, actionable goals: it names the objects of study (dataset, system, population, corpus), states a concrete evaluation, is feasible in the stated months, and makes clear what the student would actually do first. It asks for a plausible plan, not a finalized protocol: a choice the student can make during the thesis without changing a research question does not fail it.
 
 A citation does not satisfy the necessity test. A citation is evidence for a claim, so a claim no research question, delta, or method step needs fails together with the sentence carrying it, however good the source behind it — and a sentence written so that an entry in the reference list gets cited is exactly that failure. This is where a neighbouring field's vocabulary enters a proposal that has no use for it.
+
+## Readiness
+
+A proposal is ready when it lets a supervisor make an informed decision to supervise the thesis — not when the thesis could begin tomorrow without another methodological decision. Ready for that decision is a different state from an execution protocol finalized: the proposal settles the research questions, the contribution, the method and the scope, and the thesis settles the rest. Judging a proposal never demands the second state.
+
+Every finding about a proposal belongs to exactly one of three classes:
+
+- **Proposal blockers** — problems that prevent judging the thesis core, and only those: failures of a substance test other than the necessity test. That covers no answerable research question, an unclear contribution — including literature too thin to show what the thesis adds — a method that cannot answer a question, a scope that cannot fit the stated months at the declared level, and an indispensable resource whose availability is doubtful. Nothing else blocks. Necessity, density, title and citation-practice findings are reported but never block on their own; material that obscures what the thesis contributes or asks is reported as the contribution or research-question blocker it causes.
+- **Clarify early in the thesis** — decisions that matter for rigorous execution and can be settled by an initial pilot, a supervisor discussion, or ordinary student judgement without changing a research question, the contribution or the methodology: exact model versions, capture conventions, audit sample sizes, rules for exceptional runs.
+- **Optional refinements** — improvements to presentation or execution that are not conditions of acceptance.
+
+A finding may wait for the thesis only when its **deferral record** can be filled:
+
+- what needs deciding;
+- why it matters;
+- when, or under what condition, it is settled;
+- a reasonable way to resolve it during the thesis that leaves the research questions, the contribution and the methodology intact;
+- whether an adverse outcome would require revisiting the proposal — no, or yes with a named fallback under which every research question stays answerable as asked.
+
+A finding whose record cannot be filled is a blocker. A blocker names the test it fails and says why it must be resolved before approval rather than during the thesis; that something is not specified is never that reason on its own. A finding sits in one class only: an item that would block only if something went wrong is a clarify-early item, and its record says what happens then.
+
+**Optional means optional.** Strike an element the proposal declares optional — expert ratings, an industry validation — from the plan. When every research question can still be answered, its arrangements (reviewer capacity, company agreements, scheduling) never block. When a research question falls with it, the element was never optional, and that inconsistency is the blocker.
+
+**Genuine dependencies are not deferred.** An indispensable permission, ethics approval or data access — one without which a research question cannot be answered — whose availability is doubtful stays a blocker. Routine organisational detail and arrangements for optional evidence are not such dependencies.
+
+**Stopping rule.** A proposal with no blocker is ready, however many early-thesis items or refinements remain. That more detail could be added never lowers a verdict, and nothing beyond these guidelines and the workspace `guidelines.md` is required — a program that wants, say, the ethics approval granted before acceptance says so there, and the item then blocks for that program.
+
+**Rounds converge.** A later review checks whether the earlier blockers were resolved, judged against what each asked for, not against a bar raised since. A finding about text the revision left unchanged never moves to a higher class than the earlier round gave it. Newly noticed execution details become early-thesis items; a new blocker either concerns text the revision introduced or changed, or is labelled as missed in the earlier round, with the flaw it exposes stated.
+
+The early-thesis items are the agenda for the first weeks of the thesis — its pilot, or the first discussion with the supervisor. They stay outside the proposal: no section, no work plan and no protocol paragraph carries them.
 
 ## Methodology Content
 
 These are the content contracts for the shipped branches. A workspace that declares its own branch carries that branch's contract in the declaration itself — read it there, and never fill a workspace subsection from a shipped branch that happens to have a similar name.
 
 Whatever the branch, the methodology section opens with one or two sentences stating why this methodology answers these research questions — the method-fit test written down by the student, not left for a reviewer to reconstruct. A section that starts at its first subsection has skipped its own justification.
+
+A contract element is met by a stated selection rule or candidate set as well as by a named instance: "two current model families, one open-weight and one hosted, chosen at the start of the thesis and documented with their version identifiers" covers the models, and a sample size fixed after a pilot covers the sample. The instance is chosen during the thesis and recorded there.
 
 - **Prototype Implementation** — Previous Work: key tools and libraries supporting the prototype and how they are used. Requirements: what the prototype must do, and explicitly which requirements are out of scope. Evaluation: not correctness verification, but how the prototype answers the research questions (dataset, benchmark, metrics) — name the empirical form the evaluation takes (a benchmark, a controlled measurement, a case study, a simulation) and compare against the state-of-the-art alternatives the contribution section cites, or state why comparing is impractical. Naming the form is part of this methodology, not a second one. The contract follows the design-science evaluation guidance of Hevner et al. (2004) and the ACM SIGSOFT Engineering Research standard.
 - **Theoretical Analysis** — Formalization: the mathematical model, logic, or type system. Requirements: expressiveness/soundness expectations, and what is out of scope. Example: the case study or running example illustrating the formalization. The contract is house guidance: no community reporting standard exists for formal work, and the branch corresponds to the formal-theory strategy in Stol and Fitzgerald's (2018) framework.

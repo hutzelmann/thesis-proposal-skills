@@ -64,6 +64,14 @@ EXPECTED_SCORERS = {
         "supervise_l1_closing", "supervise_l1_literature",
         "supervise_l1_substance_only", "supervise_l1_markup", "supervise_l1_locators",
     ],
+    "review_ready": ["review_ready_l1", "review_ready_l2"],
+    "review_dependency": ["review_dependency_l1", "review_dependency_l2"],
+    "review_converge": ["review_converge_l1", "review_converge_l2"],
+    "supervise_ready": [
+        "supervise_l1_feedback", "supervise_l1_points", "supervise_l1_tier",
+        "supervise_l1_pointers", "supervise_l1_closing", "supervise_l1_markup",
+        "supervise_ready_l1_block",
+    ],
 }
 
 

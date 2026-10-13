@@ -1,0 +1,19 @@
+{
+  "fixture": "w09-revised-round",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "an earlier review exists, so the new review carries an earlier-round section",
+    "both earlier blockers are resolved by the revised text: every configuration now runs on both models, and RQ3 is answered from the student's own audit with partner ratings optional",
+    "the earlier clarify-early item on the exact model versions is not promoted to a blocker, because the model-selection passage is unchanged; keeping it deferred or treating it as settled by the stated selection rule both move it to the same or a lower class",
+    "no new blocker, so the verdict is ready; newly noticed execution details such as audit sample size or run handling are clarify-early items"
+  ]
+}

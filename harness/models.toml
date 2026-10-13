@@ -155,9 +155,16 @@ matrix = [
 # (add-proposal-supervise); until then it runs on demand like the others here.
 # write_rich_seed and write_repair_citations measure one guidance rule (citation
 # scope, scope-citation-attribution) and run on demand like the rest of this list.
+# review_ready, review_dependency, review_converge and supervise_ready measure
+# proportionate review in both directions (proportionate-readiness-review); they
+# were verified on the subscription dev runner and run here on demand. The three
+# review tasks' L1 includes review_fixture's byte-identity probe, so on the
+# Inspect path an L1 failure is read as overreach first; promoted to the matrix,
+# they join excluded_l1 with it.
 extended = [
   "ideate_stonewall", "ideate_outofscope", "ideate_probing", "troubleshoot_model_rung",
   "supervise_feedback", "write_rich_seed", "write_repair_citations",
+  "review_ready", "review_dependency", "review_converge", "supervise_ready",
 ]
 # Smoke subset: cheap, short, high signal.
 core = ["write_from_seed", "import_messy", "customize_override"]
@@ -195,6 +202,9 @@ review_fixture = "proposal-review"
 review_fixture_de = "proposal-review"
 review_hollow = "proposal-review"
 title_alarm = "proposal-review"
+review_ready = "proposal-review"
+review_dependency = "proposal-review"
+review_converge = "proposal-review"
 ideate_longrun = "proposal-ideate"
 ideate_stonewall = "proposal-ideate"
 ideate_probing = "proposal-ideate"
@@ -204,6 +214,7 @@ publish_build = "proposal-publish"
 import_messy = "proposal-import"
 reverse_from_harvest = "proposal-reverse"
 supervise_feedback = "proposal-supervise"
+supervise_ready = "proposal-supervise"
 
 # Default epochs per price tier (flakiness statistics where re-runs are cheap).
 # The heavy tasks above always drop to 1 epoch on the frontier tier. The CLI

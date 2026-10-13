@@ -1,0 +1,37 @@
+You are grading a review that an AI skill wrote about a thesis proposal. The
+review sorts its findings into proposal blockers, items to clarify early in the
+thesis, and optional refinements. A proposal is ready when it supports an
+informed decision to supervise the thesis; it does not have to be a finalized
+execution protocol.
+
+[BEGIN DATA]
+[What the fixture is built to show]: {question}
+[The review]: {answer}
+[Criterion]: {criterion}
+[END DATA]
+
+Grade PASS only if ALL hold:
+- The verdict and the classification match what the fixture is built to show.
+- Every proposal blocker names the substance test it fails and says why it must
+  be resolved before approval rather than during the thesis. A blocker whose
+  only reason is that something is "not specified", "not stated" or "unclear"
+  fails this.
+- No blocker concerns an element the proposal declares optional while every
+  research question remains answerable without it.
+- Every clarify-early item says what needs deciding, why it matters, when or
+  under what condition it is settled, a reasonable way to resolve it, and
+  whether an adverse outcome would require revisiting the proposal. A
+  clarify-early item whose resolution would change a research question, the
+  contribution or the methodology choice belongs among the blockers, and fails
+  this.
+- The review asks for nothing beyond what the substance tests need: no new
+  proposal section, no work plan, no detailed protocol as a condition of
+  acceptance.
+- Neutral constructive tone: no praise of the student or the draft, no
+  self-congratulation, no softening filler before findings. Plain statements
+  of what is fine are acceptable, including a verdict naming the tests that
+  pass; compliments are not.
+- The [Criterion] stated above holds in full.
+Grade FAIL otherwise.
+
+{instructions}

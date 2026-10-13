@@ -134,10 +134,14 @@ from l1_checks import (
     verdict_paper_foundation,
     verdict_repaired_draft,
     verdict_review,
+    verdict_review_converged,
+    verdict_review_dependency,
+    verdict_review_ready,
     verdict_scoping_containment,
     verdict_seed,
     verdict_single_context,
     verdict_supervise_feedback_contract,
+    verdict_supervise_ready_block,
     verdict_supervise_review_sections,
     verdict_supervise_scope_options,
     verdict_supervise_verification_declared,
@@ -190,6 +194,49 @@ SCENARIOS = {
         "proposal": "software-quality-ml.md",
         "request": "Please review my proposal software-quality-ml.md — "
                    "is it ready for my supervisor?",
+    },
+    # readiness, both directions (testing-harness spec: readiness coverage). f28
+    # is viable with bounded execution decisions open, so any blocker is
+    # overblocking; f29 differs in one paragraph that makes RQ3 depend on
+    # partner access still to be negotiated, so ready is underblocking; w09 is
+    # f28's text beside an earlier review whose blockers it resolves
+    "review_ready": {
+        "fixture": "f28-open-decisions",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": "Please review my proposal ci-repair-agent-configurations.md — "
+                   "is it ready for my supervisor?",
+    },
+    "review_dependency": {
+        "fixture": "f29-doubtful-dependency",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": "Please review my proposal ci-repair-agent-configurations.md — "
+                   "is it ready for my supervisor?",
+    },
+    "review_converge": {
+        "fixture": "w09-revised-round",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": "I revised ci-repair-agent-configurations.md after your last review — "
+                   "please review it again. Is it ready for my supervisor now?",
+    },
+    # supervisor side of the overblocking control: a standard-format proposal
+    # used as-is, so normalization is a no-op and the feedback's tier, points
+    # and clarify-early block are what is measured
+    "supervise_ready": {
+        "fixture": "f28-open-decisions",
+        "skill": "proposal-supervise",
+        "proposal": "ci-repair-agent-configurations.md",
+        "feedback": True,
+        "ready": True,
+        "helpers": 1,
+        "request": "A student sent me this thesis proposal — I saved it as "
+                   "ci-repair-agent-configurations.md. Prepare my feedback: the draft "
+                   "I can send back. If the verdict turns out borderline, do not ask "
+                   "me — take the needs-revision path. Do not make any network "
+                   "lookups — no claim checks and no literature — and I cannot answer "
+                   "any further question.",
     },
     "write_from_seed": {
         "fixture": "w01-ideate-seed",
@@ -421,6 +468,9 @@ DRAFT_SCENARIOS = ("write_from_seed", "write_rich_seed", "write_repair_citations
 REVIEW_VERDICTS = {
     "review_fixture": verdict_review,
     "review_hollow": verdict_hollow_review,
+    "review_ready": verdict_review_ready,
+    "review_dependency": verdict_review_dependency,
+    "review_converge": verdict_review_converged,
 }
 
 
@@ -955,6 +1005,9 @@ def supervise_verdict(scenario: dict, ws: Path,
         results += [verdict_supervise_scope_options(first_text(ws, "*-feedback.md"),
                                                     load_closing_note(SKILLS)),
                     verdict_supervise_review_sections(review)]
+    if scenario.get("ready"):
+        results.append(verdict_supervise_ready_block(first_text(ws, "*-feedback.md"),
+                                                     load_closing_note(SKILLS)))
     failed = [reason for ok, reason in results if not ok]
     if failed:
         return False, "; ".join(failed)

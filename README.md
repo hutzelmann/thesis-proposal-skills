@@ -168,14 +168,15 @@ The skills encode conservative academic guidance: analytical research questions 
 
 Bachelor's and Master's proposals are held to different bars, not different documents. Structure, section list and check are identical at both levels; the level — read from the subtitle, never guessed — changes only what the skills ask for. A Bachelor's proposal may close its contribution with a competent application or evaluation in a named setting, a novelty claim welcome but not required; a Master's proposal has to name what will be new and for whom; demanding a novelty claim from the one is the same error as accepting its absence from the other. Where the research questions come from, the weight established literature may carry and the scope the available months allow grade the same way. A subtitle that leaves the level open gets a level-neutral review with one line saying so. Anything stricter per level — a Master-only reference floor, a different page limit — is a rule you write into the `guidelines.md` described below, because programs weight the difference differently and the defaults stay portable. [docs/degree-level-sources.md](docs/degree-level-sources.md) records the qualification frameworks, curricula and assessment literature behind the grading.
 
-Substance is judged, not assumed. The review skill applies six named tests (delta, falsifiability, swap, necessity, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. The student decides what to do about it; the tools advise and never block.
+Substance is judged, not assumed. The review skill applies six named tests (delta, falsifiability, swap, necessity, method-fit, executability) and says plainly when a draft has no viable thesis core, rather than polishing hollow material into something that merely reads well. It is just as plain about the other direction. A proposal is ready when it supports a decision to supervise, not when its execution protocol is finished, so open execution decisions such as exact model versions or a pilot-fixed sample size become an agenda for the first weeks of the thesis, not new conditions for approval. The student decides what to do about it; the tools advise and never block.
 
 Feedback on incoming submissions has a skill of its own. `proposal-supervise` takes whatever a student sent — PDF, Word export, pasted email — and normalizes it with personal data stripped. It judges the submission against the same check and review rules your students' tools use, and checks whether the plan fits the months it has.
 
 It then drafts the feedback:
 - a verdict;
 - when the plan is too large, two or three lettered ways to cut it to one core, with the choice left to the student;
-- the three to five most pressing points, each with its reason;
+- up to five points that block approval, each with its reason, and none when the proposal is ready;
+- up to five decisions to settle once the thesis starts, marked as no condition for resubmission;
 - what to keep;
 - a plain-language note that an AI assistant prepared it.
 

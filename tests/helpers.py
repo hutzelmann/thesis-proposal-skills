@@ -27,8 +27,27 @@ FIXTURES = REPO / "tests" / "fixtures"
 MODEL_CATALOG = REPO / "tests" / "unit" / "data" / "model_catalog"
 REGISTRY_PATH = REPO / "harness" / "models.toml"
 
-# markdown that sits beside a fixture proposal without being one
+# markdown that sits beside a fixture proposal without being one: the corpus
+# README and workspace overrides by name; by suffix, a handout and a harvest
+# record (w06) — inputs to a skill, never documents to check or build
 NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
+NON_PROPOSAL_SUFFIXES = ("-handout.md", ".harvest.md")
+REVIEW_SUFFIX = "-review.md"
+
+
+def is_fixture_proposal(path: Path) -> bool:
+    """Whether a markdown file in the fixture corpus is a proposal. One
+    predicate for every corpus walker, so a new kind of companion file is
+    excluded everywhere at once rather than wherever someone remembered.
+
+    An earlier round's review (w09) is `<slug>-review.md` beside `<slug>.md`;
+    the suffix alone would also match a proposal slugged `…-review`
+    (f00's `ml-code-review.md`), so the sibling decides."""
+    name = path.name
+    if name in NON_PROPOSAL_MARKDOWN or name.endswith(NON_PROPOSAL_SUFFIXES):
+        return False
+    stem = name.removesuffix(REVIEW_SUFFIX)
+    return stem == name or not path.with_name(f"{stem}.md").is_file()
 
 
 @dataclass(frozen=True)
@@ -57,10 +76,7 @@ def run_check(proposal: Path, *extra: str) -> CheckRun:
 
 def fixture_proposal(fixture: str) -> Path:
     """The one proposal markdown file in a fixture directory."""
-    return next(
-        p for p in sorted((FIXTURES / fixture).glob("*.md"))
-        if p.name not in NON_PROPOSAL_MARKDOWN and not p.name.endswith("-handout.md")
-    )
+    return next(p for p in sorted((FIXTURES / fixture).glob("*.md")) if is_fixture_proposal(p))
 
 
 def shipped_registry() -> support.Registry:

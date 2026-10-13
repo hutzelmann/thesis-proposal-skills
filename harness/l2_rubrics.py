@@ -69,6 +69,18 @@ CRITERIA: dict[tuple[str, str], str] = {
         "tests by name for defects that are actually present, states what kind of "
         "work would change the verdict, and never softens it into needs-revision "
         "phrasing.",
+    ("review_ready", "review_ready_l2"):
+        "Opens ready, raises no proposal blocker and no conditional or hedged one, "
+        "and gives every item it defers its deferral record.",
+    ("review_dependency", "review_dependency_l2"):
+        "Opens with needs revision and carries a blocker on the doubtful, "
+        "indispensable access, naming its test and why it cannot wait; every other "
+        "blocker it raises is a genuine substance-test failure with its reason.",
+    ("review_converge", "review_converge_l2"):
+        "Carries the earlier round over, marks the earlier blockers resolved against "
+        "what they asked for, moves no finding about unchanged text to a higher class "
+        "(the unchanged clarify-early item stays deferred or is settled), raises no "
+        "new blocker, and opens ready.",
     ("title_alarm", "title_l2_alarm"):
         "Title raised as its own finding, certificate consequence named, one to "
         "three abstracted alternatives offered, decision left with the student.",
@@ -161,6 +173,8 @@ DEV_RUBRICS: dict[str, tuple[DevCriterion, ...]] = {
         DevCriterion(("review_fixture", "review_l2_quality"), "review_quality.txt", "oracle"),),
     "review_hollow": (
         DevCriterion(("review_hollow", "review_hollow_l2"), "review_quality.txt", "oracle"),),
+    **{name: (DevCriterion((name, f"{name}_l2"), "readiness.txt", "oracle"),)
+       for name in ("review_ready", "review_dependency", "review_converge")},
 }
 
 

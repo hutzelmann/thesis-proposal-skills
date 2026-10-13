@@ -40,7 +40,7 @@ A proposal may have a companion working file, `<slug>.notes.md`, with five secti
 
 If the target proposal has one, read it before drafting. Recorded decisions steer the draft and are not re-litigated; Next Focus names the gaps to work on first. Decisions this session produces go into its Decisions section. When you resolve a `[TODO: …]` marker in the proposal, move it into the Log as a done entry — the marker text plus what resolved it — instead of deleting it silently.
 
-Proposal TODOs are for submission-blocking gaps only. Working knowledge that does not block submission — rationale, rejected alternatives, non-blocking open points, next steps — belongs in the notes file, not the proposal. Without a notes file, work as before; create one only when you have decisions to record, never as an empty skeleton.
+Proposal TODOs are for submission-blocking gaps only. Working knowledge that does not block submission — rationale, rejected alternatives, non-blocking open points, next steps — belongs in the notes file, not the proposal. Without a notes file, work as before; create one only when you have decisions or clarify-early items from an applied review to record, never as an empty skeleton.
 
 ## From scratch
 
@@ -72,7 +72,7 @@ A named technology stays only when the student can say it is the object of study
 ## Refining
 
 - Minimal, surgical edits: preserve the author's substance and voice; touch only what the request or the review finding requires.
-- "Apply the review": work through `<slug>-review.md` item by item, reporting per item what changed or why it was skipped.
+- "Apply the review": work through `<slug>-review.md` item by item, reporting per item what changed or why it was skipped. Blockers and refinements are edits to the proposal. Clarify-early items are not: record each, with its deferral record, under the notes file's Open Points, and write one into the proposal only when the author asks for that item there — never as a new section, a work plan, or protocol detail the next review would then audit.
 - Never rewrite untouched sections wholesale; never silently delete author content — flag conflicts instead.
 
 ## Language

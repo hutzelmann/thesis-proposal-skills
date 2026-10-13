@@ -755,6 +755,163 @@ def verdict_hollow_review(original: str, current: str | None, review: str | None
     return True, f"no-viable-core verdict, tests cited: {', '.join(cited)}"
 
 
+# The review's section titles per language (skill-review spec: persisted,
+# actionable output), keyed by the readiness class they carry. Matched on the
+# `## ` heading text, case-insensitive, so either language's review parses.
+REVIEW_SECTIONS = {
+    "earlier": ("earlier round", "frühere runde"),
+    "blockers": ("proposal blockers", "vor der annahme zu klären"),
+    "early": ("clarify early in the thesis", "früh in der arbeit zu klären"),
+    "refinements": ("optional refinements", "optionale verbesserungen"),
+}
+# Verdict phrases by tier, English then German. The verdict is the tier whose
+# phrase comes *first* in the opening lines: a ready verdict may go on to say
+# that nothing needs revision before approval, and the tier is still ready.
+REVIEW_TIERS = {
+    "no viable thesis core": r"no viable thesis core|kein tragfähiger thesenkern",
+    "needs revision": r"needs revision|überarbeitung erforderlich",
+    "ready": r"\bready\b|\bbereit\b",
+}
+# a tier phrase the opening negates is not the verdict: "not (yet) ready",
+# "noch nicht bereit", "keine Überarbeitung erforderlich"
+_NEGATED = re.compile(r"(?:\bnot(?: yet)?|\bnicht|\bkeine?|\bno)\s+$")
+# a numbered item (plain or bold), or an item written as its own `### `
+# sub-heading; bullets count only in a section that numbers nothing
+_NUMBERED_ITEM = re.compile(r"^(?:\*\*)?\d+[.)](?:\*\*)?\s|^###\s", re.MULTILINE)
+_BULLET_ITEM = re.compile(r"^[-*]\s", re.MULTILINE)
+# the first status word of an earlier-round item; `open` not as in "open-weight"
+_STATUS = re.compile(
+    r"\b(not resolved|unresolved|partly[- ]resolved|partially resolved|resolved|open(?![-\w])"
+    r"|nicht (?:erledigt|gelöst|behoben)|teilweise (?:erledigt|gelöst|behoben)"
+    r"|erledigt|gelöst|behoben|offen)\b")
+RESOLVED_STATUS = ("resolved", "erledigt", "gelöst", "behoben")
+
+
+def first_unnegated(head: str, pattern: re.Pattern | str) -> re.Match | None:
+    """The first match of `pattern` in `head` that no negation precedes."""
+    return next((m for m in re.finditer(pattern, head)
+                 if not _NEGATED.search(head[:m.start()])), None)
+
+
+def review_tier(review: str | None) -> str | None:
+    """The tier the review opens with, by the earliest unnegated tier phrase
+    in its first five lines; None when none is stated."""
+    head = " ".join((review or "").splitlines()[:5]).lower()
+    hits = [(m.start(), tier) for tier, pattern in REVIEW_TIERS.items()
+            if (m := first_unnegated(head, pattern))]
+    return min(hits)[1] if hits else None
+
+
+def review_sections(review: str | None) -> dict[str, str]:
+    """The body of each readiness section a review carries, keyed by class.
+    A heading may be numbered ("## 1. Proposal blockers") or carry trailing
+    words ("Proposal blockers (none)"); what counts is the section's title."""
+    sections: dict[str, str] = {}
+    for match in re.finditer(r"^##\s+(.+?)\s*$\n(.*?)(?=^##\s|\Z)", review or "",
+                             re.MULTILINE | re.DOTALL):
+        title = re.sub(r"^\d+[.)]?\s*", "", match.group(1).strip("*: ")).lower()
+        for key, titles in REVIEW_SECTIONS.items():
+            if key not in sections and title.startswith(titles):
+                sections[key] = match.group(2)
+    return sections
+
+
+def enumerated_items(body: str) -> list[str]:
+    """Top-level items of a section body, each with its continuation lines;
+    prose saying the section is empty yields none."""
+    starts = [m.start() for m in _NUMBERED_ITEM.finditer(body)] or [
+        m.start() for m in _BULLET_ITEM.finditer(body)]
+    return [body[a:b].strip() for a, b in pairwise([*starts, len(body)])]
+
+
+def earlier_resolved(body: str) -> int:
+    """How many earlier-round items are marked resolved, by each item's first
+    status word — so "partly resolved", "not resolved" and an item that says
+    "open" before it mentions what the revision resolved do not count."""
+    return sum(1 for item in enumerated_items(body)
+               if (m := _STATUS.search(item.lower())) and m.group(1) in RESOLVED_STATUS)
+
+
+def _review_shape(original: str, current: str | None, review: str | None,
+                  review_name: str, tier: str) -> tuple[bool, str, dict[str, str]]:
+    """Shared opening of the readiness verdicts: the proposal untouched, the
+    review written, the expected tier first, and the blocker section present."""
+    ok, why = verdict_review(original, current, review, review_name)
+    if not ok:
+        return False, why, {}
+    sections = review_sections(review)
+    found = review_tier(review)
+    if found != tier:
+        return False, f"review opens with {found or 'no tier'}, expected {tier}", sections
+    if "blockers" not in sections:
+        return False, "no proposal-blockers section", sections
+    return True, "", sections
+
+
+def verdict_review_ready(original: str, current: str | None, review: str | None,
+                         review_name: str) -> tuple[bool, str]:
+    """review_ready: on a viable proposal that leaves bounded execution
+    decisions open, the review opens ready, lists no blocker, and files the
+    open decisions as clarify-early items — the agenda (guidance: readiness
+    classification). A blocker here is overblocking, whatever it names."""
+    ok, why, sections = _review_shape(original, current, review, review_name, "ready")
+    if not ok:
+        return False, why
+    blockers = enumerated_items(sections["blockers"])
+    if blockers:
+        return False, f"{len(blockers)} blocker(s) on a ready proposal: {blockers[0][:120]}"
+    early = enumerated_items(sections.get("early", ""))
+    if not early:
+        return False, "no clarify-early items, though the proposal leaves decisions open"
+    return True, f"ready, no blocker, {len(early)} clarify-early item(s)"
+
+
+def verdict_review_dependency(original: str, current: str | None, review: str | None,
+                              review_name: str,
+                              terms: tuple[str, ...] = ("access", "partner", "engineer",
+                                                        "company")) -> tuple[bool, str]:
+    """review_dependency: an indispensable resource whose availability is in
+    doubt stays a blocker (guidance: dependency safeguard) — the review opens
+    with needs revision and one of its blockers concerns that resource."""
+    ok, why, sections = _review_shape(original, current, review, review_name,
+                                      "needs revision")
+    if not ok:
+        return False, why
+    blockers = enumerated_items(sections["blockers"])
+    hit = next((b for b in blockers if any(t in b.lower() for t in terms)), None)
+    if not hit:
+        return False, (f"{len(blockers)} blocker(s), none on the doubtful access "
+                       f"({', '.join(terms)})")
+    return True, f"needs revision, blocker on the dependency: {hit[:120]}"
+
+
+def verdict_review_converged(original: str, current: str | None, review: str | None,
+                             review_name: str, resolved_needed: int = 2,
+                             bait: tuple[str, ...] = ("model version", "version identifier",
+                                                      "model release", "exact model")
+                             ) -> tuple[bool, str]:
+    """review_converge: a later round carries the earlier one over, marks the
+    blockers the revision resolved, and does not promote the earlier
+    clarify-early item about an unchanged passage (skill-review spec: review
+    rounds converge)."""
+    ok, why, sections = _review_shape(original, current, review, review_name, "ready")
+    blockers = enumerated_items(sections.get("blockers", ""))
+    promoted = next((b for b in blockers if any(t in b.lower() for t in bait)), None)
+    if promoted:
+        return False, f"earlier clarify-early item promoted to a blocker: {promoted[:120]}"
+    if not ok:
+        return False, why
+    if blockers:
+        return False, f"{len(blockers)} new blocker(s) on a resolved revision: {blockers[0][:120]}"
+    if "earlier" not in sections:
+        return False, "no earlier-round section, though an earlier review existed"
+    resolved = earlier_resolved(sections["earlier"])
+    if resolved < resolved_needed:
+        return False, (f"earlier round marks {resolved} blocker(s) resolved, "
+                       f"{resolved_needed} expected")
+    return True, f"converged: ready, {resolved} earlier blocker(s) resolved, nothing promoted"
+
+
 def verdict_litsearch_expanded(text: str | None, before: int = 3) -> tuple[bool, str]:
     """lit-search: the reference list grew and carries no duplicate ids.
 
@@ -947,15 +1104,114 @@ def verdict_supervise_feedback(feedback: str | None) -> tuple[bool, str]:
     return True, "feedback present"
 
 
+def supervise_opening_tier(feedback: str | None) -> str | None:
+    """The student-facing tier the feedback opens with — ready, needs revision
+    or idea stage — by the earliest tier phrase in its first five lines, so an
+    incidental "ready" later in a needs-revision opening does not decide it."""
+    head = " ".join((feedback or "").splitlines()[:5]).lower()
+    match = first_unnegated(head, SUPERVISE_TIER_PATTERN)
+    if not match:
+        return None
+    phrase = match.group(0)
+    if phrase in ("ready", "bereit"):
+        return "ready"
+    if phrase in ("needs revision", "überarbeitung erforderlich"):
+        return "needs revision"
+    return "idea stage"
+
+
+def no_point_owed(feedback: str | None) -> str | None:
+    """Why a feedback may carry no numbered point, or None when it owes some:
+    it opens ready, or its lettered scope options carry its only blocker
+    (skill-supervise spec: workload volume check)."""
+    if supervise_opening_tier(feedback) == "ready":
+        return "ready feedback"
+    letters = {next(g for g in m.groups() if g)
+               for m in _LETTERED_OPTION.finditer(feedback or "")}
+    return "scope options carry the blocker" if len(letters) >= 2 else None
+
+
 def verdict_supervise_points(feedback: str | None) -> tuple[bool, str]:
-    """supervise: the feedback carries a numbered points list of at most five
-    entries (skill-supervise spec: curated to pressing points)."""
+    """supervise: the feedback's numbered points are blockers only — at most
+    five, and none only when no point is owed (skill-supervise spec: curated
+    to pressing points). Lettered cut options and the clarify-early dash list
+    are not numbered, so they never count."""
     items = re.findall(r"^\s*\d+[.)]\s", feedback or "", re.MULTILINE)
     if not items:
+        why = no_point_owed(feedback)
+        if why:
+            return True, f"no numbered points: {why}"
         return False, "no numbered points in the feedback"
     if len(items) > 5:
         return False, f"{len(items)} numbered points — at most five survive curation"
     return True, f"{len(items)} curated points"
+
+
+CLARIFY_EARLY_LABELS = ("clarify early in the thesis", "früh in der arbeit zu klären")
+# a promise of supervisor action the feedback must never make (skill-supervise
+# spec: draft-only, no commitments) — the clarify-early block is where an agenda
+# for "our first meeting" would slip in. Promise constructions only: "meet the
+# deadline" and "eine Entscheidung treffen" are ordinary prose.
+MEETING_PROMISE = re.compile(
+    r"\b(?:our(?:\s+(?:first|next))?|the\s+(?:first|next)|an\s+initial|a\s+first)\s+"
+    r"(?:meeting|conversation|call|discussion|appointment)\b|\ba meeting\b"
+    r"|\b(?:we|i)(?:'ll|\s+will|\s+can|\s+could|\s+should|\s+would)\s+(?:meet|discuss|talk)\b"
+    r"|\blet'?s\s+(?:meet|discuss|talk)\b|\btermin\b|\bbesprechung\b|\bsprechstunde\b"
+    r"|\b(?:unser(?:em|e)?|ein(?:em)?)\s+(?:ersten?\s+|nächsten?\s+)?(?:treffen|gespräch)\b",
+    re.IGNORECASE)
+
+
+def clarify_early_items(feedback: str | None) -> list[str] | None:
+    """The dash-listed items following the clarify-early label, or None when
+    the feedback carries no label. The label opens its line (a prose mention
+    elsewhere is not the block); its paragraph may wrap and a blank line may
+    separate it from the list. A wrapped item's indented continuation folds
+    into the item; the list ends at the first other line."""
+    lines = (feedback or "").splitlines()
+    at = next((i for i, line in enumerate(lines)
+               if line.strip().lstrip("*_ ").lower().startswith(CLARIFY_EARLY_LABELS)), None)
+    if at is None:
+        return None
+    items: list[str] = []
+    indent: int | None = None
+    in_label = True
+    for line in lines[at + 1:]:
+        bullet = re.match(r"(\s*)[-–*]\s", line)
+        if bullet and (indent is None or len(bullet.group(1)) <= indent):
+            indent = len(bullet.group(1)) if indent is None else indent
+            items.append(line.strip())
+        elif items and line.strip() and line[:1].isspace():
+            items[-1] += " " + line.strip()
+        elif items or not (in_label or not line.strip()):
+            break
+        elif not line.strip():
+            in_label = False
+    return items
+
+
+def verdict_supervise_ready_block(feedback: str | None,
+                                  closing: dict[str, str] | None = None) -> tuple[bool, str]:
+    """supervise_ready: on a viable proposal with open execution decisions the
+    feedback opens ready, carries no numbered point, names the decisions in a
+    labelled clarify-early block of one to five items, and promises no meeting
+    (skill-supervise spec: verdict expressed as proposal state). The closing
+    note is the shared snippet and is left out of the promise search."""
+    if supervise_opening_tier(feedback) != "ready":
+        return False, f"feedback opens with {supervise_opening_tier(feedback) or 'no tier'}"
+    if re.search(r"^\s*\d+[.)]\s", feedback or "", re.MULTILINE):
+        return False, "numbered points on a ready feedback"
+    items = clarify_early_items(feedback)
+    if not items:
+        return False, "no clarify-early block" if items is None else "clarify-early label, no items"
+    if len(items) > 5:
+        return False, f"{len(items)} clarify-early items — at most five"
+    body = _collapse(feedback or "")
+    for snippet in (closing or {}).values():
+        body = body.replace(_collapse(snippet), "")
+    promise = MEETING_PROMISE.search(body)
+    if promise:
+        return False, f"promises supervisor action: {promise.group(0)!r}"
+    return True, f"ready, no points, {len(items)} clarify-early item(s), no meeting promised"
 
 
 def verdict_supervise_tier(feedback: str | None) -> tuple[bool, str]:
@@ -991,7 +1247,8 @@ def verdict_supervise_pointers(feedback: str | None,
                                installed: tuple[str, ...]) -> tuple[bool, str]:
     """supervise: the feedback steers somewhere real — at least one skill
     named, and every `proposal-*` name it mentions exists in the installed
-    set."""
+    set. A skill is owed per point, so a feedback that opens ready with no
+    numbered points owes none (sonnet dev run over f28, 2026-10-13)."""
     # the lookbehind keeps repo/install names out: `thesis-proposal-skills` in
     # the closing note must not read as a skill named proposal-skills
     # case-insensitive: without code markup a skill name can open a sentence
@@ -999,6 +1256,9 @@ def verdict_supervise_pointers(feedback: str | None,
     named = {name.lower() for name in re.findall(r"(?<![\w-])proposal-[a-z][a-z-]*[a-z]",
                                                  feedback or "", re.IGNORECASE)}
     if not named:
+        why = no_point_owed(feedback)
+        if why and not re.search(r"^\s*\d+[.)]\s", feedback or "", re.MULTILINE):
+            return True, f"no numbered points ({why}), so no skill pointer is owed"
         return False, "feedback names no skill at all"
     unknown = sorted(named - set(installed))
     if unknown:
