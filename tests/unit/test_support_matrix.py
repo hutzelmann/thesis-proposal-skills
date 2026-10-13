@@ -322,10 +322,24 @@ def test_render_summary_shows_untested_and_flaky(registry):
     assert "2026-08-06" in text
 
 
-def test_render_summary_keeps_disabled_models_visible(registry):
+def test_render_summary_leaves_disabled_models_out(registry):
+    """The README lists current models only; a disabled row's verdict stays in
+    the grid and the exported data."""
     text = support.render_summary(list(registry.models), {}, "2026-08-06")
-    assert "`lab/off-2`" in text
-    assert "disabled in registry" in text
+    assert "`lab/off-2`" not in text
+    assert "disabled in registry" not in text
+    grid = support.render_grid(list(registry.models), ["t"], {}, {}, "2026-08-06")
+    assert "`lab/off-2` (disabled)" in grid
+    exported = support.export_support(list(registry.models), ["t"], {}, {}, "2026-08-06")
+    assert exported["models"]["lab/off-2"]["enabled"] is False
+
+
+def test_newest_day_takes_the_newest_stamp_or_never():
+    import report
+
+    assert report.newest_day(["2026-08-06T10:00:00", "", "2026-08-10T09:00:00"]) == "2026-08-10"
+    assert report.newest_day(["", ""]) == "never"
+    assert report.newest_day([]) == "never"
 
 
 def test_render_summary_partial_discloses_untested(registry):
@@ -1183,23 +1197,25 @@ def shipped_roster_mismatch(
 ) -> dict[str, set[str]]:
     """Per shipped artifact, the IDs it lists beyond the roster ("extra") and
     the roster IDs it lacks ("missing"), routing prefix dropped as the report
-    drops it."""
+    drops it. The data lists every registry row; the README its enabled ones."""
     import json
     import re
 
     registry = support.parse_registry(registry_path.read_text(encoding="utf-8"))
     roster = {m.id.removeprefix("openrouter/") for m in registry.models}
-    shipped = {
-        "shared/model-support.json":
-            set(json.loads(support_path.read_text(encoding="utf-8"))["models"]),
-    }
+    current = {m.id.removeprefix("openrouter/") for m in registry.models if m.enabled}
     readme = readme_path.read_text(encoding="utf-8")
     region = readme.split(support.START_MARKER, 1)[1].split(support.END_MARKER, 1)[0]
-    shipped["README.md summary"] = set(re.findall(r"^\| `([^`]+)` \|", region, re.MULTILINE))
+    shipped = {
+        "shared/model-support.json":
+            (set(json.loads(support_path.read_text(encoding="utf-8"))["models"]), roster),
+        "README.md summary":
+            (set(re.findall(r"^\| `([^`]+)` \|", region, re.MULTILINE)), current),
+    }
     mismatch = {}
-    for name, ids in shipped.items():
-        mismatch[f"{name} extra"] = ids - roster
-        mismatch[f"{name} missing"] = roster - ids
+    for name, (ids, expected) in shipped.items():
+        mismatch[f"{name} extra"] = ids - expected
+        mismatch[f"{name} missing"] = expected - ids
     return {k: v for k, v in mismatch.items() if v}
 
 
@@ -1219,7 +1235,7 @@ def test_shipped_verdict_check_catches_an_unregenerated_bump(tmp_path):
     registry = (REPO / "harness" / "models.toml").read_text(encoding="utf-8")
     parsed = support.parse_registry(registry)
     named_by_roles = {parsed.roles.judge, parsed.roles.persona, parsed.roles.smoke}
-    first = next(m.id for m in parsed.models if m.id not in named_by_roles)
+    first = next(m.id for m in parsed.models if m.id not in named_by_roles and m.enabled)
     bumped = tmp_path / "models.toml"
     bumped.write_text(registry.replace(f'id = "{first}"', f'id = "{first}-next"'), encoding="utf-8")
     mismatch = shipped_roster_mismatch(registry_path=bumped)
