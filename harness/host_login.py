@@ -218,7 +218,7 @@ L3_CAVEAT = "Whether this logs out your other Claude sessions is unverified (L3)
 # refresh token and whose login revokes the previous one held there
 # (`cli_login.rs:122-153` @0.160). add-codex-dev-runner task 6.4 flips it once
 # the user has observed it pass; the L0 tests cover both values.
-X8_PASSED = False
+X8_PASSED = True  # observed 2026-10-13: ChatGPT stayed signed in (task 6.4)
 CODEX_NOT_AFFECTED = "Your own Codex login is not affected"
 X8_CAVEAT = "Whether this logs out your other ChatGPT sessions is unverified (X8)"
 # A token-file client has no revocation check: its login and logout touch only

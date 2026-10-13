@@ -334,13 +334,14 @@ Ground rules for every task below:
 
   ~~*Pending: user action, then live check (2026-10-06).*~~
   *Done 2026-10-13: passed, on the Plus account directly.* The user had bought Plus, so the free-plan rehearsal was skipped and this login also serves 7.2. The user ran `uv run poe host-login codex` (browser flow, no `--device-auth`); `uv run poe host-status codex` read `marker: yes`, `logged_in: yes`, `auth_method: chatgpt`, `config_pinned: yes`, `clean: yes`, `features_ok: yes` (under the 9e0f48c feature policy), `cli_version: 0.160.0`, `stop: none`. The user's own `~/.codex/auth.json` mtime stayed 1780433511 (2026-06-02) before and after.
-- [ ] 6.4 X8, **USER ACTION** (observation, no command beyond these):
+- [x] 6.4 X8, **USER ACTION** (observation, no command beyond these):
   1. With a ChatGPT session open in the desktop app or on the web, run `uv run poe host-logout codex`, then `uv run poe host-login codex`.
   2. Confirm that the other session still works without a new sign-in.
 
   The agent records `stat -c %Y ~/.codex/auth.json` before and after (mtime only), and it must be unchanged. Pass: both hold. Then set `host_login.X8_PASSED = True`, which swaps the caveat for "Your own Codex login is not affected" in every message, and confirm that `uv run poe test` stays green. Do it here if this change is not yet archived, otherwise as a task in `record-codex-streams`. If the other session was signed out, keep `X8_PASSED = False`, document it in the README, and relay it to the user.
 
-  *Pending: user action (2026-10-06).* `X8_PASSED` is False; the L0 tests cover both values.
+  ~~*Pending: user action (2026-10-06).* `X8_PASSED` is False; the L0 tests cover both values.~~
+  *Done 2026-10-13: passed.* With a ChatGPT session open, the user ran `uv run poe host-logout codex` and `uv run poe host-login codex` (from a clean detached worktree at 54c3869) and reported that the other session was not signed out. `stat -c %Y ~/.codex/auth.json` read 1780433511 before and after. `host_login.X8_PASSED` is now True, and `uv run poe test` stays green.
 - [x] 6.5 X4b, run by the agent, with no model call: `uv run poe host-status codex --quota`. Record:
   - whether the handshake answered;
   - the window durations and used percentages;
