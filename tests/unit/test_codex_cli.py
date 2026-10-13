@@ -32,13 +32,16 @@ import host_login
 import pytest
 import routing
 import workspace_guard
-from helpers import REGISTRY_PATH, json_path, saved_stream
+from helpers import PROC_FDS, REGISTRY_PATH, json_path, reusing_lstat, saved_stream
 from host_login import CODEX, LoginProblem, refusal
 from l1_checks import verdict_single_context, verdict_supervise_verifier
 
 STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
 WS = Path(tempfile.gettempdir()) / "devrun-check_report-fixture"  # never created
 SKILL_ROOT = WS / ".agents" / "skills"
+# a user-scope skill directory outside the workspace, native on every platform; never created
+HOME_ROOT = str(Path(tempfile.gettempdir()) / "devrun-home-fixture" / ".agents" / "skills")
+GRILL = "grill-me/SKILL.md"
 POSIX = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None,
                            reason="POSIX signals and file locks")
 # a directory's mode keeps its owner out only when the owner is not root
@@ -50,7 +53,7 @@ CODEX_NOTE = "Your own Codex login is not affected"
 
 
 def stream(name: str, ws: Path = WS) -> list[dict]:
-    return saved_stream(STREAMS / f"{name}.jsonl", ws)
+    return saved_stream(STREAMS / f"{name}.jsonl", ws, home_skills=HOME_ROOT)
 
 
 def answer(name: str) -> dict:
@@ -985,7 +988,7 @@ def test_a_roster_priced_name_gets_a_notional_figure():
 
 @pytest.mark.parametrize(("name", "kind", "fragments"), [
     ("effort-dropped", "precondition", ["medium", "xhigh"]),
-    ("foreign-skill", "isolation", ["/home/fixture-user/.agents/skills/grill-me/SKILL.md"]),
+    ("foreign-skill", "isolation", [f"{Path(HOME_ROOT, GRILL)} (r0/{GRILL})"]),
     ("cloud-skill-tool", "isolation", ["skills.load"]),
     ("mcp-call", "isolation", ["docs", "publish"]),
     ("provider-leak", "subscription", ["openrouter"]),
@@ -1034,10 +1037,7 @@ def test_a_failed_run_with_a_billing_or_isolation_signal_is_untested(name, kind,
     assert (problem.billing is not None) is (kind == "subscription")
 
 
-# a user-scope skill directory outside the workspace, native on every platform; never created
-HOME_ROOT = str(Path(tempfile.gettempdir()) / "devrun-home-fixture" / ".agents" / "skills")
 CHECK = "proposal-check/SKILL.md"
-GRILL = "grill-me/SKILL.md"
 UP = "../../../etc/x/SKILL.md"
 
 
@@ -1230,6 +1230,11 @@ elif verb == "exec":
         cwd = pathlib.Path.cwd()
         cwd.rename(cwd.with_name(cwd.name + "-moved"))
         cwd.symlink_to(here)
+    if (here / "remake").exists():  # the workspace removed and made again under its name
+        cwd = pathlib.Path.cwd()
+        os.chdir(here)
+        cwd.rmdir()
+        cwd.mkdir()
     for line in (here / "events.jsonl").read_text(encoding="utf-8").splitlines():
         print(line, flush=True)
     if (here / "hang").exists():  # a run that outlives its time limit
@@ -1466,6 +1471,24 @@ def test_a_codex_run_that_replaces_its_workspace_reads_nothing_in_it(tmp_path):
     assert codex_cli.read_stop(home)["cause"] == workspace_guard.WORKSPACE_REPLACED
     problem = codex_cli.run_problem(events, skill_root=ws / ".agents" / "skills", effort=None)
     assert problem.kind == "isolation"
+
+
+@pytest.mark.skipif(not (PROC_FDS and host_login.fcntl),
+                    reason="POSIX file locks, this process's descriptors (/proc/self/fd)")
+def test_a_codex_run_that_makes_its_workspace_again_is_replaced_whatever_the_filesystem(
+        tmp_path, monkeypatch):
+    """The run holds the workspace's identity from before the child to the
+    check (`workspace_guard.pinned`): a workspace the shell removes and makes
+    again under its name is replaced even where the filesystem hands the
+    removed inode number on (simulated, `reusing_lstat`; ext4 does)."""
+    environ, bindir, home, ws = fake_run(tmp_path, cloud_tool=False)
+    (bindir / "remake").write_text("", encoding="utf-8")
+    monkeypatch.setattr(os, "lstat", reusing_lstat(ws, workspace_guard.workspace_identity(ws)))
+    events = codex_cli.run_codex(ws, "request", model="gpt-fixture-a", effort=None, timeout=60,
+                                 home=home, scenario=claude_runner.SCENARIOS["check_report"],
+                                 environ=environ)
+    assert events[-1]["workspace_breach"] == workspace_guard.WORKSPACE_REPLACED
+    assert codex_cli.read_stop(home)["cause"] == workspace_guard.WORKSPACE_REPLACED
 
 
 @POSIX

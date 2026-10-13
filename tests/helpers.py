@@ -15,7 +15,9 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import shutil
+import stat
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -119,13 +121,51 @@ def json_path(path: Path | str) -> str:
     return json.dumps(str(path))[1:-1]
 
 
-def saved_stream(path: Path, ws: Path | str | None = None) -> list[dict]:
+def saved_stream(path: Path, ws: Path | str | None = None,
+                 home_skills: Path | str | None = None) -> list[dict]:
     """A saved JSON-lines event list, its `__WS__` placeholder replaced by `ws`
-    (JSON-escaped, `json_path`) when one is given."""
+    and its `__HOME_SKILLS__` placeholder (a user-scope skill directory
+    outside the workspace) by `home_skills`, each JSON-escaped (`json_path`)
+    when given: native absolute paths on every platform."""
     text = path.read_text(encoding="utf-8")
     if ws is not None:
         text = text.replace("__WS__", json_path(ws))
+    if home_skills is not None:
+        text = text.replace("__HOME_SKILLS__", json_path(home_skills))
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+REAL_LSTAT = os.lstat
+# this process's descriptors, where Linux lists them; PROC_FDS: whether it does here
+PROC_FD_DIR = "/proc/self/fd"
+PROC_FDS = os.name == "posix" and Path(PROC_FD_DIR).is_dir()
+
+
+def reusing_lstat(ws: Path, start: tuple[int, int]) -> Callable[..., os.stat_result]:
+    """`os.lstat` as on a filesystem that hands a removed directory's inode
+    number to the next directory at once (ext4 does; tmpfs and btrfs, where
+    the suite usually runs, do not): `ws`, once it is a directory other than
+    the start's, reports the start's number while no descriptor of this
+    process keeps the start's inode alive (`PROC_FD_DIR`). Only for a start
+    that was removed: a start renamed away is alive without one."""
+    def alive() -> bool:
+        for entry in Path(PROC_FD_DIR).iterdir():
+            with contextlib.suppress(OSError):
+                info = os.fstat(int(entry.name))
+                if (info.st_dev, info.st_ino) == start:
+                    return True
+        return False
+
+    def lstat(path, *args, **kwargs) -> os.stat_result:
+        info = REAL_LSTAT(path, *args, **kwargs)
+        if (Path(path) == ws and stat.S_ISDIR(info.st_mode)
+                and (info.st_dev, info.st_ino) != start and not alive()):
+            fields = list(info)
+            fields[stat.ST_INO] = start[1]
+            return os.stat_result(fields)
+        return info
+
+    return lstat
 
 
 def copilot_stream(name: str, ws: Path | str | None = None) -> list[dict]:

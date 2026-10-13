@@ -13,6 +13,7 @@ package). The fake records which token-shaped variables it received, by name.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -39,7 +40,7 @@ import routing
 import workspace_guard
 from claude_cli import Grade, JudgeCall, JudgeRun, RateLimit
 from copilot_cli import CanaryReading, Check, ProbeResult, RunProblem
-from helpers import CLEAN_DRAFT, COPILOT_STREAMS, REPO, copilot_stream
+from helpers import CLEAN_DRAFT, COPILOT_STREAMS, PROC_FDS, REPO, copilot_stream, reusing_lstat
 from helpers import COPILOT_TOKEN as TOKEN
 from helpers import copilot_reply as load
 from host_login import COPILOT, LoginProblem, refusal
@@ -54,6 +55,12 @@ POSIX = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None,
 # a directory's mode keeps its owner out only when the owner is not root
 ROOTLESS = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None
                               or os.geteuid() == 0, reason="POSIX modes, a non-root owner")
+# the runner refuses `--host copilot` on Windows (test_windows_is_a_usage_error), so a
+# Copilot session record only ever comes from a POSIX run: the saved streams join the
+# workspace and a skill's SKILL.md with "/", and the check that a project skill ran from
+# its own staged file compares that path with the platform's own spelling of it
+POSIX_RECORDS = pytest.mark.skipif(os.name != "posix",
+                                   reason="Copilot records come from POSIX runs only")
 # taken at import, before the conftest replaces the seam (no test writes under /run/user)
 REAL_RUNTIME_DIR = copilot_cli.runtime_dir
 # the same for Yama's reader: tests hand it their own files, never the real sysctl
@@ -664,7 +671,7 @@ def test_the_workspace_check_removes_what_the_harness_must_not_follow(tmp_path):
     named and unlinked without being followed; the run's own files and every
     target outside stay as they were."""
     ws, victim, outside = _planted(tmp_path)
-    identity = copilot_cli.workspace_identity(ws)
+    identity = workspace_guard.workspace_identity(ws)
     found = copilot_cli.workspace_breach(ws, identity, TOKEN)
     for name in ("proposal.md (a link)", "sub/dir-link (a link)", "dangling.md (a link)",
                  "pipe.md (not a regular file)", "hard.md (a hard link)"):
@@ -683,7 +690,7 @@ def test_the_workspace_check_names_at_most_a_few_entries_and_scrubs_them(tmp_pat
     ws.mkdir()
     for index in range(workspace_guard.SHOWN_ENTRIES + 2):
         (ws / f"{TOKEN}-{index}").symlink_to(tmp_path)
-    found = copilot_cli.workspace_breach(ws, copilot_cli.workspace_identity(ws), TOKEN)
+    found = copilot_cli.workspace_breach(ws, workspace_guard.workspace_identity(ws), TOKEN)
     assert found.endswith(" and 2 more")
     assert TOKEN not in found
     assert copilot_cli.SCRUBBED in found
@@ -694,23 +701,76 @@ def test_the_workspace_check_names_at_most_a_few_entries_and_scrubs_them(tmp_pat
 def test_a_replaced_workspace_is_read_by_nothing(tmp_path):
     """A workspace swapped for a link (or for another directory) is not the one
     the run started in: the link is removed, never followed, and nothing in
-    its target is walked or scrubbed."""
+    its target is walked or scrubbed. The identity is held as both runners
+    hold it (`workspace_guard.pinned`)."""
     ws, outside = tmp_path / "ws", tmp_path / "outside"
     ws.mkdir()
     outside.mkdir()
     (outside / "keep.md").write_text(f"keep {TOKEN}", encoding="utf-8")
-    identity = copilot_cli.workspace_identity(ws)
+    with workspace_guard.pinned(ws) as identity:
+        ws.rmdir()
+        ws.symlink_to(outside)
+        assert (copilot_cli.workspace_breach(ws, identity, TOKEN)
+                == workspace_guard.WORKSPACE_REPLACED)
+        assert not ws.is_symlink()
+        assert not ws.exists()
+        assert (outside / "keep.md").read_text(encoding="utf-8") == f"keep {TOKEN}"
+        ws.mkdir()  # another directory under the same name
+        assert (copilot_cli.workspace_breach(ws, identity, TOKEN)
+                == workspace_guard.WORKSPACE_REPLACED)
+        assert ws.is_dir()
+        ws.rmdir()
+        assert (copilot_cli.workspace_breach(ws, identity, TOKEN)
+                == workspace_guard.WORKSPACE_REPLACED)
+
+
+@pytest.mark.skipif(not PROC_FDS, reason="reads this process's descriptors (/proc/self/fd)")
+def test_a_workspace_made_again_is_replaced_where_inode_numbers_are_reused(tmp_path,
+                                                                           monkeypatch):
+    """CI, 2026-10-13: on the runner's ext4 /tmp the directory made under the
+    workspace's name got the removed workspace's inode number, so the check
+    read it as the directory the run started in; tmpfs and btrfs never hand a
+    number on. Simulated here on any filesystem (`reusing_lstat`): an
+    identity merely read is fooled, one held as the runners hold it
+    (`workspace_guard.pinned`) keeps the start's inode alive, so its number
+    is never handed on."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    start = workspace_guard.workspace_identity(ws)
+    monkeypatch.setattr(os, "lstat", reusing_lstat(ws, start))
     ws.rmdir()
+    ws.mkdir()
+    assert workspace_guard.breach(ws, start) is None  # the simulation bites: read, not held
+    ws.rmdir()
+    ws.mkdir()
+    with workspace_guard.pinned(ws) as held:
+        monkeypatch.setattr(os, "lstat", reusing_lstat(ws, held))
+        ws.rmdir()
+        ws.mkdir()
+        assert copilot_cli.workspace_breach(ws, held, TOKEN) == workspace_guard.WORKSPACE_REPLACED
+
+
+@POSIX
+def test_a_link_in_the_workspace_place_is_never_pinned(tmp_path):
+    ws, outside = tmp_path / "ws", tmp_path / "outside"
+    outside.mkdir()
     ws.symlink_to(outside)
-    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == workspace_guard.WORKSPACE_REPLACED
-    assert not ws.is_symlink()
-    assert not ws.exists()
-    assert (outside / "keep.md").read_text(encoding="utf-8") == f"keep {TOKEN}"
-    ws.mkdir()  # another directory under the same name
-    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == workspace_guard.WORKSPACE_REPLACED
-    assert ws.is_dir()
-    ws.rmdir()
-    assert copilot_cli.workspace_breach(ws, identity, TOKEN) == workspace_guard.WORKSPACE_REPLACED
+    # Linux reports ENOTDIR (a link is no directory), macOS ELOOP (O_NOFOLLOW)
+    refusals = rf"\[Errno ({errno.ENOTDIR}|{errno.ELOOP})\]"
+    with pytest.raises(OSError, match=refusals), workspace_guard.pinned(ws):
+        pytest.fail("a link was opened as the workspace")
+
+
+def test_without_directory_descriptors_the_identity_is_read_alone(tmp_path, monkeypatch):
+    """Where a directory cannot be opened (no `O_DIRECTORY`: Windows),
+    `pinned` yields the identity `workspace_identity` reads and opens
+    nothing."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.delattr(workspace_guard.os, "O_DIRECTORY", raising=False)
+    monkeypatch.setattr(workspace_guard.os, "open", lambda *_a, **_k: pytest.fail("opened"))
+    with workspace_guard.pinned(ws) as identity:
+        assert identity == workspace_guard.workspace_identity(ws)
 
 
 @contextmanager
@@ -744,7 +804,7 @@ def test_a_directory_closed_to_its_owner_is_a_breach_and_is_never_reopened(where
     secret.write_text("SYNTHETIC-SECRET-CONTENT", encoding="utf-8")
     closed = ws if where == "." else ws / where
     (closed / "proposal.md").symlink_to(secret)
-    identity = copilot_cli.workspace_identity(ws)
+    identity = workspace_guard.workspace_identity(ws)
     closed.chmod(mode)
     with reopened(closed):
         found = workspace_guard.breach(ws, identity)
@@ -1555,6 +1615,8 @@ def test_a_refused_state_root_gets_no_work_directory(monkeypatch):
     assert not state.exists()
 
 
+@pytest.mark.skipif(not hasattr(os, "getuid"),
+                    reason="the per-user runtime directory /run/user/<uid> is POSIX")
 def test_runtime_dir_is_only_a_private_directory_of_the_user(monkeypatch):
     uid = 4242
 
@@ -1574,10 +1636,24 @@ def test_runtime_dir_is_only_a_private_directory_of_the_user(monkeypatch):
     assert REAL_RUNTIME_DIR(uid) is None
 
 
+def test_runtime_dir_is_none_without_posix_users(monkeypatch):
+    """Without POSIX user ids (Windows) there is no per-user runtime
+    directory, and nothing is read."""
+    monkeypatch.delattr(copilot_cli.os, "getuid", raising=False)
+    monkeypatch.setattr(copilot_cli.os, "lstat", lambda _path: pytest.fail("read"))
+    assert REAL_RUNTIME_DIR() is None
+    assert REAL_RUNTIME_DIR(4242) is None
+
+
+@POSIX
+@pytest.mark.usefixtures("copilot_account")
 def test_the_copilot_workspace_is_made_in_the_work_directory(tmp_path, monkeypatch):
     """testing-harness spec: Copilot workspace outside the system temporary
     directory — a run's (and `--preflight-only`'s) workspace comes from the
-    host's work directory; Claude's and Codex's stay where they were."""
+    host's work directory; Claude's and Codex's stay where they were. The
+    account home is the test's own, so the state root in `tmp_path` lies
+    outside it wherever the system keeps its temporary directory (inside the
+    user's profile on Windows, or under a TMPDIR in the home)."""
     monkeypatch.setenv(host_login.STATE_VAR, str(tmp_path / "state"))
     ws = claude_runner.new_workspace(claude_runner.HOSTS["copilot"], "check_report")
     assert ws.parent == copilot_cli.work_root()
@@ -1590,6 +1666,9 @@ def test_the_copilot_workspace_is_made_in_the_work_directory(tmp_path, monkeypat
         shutil.rmtree(other)
 
 
+@pytest.mark.skipif(sys.platform == "win32" or host_login.fcntl is None,
+                    reason="the runner refuses --host copilot here as a usage error "
+                           "(test_windows_is_a_usage_error)")
 @pytest.mark.parametrize("preflight", [False, True])
 def test_a_run_without_a_work_directory_is_untested_and_makes_nothing(preflight, tmp_path,
                                                                       monkeypatch):
@@ -2289,6 +2368,7 @@ def test_a_skill_file_view_is_a_flagged_read_not_a_skill_call():
     assert read["skill_file_read"] == "proposal-check"
 
 
+@POSIX_RECORDS
 def test_an_unknown_tool_is_untested():
     """testing-harness spec: Unknown Copilot tool."""
     assessment = copilot_cli.assess(stream("unknown-tool"))
@@ -2311,6 +2391,7 @@ def test_routing_reads_the_copilot_shape():
     assert verdict_single_context([n for n, _ in calls_], 1)[0]
 
 
+@POSIX_RECORDS
 def test_copilot_read_reports_text_models_and_credits():
     """testing-harness spec: Copilot run reports credits, not cost."""
     events = stream("success")
@@ -2449,6 +2530,7 @@ def test_isolation_findings_after_the_run(name, named):
 # ---------- 8.1a: the loaded skills without the report (the first skill run, 2026-10-13) ----
 
 
+@POSIX_RECORDS
 def test_a_run_without_the_report_is_confirmed_by_its_roster_and_records():
     """testing-harness spec: Loaded skills confirmed without the report — the
     shape the first skill run recorded: no `session.skills_loaded` anywhere,
@@ -2534,6 +2616,7 @@ def test_the_loaded_skills_stay_unconfirmed_without_positive_evidence(change, na
     assert named in problem.message
 
 
+@POSIX_RECORDS
 def test_a_bundled_skill_the_roster_listed_may_be_invoked():
     events = _skill_record(stream("skills-by-roster"), type="copilot.skill_invoked",
                            name="github-pr-media", path="/pkg/builtin/github-pr-media/SKILL.md",
@@ -2547,6 +2630,7 @@ def test_a_bundled_skill_the_roster_listed_may_be_invoked():
         events).message
 
 
+@POSIX_RECORDS
 def test_a_report_that_arrives_is_still_compared_with_the_roster():
     """The report, when present, is positive evidence of its own and must name
     the roster; the skill records are checked either way."""
@@ -2593,6 +2677,7 @@ def test_a_skill_run_without_the_report_passes_end_to_end(home, tmp_path, monkey
     assert copilot_cli.isolation_findings(events, harness) == []
 
 
+@POSIX_RECORDS
 @pytest.mark.parametrize(("name", "named"), [
     ("model-differs", "copilot-fixture-b"),
     ("model-switch", "because of a rate limit"),
@@ -2607,10 +2692,12 @@ def test_model_and_effort_findings_are_untested_preconditions(name, named):
     assert named in problem.message
 
 
+@POSIX_RECORDS
 def test_a_helpers_second_model_does_not_make_the_run_untested():
     assert copilot_cli.run_problem(stream("helper-spawn")) is None
 
 
+@POSIX_RECORDS
 def test_each_task_call_is_cross_checked_with_its_subagent():
     """design Decision 10: a `task` call is read as `Agent`, cross-checked with
     `subagent.started` both ways, so the helper count the verdicts read holds."""
@@ -2626,6 +2713,7 @@ def test_each_task_call_is_cross_checked_with_its_subagent():
     assert "t9" in problem.message
 
 
+@POSIX_RECORDS
 def test_the_session_version_is_cross_checked_with_the_pinned_one():
     """design Decision 10: the CLI version the session file reports is the one
     the preflight checked."""
@@ -2639,6 +2727,7 @@ def test_the_session_version_is_cross_checked_with_the_pinned_one():
     assert "1.0.91" in problem.message
 
 
+@POSIX_RECORDS
 @pytest.mark.parametrize(("name", "untested", "named"), [
     ("auth-error", True, "fine-grained token"),
     ("exit0-error", False, "model_call"),
@@ -2655,6 +2744,7 @@ def test_the_exit_mapping(name, untested, named):
         assert "uv run poe host-login copilot --reset" in problem.message
 
 
+@POSIX_RECORDS
 def test_a_result_line_of_another_session_is_a_runner_failure():
     """design Decision 9: the result line's session is cross-checked."""
     events = stream("success")
@@ -3038,6 +3128,7 @@ def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home,
     assert "--sandbox" not in argv  # changes nothing on the server (K6 diagnosis)
 
 
+@POSIX
 @pytest.mark.usefixtures("home")
 def test_a_write_that_reaches_the_host_tmp_refuses_the_probe(tmp_path, monkeypatch):
     """testing-harness spec: Host temporary directory denied to the sandboxed
@@ -4318,6 +4409,7 @@ def test_the_go_is_recorded_by_a_clear_and_ended_by_any_stop(copilot_home):
     assert copilot_cli.read_go(home) is None
 
 
+@POSIX
 @pytest.mark.parametrize(("go", "named"), [
     ("none", "no go is recorded"), ("pending", "no canary has passed"),
 ])

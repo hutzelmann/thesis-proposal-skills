@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 import stat
 from collections.abc import Callable, Iterator
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 WORKSPACE_REPLACED = ("the workspace itself was replaced (by a link or another directory), so "
@@ -102,9 +102,35 @@ def workspace_identity(ws: Path) -> tuple[int, int]:
     return info.st_dev, info.st_ino
 
 
+@contextmanager
+def pinned(ws: Path) -> Iterator[tuple[int, int]]:
+    """The workspace's identity (`workspace_identity`), held from before the
+    host child until the check after it: a descriptor open on the directory
+    keeps its inode allocated even once the run removes it, so a directory
+    made under the same name afterwards cannot carry the same inode number and
+    `replaced` sees it. Unheld, the check depends on the filesystem: ext4
+    hands a freed inode number to the next directory at once (the CI runner's
+    /tmp, 2026-10-13), tmpfs and btrfs do not. The descriptor is not
+    inheritable, so no child receives it; a link in the workspace's place is
+    refused, never followed. Where a directory cannot be opened (no
+    `O_DIRECTORY`: Windows), the identity alone."""
+    directory = getattr(os, "O_DIRECTORY", None)
+    if directory is None:
+        yield workspace_identity(ws)
+        return
+    fd = os.open(ws, os.O_RDONLY | directory | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        info = os.fstat(fd)
+        yield info.st_dev, info.st_ino
+    finally:
+        os.close(fd)
+
+
 def replaced(ws: Path, identity: tuple[int, int] | None) -> bool:
     """Whether `ws` is no longer the directory the run started in; a link left
-    in its place is removed, never followed."""
+    in its place is removed, never followed. Exact only while the identity is
+    `pinned`: a removed directory's inode number is otherwise free for the
+    next one."""
     try:
         info = os.lstat(ws)
     except OSError:

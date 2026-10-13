@@ -1403,13 +1403,13 @@ def run_codex(ws: Path, request: str, *, model: str, effort: str | None, timeout
     again (another run may have recorded one while this one waited), the
     quota read, the feature allowlist, the run (whose child holds the lock
     too), the workspace check, the capture. The workspace's identity is taken
-    before any Codex child starts in it. Raises `host_login.RunLockRefused`,
+    before any Codex child starts in it and held until that check
+    (`workspace_guard.pinned`). Raises `host_login.RunLockRefused`,
     `CodexRefused` (untested) or `CodexRunFailed` (checked by
     `timeout_problem`); the events it returns are checked afterwards by
     `run_problem`."""
     environ = os.environ if environ is None else environ
-    ws_id = workspace_guard.workspace_identity(ws)
-    with host_login.run_lock(home) as fd:
+    with workspace_guard.pinned(ws) as ws_id, host_login.run_lock(home) as fd:
         stopped = stop_problem(read_stop(home))
         if stopped:
             raise CodexRefused.of(stopped)

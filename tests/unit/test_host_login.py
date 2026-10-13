@@ -1363,13 +1363,15 @@ def test_the_temporary_directories_are_the_shared_ones_and_the_process_own(own, 
     """The user's decision D-b, and the review of task 7.15: the deny list and
     the Copilot work directory keep out the shared `/tmp`, whatever TMPDIR
     says, the shared `/var/tmp` where the host has one, and the process's own
-    temporary directory where TMPDIR moves it outside both."""
+    temporary directory where TMPDIR moves it outside both. Each path as the
+    platform spells it (`\\tmp` on Windows), so the containment is checked
+    there too."""
     monkeypatch.setattr(host_login.tempfile, "gettempdir", lambda: own)
     monkeypatch.setattr(host_login.os.path, "realpath", lambda path: str(path))
     real_is_dir = Path.is_dir
-    monkeypatch.setattr(host_login.Path, "is_dir", lambda path: var_tmp if str(path) == (
+    monkeypatch.setattr(host_login.Path, "is_dir", lambda path: var_tmp if path == Path(
         host_login.SHARED_VAR_TMP) else real_is_dir(path))
-    assert REAL_TEMP_DIRS() == expected
+    assert REAL_TEMP_DIRS() == tuple(str(Path(path)) for path in expected)
 
 
 def test_a_home_seeded_before_the_deny_list_changed_needs_a_reset(copilot_home):

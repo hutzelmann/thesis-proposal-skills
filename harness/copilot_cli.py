@@ -203,7 +203,7 @@ import host_login
 import workspace_guard
 from host_login import COPILOT, MARKER, LoginProblem, refusal
 from hosts import RunView, needs_network
-from workspace_guard import unsafe_entries, workspace_entries, workspace_identity
+from workspace_guard import pinned, unsafe_entries, workspace_entries
 from workspace_guard import unsafe_entry as _unsafe_entry
 
 REPO = Path(__file__).resolve().parent.parent
@@ -4326,32 +4326,35 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
     fingerprint; the probe's commands for this run (`canary_for`), built
     under the lock, go into the workspace's script (`_canary_script`) and its
     prompt is the one command that runs it (`canary_prompt`), with the
-    probe's host side (`probe_host`) kept until the child is checked. Raises
-    `host_login.RunLockRefused`, `CopilotRefused` (untested) or
-    `CopilotRunFailed` (checked by `timeout_problem`); the events it returns
-    are checked afterwards by `run_problem`."""
+    probe's host side (`probe_host`) kept until the child is checked. The
+    workspace's identity is held from before the child until the check after
+    it (`workspace_guard.pinned`). Raises `host_login.RunLockRefused`,
+    `CopilotRefused` (untested) or `CopilotRunFailed` (checked by
+    `timeout_problem`); the events it returns are checked afterwards by
+    `run_problem`."""
     if canary:
         stage_canary_skill(ws)
     problem = scan_problem(ws)
     if problem:
         raise CopilotRefused.of(problem)
-    run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort, cap=cap,
-                  ws_id=workspace_identity(ws), is_canary=canary)
-    run.home = home
-    run.staged_tree = staged_digest(ws)  # the staged skills as handed to the child
-    run.scratch = make_scratch("devrun-copilot-home-", run.environ)
-    try:
-        with host_login.run_lock(home, record=COPILOT) as fd:
-            _require(step(run) for step in LOCKED)
-            _require(gate_checks(run))
-            if not canary:
-                return _execute(run, request, fd, timeout)
-            with probe_host() as host:
-                run.host, run.canary = host, canary_for(run, host)
-                run.canary_sha = _canary_script(ws, run.canary)
-                return _execute(run, canary_prompt(), fd, timeout)
-    finally:
-        shutil.rmtree(run.scratch, ignore_errors=True)
+    with pinned(ws) as ws_id:
+        run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort, cap=cap,
+                      ws_id=ws_id, is_canary=canary)
+        run.home = home
+        run.staged_tree = staged_digest(ws)  # the staged skills as handed to the child
+        run.scratch = make_scratch("devrun-copilot-home-", run.environ)
+        try:
+            with host_login.run_lock(home, record=COPILOT) as fd:
+                _require(step(run) for step in LOCKED)
+                _require(gate_checks(run))
+                if not canary:
+                    return _execute(run, request, fd, timeout)
+                with probe_host() as host:
+                    run.host, run.canary = host, canary_for(run, host)
+                    run.canary_sha = _canary_script(ws, run.canary)
+                    return _execute(run, canary_prompt(), fd, timeout)
+        finally:
+            shutil.rmtree(run.scratch, ignore_errors=True)
 
 
 def preflight_report(ws: Path, scenario: Mapping, *, model: str, effort: str | None,

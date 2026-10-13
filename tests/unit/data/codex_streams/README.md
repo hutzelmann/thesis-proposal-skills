@@ -27,7 +27,10 @@ runner reduces from the session record (design Decision 10: `codex.session`,
 `codex.turn_context`, `codex.token_count`, `codex.skills`, `codex.tool`,
 `codex.error`), then the runner's own `codex.harness` record (duration, exit
 status, stderr tail and the quota read before the run). `__WS__` stands for the
-run's workspace; the tests substitute it. The model names are synthetic
+run's workspace and `__HOME_SKILLS__` for a user-scope skill directory outside
+it; the tests substitute both with native absolute paths, so a root reads as
+absolute on every platform (a POSIX `/home/…` has no drive on Windows, where
+it read as unresolved; CI, 2026-10-13). The model names are synthetic
 (`gpt-fixture-a`, `gpt-fixture-b`): the model-ID guard's `gpt-\d` head does not
 match them, so `tests/unit/test_model_ids.py` needs no exemption, as with the
 `claude-fixture-…` names in `../claude_cli_streams/`. The follow-up change
@@ -41,7 +44,7 @@ Claude.
 | `skill-read.jsonl` | synthetic, `exec_events.rs` @ rust-v0.160.0 | a `cat …/.agents/skills/proposal-check/SKILL.md` command reads as a `Skill` call naming `proposal-check` (and a later `sed` read of another skill does not change the route); a repeated `item.completed` id is counted once |
 | `helper-spawn.jsonl` | synthetic, `exec_events.rs` (`CollabToolCallItem`) @ rust-v0.160.0 | `collab_tool_call` `spawn_agent` reads as `Agent` carrying the verifier-brief prompt; `wait` reads as `collab:wait`; a `file_change` reads as `Edit` |
 | `mcp-call.jsonl` | synthetic, `exec_events.rs` (`McpToolCallItem`) @ rust-v0.160.0 | an MCP call reads as `mcp__docs__publish` and makes the run untested for isolation |
-| `foreign-skill.jsonl` | synthetic, skills block of `protocol.rs` @ rust-v0.160.0, locators in the 0.160 rendering (below) | a `codex.skills` locator (`r0/grill-me/SKILL.md`) whose root is a home `.agents/skills`: untested for isolation, the resolved path named |
+| `foreign-skill.jsonl` | synthetic, skills block of `protocol.rs` @ rust-v0.160.0, locators in the 0.160 rendering (below) | a `codex.skills` locator (`r0/grill-me/SKILL.md`) whose root is a home `.agents/skills` (`__HOME_SKILLS__`): untested for isolation, the resolved path named |
 | `cloud-skill-tool.jsonl` | synthetic, the `skills` tool namespace of `ext/skills/src/tools_mod.rs` (`SKILLS_NAMESPACE`) @ rust-v0.160.0 | a `codex.tool` in the `skills` namespace: untested for isolation |
 | `provider-leak.jsonl` | synthetic, `session_meta.model_provider` @ rust-v0.160.0 | `model_provider: "openrouter"`: untested, provider and CLI version named |
 | `no-rate-limits.jsonl` | synthetic, `event_msg`/`token_count` of `protocol.rs` @ rust-v0.160.0 | a `token_count` with `rate_limits: null`: plan use cannot be confirmed |
