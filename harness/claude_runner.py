@@ -531,6 +531,30 @@ SCENARIOS = {
             "with the sample size fixed after a pilot of twenty patches; ratings by the "
             "partner's engineers become optional.",),
     },
+    # the cold direct request rounds 1 and 2 carried out as a bare edit: kept
+    # as its own measurement of whether the writing skill loads without a handoff
+    # having led there (the description names "apply review findings or blockers")
+    "handoff_direct_revision": {
+        "fixture": "w11-blocker-revision",
+        "skill": "proposal-write",
+        "siblings": all_but("proposal-write"),
+        "proposal": "ci-repair-agent-configurations.md",
+        "handoff": "direct_revision",
+        "request": "Please apply the blocker from the review to "
+                   "ci-repair-agent-configurations.md. My decision: RQ3 is answered from my "
+                   "own audit of a random sample of accepted patches against the published "
+                   "patch-quality rubric of Chen26Repair, which is already in my references, "
+                   "with the sample size fixed after a pilot of twenty patches; ratings by the "
+                   "partner's engineers become optional.",
+        "semantic": [
+            "the request applies the review's one blocker with the decision that resolves "
+            "it, so the revision runs under the writing skill's instructions",
+            "the pass rewrites the RQ3 passage the blocker cites and leaves the review file "
+            "as it is; because that passage changed, the review on file describes an earlier "
+            "text and the right step is a fresh review, recommended rather than run",
+            "no skill is named in the handoff",
+        ],
+    },
     "handoff_ready": {
         "fixture": "w12-ready-current",
         "skill": "proposal-check",
@@ -1309,10 +1333,11 @@ def handoff_verdict(scenario: dict, ws: Path, chat: str,
         return verdict_handoff_review_feedback(changed, new, chat, proposal, review)
     if kind == "superseded":
         return verdict_handoff_superseded(changed, new, chat)
-    if kind == "after_revision":
+    if kind in ("after_revision", "direct_revision"):
+        # a direct request has no status turn whose edits would come unasked
+        edits = first_turn_edits(events) if kind == "after_revision" else []
         return verdict_handoff_after_revision(changed, new, chat, run_check(ws, proposal),
-                                              proposal, review, skills_invoked(events),
-                                              first_turn_edits(events))
+                                              proposal, review, skills_invoked(events), edits)
     if kind == "ready":
         return verdict_handoff_ready(changed, new, chat)
     return verdict_handoff_untouched(changed, new, chat)

@@ -49,7 +49,8 @@ CITATION_SYNTHESIS = (
 # share one criterion: what differs between them is the situation, which the
 # question carries.
 HANDOFF_SCENARIOS = ("handoff_review_feedback", "handoff_superseded",
-                     "handoff_after_revision", "handoff_ready", "handoff_todos")
+                     "handoff_after_revision", "handoff_direct_revision", "handoff_ready",
+                     "handoff_todos")
 HANDOFF = (
     "The final reply closes with a handoff that places the proposal accurately, "
     "recommends the step that unblocks the next milestone with its reason, recommends a "

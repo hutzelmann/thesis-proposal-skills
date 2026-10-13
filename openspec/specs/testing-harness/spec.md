@@ -1857,6 +1857,7 @@ The harness SHALL test the stage handoff in conversations, including the two fai
   - a review followed by the turn "What do we do now with that feedback?" — the final chat passes the format verdict and the proposal is byte-identical after both turns;
   - a narrowed draft beside a review of its broader predecessor, asked where it stands — the first sentence of the next-step line recommends a fresh review, not merely mentions one, with a phrase to send; a sentence about the review says it judged an earlier version; and the proposal and review files are byte-identical;
   - a draft beside a review with a blocker, asked where it stands, then the approval of the revision with the decision it needs — the revision ran under the writing skill's instructions, the proposal changed, the review file is byte-identical, the check reports no errors, and the next-step line recommends a fresh review with a phrase to send;
+  - the same draft and review, with a single cold request to apply the review's blocker that carries the decision it needs — the same assertions without a status turn, the writing skill loaded although no handoff led there;
   - a draft beside a current ready review, asked what comes next — no file is added or changed, and the next-step line recommends the final check or the hand-in build with a phrase to send, recommends no further review, and makes none of the review's clarify-early items a step;
   - a complete draft with two decision markers and three execution-detail markers, asked where it stands — the proposal is byte-identical and the chat passes the format verdict.
 - **Rubric**: a model-graded rubric SHALL judge each scenario's transcript against its fixture's `semantic` list: the position is stated accurately, the recommended step is the one that unblocks the next milestone and its reason is given, a superseded review is recognised and a fresh one recommended, a decision step quotes the student's text and offers options from the student's material with a way out, nothing was done unasked, and no checklist is repeated. Its grades are dev-runner L2, not comparable to matrix results.
@@ -1896,3 +1897,7 @@ Inspect twins and matrix cells for these scenarios are a separate, cost-gated de
 #### Scenario: Superseded review announced, not recommended
 - **WHEN** the reply on the narrowed draft says only that no current review exists and recommends no review
 - **THEN** the scenario verdict fails
+
+#### Scenario: Cold request carried out as a bare edit
+- **WHEN** a single request to apply the review's blocker is carried out by editing the proposal without loading the writing skill
+- **THEN** the direct-request scenario fails, naming the skills the run loaded

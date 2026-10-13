@@ -261,6 +261,44 @@ def test_status_scenarios(scenario, chat, status, monkeypatch):
     assert main([scenario]) == status
 
 
+REVISED_CHAT = (
+    "Rewrote the RQ3 passage.\n\n"
+    "Where it stands: the blocker's passage changed, so the review on file describes an "
+    "earlier text.\n"
+    'Next: a fresh review of the changed text. Send: "Review my proposal again."\n'
+)
+
+
+def revise(ws: Path) -> None:
+    path = ws / "ci-repair-agent-configurations.md"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("still to be negotiated with the company",
+                                 "confirmed in writing by the company"), encoding="utf-8")
+
+
+def fake_direct(monkeypatch, *, load_write: bool) -> None:
+    def run_claude(ws, _request, _model, _timeout, **_rest):
+        revise(ws)
+        events = stream(REVISED_CHAT)
+        if load_write:
+            events.insert(1, skill_call("proposal-write"))
+        return events
+
+    monkeypatch.setattr(claude_runner, "run_claude", run_claude)
+
+
+def test_a_cold_revision_under_the_writing_skill_passes(monkeypatch):
+    """The direct request has no status turn: its own edits are the revision."""
+    fake_direct(monkeypatch, load_write=True)
+    assert main(["handoff_direct_revision"]) == EXIT_PASS
+
+
+def test_a_cold_revision_as_a_bare_edit_fails(monkeypatch, capsys):
+    fake_direct(monkeypatch, load_write=False)
+    assert main(["handoff_direct_revision"]) == EXIT_FAIL
+    assert "without the writing skill" in capsys.readouterr().out
+
+
 def test_the_judge_reads_the_saved_conversation(tmp_path):
     scenario = SCENARIOS["handoff_review_feedback"]
     save_events(stream("Review written.") + stream(WHAT_NOW_CHAT), tmp_path)
