@@ -86,12 +86,14 @@ Whichever skill is running, six rules apply:
 | `proposal-write` | Turns your material into proposal prose following proven structure and writing rules. Thin material becomes a TODO, never invented filler. |
 | `proposal-import` | Converts an existing proposal (usually a PDF) into the workable format and strips personal data. |
 | `proposal-reverse` | Derives the proposal a finished thesis should have had — for a thesis whose proposal was never filed, or for a supervisor turning a thesis they supervised into an exemplar. Writes the plan the thesis started from, without the results it ended with. |
-| `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs, estimated length. |
+| `proposal-check` | Fast mechanical check: required sections, citation consistency, forbidden content, leftover TODOs, estimated length. Also the place to ask where your proposal stands and what comes next. |
 | `proposal-review` | Supervisor-style content review: a verdict on whether there is a thesis here (ready / needs revision / no viable thesis core), then every weak point with a concrete suggestion. |
 | `proposal-publish` | Optional: builds a compact PDF via pandoc with typst or an existing LaTeX installation. Where your program prescribes its own document, a build script in your folder takes over instead. A plain markdown hand-in is fine too. |
 | `proposal-customize` | Adapts everything to your supervisor's requirements ("detailed work plan required", "max 3 pages", a methodology the defaults do not carry). |
 | `proposal-supervise` | For supervisors: turns a raw student submission into curated, paste-ready draft feedback. Drafts only, never sends. |
 | `proposal-troubleshoot` | Diagnoses a skill that misbehaved, and assembles a bug report if it really is a defect. Most problems turn out not to be. |
+
+**You do not need to know these names.** Every step ends by saying where your proposal stands — seeded idea, complete draft, ready for supervisor discussion, handed in — what still blocks the next stage, and one recommended next step, which you approve with a "yes" or a sentence the skill suggests. Nothing is applied, built or sent until you say so, and a review that no longer matches your text leads to a fresh one, never to a longer task list.
 
 Your proposal itself lives in **one self-contained file**: readable text on top, literature entries at the bottom. A companion `<slug>.notes.md` beside it keeps the working knowledge the hand-in cannot carry, such as decisions, open points and rejected literature. Many proposals can sit side by side in one folder.
 

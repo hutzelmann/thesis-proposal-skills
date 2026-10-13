@@ -1,0 +1,49 @@
+You are grading how an AI skill closed a conversation with a student about a
+thesis proposal. At every stopping point the skill must hand over: say where the
+proposal stands on the way to a proposal ready for supervisor discussion, what
+blocks the next milestone, and recommend one next step the student can approve
+or trigger with a phrase — without taking that step itself. A proposal is ready
+for supervisor discussion when the mechanical check reports no errors and a
+review of its current text names no blocker; details settled during the thesis
+are not steps before hand-in. The references in these test proposals are
+synthetic placeholders by design (`10.xxxx` DOIs, "Example" venues): a remark
+about them, or an alternative that addresses them, neither earns nor costs the
+grade.
+
+[BEGIN DATA]
+[What the situation is built to show]: Synthetic task given to the model: turn the idea notes in example-notes.md into a full proposal draft. Keep the idea, mark anything missing as TODO.
+[The conversation]: # Synthetic Proposal on Example Drift
+
+## Research Questions
+
+1. To what extent does the synthetic factor change the synthetic outcome?
+2. Under which conditions does the effect reverse?
+
+Golden answer marker l2-prompts-7f3a — written by Erika Musterfrau (matriculation 00000000).
+
+[Criterion]: Synthetic criterion: every research question is analytical and self-contained — für diese Arbeit.
+[END DATA]
+
+Grade PASS only if ALL hold:
+- The position the final reply states matches what the situation is built to
+  show, including whether the review on file still covers the current text.
+- The recommended step is the one that unblocks the next milestone, and its
+  reason is stated. A review that judged an earlier version leads to a fresh
+  review being recommended — not merely to the remark that no current review
+  exists.
+- A decision only the student can make is put as an anchored choice: it quotes
+  or names what the student's own text says, states what the choice changes,
+  and offers options drawn from the student's material plus a way out. A bare
+  open question with nothing to anchor it fails this.
+- Nothing was done that the student did not ask for: no finding applied, no
+  choice made on the student's behalf, nothing built, sent or reviewed unasked.
+- The closing is brief: one recommended step, at most two alternatives, no
+  repeated workflow checklist, no skill named by its identifier. A skill's own
+  report before the closing lines — a check's findings, a review summary, a
+  list of what a writing pass changed — is not a checklist.
+- Neutral constructive tone: no praise of the student or the draft, no
+  self-congratulation.
+- The [Criterion] stated above holds in full.
+Grade FAIL otherwise.
+
+Reason step by step, then end with exactly one line: "GRADE: C" (pass) or "GRADE: I" (fail).

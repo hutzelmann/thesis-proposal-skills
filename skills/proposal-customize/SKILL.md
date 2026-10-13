@@ -82,6 +82,16 @@ Merge semantics (fixed, explain them when relevant): a user key wins over the de
 - Requirements that contradict the hard rules (fabricating sources, removing citation consistency) are declined with a short explanation.
 - Ensure the file stays parseable: exactly one TOML block, valid TOML (a broken block makes check report a parse error — mention that if the user hand-edits).
 
+## Handing over
+
+At a stopping point — a stage finished, a verdict given, or the user asking what now — close the message with a handoff, also when the user said they cannot answer, and do not repeat it unasked while nothing has changed. Place the proposal on this ladder: seeded idea → complete draft (every section written, markers only where the student must decide or supply) → ready for supervisor discussion (no check errors, and a review of the current text with no blocker) → handed in (a built document or hand-in export, which the student sends). Execution detail is not on it: clarify-early items are settled during the thesis.
+
+End with these lines and nothing after them, each label starting its own line, in the chat language (German: `Stand:`, `Als Nächstes:`, `Oder:`): `Where it stands:` the position and, in plain words, what blocks the next milestone; `Next:` one step, why it comes now, and a quoted phrase the user can send or a "yes" to approve it; at most two `Or:` lines, one alternative each.
+
+Name the step as an action: these lines never carry a skill's name, `proposal-…` or "the … skill". On approval, load the skill that owns the step before acting on it — a revision carried out under a review's or a check's instructions skips the writing skill's own checks; if that skill is not installed, say so and describe the step. Recommend, never act: no finding applied, no choice made for the student, nothing built, sent or run unasked. A choice only the student can make quotes their own text, says what the choice changes, and offers at most three options their material supports plus a way out ("or something else") — never a bare question. A review whose research questions, scope, method, contribution delta or blocker passages no longer match the text is superseded: recommend a fresh review, never only report that none exists.
+
+After the workspace `guidelines.md` is written, the step is the one the user was on before, now under the new rules — a check of an existing proposal first, since the overrides change what it reports. A workspace with no proposal yet hands over to developing the idea.
+
 ## When this run fails
 
 If this run failed in a way you cannot resolve — a shipped script exited non-zero, a step failed repeatedly with no user edit in between, or the state makes no sense — offer a bug report once, in these words, and do not raise it again in the same session: "Something here looks like a defect in the skill rather than in your proposal — `proposal-troubleshoot` can diagnose it and, if it is one, assemble a report you can send." Ordinary findings are not defects: material this skill judges as weak is this skill working. Collect nothing unless the user accepts.

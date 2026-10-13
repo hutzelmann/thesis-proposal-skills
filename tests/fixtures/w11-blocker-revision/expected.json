@@ -1,0 +1,20 @@
+{
+  "fixture": "w11-blocker-revision",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "the review on file covers the current text and names one blocker: RQ3 rests on partner access that is still to be negotiated; asked where the proposal stands, the first reply edits nothing and recommends revising that blocker, put as an anchored choice (the student's own audit against a published rubric, the partner's access confirmed, or something else)",
+    "the student's approval supplies the decision that resolves it (RQ3 is answered from the student's own audit against the Chen26Repair rubric already in the references, partner ratings optional), and the revision runs under the writing skill's instructions",
+    "the writing pass rewrites the RQ3 analysis passage the blocker cites, leaves the clarify-early item on model versions out of the proposal text, and leaves the review file as it is",
+    "because the pass changed a passage a blocker cites, the review on file now describes an earlier text, and the right step is a fresh review of the changed text, recommended rather than run",
+    "the optional refinement may be offered as an alternative but is not part of the recommended step, and no skill is named in the handoff"
+  ]
+}

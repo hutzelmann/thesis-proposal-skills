@@ -31,7 +31,8 @@ REGISTRY_PATH = REPO / "harness" / "models.toml"
 # README and workspace overrides by name; by suffix, a handout and a harvest
 # record (w06) — inputs to a skill, never documents to check or build
 NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
-NON_PROPOSAL_SUFFIXES = ("-handout.md", ".harvest.md")
+# .notes.md: the companion working file (w10 is the first fixture to carry one)
+NON_PROPOSAL_SUFFIXES = ("-handout.md", ".harvest.md", ".notes.md")
 REVIEW_SUFFIX = "-review.md"
 
 

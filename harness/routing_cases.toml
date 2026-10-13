@@ -385,3 +385,86 @@ utterance = "Ein Student hat mir diese Themenskizze geschickt (submission-email.
 expected = "proposal-supervise"
 kind = "canonical"
 lang = "de"
+
+# ---------- stage handoff ----------------------------------------------------
+# The status moment (check owns it, trigger_terms.json) and the continuation
+# phrases the handoffs suggest. A handoff names the step, never the skill, so the
+# phrase it offers must reach the skill that owns the step from the
+# descriptions alone (skill-packaging spec: stage handoff at stopping points).
+
+[[cases]]
+id = "status-canonical"
+utterance = "Where does my proposal stand, and what should I do next?"
+expected = "proposal-check"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "status-oblique"
+utterance = "I've been working on this proposal for weeks and lost track of where it is. What's the next step?"
+expected = "proposal-check"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "status-de"
+utterance = "Wo steht mein Exposé gerade, und was ist der nächste Schritt?"
+expected = "proposal-check"
+kind = "oblique"
+lang = "de"
+
+[[cases]]
+id = "continue-fresh-review"
+utterance = "Review my proposal — review only, no edits."
+expected = "proposal-review"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-apply-blockers"
+utterance = "Apply the two blockers from the review."
+expected = "proposal-write"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-draft-from-seed"
+utterance = "Write the full draft from data-drift-detection.md."
+expected = "proposal-write"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-more-sources"
+utterance = "Find more sources for my proposal."
+expected = "proposal-lit-search"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-final-check"
+utterance = "Check my proposal before I hand it in."
+expected = "proposal-check"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-handin-export"
+utterance = "Make a hand-in export of my proposal."
+expected = "proposal-publish"
+kind = "canonical"
+lang = "en"
+
+[[cases]]
+id = "continue-rework-idea"
+utterance = "Let's go back to my thesis idea and rework it from the start."
+expected = "proposal-ideate"
+kind = "oblique"
+lang = "en"
+
+[[cases]]
+id = "continue-move-markers"
+utterance = "Move the three execution-detail TODOs from my proposal into my notes."
+expected = "proposal-write"
+kind = "oblique"
+lang = "en"

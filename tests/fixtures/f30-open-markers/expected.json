@@ -1,0 +1,27 @@
+{
+  "fixture": "f30-open-markers",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [
+      "open [TODO: state start month and submission month]",
+      "open [TODO: decide who rates maintainability",
+      "open [TODO: name the exact model versions and access dates]",
+      "open [TODO: fix the audit sample size after a pilot audit of twenty patches]",
+      "open [TODO: choose the log format each run records]"
+    ],
+    "rules": {
+      "errors": [],
+      "warnings": [
+        "todo-marker"
+      ]
+    }
+  },
+  "semantic": [
+    "the proposal is a complete draft, mechanically valid, with five open markers; no review exists yet, so the next milestone is ready for supervisor discussion",
+    "two markers are decisions the student owes the proposal and block that milestone: the start and submission months, and who rates maintainability for RQ3 — an indispensable judgement whose rater, if it were the partner's engineers, depends on access that is still open",
+    "three markers are execution details whose deferral record can be filled — the exact model versions (a selection rule is stated), the audit sample size (fixed after the pilot), and the log format — and may be proposed for the notes file as clarify-early items, moved only on the student's approval",
+    "the right closing names the two decisions as what blocks the next milestone, puts the RQ3 rater choice as an anchored choice from the student's own text (own audit against the published rubric, or the partner's engineers), proposes moving the three execution details, writes nothing, and names no skill"
+  ]
+}

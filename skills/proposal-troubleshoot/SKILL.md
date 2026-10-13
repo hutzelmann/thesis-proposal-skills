@@ -134,3 +134,13 @@ The bundle is local and nothing has been sent. Tell the user their options and s
 - keep it, and delete `bug-report/` once it has been sent
 
 The URL carries nothing beyond what the chosen disclosure level already put into `report.md` — building it changes no privacy decision. Do not open it, do not offer to file the issue, and do not file it: the user reviews the form and submits it themselves. This skill transmits nothing, has no credentials, and must not acquire either.
+
+## Handing over
+
+At a stopping point — a stage finished, a verdict given, or the user asking what now — close the message with a handoff, also when the user said they cannot answer, and do not repeat it unasked while nothing has changed. Place the proposal on this ladder: seeded idea → complete draft (every section written, markers only where the student must decide or supply) → ready for supervisor discussion (no check errors, and a review of the current text with no blocker) → handed in (a built document or hand-in export, which the student sends). Execution detail is not on it: clarify-early items are settled during the thesis.
+
+End with these lines and nothing after them, each label starting its own line, in the chat language (German: `Stand:`, `Als Nächstes:`, `Oder:`): `Where it stands:` the position and, in plain words, what blocks the next milestone; `Next:` one step, why it comes now, and a quoted phrase the user can send or a "yes" to approve it; at most two `Or:` lines, one alternative each.
+
+Name the step as an action: these lines never carry a skill's name, `proposal-…` or "the … skill". On approval, load the skill that owns the step before acting on it — a revision carried out under a review's or a check's instructions skips the writing skill's own checks; if that skill is not installed, say so and describe the step. Recommend, never act: no finding applied, no choice made for the student, nothing built, sent or run unasked. A choice only the student can make quotes their own text, says what the choice changes, and offers at most three options their material supports plus a way out ("or something else") — never a bare question. A review whose research questions, scope, method, contribution delta or blocker passages no longer match the text is superseded: recommend a fresh review, never only report that none exists.
+
+When a rung resolved the problem, the step is the one the user was on before it. When a report was assembled, the step is the user's own — send it by one of the routes above — and after that, the step they were on. Never file, send or open anything for them.

@@ -1965,3 +1965,271 @@ def verdict_paper_foundation(chat: str, seen: str,
     named = [s for s in PAPER_FRAMING_SECTIONS if s in chat.lower()]
     return True, (f"framing slice read, Method and Results unread, sections named "
                   f"({', '.join(named)}), one question, axis left to the student")
+
+
+# ---------- stage handoff (skill-packaging spec: stage handoff at stopping points)
+#
+# The handoff closes a message with labelled lines in the chat language. The
+# format is checked here; whether the recommended step is the right one is the
+# handoff rubric's question, not this module's.
+
+_HANDOFF_LINE = re.compile(
+    r"^\s*(?:[-*>]\s*)*(?:\*{1,2}|_{1,2})?\s*"
+    r"(where it stands|stand|als nächstes|next|oder|or)"
+    r"\s*(?:(?:\*{1,2}|_{1,2})\s*:|:\s*(?:\*{1,2}|_{1,2})?)\s*(?P<text>.*)$",
+    re.IGNORECASE)
+HANDOFF_KINDS = {"where it stands": "where", "stand": "where", "next": "next",
+                 "als nächstes": "next", "or": "or", "oder": "or"}
+HANDOFF_ORDER = {"where": 0, "next": 1, "or": 2}
+# the longest closing in the agreed examples ran to about 95 words; a status
+# answer naming five open markers ran to 161 on sonnet (2026-10-13). The cap
+# catches an essay in the closing lines, not a thorough position line.
+HANDOFF_WORD_CAP = 200
+# a skill identifier, or a skill named as one ("the review skill", "den Review-Skill");
+# "skills" as a thesis topic or "proposal-ready" are not
+_SKILL_NAMED = re.compile(
+    r"\bproposal-(?:ideate|lit-search|write|check|review|publish|import|reverse|customize|"
+    r"supervise|troubleshoot)\b|"
+    r"\b(?:the|this|that|your|my|den|die|das|dem|deinen?|ihren?)\s+[\w-]+\s+skill\b|"
+    r"\b\w+-skill\b", re.IGNORECASE)
+_QUOTED_PHRASE = re.compile(
+    r"[\"“„«‘‚]([^\"“”„«»‘’‚]{2,})[\"”“»’‘]"
+    r"|(?:^|(?<=[\s:(]))'([^'\n]{2,})'(?=[\s.,;:!?)]|$)|`([^`\n]{2,})`")
+# the recommended step names a review as its object — "a fresh review", "review
+# it again", "Review my proposal" — not merely "the review on file"
+REVIEW_STEP = re.compile(
+    r"\b(?:fresh|new|second|another|neue[nsm]?|erneute[nsm]?|weitere[nsm]?)\s+"
+    r"(?:review|begutachtung)\b|\bre-?review\b|"
+    r"\breview(?:ed)?\b[^.;]{0,40}\b(?:again|afresh|anew|erneut)\b|"
+    r"\b(?:a|an|ein)\s+(?:\w+\s+)?review\b|\b(?:have|get)\b[^.;]{0,50}\breviewed\b|"
+    r"(?:^|[:;]\s*|[\"“„]\s*)(?:review|reviewe)\b", re.IGNORECASE)
+HANDIN_STEP = re.compile(r"check|pdf|hand-in|hand in|build|export|send|prüf|abgabe|abgeb",
+                         re.IGNORECASE)
+# a hand-in step named ahead of the review makes the review a later step, not this one
+HANDIN_FIRST = re.compile(r"\b(?:build|send|publish|export|hand (?:it )?in|pdf|baue|schick)",
+                          re.IGNORECASE)
+_NEGATION = re.compile(r"\b(?:no|not|without|never|kein\w*|nicht|ohne)\b", re.IGNORECASE)
+_NEGATED_AFTER = re.compile(
+    r"^[^.;:]{0,30}?\b(?:(?:is|are|was)\s+not\s+(?:needed|necessary|required)|isn't needed|"
+    r"unnecessary|would add nothing|adds nothing|no need|nicht nötig|nicht notwendig|"
+    r"unnötig|überflüssig)", re.IGNORECASE)
+_DEFERRAL_CUE = re.compile(
+    r"first weeks|during the thesis|in the thesis|not before|later|after approval|"
+    r"clarify-early|ersten wochen|während der arbeit|später", re.IGNORECASE)
+SUPERSEDED_CUES = re.compile(
+    r"\b(earlier|previous|older|prior|outdated|superseded|no longer|stale|"
+    r"früher|vorherig|veraltet|nicht mehr|ältere)", re.IGNORECASE)
+_SENTENCE_END = re.compile(r"(?<=[.;!?])\s+|\n+")
+
+
+_LIST_ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(?P<text>\S.*)$")
+
+
+def _attach(kind: str, text: str, items: list[str]) -> list[tuple[str, str]]:
+    """A label with the list beneath it, bottom-up: under an empty `Or:` each
+    item is one alternative, so the cap still applies; under any other label
+    the list continues that line — an anchored choice's options under `Next:`."""
+    if kind == "or" and not text and items:
+        return [("or", item) for item in items]
+    return [(kind, " ".join([text, *reversed(items)]).strip())]
+
+
+def handoff_lines(chat: str | None) -> list[tuple[str, str]]:
+    """The labelled lines closing a chat, in order, as (kind, text) with kind
+    one of where/next/or; empty when the last non-empty line is neither a
+    label nor a list beneath one. A list above the first label is the body's."""
+    block: list[tuple[str, str]] = []
+    items: list[str] = []
+    for line in reversed((chat or "").rstrip().splitlines()):
+        if not line.strip():
+            continue
+        match = _HANDOFF_LINE.match(line)
+        if match:
+            block += _attach(HANDOFF_KINDS[match.group(1).lower()],
+                             match.group("text").strip(), items)
+            items = []
+            continue
+        listed = _LIST_ITEM.match(line)
+        if not listed:
+            break
+        items.append(listed.group("text").strip())
+    return block[::-1]
+
+
+def next_step(chat: str | None) -> str:
+    """The text of the closing `Next:` line, or "" when there is none."""
+    return next((text for kind, text in handoff_lines(chat) if kind == "next"), "")
+
+
+def has_quoted_phrase(text: str) -> bool:
+    """Whether a line carries a quoted phrase the user could send, "yes" included."""
+    return bool(_QUOTED_PHRASE.search(text))
+
+
+def _handoff_problems(lines: list[tuple[str, str]]) -> list[str]:
+    kinds = [kind for kind, _ in lines]
+    problems = []
+    if kinds.count("next") != 1:
+        problems.append(f"{kinds.count('next')} Next lines, exactly one expected")
+    if kinds.count("or") > 2:
+        problems.append(f"{kinds.count('or')} Or lines, at most two allowed")
+    if kinds.count("where") != 1:
+        problems.append(f"{kinds.count('where')} Where-it-stands lines, exactly one expected")
+    empty = sorted({kind for kind, text in lines if not text})
+    if empty:
+        problems.append(f"empty {', '.join(empty)} line")
+    if [HANDOFF_ORDER[k] for k in kinds] != sorted(HANDOFF_ORDER[k] for k in kinds):
+        problems.append(f"lines out of order: {', '.join(kinds)}")
+    named = next((text for _, text in lines if _SKILL_NAMED.search(text)), None)
+    if named:
+        problems.append(f"a skill is named: {named[:100]}")
+    words = sum(len(text.split()) for _, text in lines)
+    if words > HANDOFF_WORD_CAP:
+        problems.append(f"{words} words, cap {HANDOFF_WORD_CAP}")
+    return problems
+
+
+def verdict_handoff(chat: str | None) -> tuple[bool, str]:
+    """Every dev run, advisory, and the handoff scenarios: the chat closes with
+    the stage handoff — exactly one `Where it stands:` line, exactly one
+    `Next:` line and at most two alternatives, as `Or:` lines or as a list
+    under one empty `Or:` label (German labels alike), in that order, none
+    empty, with nothing after them, no skill named in them, and within the
+    length cap."""
+    lines = handoff_lines(chat)
+    if not lines:
+        return False, "the chat does not close with handoff lines"
+    problems = _handoff_problems(lines)
+    if problems:
+        return False, "; ".join(problems)
+    words = sum(len(text.split()) for _, text in lines)
+    return True, f"handoff closes the chat: {', '.join(k for k, _ in lines)} ({words} words)"
+
+
+def recommends(text: str, step: re.Pattern[str],
+               rival: re.Pattern[str] | None = None) -> bool:
+    """Whether the first sentence of a `Next:` text recommends `step`: the
+    step is named there; no negation stands just before it ("no current
+    review yet" announces) or just after it ("a fresh review is not needed");
+    and no `rival` step comes first ("build the PDF and get it reviewed
+    later" recommends the build)."""
+    first = _SENTENCE_END.split(text.strip(), maxsplit=1)[0]
+    match = step.search(first)
+    if not match:
+        return False
+    before, after = first[max(0, match.start() - 30):match.start()], first[match.end():]
+    if _NEGATION.search(before) or _NEGATED_AFTER.search(after):
+        return False
+    return not (rival and rival.search(first[:match.start()]))
+
+
+def says_superseded(chat: str) -> bool:
+    """Whether a sentence of the chat says that the review judged an earlier
+    version: a cue word in a sentence about the review, not "prior work"."""
+    return any(re.search(r"review|begutacht|gutacht", s, re.IGNORECASE)
+               and SUPERSEDED_CUES.search(s) for s in _SENTENCE_END.split(chat))
+
+
+def _handoff_recommends(chat: str, step: re.Pattern[str], quoted: bool = False,
+                        avoid: tuple[str, ...] = (),
+                        rival: re.Pattern[str] | None = None) -> tuple[bool, str]:
+    """The handoff verdict plus what its `Next:` line must recommend, with a
+    phrase to send where `quoted`, and none of `avoid` made a step — an item
+    named only to put it off ("settled in the first weeks") is not one."""
+    ok, why = verdict_handoff(chat)
+    if not ok:
+        return False, why
+    text = next_step(chat)
+    if not recommends(text, step, rival):
+        return False, f"Next does not recommend the expected step: {text[:120]}"
+    if quoted and not has_quoted_phrase(text):
+        return False, f"Next carries no phrase the user could send: {text[:120]}"
+    named = next((term for term in avoid if term in text.lower()), None)
+    if named and not _DEFERRAL_CUE.search(text):
+        return False, f"Next makes {named!r} a step: {text[:120]}"
+    return True, why
+
+
+def verdict_handoff_review_feedback(changed: list[str], new: list[str], chat: str,
+                                    proposal: str, review_name: str) -> tuple[bool, str]:
+    """handoff_review_feedback: a review, then the follow-up "What do we do now
+    with that feedback?". The review file was written, the proposal is
+    byte-identical after both turns — no finding applied unasked — and the
+    final reply closes with the stage handoff."""
+    if proposal in changed:
+        return False, "the proposal changed: a finding was applied unasked"
+    if review_name not in changed + new:
+        return False, f"no {review_name} written"
+    return verdict_handoff(chat)
+
+
+def verdict_handoff_superseded(changed: list[str], new: list[str],
+                               chat: str) -> tuple[bool, str]:
+    """handoff_superseded: a narrowed draft beside a review of its broader
+    predecessor, asked where it stands. Nothing is written — no review run
+    unasked — the chat says the review judged an earlier version, and the
+    `Next:` line recommends a fresh review with a phrase the user could send."""
+    if changed + new:
+        return False, f"files written: {', '.join(changed + new)}"
+    if not says_superseded(chat):
+        return False, "the chat never says that the review judged an earlier version"
+    return _handoff_recommends(chat, REVIEW_STEP, quoted=True, rival=HANDIN_FIRST)
+
+
+def verdict_handoff_after_revision(changed: list[str], new: list[str], chat: str,
+                                   check_output: str, proposal: str, review_name: str,
+                                   skills: list[str],
+                                   status_edits: list[str]) -> tuple[bool, str]:
+    """handoff_after_revision: asked where the proposal stands beside a review
+    with a blocker, then approving the revision with the missing decision. The
+    status turn edited nothing (`status_edits`: files its edit tools wrote),
+    the revision ran under the writing skill's instructions (`skills`: every
+    skill the run loaded), the proposal changed and the check reports no
+    errors, the review file is byte-identical — no review run unasked — and
+    the `Next:` line recommends a fresh review."""
+    if status_edits:
+        return False, f"the status answer edited {', '.join(status_edits)} before any approval"
+    if "proposal-write" not in skills:
+        return False, (f"the revision ran without the writing skill's instructions "
+                       f"(skills loaded: {', '.join(skills) or 'none'})")
+    if proposal not in changed:
+        return False, "the proposal is unchanged: the blockers were not applied"
+    reviews = [name for name in changed + new
+               if name == review_name or name.endswith("-review.md")]
+    if reviews:
+        return False, f"review file written: {', '.join(reviews)} — a review ran unasked"
+    errors = disallowed_errors(check_output)
+    if errors:
+        return False, f"check errors after the pass: {errors[0][:120]}"
+    return _handoff_recommends(chat, REVIEW_STEP, quoted=True, rival=HANDIN_FIRST)
+
+
+# w12's clarify-early items: the agenda for the thesis's first weeks, never a
+# step before hand-in
+W12_DEFERRED = ("model version", "sample size", "crash")
+
+
+def verdict_handoff_ready(changed: list[str], new: list[str], chat: str,
+                          deferred: tuple[str, ...] = W12_DEFERRED) -> tuple[bool, str]:
+    """handoff_ready: a draft beside a current ready review, asked what comes
+    next. No file is added or changed — nothing built unasked — and the
+    `Next:` line recommends the final check or the hand-in build with a phrase
+    to send, recommends no further review, and makes none of the review's
+    clarify-early items a step before hand-in."""
+    if changed + new:
+        return False, f"files written: {', '.join(changed + new)}"
+    if recommends(next_step(chat), REVIEW_STEP, HANDIN_FIRST):
+        return False, f"Next recommends another review: {next_step(chat)[:120]}"
+    return _handoff_recommends(chat, HANDIN_STEP, quoted=True, avoid=deferred,
+                               rival=REVIEW_STEP)
+
+
+def verdict_handoff_untouched(changed: list[str], new: list[str],
+                              chat: str) -> tuple[bool, str]:
+    """handoff_todos: a complete draft with decision and execution-detail
+    markers, asked where it stands. No file is added or changed — no marker
+    moved unasked — and the chat closes with the stage handoff; the sorting
+    itself is the rubric's to judge."""
+    if changed + new:
+        return False, f"files written: {', '.join(changed + new)}"
+    return verdict_handoff(chat)

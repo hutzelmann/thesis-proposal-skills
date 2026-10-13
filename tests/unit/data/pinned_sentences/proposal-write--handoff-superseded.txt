@@ -1,0 +1,1 @@
+It changed research questions, scope, method, the contribution delta, or a passage a blocker in `<slug>-review.md` cites: that review now describes an earlier text — say so and recommend a fresh review.

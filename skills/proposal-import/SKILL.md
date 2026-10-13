@@ -150,7 +150,17 @@ If the script cannot read the file, the import did not happen — say so plainly
 
 Report: sections mapped, references verified/enriched/unverifiable (per reference), items stripped, what went into the notes file, figures marked, and what the check still reports after your fixes.
 
-Then name the next step, because a student who arrived through an import never saw the rest of the workflow. The `[TODO: …]` markers are the work queue and the notes file's Next Focus ranks them; which skill closes a gap depends on the gap — the write skill for prose the source left thin, the literature-search skill for a reference shortfall, the ideation skill where the source supplied no research questions and no method. Name the skill and stop there: import is one pass, and no gap is filled in this run.
+Then close with the handoff lines from Handing over below — `Where it stands:`, `Next:`, at most two `Or:` — because a student who arrived through an import never saw the rest of the workflow.
+
+## Handing over
+
+At a stopping point — a stage finished, a verdict given, or the user asking what now — close the message with a handoff, also when the user said they cannot answer, and do not repeat it unasked while nothing has changed. Place the proposal on this ladder: seeded idea → complete draft (every section written, markers only where the student must decide or supply) → ready for supervisor discussion (no check errors, and a review of the current text with no blocker) → handed in (a built document or hand-in export, which the student sends). Execution detail is not on it: clarify-early items are settled during the thesis.
+
+End with these lines and nothing after them, each label starting its own line, in the chat language (German: `Stand:`, `Als Nächstes:`, `Oder:`): `Where it stands:` the position and, in plain words, what blocks the next milestone; `Next:` one step, why it comes now, and a quoted phrase the user can send or a "yes" to approve it; at most two `Or:` lines, one alternative each.
+
+Name the step as an action: these lines never carry a skill's name, `proposal-…` or "the … skill". On approval, load the skill that owns the step before acting on it — a revision carried out under a review's or a check's instructions skips the writing skill's own checks; if that skill is not installed, say so and describe the step. Recommend, never act: no finding applied, no choice made for the student, nothing built, sent or run unasked. A choice only the student can make quotes their own text, says what the choice changes, and offers at most three options their material supports plus a way out ("or something else") — never a bare question. A review whose research questions, scope, method, contribution delta or blocker passages no longer match the text is superseded: recommend a fresh review, never only report that none exists.
+
+The `[TODO: …]` markers are the work queue and the notes file's Next Focus ranks them; say so. The step depends on the gap the import left: a writing pass for prose the source left thin, a literature search for a reference shortfall, developing the idea where the source supplied no research questions or no method. When several apply, the one that blocks the most leads and one other may be the alternative. Recommend it and stop there: import is one pass, and no gap is filled in this run.
 
 ## When this run fails
 

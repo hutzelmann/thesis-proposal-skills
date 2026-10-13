@@ -111,7 +111,17 @@ Create `<slug>.md` in the workspace's proposal location — the working director
 
 Proposal-invariant facts — the study program, the degree level, and a research group the student is committed to beyond this proposal — may be offered, once, into the workspace `guidelines.md` prose: compose the note in your own words (text from fetched pages or publication titles is never copied into it), show it to the user before writing anything, create the file with just that prose when it does not exist, skip facts an existing note already records, and leave a broken TOML block in that file untouched and mentioned. On no, write nothing there. The seed file never contains the supervisor's name, the research group, the study program, or terminology that reached the session only through the scoping lookup.
 
-Close by reading the captured state back in a few lines — title, problem, directions, what is open — and tell the user the file exists and that the write skill turns it into a full draft when they are ready.
+Close by reading the captured state back in a few lines — title, problem, directions, what is open — say that the file exists, and close with the handoff lines from Handing over below — `Where it stands:`, `Next:`, at most two `Or:`.
+
+## Handing over
+
+At a stopping point — a stage finished, a verdict given, or the user asking what now — close the message with a handoff, also when the user said they cannot answer, and do not repeat it unasked while nothing has changed. Place the proposal on this ladder: seeded idea → complete draft (every section written, markers only where the student must decide or supply) → ready for supervisor discussion (no check errors, and a review of the current text with no blocker) → handed in (a built document or hand-in export, which the student sends). Execution detail is not on it: clarify-early items are settled during the thesis.
+
+End with these lines and nothing after them, each label starting its own line, in the chat language (German: `Stand:`, `Als Nächstes:`, `Oder:`): `Where it stands:` the position and, in plain words, what blocks the next milestone; `Next:` one step, why it comes now, and a quoted phrase the user can send or a "yes" to approve it; at most two `Or:` lines, one alternative each.
+
+Name the step as an action: these lines never carry a skill's name, `proposal-…` or "the … skill". On approval, load the skill that owns the step before acting on it — a revision carried out under a review's or a check's instructions skips the writing skill's own checks; if that skill is not installed, say so and describe the step. Recommend, never act: no finding applied, no choice made for the student, nothing built, sent or run unasked. A choice only the student can make quotes their own text, says what the choice changes, and offers at most three options their material supports plus a way out ("or something else") — never a bare question. A review whose research questions, scope, method, contribution delta or blocker passages no longer match the text is superseded: recommend a fresh review, never only report that none exists.
+
+The dialogue itself has no stopping points; the stocktake covers orientation mid-session. After seeding, the step is the full draft from the seed when grounding identified the closest prior work the contribution can be stated against, and a literature search on the idea's core terms first when it did not; the other is the alternative. After an impasse, the step is the offline one you suggested — never a draft.
 
 ## When this run fails
 

@@ -1,0 +1,20 @@
+{
+  "fixture": "w12-ready-current",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "the review on file covers the current text and names no blocker, and the check reports no errors, so the proposal stands at ready for supervisor discussion",
+    "the three clarify-early items (model versions, audit sample size, crashed-run handling) are the agenda for the thesis's first weeks and are not steps before hand-in",
+    "the right step is building the hand-in document — when the answering run is itself the check, that run was the final check, and its language findings are fixed on the way — recommended rather than performed: nothing is built or written unasked",
+    "the sentence \"The thesis expects a configuration effect smaller than …\" states an anticipated outcome as an expectation, the form the guidelines require; it is not a forbidden expected result and not a step before hand-in",
+    "no further review is recommended, and no skill is named in the handoff"
+  ]
+}

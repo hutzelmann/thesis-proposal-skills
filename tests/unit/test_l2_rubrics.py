@@ -58,7 +58,8 @@ def test_every_dev_criterion_is_a_matrix_criterion_with_an_existing_rubric():
 def test_dev_rubrics_cover_exactly_the_scenarios_with_a_rubric_twin():
     assert set(DEV_RUBRICS) == {"write_from_seed", "write_rich_seed", "write_repair_citations",
                                 "review_fixture", "review_hollow", "review_ready",
-                                "review_dependency", "review_converge"}
+                                "review_dependency", "review_converge",
+                                *l2_rubrics.HANDOFF_SCENARIOS}
     assert {e.name for e in DEV_RUBRICS["write_from_seed"]} == {
         "write_l2_rq_quality", "write_l2_density"}
     for scenario in ("write_rich_seed", "write_repair_citations"):
@@ -85,6 +86,15 @@ def test_review_scenarios_ask_about_the_oracle_semantic_list():
         [entry] = DEV_RUBRICS[scenario]
         assert entry.question == "oracle"
         assert question_for(entry, "ignored request", oracle) == "; ".join(oracle["semantic"])
+
+
+def test_handoff_scenarios_share_one_criterion_and_ask_about_the_oracle():
+    """One criterion for all five: the situation, which differs, travels in the
+    question — the fixture's semantic list, or the scenario's own."""
+    for scenario in l2_rubrics.HANDOFF_SCENARIOS:
+        [entry] = DEV_RUBRICS[scenario]
+        assert (entry.rubric, entry.question) == ("handoff.txt", "oracle")
+        assert CRITERIA[entry.key] == l2_rubrics.HANDOFF
 
 
 def test_judge_system_is_one_fixed_sentence():
