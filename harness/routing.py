@@ -27,9 +27,12 @@ found in the configuration after the sweep voids every case
 (`billing_problem`, `billing_signals`, `case_billing`, which live here because
 `claude_cli` imports this module): a case whose stream shows billing other
 than the subscription voids the whole sweep, and no further case starts. The
-report records the isolation conditions, so a report measured under others is
-not compared as a predecessor; the raw run log also records the login the
-sweep linked and its directory. The rig needs the `claude` binary and a
+report records the isolation conditions and the served model IDs, so a report
+measured under other ones is not compared as a predecessor; each raw result
+records the model and CLI version its own stream reported (`served_model`,
+which the dev runner shares), since the requested alias resolves to whatever
+the host maps it to, and the raw run log also records the login the sweep
+linked and its directory. The rig needs the `claude` binary and a
 logged-in subscription, which is why it is an on-demand instrument and not
 part of the L0 chain; the pure functions below and the dataset's integrity
 are. `follow_stream`, the stream reader with its deadline and its stop at the
@@ -174,11 +177,18 @@ class Case:
 
 @dataclass
 class Result:
+    """One measurement. `served_model` and `cli_version` are what the case's
+    own stream reported serving it (`served_model`, `host_cli_version`), not
+    the alias the sweep requested; both stay None for a stream that reported
+    neither, and for a raw log written before they were recorded."""
+
     case_id: str
     expected: str
     kind: str
     route: str | None = None
     error: str | None = None
+    served_model: str | None = None
+    cli_version: str | None = None
 
     @property
     def selected(self) -> str:
@@ -324,9 +334,39 @@ def model_usage(events: list[dict]) -> dict[str, dict]:
     return usage if isinstance(usage, dict) else {}
 
 
+def host_cli_version(events: list[dict]) -> str | None:
+    """The host CLI version the stream's `init` event reports, or None."""
+    return init_event(events).get("claude_code_version")
+
+
 def version_label(events: list[dict]) -> str:
     """The CLI version for a fail-closed reason: a host change is the usual cause."""
-    return init_event(events).get("claude_code_version") or "unknown"
+    return host_cli_version(events) or "unknown"
+
+
+def output_tokens(usage: Mapping | None) -> int:
+    """One `modelUsage` entry's output tokens; 0 when the entry or count is absent."""
+    return int((usage or {}).get("outputTokens") or 0)
+
+
+def served_model(events: list[dict]) -> tuple[str | None, str | None]:
+    """The model the host served, by its full ID — from the `init` event,
+    checked against the result's per-model usage — and a note when the two
+    disagree. A full session may list an auxiliary model beside the main one,
+    so only the init model's absence from the usage is a discrepancy. Without
+    an `init` event the model that produced the most output stands in. The
+    one reader of "the served model" for the dev runner and the routing rig,
+    whose cases mostly stop before the result event carries any usage."""
+    reported = init_event(events).get("model")
+    usage = model_usage(events)
+    if reported and (not usage or reported in usage):
+        return reported, None
+    if reported:
+        return reported, f"init reports {reported}, modelUsage lists {', '.join(sorted(usage))}"
+    producing = sorted(usage, key=lambda m: -output_tokens(usage[m]))
+    if producing:
+        return producing[0], "no init event; taken from modelUsage"
+    return None, None
 
 
 def rate_limit_infos(events: list[dict]) -> list[dict]:
@@ -482,8 +522,13 @@ def case_result(case: Case, events: list[dict], stream_error: str | None,
     rather than as "no events" — and never as unrouted, which a negative case
     would count as correct: a sweep run while logged out would otherwise pass
     every negative case and report every other case as not selected.
+
+    Whatever the outcome, the result carries the served model and the CLI
+    version the case's own stream reported, so an errored case still shows
+    what served it.
     """
-    result = Result(case_id=case.id, expected=case.expected, kind=case.kind)
+    result = Result(case_id=case.id, expected=case.expected, kind=case.kind,
+                    served_model=served_model(events)[0], cli_version=host_cli_version(events))
     leaks = stream_surfaces(events, isolated=True)
     if leaks:
         result.error = surface_reason(leaks, isolated=True)
@@ -522,9 +567,10 @@ def misroutes(results: list[Result]) -> list[Result]:
 
 def void(results: list[Result], reason: str) -> list[Result]:
     """Every result of a sweep turned into an error naming `reason`. What each
-    case measured stays in the record — its route, and its own error after the
-    voiding reason — so the persisted run log still shows it; an errored
-    result counts toward no total (`classify`)."""
+    case measured stays in the record — its route, the model and CLI version
+    that served it, and its own error after the voiding reason — so the
+    persisted run log still shows it; an errored result counts toward no
+    total (`classify`)."""
     return [replace(r, error=reason if r.error is None else f"{reason} The case's own error: "
                     f"{r.error}") for r in results]
 
@@ -589,6 +635,38 @@ def skills_revision() -> str:
 
 SCORE_LINE = re.compile(r"measurements: (\d+) \((\d+) correct\)")
 ISOLATION_LINE = re.compile(r"^- isolation: (.+)$", re.MULTILINE)
+SERVED_LINE = re.compile(r"^- served: (.+)$", re.MULTILINE)
+NOT_RECORDED = "not recorded"
+
+
+def tally(values: Sequence[str | None], recorded: bool = True, quote: str = "`") -> str:
+    """`<value>` (n), … most frequent first, with the values a stream did not
+    report counted as `not reported (n)`; "not recorded" for a record that
+    predates the field (`recorded`) or holds no measurement. The report's
+    served-model and CLI lines, and the rig's closing line."""
+    if not recorded or not values:
+        return NOT_RECORDED
+    counts: dict[str, int] = {}
+    for value in values:
+        if value:
+            counts[value] = counts.get(value, 0) + 1
+    parts = [f"{quote}{value}{quote} ({n})"
+             for value, n in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+    missing = sum(1 for value in values if not value)
+    return ", ".join([*parts, *([f"not reported ({missing})"] if missing else [])])
+
+
+def measured(results: list[Result]) -> list[Result]:
+    """The measurements a report's figures describe: every one without an error."""
+    return [r for r in results if r.error is None]
+
+
+def served_set(results: list[Result]) -> frozenset[str]:
+    """The served model IDs of a run's error-free measurements — the model
+    condition a report is compared under (testing-harness spec: A conditions
+    change invalidates comparison). Counts are ignored, and so are
+    measurements whose stream reported none."""
+    return frozenset(r.served_model for r in measured(results) if r.served_model)
 
 
 def previous_score(path: Path = REPORT_FILE) -> str | None:
@@ -613,11 +691,28 @@ def previous_isolation(path: Path = REPORT_FILE) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def previous_served(path: Path) -> frozenset[str] | None:
+    """The served model IDs the outgoing report records; None when it records
+    none — no `served` line, as every report measured before the served model
+    was recorded, or one that names no ID."""
+    if not path.exists():
+        return None
+    match = SERVED_LINE.search(path.read_text(encoding="utf-8"))
+    served = frozenset(re.findall(r"`([^`]+)`", match.group(1))) if match else frozenset()
+    return served or None
+
+
 def render_report(results: list[Result], matrix: Matrix, model: str,
                   revision: str | None = None, supersedes: str | None = None,
                   epochs: int = DEFAULT_EPOCHS, conditions_changed: bool = False,
-                  isolation: str | None = ISOLATION_CONDITIONS) -> str:
+                  isolation: str | None = ISOLATION_CONDITIONS,
+                  served_recorded: bool = True) -> str:
+    """The tracked report. `model` is the alias the run requested; the served
+    model IDs and CLI versions are counted over the error-free measurements
+    the figures below describe, and read "not recorded" for a raw log written
+    before they were (`served_recorded`)."""
     passed, total = matrix.totals
+    counted = measured(results)
     earlier = (
         f"- measured under different conditions, not comparable: {supersedes}"
         if conditions_changed else f"- supersedes: {supersedes}"
@@ -630,6 +725,8 @@ def render_report(results: list[Result], matrix: Matrix, model: str,
         "`harness/README.md`.",
         "",
         f"- model: `{model}`",
+        f"- served: {tally([r.served_model for r in counted], served_recorded)}",
+        f"- host CLI: {tally([r.cli_version for r in counted], served_recorded, quote='')}",
         f"- skills revision: `{revision or skills_revision()}`",
         *([f"- isolation: {isolation}"] if isolation else []),
         f"- measurements: {total} ({passed} correct), {epochs} epochs per case",
@@ -1036,6 +1133,18 @@ def sweep(work: list[Case], args: argparse.Namespace) -> tuple[list[Result], dic
     return results, {"login": source.value, "login_dir": str(directory) if directory else None}
 
 
+def recorded_conditions_changed(results: list[Result], path: Path) -> bool:
+    """Whether the outgoing report recorded other measurement conditions than
+    this run's, or none: its isolation, or the set of served model IDs (the
+    alias alone says nothing about the model behind it). Both are recorded in
+    the report itself, so their change needs no one to remember
+    --conditions-changed. The CLI version is recorded but not compared: the
+    host updates every few days, and a CLI change that matters to the rig
+    stays the operator's declaration."""
+    return (previous_isolation(path) != ISOLATION_CONDITIONS
+            or previous_served(path) != served_set(results))
+
+
 def write_report(results: list[Result], matrix: Matrix, args: argparse.Namespace) -> None:
     """Replace the tracked report — unless the run measured nothing, which
     leaves the earlier report and its score standing."""
@@ -1043,16 +1152,29 @@ def write_report(results: list[Result], matrix: Matrix, args: argparse.Namespace
         print(f"routing: no measurement completed; {REPORT_FILE.name} left unchanged")
         return
     supersedes = previous_score(REPORT_FILE)
-    # isolation is a measurement condition recorded in the report itself, so
-    # its change needs no one to remember --conditions-changed
-    isolation_changed = (supersedes is not None
-                         and previous_isolation(REPORT_FILE) != ISOLATION_CONDITIONS)
+    changed = (args.conditions_changed
+               or (supersedes is not None and recorded_conditions_changed(results, REPORT_FILE)))
     REPORT_FILE.write_text(
         render_report(results, matrix, args.model, supersedes=supersedes,
-                      epochs=args.epochs or DEFAULT_EPOCHS,
-                      conditions_changed=args.conditions_changed or isolation_changed),
+                      epochs=args.epochs or DEFAULT_EPOCHS, conditions_changed=changed),
         encoding="utf-8")
     print(f"routing: report written to {REPORT_FILE.relative_to(REPO).as_posix()}")
+
+
+def rebuild_report(log: Path) -> None:
+    """The report rebuilt from a saved run log, measuring nothing. A log
+    written before the served model was recorded says so, rather than letting
+    the alias stand in for it."""
+    payload = json.loads(log.read_text(encoding="utf-8"))
+    raw = payload["results"]
+    results = [Result(**r) for r in raw]
+    recorded = all("served_model" in r for r in raw)
+    REPORT_FILE.write_text(
+        render_report(results, classify(results), payload["model"],
+                      payload.get("skills_revision"), isolation=payload.get("isolation"),
+                      served_recorded=recorded),
+        encoding="utf-8")
+    print(f"routing: report rebuilt from {log} into {REPORT_FILE.relative_to(REPO).as_posix()}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1075,14 +1197,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.render:
-        payload = json.loads(args.render.read_text(encoding="utf-8"))
-        results = [Result(**r) for r in payload["results"]]
-        REPORT_FILE.write_text(
-            render_report(results, classify(results), payload["model"],
-                          payload.get("skills_revision"), isolation=payload.get("isolation")),
-            encoding="utf-8")
-        print("routing: report rebuilt from "
-              f"{args.render} into {REPORT_FILE.relative_to(REPO).as_posix()}")
+        rebuild_report(args.render)
         return 0
 
     cases = load_cases()
@@ -1110,7 +1225,10 @@ def main(argv: list[str] | None = None) -> int:
     for error in matrix.errors:
         print(f"  ERROR {error}")
     errored = f", {len(matrix.errors)} errored" if matrix.errors else ""
-    print(f"routing: {passed}/{total} correct{errored}")
+    # every result, errored ones included, as the raw log records them; the
+    # report counts only the error-free measurements its figures describe
+    served = tally([r.served_model for r in results], quote="")
+    print(f"routing: {passed}/{total} correct{errored}; requested {args.model}, served {served}")
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")

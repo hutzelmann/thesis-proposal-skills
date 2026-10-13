@@ -64,7 +64,7 @@ uv run poe test                    # L0 chain: pytest + ruff + generated-copy dr
 uv run poe test-fast               # inner loop: parallel, without the pandoc/typst builds (~3s)
 uv run poe cov                     # coverage with the 78% floor
 uv run poe specs                   # openspec validate --all --strict, CLI version pinned here for CI
-uv run poe dev <scenario> --model haiku   # default for Anthropic models: real Claude Code on the subscription, $0 while the plan's extra usage stays off: billing variables are stripped from every model run (claude_runner passthrough)
+uv run poe dev <scenario> --model haiku   # default for Anthropic models: real Claude Code on the subscription, $0 while the plan's extra usage stays off: billing variables are stripped from every model run (claude_runner passthrough); the alias runs the host's current haiku, not the matrix row
 uv run poe smoke                   # subscription: the core scenarios on the dev runner, isolated and budget-capped, write_from_seed judged, closing summary
 uv run poe smoke-inspect           # metered, cost-gated, only when the Inspect wiring changed: [roles].smoke × core tasks × 1 epoch via OpenRouter
 uv run poe matrix [--estimate-only|--tier|--models|--tasks|--epochs|--yes]  # model-support matrix: metered OpenRouter, cost-gated — the source of record for shipped verdicts

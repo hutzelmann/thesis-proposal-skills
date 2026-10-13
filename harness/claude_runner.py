@@ -158,8 +158,10 @@ from routing import (
     OUTWARD_TOOLS,
     error_result_reason,
     follow_stream,
+    host_cli_version,
     isolated_config,
     result_event,
+    served_model,
     tool_calls,
 )
 from sources import MESSY_REQUEST
@@ -1015,28 +1017,12 @@ def telemetry(events: list[dict]) -> dict:
     return {**summed, "cost_usd": figures[-1]["cost_usd"], "conversation_turns": len(results)}
 
 
-def served_model(events: list[dict]) -> tuple[str | None, str | None]:
-    """The model the host served, by its full ID — from the `init` event,
-    checked against the result's per-model usage — and a note when the two
-    disagree. A full session may list an auxiliary model beside the main one,
-    so only the init model's absence from the usage is a discrepancy."""
-    reported = claude_cli.init_event(events).get("model")
-    usage = claude_cli.model_usage(events)
-    if reported and (not usage or reported in usage):
-        return reported, None
-    if reported:
-        return reported, f"init reports {reported}, modelUsage lists {', '.join(sorted(usage))}"
-    producing = sorted(usage, key=lambda m: -claude_cli.output_tokens(usage[m]))
-    if producing:
-        return producing[0], "no init event; taken from modelUsage"
-    return None, None
-
-
 def identity(args: argparse.Namespace, events: list[dict]) -> dict:
-    """What ran: the requested alias beside the served full ID and CLI version."""
+    """What ran: the requested alias beside the served full ID and CLI version
+    (`routing.served_model`, the reader the routing rig shares)."""
     model, note = served_model(events)
     record = {"scenario": args.scenario, "model_requested": args.model, "model": model,
-              "cli_version": claude_cli.init_event(events).get("claude_code_version")}
+              "cli_version": host_cli_version(events)}
     if note:
         record["model_check"] = note
     return record
@@ -1604,11 +1590,29 @@ def load_events(ws: Path) -> list[dict]:
     return parse_events(path.read_text(encoding="utf-8")) if path.exists() else []
 
 
+def kept_identity(ws: Path) -> dict:
+    """What served a kept run: the full model ID and the CLI version from the
+    stream saved in its workspace, each None where the stream does not say.
+    A stream that cannot be read says nothing, so a crashed re-grade's lines
+    still carry both fields."""
+    try:
+        kept = load_events(ws)
+    except (OSError, UnicodeDecodeError):
+        kept = []
+    return {"model": served_model(kept)[0], "cli_version": host_cli_version(kept)}
+
+
 def rejudge_lines(args: argparse.Namespace, judge: Judge,
                   workspaces: list[Path]) -> list[dict]:
     """One summary per kept workspace. One invocation: one isolated config,
     one warm-up, and the batch projection before the fan-out; a config that
-    cannot be prepared leaves every criterion untested."""
+    cannot be prepared leaves every criterion untested.
+
+    Each line names the kept run's served model and CLI version, read from
+    the stream saved in its workspace (None where it carries no `init`),
+    beside the judge's own inside `l2`. It names no requested alias: the
+    workspace does not record one, and `--model` defaults to `haiku`, so a
+    re-grade of a sonnet run would be labelled haiku."""
     scenario = SCENARIOS[args.scenario]
     plans = [(ws, *judge_criteria(args.scenario, scenario, ws, scenario["request"]))
              for ws in workspaces]
@@ -1622,11 +1626,11 @@ def rejudge_lines(args: argparse.Namespace, judge: Judge,
     grades = iter(run.grades)
     lines = []
     for ws, criteria, not_judged in plans:
-        served, _ = served_model(load_events(ws))
-        l2, status = l2_report(judge, [next(grades) for _ in criteria], not_judged, served)
+        kept = kept_identity(ws)
+        l2, status = l2_report(judge, [next(grades) for _ in criteria], not_judged,
+                               kept["model"])
         lines.append({"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
-                      "model": served, **l2, "outcome": OUTCOMES[status],
-                      "exit_status": status})
+                      **kept, **l2, "outcome": OUTCOMES[status], "exit_status": status})
     return lines
 
 
@@ -1645,8 +1649,8 @@ def rejudge(args: argparse.Namespace, judge: Judge) -> int:
         traceback.print_exc()
         failure = RunnerFailure(f"runner crashed: {exc!r}")
         lines = [{"scenario": args.scenario, "mode": "rejudge", "workspace": str(ws),
-                  "outcome": OUTCOMES[failure.status], "exit_status": failure.status,
-                  "why": failure.message} for ws in workspaces]
+                  **kept_identity(ws), "outcome": OUTCOMES[failure.status],
+                  "exit_status": failure.status, "why": failure.message} for ws in workspaces]
     for line in lines:
         emit(line, args.summary_log)
     return aggregate_status([line["exit_status"] for line in lines])

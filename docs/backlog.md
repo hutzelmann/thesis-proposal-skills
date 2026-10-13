@@ -13,7 +13,7 @@ Follow-ups that were deferred by a change or a session and have no change of the
 
 ## Harness
 
-- **Routing report labels.** The routing rig labels its report with the committed skills tree, not the working tree it measured.
+- **Routing report labels.** The routing rig labels its report with the committed skills tree, not the working tree it measured. The routing log's `skills_revision` is the committed `HEAD:skills` even when the working tree changed between sweeps: all four 2026-10-13 sweeps record `36021c9`, although the writing skill's description changed in the working tree between two of them. Evidence: "Also observed" in `openspec/changes/archive/2026-10-13-label-served-models/measurement.md`.
 - **Silent host stall.** `stream_events` puts no bound on a host that stalls without emitting anything.
 - **Harness login, step B.** Observation L1 (the first natural token refresh, task 5.8) and the conditional 5.10 of `openspec/changes/archive/2026-10-06-add-harness-claude-login/` are open; L1 gates removing the `CLAUDE_REAL_CONFIG_DIR` opt-in. Check with `uv run poe host-status` after the next natural refresh; no model call is needed for the check itself.
 - **Worktree status view.** One command that lists every worktree with its branch, its open OpenSpec changes and whether it is merged, so open work is visible without an audit.
