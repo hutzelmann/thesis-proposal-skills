@@ -13,6 +13,7 @@ package). The fake records which token-shaped variables it received, by name.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -1478,6 +1479,39 @@ def test_work_root_under_the_state_root_is_made_owner_only(tmp_path, monkeypatch
     assert copilot_cli.work_problem() is None
 
 
+@ROOTLESS
+def test_work_root_repairs_an_owned_level_left_group_readable(tmp_path, monkeypatch):
+    """testing-harness spec: Copilot work directory owner-only. A level the
+    harness owns that another process created group- or world-readable (a
+    scratch rig's `mkdir(parents=True)` leaves intermediates 0755) is repaired
+    to 0700 even though it already exists; the per-user runtime directory, which
+    the harness does not own, is never chmodded."""
+    runtime = tmp_path / "run-user-1000"
+    runtime.mkdir(mode=0o755)  # systemd-logind's; the harness must not touch it
+    (runtime / "thesis-proposal-dev").mkdir(mode=0o755)  # owned, left lax by a rig
+    (runtime / "thesis-proposal-dev" / "work").mkdir(mode=0o755)  # owned, left lax
+    account = tmp_path / "account"
+    state = account / ".local" / "state" / "thesis-proposal-dev"
+    monkeypatch.setenv(host_login.STATE_VAR, str(state))
+    monkeypatch.setattr(host_login, "account_home", lambda _uid=None: account)
+    monkeypatch.setattr(copilot_cli, "runtime_dir", lambda _uid=None: runtime)
+    root = copilot_cli.work_root()
+    assert root == runtime / "thesis-proposal-dev" / "work" / "copilot"
+    assert _mode(runtime / "thesis-proposal-dev") == 0o700  # repaired
+    assert _mode(runtime / "thesis-proposal-dev" / "work") == 0o700  # repaired
+    assert _mode(root) == 0o700  # created owner-only
+    assert _mode(runtime) == 0o755  # the boundary the harness does not own is untouched
+
+
+def test_owned_base_is_the_ancestor_the_harness_does_not_own():
+    runtime = PurePosixPath("/run/user/1000")
+    runtime_root = runtime / "thesis-proposal-dev" / "work" / "copilot"
+    assert copilot_cli.owned_base(STATE_P, runtime, runtime_root) == runtime
+    state_root = STATE_P / "work" / "copilot"
+    assert copilot_cli.owned_base(STATE_P, runtime, state_root) == STATE_P.parent
+    assert copilot_cli.owned_base(STATE_P, None, state_root) == STATE_P.parent
+
+
 @POSIX
 def test_work_root_falls_back_to_the_runtime_directory(tmp_path, monkeypatch):
     """The default layout: the state root lies in the account home, so the
@@ -1889,6 +1923,128 @@ def test_the_live_watch_stops_a_file_tool_pointed_outside_the_workspace(tmp_path
     assert watch.event_line(json.dumps(_file_start("f5", "view", path="proposal-review.md")))
     assert watch.breach == copilot_cli.OUTSIDE_FILE
     assert secret.read_text(encoding="utf-8") == "synthetic"
+
+
+def _staged_tree(ws: Path) -> Path:
+    """A staged skill tree with one skill and one regular file; returns its root."""
+    skill = ws / ".agents" / "skills" / "proposal-check"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: proposal-check\n---\nbody\n", encoding="utf-8")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "check.py").write_text("print(1)\n", encoding="utf-8")
+    return ws / ".agents" / "skills"
+
+
+@POSIX
+def test_staged_digest_fingerprints_files_dirs_and_unsafe_entries(tmp_path):
+    """The before/after fingerprint of the staged skill tree: a regular file by
+    its sha256, a directory as `dir`, and a link, FIFO or hard link as `UNSAFE`;
+    an absent or link-replaced tree is empty."""
+    ws = tmp_path / "ws"
+    _staged_tree(ws)
+    digest = copilot_cli.staged_digest(ws)
+    assert digest["proposal-check/SKILL.md"] == hashlib.sha256(
+        b"---\nname: proposal-check\n---\nbody\n").hexdigest()
+    assert digest["proposal-check"] == "dir"
+    assert digest["proposal-check/scripts"] == "dir"
+    secret = tmp_path / "secret"
+    secret.write_text("synthetic", encoding="utf-8")
+    (ws / ".agents" / "skills" / "proposal-check" / "SKILL.md").unlink()
+    (ws / ".agents" / "skills" / "proposal-check" / "SKILL.md").symlink_to(secret)
+    os.mkfifo(ws / ".agents" / "skills" / "proposal-check" / "pipe")
+    after = copilot_cli.staged_digest(ws)
+    assert after["proposal-check/SKILL.md"].startswith("UNSAFE:")
+    assert after["proposal-check/pipe"].startswith("UNSAFE:")
+    assert secret.read_text(encoding="utf-8") == "synthetic"  # the link was never followed
+    assert copilot_cli.staged_digest(tmp_path / "none") == {}  # absent tree
+    (tmp_path / "link-ws" / ".agents" / "skills").parent.mkdir(parents=True)
+    (tmp_path / "link-ws" / ".agents" / "skills").symlink_to(tmp_path)
+    assert copilot_cli.staged_digest(tmp_path / "link-ws") == {}  # tree replaced by a link
+
+
+def test_staged_changes_names_what_the_sandboxed_shell_changed():
+    before = {"a/SKILL.md": "sha1", "a": "dir", "b/SKILL.md": "sha2", "c/SKILL.md": "sha3"}
+    after = {"a/SKILL.md": "UNSAFE:a link", "a": "dir", "b/SKILL.md": "sha2changed",
+             "d/SKILL.md": "sha4", "e/SKILL.md": "UNSAFE:a link"}
+    found = copilot_cli.staged_changes(before, after)
+    assert "a/SKILL.md became a link" in found
+    assert "b/SKILL.md changed" in found
+    assert "c/SKILL.md removed" in found
+    assert "d/SKILL.md added" in found
+    assert "e/SKILL.md added (a link)" in found
+    assert copilot_cli.staged_changes(before, before) == []  # no change, no finding
+    big = {str(i): "x" for i in range(copilot_cli.SHOWN_SKILL_CHANGES + 5)}
+    assert len(copilot_cli.staged_changes({}, big)) == copilot_cli.SHOWN_SKILL_CHANGES
+
+
+@POSIX
+def test_a_skill_tool_call_stops_the_run_when_the_staged_tree_holds_a_link(tmp_path):
+    """testing-harness spec: Skill read outside the staged tree stops the run.
+    The client's `skill` tool reads its SKILL.md in the client's own process,
+    outside the sandbox, and follows a link; its start names the skill, not a
+    path, so on a `skill` start the watch checks the staged tree for a planted
+    link rather than a path (`skill.invoked`, with the path, never reaches
+    stdout)."""
+    ws = tmp_path / "ws"
+    _staged_tree(ws)
+    start = _file_start("s1", "skill", skill="proposal-check")
+    assert copilot_cli.breach_of(start, set(), ws) is None  # clean tree, no breach
+    assert copilot_cli.breach_of(start, set()) is None  # no workspace, no check
+    secret = tmp_path / "secret"
+    secret.write_text("synthetic", encoding="utf-8")
+    skillmd = ws / ".agents" / "skills" / "proposal-check" / "SKILL.md"
+    skillmd.unlink()
+    skillmd.symlink_to(secret)
+    assert copilot_cli.breach_of(start, set(), ws) == copilot_cli.SKILL_LINK
+    mcp = _file_start("s2", "skill", skill="proposal-check")
+    mcp["data"]["mcpServerName"] = "github-mcp-server"
+    assert copilot_cli.breach_of(mcp, set(), ws) is None  # an MCP tool, not the client's skill
+    watch = copilot_cli.ConfinementWatch(ws)
+    assert watch.event_line(json.dumps(start))
+    assert watch.breach == copilot_cli.SKILL_LINK
+    assert secret.read_text(encoding="utf-8") == "synthetic"  # the watch followed no link
+
+
+def test_a_changed_staged_skill_is_untested_for_isolation_and_stops():
+    """testing-harness spec: Staged skill changed during the run — pure over the
+    saved events: the harness record names what changed."""
+    events = stream("success")
+    harness = copilot_cli.harness_record(events)
+    harness["skill_findings"] = ["proposal-check/SKILL.md became a link"]
+    assessment = copilot_cli.assess(events)
+    assert assessment.problem.untested
+    assert assessment.problem.kind == "isolation"
+    assert copilot_cli.SKILL_TAMPER in assessment.problem.message
+    assert "became a link" in assessment.problem.message  # the entry named
+    assert ("isolation", f"{copilot_cli.SKILL_TAMPER}: proposal-check/SKILL.md became a link") in (
+        assessment.stops)
+
+
+@POSIX
+def test_a_link_planted_over_a_staged_skill_stops_the_run(home, tmp_path, monkeypatch):
+    """End to end: a sandboxed shell that replaced a staged SKILL.md with a link
+    to a file under a denied path (the client's `skill` tool would follow it) is
+    caught after the run by the staged-tree comparison — untested for isolation,
+    the link unlinked unread, its target untouched, with the tamper stop."""
+    skip_scan(monkeypatch)
+    ws = staged_ws(tmp_path)
+    secret = tmp_path / "secret"
+    secret.write_text("SYNTHETIC-SKILL-SECRET", encoding="utf-8")
+    link = ws / ".agents" / "skills" / "proposal-check" / "SKILL.md"
+    fake_copilot(tmp_path, monkeypatch, links={str(link): str(secret)})
+    events = copilot_cli.run_copilot(ws, "check", model="copilot-fixture-a", effort=None,
+                                     cap=30, timeout=30, home=home,
+                                     scenario=claude_runner.SCENARIOS["check_report"])
+    problem = copilot_cli.run_problem(events)
+    assert problem.untested
+    assert problem.kind == "isolation"
+    assert copilot_cli.SKILL_TAMPER in problem.message
+    assert "proposal-check/SKILL.md" in problem.message
+    assert "SYNTHETIC-SKILL-SECRET" not in json.dumps(events)
+    assert secret.read_text(encoding="utf-8") == "SYNTHETIC-SKILL-SECRET"  # never followed
+    assert not link.is_symlink()  # the workspace check unlinked it unread
+    assert copilot_cli.read_stop(home)["kind"] == "isolation"
+    assert copilot_cli.SKILL_TAMPER in copilot_cli.read_stop(home)["cause"]
 
 
 def test_a_run_the_watch_stopped_is_untested_for_isolation_and_stops():

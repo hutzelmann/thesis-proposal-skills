@@ -71,8 +71,13 @@ and every check here is the backstop, failing closed:
 - **During the run** (`ConfinementWatch`): prompt mode applies the home's
   sandbox itself, which nothing before the run can observe, so the child's
   output is read as it arrives and the child is stopped at the first shell
-  completion not reported `sandboxed`, the first sandbox warning, or the
-  first file tool pointed outside the workspace (links resolved), rather than
+  completion not reported `sandboxed`, the first sandbox warning, the
+  first file tool pointed outside the workspace (links resolved), or the first
+  `skill` tool call made while the staged skill tree holds a link or a foreign
+  entry (`staged_breach`: the client's `skill` tool reads its SKILL.md in the
+  client's own process, outside the sandbox, and follows a link a sandboxed
+  shell planted there, so a swapped staged skill could read a file under a
+  denied path — the skill-tool link escape, measured 2026-10-13), rather than
   left to go on with the skill prompt; the stop names the breach. Every child
   leads its own process group, and whatever ended it, the group is killed
   (`stop_group`).
@@ -82,13 +87,19 @@ and every check here is the backstop, failing closed:
   there, or the workspace itself replaced, would make the unsandboxed harness
   act on another file, and a directory closed to its owner would hide one;
   each such entry is unlinked unread (a closed directory left as it is), and the run is
-  untested for isolation with an isolation stop. The event file is created
-  afresh without following a link (`claude_runner.save_events`).
+  untested for isolation with an isolation stop. The staged skill tree is
+  also fingerprinted before the child and again after it (`staged_digest`,
+  `staged_changes`): a staged skill the sandboxed shell changed, removed, or
+  turned into a link is an isolation finding (the skill-tool link escape), since
+  a skill the model loaded was not the one the harness staged and a staged
+  skill that became a link could have read a file outside the tree. The event
+  file is created afresh without following a link (`claude_runner.save_events`).
 - **After the run** (`assess`): the session file is reduced into `copilot.*`
   records (`reduce_session`) and deleted; the status is read again; overage
   growth, an unavailable read, unreadable consumption, more than twice the
   credit cap, zero nano-AIU with tokens and a reached soft cap or session
   limit record a billing stop; a run the watch stopped, a workspace breach, a
+  changed staged skill, a
   finding in the process logs, a sandbox warning, a shell completion not
   reported `sandboxed`, or no shell completion at all records an isolation
   stop. The steps after the child's
@@ -185,8 +196,8 @@ import host_login
 import workspace_guard
 from host_login import COPILOT, MARKER, LoginProblem, refusal
 from hosts import RunView, needs_network
+from workspace_guard import unsafe_entries, workspace_entries, workspace_identity
 from workspace_guard import unsafe_entry as _unsafe_entry
-from workspace_guard import workspace_entries, workspace_identity
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -278,6 +289,12 @@ LOCAL_FIXTURE_HOST = "127.0.0.1"  # where claude_runner binds its fixture server
 # search tools also run the bundled ripgrep from the denied package cache.
 # Files are read, searched and written through the sandboxed shell, which the
 # sandbox grants the workspace.
+# `skill` stays — skills are the run's point — but it, like the file tools,
+# reads its `<ws>/.agents/skills/<name>/SKILL.md` in the client's own process,
+# outside the sandbox, and follows a link (the skill-tool link escape, measured
+# 2026-10-13). It is not removed: it is guarded by the live watch (`staged_breach`
+# on a `skill` call) and the staged-tree fingerprint before and after the child
+# (`staged_digest`, `staged_changes`).
 BASE_TOOLS = ("bash", "read_bash", "write_bash", "stop_bash", "list_bash", "skill",
               "report_intent", "update_todo")
 HELPER_TOOLS = ("task", "read_agent", "list_agents", "write_agent")
@@ -434,17 +451,61 @@ def choose_work_root(state: PurePath, runtime: PurePath | None, *,
     return None
 
 
-def _private_dirs(root: Path) -> bool:
-    """Create the missing levels of `root` owner-only, top down; whether it is
-    then a real directory (never a link)."""
-    missing = []
+def owned_base(state: PurePath, runtime: PurePath | None, root: PurePath) -> PurePath:
+    """The ancestor of the work directory the harness does not own and must not
+    chmod (Decision 7): the per-user runtime directory on the runtime layout
+    (systemd-logind's, already 0700), the state root's parent on the state
+    layout. Every level between it and `root` — the state root, `work` and
+    `copilot`, or `thesis-proposal-dev`, `work` and `copilot` — is the harness's
+    own, created and kept 0700. Pure."""
+    if runtime is not None and runtime in root.parents:
+        return runtime
+    return state.parent
+
+
+def _repair_owner_only(level: Path, uid: int | None) -> None:
+    """Make an existing harness-owned level owner-only (0700), so a level that
+    another process created under a laxer umask (a scratch rig's
+    `mkdir(parents=True)` leaves intermediates 0755) is repaired: only a real
+    directory the current user owns, never a link, never one owned by someone
+    else (the per-user runtime directory is never passed here)."""
+    try:
+        info = level.lstat()
+    except OSError:
+        return
+    if (stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode)
+            and (uid is None or info.st_uid == uid)
+            and stat.S_IMODE(info.st_mode) != 0o700):
+        with suppress(OSError):
+            level.chmod(0o700)
+
+
+def _owned_levels(root: Path, base: Path) -> list[Path]:
+    """The harness-owned levels of `root`, from just below `base` down to
+    `root` (nearest `base` first). `base` is never included."""
+    out: list[Path] = []
     level = root
-    while not level.exists() and not level.is_symlink() and level != level.parent:
-        missing.append(level)
+    while level != base and level != level.parent:
+        out.append(level)
         level = level.parent
-    for path in reversed(missing):
-        path.mkdir(mode=0o700)
-        path.chmod(0o700)  # whatever the umask
+    out.reverse()
+    return out
+
+
+def _private_dirs(root: Path, base: Path) -> bool:
+    """Create the harness-owned levels of `root` (those below `base`) owner-only,
+    top down, and repair any that already exist to 0700 (`_repair_owner_only`) —
+    never `base` itself or anything above it. Whether `root` is then a real
+    directory (never a link)."""
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    for level in _owned_levels(root, base):
+        if level.is_symlink():
+            continue  # never create or chmod through a link; the return refuses
+        if level.exists():
+            _repair_owner_only(level, uid)
+        else:
+            level.mkdir(mode=0o700)
+            level.chmod(0o700)  # whatever the umask
     return root.is_dir() and not root.is_symlink()
 
 
@@ -454,7 +515,9 @@ def work_root(environ: Mapping[str, str] | None = None) -> Path:
     the operator's other processes keep their files (D-b). The state root's
     location check comes first, so a refused override gets nothing created;
     without either location the run is refused as untested for a
-    precondition (`CopilotRefused`), and nothing is created."""
+    precondition (`CopilotRefused`), and nothing is created. Every level the
+    harness owns is created and kept 0700; a pre-existing one another process
+    left group- or world-readable is repaired (`_private_dirs`)."""
     environ = os.environ if environ is None else environ
     state = host_login.state_root(environ)
     problem = host_login.check_location(state, environ, record=COPILOT)
@@ -462,8 +525,10 @@ def work_root(environ: Mapping[str, str] | None = None) -> Path:
         raise CopilotRefused.of(problem)
     avoid = [host_login.account_home().resolve(), REPO.resolve(),
              *(Path(tmp).resolve() for tmp in host_login.temp_dirs())]
-    root = choose_work_root(state.resolve(), runtime_dir(), avoid=avoid)
-    if root is None or not _private_dirs(Path(root)):
+    runtime = runtime_dir()
+    root = choose_work_root(state.resolve(), runtime, avoid=avoid)
+    if root is None or not _private_dirs(
+            Path(root), Path(owned_base(state.resolve(), runtime, Path(root)))):
         raise CopilotRefused.of(_problem(
             f"the Copilot workspace has no place outside the system temporary directory and "
             f"your home: the harness state directory {state} lies inside your home, the "
@@ -1480,6 +1545,10 @@ class Run:
     # the staged skill names the roster was checked against, recorded beside it
     # for the loaded-skills confirmation after the run (Decision 10)
     staged: list[str] = field(default_factory=list)
+    # a fingerprint of the staged skill tree before the child (`staged_digest`),
+    # re-taken after the child to catch the sandboxed shell tampering with a
+    # staged skill or planting a link the client's `skill` tool would follow
+    staged_tree: dict[str, str] = field(default_factory=dict)
     # the workspace directory's device and inode before any child starts in it
     ws_id: tuple[int, int] | None = None
     # the session the prompt-mode child is told to create (`--session-id`)
@@ -1759,6 +1828,67 @@ def _listing(args: Sequence[str], run: Run) -> object:
 def staged_names(ws: Path) -> list[str]:
     root = ws / ".agents" / "skills"
     return sorted(p.name for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
+
+
+# -- the staged skill tree's fingerprint (Decision 10, the skill-tool link escape) --
+
+# how many staged-tree changes a finding names before "and N more"
+SHOWN_SKILL_CHANGES = 10
+
+
+def _file_sha(path: Path) -> str:
+    try:
+        with path.open("rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        return "UNREADABLE"
+
+
+def staged_digest(ws: Path) -> dict[str, str]:
+    """A fingerprint of the staged skill tree `<ws>/.agents/skills`, taken
+    before the child and again after it (Decision 10): each entry by its path
+    relative to the tree → the sha256 of a regular file's bytes, `dir` for a
+    directory, or `UNSAFE:<why>` for an entry the harness must not follow (a
+    link, FIFO, socket, device, hard link or a directory closed to its owner)
+    and `UNREADABLE` for one it could not examine. An absent or replaced tree
+    is `{}` (the canary stages none). `workspace_entries` lstats without
+    following, so a regular-file digest reads a real file, never a link's
+    target."""
+    root = ws / STAGED_DIR
+    if root.is_symlink() or not root.is_dir():
+        return {}
+    out: dict[str, str] = {}
+
+    def failed(path: Path) -> None:
+        with suppress(ValueError):
+            out[Path(path).relative_to(root).as_posix() or "."] = "UNREADABLE"
+
+    for path, info in workspace_entries(root, failed):
+        rel = path.relative_to(root).as_posix()
+        why = _unsafe_entry(info.st_mode, info.st_nlink)
+        out[rel] = (f"UNSAFE:{why}" if why else
+                    "dir" if stat.S_ISDIR(info.st_mode) else _file_sha(path))
+    return out
+
+
+def staged_changes(before: Mapping[str, str], after: Mapping[str, str]) -> list[str]:
+    """What the sandboxed shell changed in the staged skill tree across the run
+    (Decision 10): a removed, added or changed entry, or one that became a link
+    or could not be read — at most SHOWN_SKILL_CHANGES, by relative path. The
+    staged files are the harness's own, so any difference is the shell's. Pure."""
+    found = []
+    for rel in sorted(set(before) | set(after)):
+        if (bef := before.get(rel)) == (aft := after.get(rel)):
+            continue
+        unsafe = (aft.split(":", 1)[-1] if str(aft).startswith("UNSAFE") else
+                  "unreadable" if aft == "UNREADABLE" else None)
+        if aft is None:
+            found.append(f"{rel} removed")
+        elif bef is None:
+            found.append(f"{rel} added" + (f" ({unsafe})" if unsafe else ""))
+        else:
+            found.append(f"{rel} became {unsafe}" if unsafe else f"{rel} changed")
+    return found[:SHOWN_SKILL_CHANGES]
 
 
 # -- the confinement probe (Decision 13) --
@@ -2938,6 +3068,15 @@ OUTSIDE_FILE = "a file tool call on a path outside the workspace"
 FILE_TOOLS = frozenset({"view", "glob", "grep", "rg", "str_replace_editor", *EDIT_TOOLS})
 # the file headers of a patch in the format `apply_patch` takes
 PATCH_FILE = re.compile(r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$", re.MULTILINE)
+# The `skill` tool, like the file tools, reads its `<ws>/.agents/skills/<name>/
+# SKILL.md` in the client's own process, outside the sandbox, and follows a link
+# there (measured 2026-10-13, the skill-tool link escape): a sandboxed shell that
+# replaced a staged SKILL.md, or a skill directory, with a link to a file under a
+# denied path makes the client read that file and deliver it to the model. The
+# `skill` tool's start names the skill, not a path, and `skill.invoked` (with the
+# path) never reaches stdout, so on a `skill` start the watch checks the staged
+# tree itself for a link or foreign entry rather than a path.
+SKILL_LINK = "a skill tool call with a link or foreign entry in the staged skill tree"
 
 
 def tool_paths(data: Mapping) -> list[str]:
@@ -2964,10 +3103,28 @@ def leaves_workspace(path: str, ws: Path) -> bool:
     return target != root and not target.startswith(root.rstrip(os.sep) + os.sep)
 
 
+def staged_breach(ws: Path | None) -> str | None:
+    """A link, FIFO, socket, device or hard link in the staged skill tree
+    `<ws>/.agents/skills`, or the tree itself replaced by a link — which the
+    client's `skill` tool, running outside the sandbox, would follow off the
+    tree — or None when the tree is clean or absent (the canary stages none).
+    Reads nothing; `unsafe_entries` lstats without following."""
+    if ws is None:
+        return None
+    root = ws / STAGED_DIR
+    if root.is_symlink():
+        return SKILL_LINK
+    if not root.is_dir():
+        return None
+    return SKILL_LINK if unsafe_entries(root) else None
+
+
 def _start_breach(data: Mapping, shells: set[str], ws: Path | None) -> str | None:
     name = data.get("toolName")
     if name in SHELL_TOOLS:
         shells.add(str(data.get("toolCallId")))
+    elif name == "skill" and not data.get("mcpServerName"):
+        return staged_breach(ws)
     elif (ws is not None and name in FILE_TOOLS and not data.get("mcpServerName")
           and any(leaves_workspace(path, ws) for path in tool_paths(data))):
         return OUTSIDE_FILE
@@ -3711,6 +3868,24 @@ def _logged_after(harness: Mapping) -> RunProblem | None:
                                        "isolation")), True, "isolation")
 
 
+SKILL_TAMPER = "the staged skill tree changed during the run"
+SKILL_TAMPER_REMEDY = (f"read the run's findings, then run `{host_login.CLEAR_STOP_COMMAND}`")
+
+
+def _skill_tamper_after(harness: Mapping) -> RunProblem | None:
+    """The staged-skill-tree comparison after the run (`staged_changes`, Decision
+    10, the skill-tool link escape): a staged skill the sandboxed shell changed,
+    removed or turned into a link is untested for isolation — a skill the model
+    loaded was not the one the harness staged, and a staged skill that became a
+    link could have read a file outside the tree through the client's `skill`
+    tool. Names the entries, never their content."""
+    found = harness.get("skill_findings")
+    if not found:
+        return None
+    return RunProblem(refusal(_problem(f"{SKILL_TAMPER}: {'; '.join(found)}",
+                                       SKILL_TAMPER_REMEDY, "isolation")), True, "isolation")
+
+
 def _offered(harness: Mapping) -> list[str]:
     """The tools the run offered: the runner's record of them (the canary's
     shell alone), or a scenario's set."""
@@ -3723,10 +3898,12 @@ def _offered(harness: Mapping) -> list[str]:
 def _stops(harness: Mapping, scrubbed: object, billing: RunProblem | None,
            sandbox: object) -> list[tuple[str, str]]:
     breach, planted = harness.get("confinement_breach"), harness.get("workspace_breach")
+    tampered = harness.get("skill_findings")
     stops = [("isolation", "the token's value appeared in a child's output")] if scrubbed else []
     stops += [("isolation", LOGGED_CAUSE)] if harness.get("log_findings") else []
     stops += [("isolation", f"the run was stopped at {breach}")] if breach else []
     stops += [("isolation", str(planted))] if planted else []
+    stops += [("isolation", f"{SKILL_TAMPER}: {'; '.join(tampered)}")] if tampered else []
     stops += [("billing", billing.billing or billing.message)] if billing else []
     return stops + ([("isolation", "the sandbox was ignored or not reported active")]
                     if sandbox else [])
@@ -3750,7 +3927,8 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
     billing, billing_stop = billing_after(harness.get("before"), harness.get("after"), events, cap)
     sandbox = sandbox_after(events, str(harness.get("stderr_tail") or ""))
     own = canary_after(events)
-    problems = [scrubbed, _logged_after(harness), stopped_after(harness.get("confinement_breach")),
+    problems = [scrubbed, _logged_after(harness), _skill_tamper_after(harness),
+                stopped_after(harness.get("confinement_breach")),
                 planted_after(harness.get("workspace_breach")), failure,
                 session_problem(events), billing, sandbox,
                 isolation_after(events, harness, loaded=not canary),
@@ -3851,16 +4029,17 @@ def _after_status(run: Run) -> Status | None:
 def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun: float,
              after: Status | None, hit: bool, timed_out: bool, breach: str | None,
              planted: str | None = None, first_event: float | None = None,
-             logged: int = 0) -> dict:
+             logged: int = 0, tampered: Sequence[str] = ()) -> dict:
     """The runner's own record of a run: its timing and exit, the findings of
-    the watch, the workspace check and the process-log scan (a count), what it
-    requested and offered, the status before and after (and, for the canary,
-    the billing guard over the read after), and K5's timing and ignored-flag
-    notice."""
+    the watch, the workspace check, the staged-skill-tree comparison and the
+    process-log scan (a count), what it requested and offered, the status
+    before and after (and, for the canary, the billing guard over the read
+    after), and K5's timing and ignored-flag notice."""
     guard = status_rows(after)[0] if after is not None else None
     return {"type": "copilot.harness", "duration_ms": int((time.monotonic() - begun) * 1000),
             "exit_code": code, "stderr_tail": stderr.strip()[-800:], "timed_out": timed_out,
             "confinement_breach": breach, "workspace_breach": planted,
+            "skill_findings": list(tampered),
             "session_id": session_id, "cap": run.cap, "model": run.model, "effort": run.effort,
             "helpers": int(run.scenario.get("helpers") or 0),
             "network": needs_network(run.scenario), "roster": run.roster,
@@ -3913,6 +4092,7 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
     events and the time-limit message."""
     watch = ConfinementWatch(run.ws)
     out, err, timed_out, breach = _watch_child(proc, timeout, run.ws, watch)
+    tampered = staged_changes(run.staged_tree, staged_digest(run.ws))  # before the unlink
     planted = workspace_breach(run.ws, run.ws_id, run.token)  # type: ignore[arg-type]
     records, file_hit = capture_session(run.home, session_id, run.token)
     after = _after_status(run)
@@ -3925,7 +4105,8 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
               *([canary_record(run, planted)] if run.canary is not None else []),
               _harness(run, session_id, code=proc.returncode, stderr=err, begun=begun,
                        after=after, hit=hit, timed_out=timed_out, breach=breach,
-                       planted=planted, first_event=watch.first_event_at, logged=len(logged))]
+                       planted=planted, first_event=watch.first_event_at, logged=len(logged),
+                       tampered=tampered)]
     write_snapshot(run.home, after)
     limit = f"copilot did not finish within {timeout:g}s" if timed_out else None
     assessment = assess(events, timed_out=limit)
@@ -3960,11 +4141,13 @@ def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
         events, limit = _settle(run, proc, session_id, begun=begun, timeout=timeout)
     except BaseException:
         stop_group(proc, signal.SIGTERM)
+        tampered = staged_changes(run.staged_tree, staged_digest(run.ws))  # before the unlink
         planted = workspace_breach(run.ws, run.ws_id, run.token)  # type: ignore[arg-type]
         scrub_tree(run.ws, run.token)  # type: ignore[arg-type]
         logged = drain_logs(run.home, run.token)
         record_stop(run.home, "billing", AFTER_INCOMPLETE)
-        for cause in (planted, LOGGED_CAUSE if logged else None):
+        for cause in (planted, LOGGED_CAUSE if logged else None,
+                      f"{SKILL_TAMPER}: {'; '.join(tampered)}" if tampered else None):
             if cause:
                 record_stop(run.home, "isolation", cause)
         raise
@@ -4018,6 +4201,7 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
     run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort, cap=cap,
                   ws_id=workspace_identity(ws), is_canary=canary)
     run.home = home
+    run.staged_tree = staged_digest(ws)  # the staged skills as handed to the child
     run.scratch = make_scratch("devrun-copilot-home-", run.environ)
     try:
         with host_login.run_lock(home, record=COPILOT) as fd:

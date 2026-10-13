@@ -884,6 +884,10 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 - **WHEN** the harness state directory lies inside the operator's home directory and no per-user runtime directory that only the user may enter exists
 - **THEN** the Copilot run is refused as untested for a precondition, the message names both locations, and no directory is created
 
+#### Scenario: Copilot work directory level repaired to owner-only
+- **WHEN** a level of the Copilot work directory that the harness owns already exists, left group- or world-readable by another process, below an ancestor the harness does not own
+- **THEN** the harness repairs that level to owner-only, leaving a level owned by someone else and the per-user runtime directory as they are, and the run goes on
+
 #### Scenario: Confinement probe applies the pinned sandbox
 - **WHEN** the confinement probe runs before a Copilot run
 - **THEN** it reads the sandbox settings the client reads from the home and applies them to its session the way the client's prompt mode does before any probe command runs; settings other than the pinned ones refuse the run as untested for isolation before any session is created, and an application that fails or is not confirmed refuses it the same way with no command run and the session deleted; the message never echoes the settings
@@ -907,6 +911,14 @@ It SHALL pass only when the run has no finding a skill run's checks would make, 
 #### Scenario: File tool outside the workspace stops the run
 - **WHEN** a Copilot run, while it lasts, calls one of the client's file tools on a path that, with links resolved, lies outside the workspace
 - **THEN** the runner stops the run there, the run is untested for isolation, the message names the stop, and an isolation stop is recorded
+
+#### Scenario: Skill tool call reaches outside the staged tree
+- **WHEN** a Copilot run, while it lasts, calls the skill tool while the staged skill directory holds a link, a non-regular entry, or the directory itself has been replaced by a link
+- **THEN** the runner stops the run there, the run is untested for isolation, the message names the stop, and an isolation stop is recorded; a skill call while the staged tree is clean does not stop it, and a skill call from an MCP server is not checked this way
+
+#### Scenario: Staged skill changed during the run
+- **WHEN** a staged skill file differs after the run from its fingerprint before the child — changed, removed, added, or turned into a link
+- **THEN** the run is untested for isolation, the message names the changed entries, an isolation stop is recorded, and no secret the comparison reveals is read or named beyond the entry's path
 
 #### Scenario: Process left behind by a Copilot run
 - **WHEN** a Copilot run's child leaves a process running in its process group
