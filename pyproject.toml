@@ -40,10 +40,13 @@ dev = "python harness/claude_runner.py"
 # model currency vs OpenRouter's public catalog: networked, read-only, no key;
 # not part of `test` (L0 replays tests/unit/data/model_catalog/ instead)
 models = "python3 harness/model_currency.py"
-# one live DBLP query through the shipped script: networked, read-only, no key;
-# exits 1 when DBLP's verification page can no longer be passed. Not part of
+# one live, read-only request per lit-search source through the shipped modules
+# (OpenAlex only when the shipped key lookup finds a key; never this repo's
+# .env), one classified line each. Exits 1 when the code needs to change: a
+# verification page not passed, an unexpected answer, zero hits; `busy` (HTTP
+# 429, any 5xx, network) exits 0. No model call. Local only: not part of
 # `test` or CI, so an external block never makes the suite flaky
-lit-live = "python3 skills/proposal-lit-search/scripts/search.py pentest --sources dblp --limit 3"
+lit-live = "python3 harness/lit_live.py"
 # skill selection, not skill behaviour: needs a host install and a subscription,
 # so it stays out of `test` and out of CI. Its verdict logic is covered there.
 routing = "python harness/routing.py"
