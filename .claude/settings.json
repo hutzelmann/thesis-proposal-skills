@@ -56,7 +56,13 @@
       "Edit(openspec/changes/**)"
     ],
     "deny": [
-      "Edit(openspec/changes/archive/**)"
+      "Edit(openspec/changes/archive/**)",
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(rtk git push)",
+      "Bash(rtk git push *)",
+      "Bash(/usr/bin/git push)",
+      "Bash(/usr/bin/git push *)"
     ]
   }
 }
