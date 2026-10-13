@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import contextlib
 import io
+import shutil
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import check as check_script
 import support
+import sync_shared
 from routing import Followed
 
 REPO = Path(__file__).resolve().parents[1]
@@ -107,3 +110,33 @@ def failing_fetch(message: str):
         raise OSError(message)
 
     return fetch
+
+
+def tracked_files() -> list[str]:
+    """Every tracked path, repo-relative. Repository-wide scans walk this list,
+    never the directory tree: the tree also holds the private proposals
+    directory, which no test may read."""
+    out = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files"], capture_output=True, text=True, check=True,
+        encoding="utf-8",
+    ).stdout
+    return out.splitlines()
+
+
+# Everything scripts/sync_shared.py reads or writes, and the script itself.
+SYNC_TREE = ("shared", "skills", ".gitattributes", "scripts/sync_shared.py",
+             *sync_shared.PROMPT_DOCS)
+
+
+def copy_sync_tree(dest: Path) -> Path:
+    """Copy the sync's whole world into `dest`, so a test that writes — a real
+    sync, a commit through the pre-commit hook — never touches the tracked
+    tree that other tests (and other sessions) are reading."""
+    for rel in SYNC_TREE:
+        source, target = REPO / rel, dest / rel
+        if source.is_dir():
+            shutil.copytree(source, target, ignore=shutil.ignore_patterns("__pycache__"))
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+    return dest

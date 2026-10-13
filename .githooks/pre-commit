@@ -1,11 +1,25 @@
 #!/bin/sh
-# Materialize shared/ copies before every commit so stale copies can never land.
-# One-time activation per clone: git config core.hooksPath .githooks
+# Refuse a commit whose staged generated copies do not match its staged sources.
+# Check only: this hook never stages, writes or reverts a file — what a commit
+# contains is its author's decision, and in a shared checkout the working tree
+# may hold another session's unfinished edits.
+# The staged snapshot is what gets judged (git sets GIT_INDEX_FILE for
+# `commit -a` and `commit <paths>`, and checkout-index honours it), using the
+# snapshot's own copy of the sync script, so script and sources always match.
+# One-time activation per clone: git config core.hooksPath .githooks (poe setup).
 # CI runs sync_shared.py --check as the backstop for bypassed hooks.
 set -e
-cd "$(git rev-parse --show-toplevel)"
-out=$(python3 scripts/sync_shared.py)
-# Stage exactly the regenerated destinations ("synced <src> -> <dst>" lines).
-echo "$out" | while read -r _ _ _ dst; do
-  [ -n "$dst" ] && git add "$dst"
-done
+snap=$(mktemp -d)
+trap 'rm -rf "$snap"' EXIT
+git checkout-index --all --prefix="$snap/"
+if out=$(python3 "$snap/scripts/sync_shared.py" --check 2>&1); then
+  exit 0
+fi
+{
+  printf '%s\n' "$out"
+  echo "pre-commit: refused: the staged generated copies above do not match the staged sources."
+  echo "  Run \`python3 scripts/sync_shared.py\`, review what it rewrote, stage the files it lists"
+  echo "  (git add -p where a file also holds edits you are not committing), and commit again."
+  echo "  Nothing was staged or changed."
+} >&2
+exit 1

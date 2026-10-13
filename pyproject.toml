@@ -22,8 +22,10 @@ test = ["_pytest", "_lint", "_drift", "conform"]
 _pytest = "pytest"
 _lint = "ruff check ."
 _drift = "python3 scripts/sync_shared.py --check"
-# the standard's own validator, pinned inside the script (scripts/conform.py);
-# first run needs network for the npx cache, afterwards it works offline
+# the standard's own reference validator (the maintainers' Python skills-ref from
+# github.com/agentskills/agentskills), pinned by commit inside scripts/conform.py
+# and run through uvx; the first run needs network to fill the uv cache (a git
+# clone of agentskills plus wheels), afterwards it works offline
 conform = "python3 scripts/conform.py"
 # end-to-end install of the tracked tree via the README command (networked,
 # CLI deliberately unpinned) — CI job + weekly schedule, not part of `test`
