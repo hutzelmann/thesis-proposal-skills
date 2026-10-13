@@ -89,7 +89,7 @@ Only for rungs 3 and 4, for an unidentified cause, or for optional model evidenc
 python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py <proposal.md> --dry-run
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, both scripts really live in `scripts/` next to this SKILL.md, so use that path — but keep running the commands from the working directory, where the report bundle and the captured output are written: the fallback changes where a script is found, never where you work or write. If you cannot find a script, say it did not run and name what is therefore unverified — never assemble a report by hand and present it as the collector's output.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, both scripts really live in `scripts/` next to this SKILL.md, so use that path — but keep running the commands from the working directory, where the report bundle and the captured output are written: the fallback changes where a script is found, never where you work or write. If you cannot find a script, say it did not run and name what is therefore unverified — never assemble a report by hand and present it as the collector's output. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
 **2. Take the disclosure decision from the user, not from yourself.** Three levels, and the default is the most protective:
 

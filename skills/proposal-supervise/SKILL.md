@@ -40,13 +40,13 @@ An earlier round: when the professor says this is a revision, or a `<slug>-revie
 
 ## Find the issues
 
-Run the shipped check over the normalized file (Windows: `py` instead of `python3`):
+Run the shipped check over the normalized file:
 
 ```
 python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <slug>.md
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md. If you cannot find it, say the mechanical check did not run and name what is therefore unverified.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md. If you cannot find it, say the mechanical check did not run and name what is therefore unverified. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
 Then apply the review rules from `references/guidelines.md` — plus any workspace `guidelines.md` override, which carries the professor's own requirements and wins — exactly as the review skill would: the six substance tests (delta, falsifiability, swap, necessity, method-fit, executability) are the bar, and every one but necessity can block; title, research questions, contribution delta, argument soundness, single methodology, and sentence-level density are the dimensions. Do not invent a separate quality bar: what check and review would tell the student is what you work from.
 

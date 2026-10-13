@@ -24,7 +24,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/publish.py <proposal.md>            # PDF vi
 python3 ${CLAUDE_SKILL_DIR}/scripts/publish.py <proposal.md> --handout  # stripped markdown export instead
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory: the fallback changes where the script is found, never where you work or write. The proposal lives in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — and its outputs and any workspace build definition sit beside it. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory: the fallback changes where the script is found, never where you work or write. The proposal lives in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — and its outputs and any workspace build definition sit beside it. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
 The script resolves the best pipeline automatically: **typst** (preferred) → **LaTeX engine** → **docx** (last resort, no PDF), using the skill's `templates/` (compact layout, `RQ n:` styling, citeproc). Outputs land next to the proposal; the script also ensures the workspace `.gitignore` covers build artifacts (shared rule: whichever skill first creates an ignorable artifact adds the entry).
 
@@ -72,7 +72,7 @@ The script reports what is missing and what it would unlock. Guide concretely, b
 - Existing **TeX Live/MiKTeX** works as the LaTeX fallback — nothing extra needed besides pandoc.
 - Nothing installable? → `--handout` produces a clean markdown for hand-in, or suggest the user's institution machines / a colleague's setup for the final PDF.
 
-Relay the script's messages rather than re-diagnosing; on Windows use `py` if `python3` is absent.
+Relay the script's messages rather than re-diagnosing.
 
 ## Hand-in guidance
 

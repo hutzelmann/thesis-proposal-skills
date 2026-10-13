@@ -8,7 +8,9 @@ way — read it before changing anything.
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
 2. `uv run poe setup` — syncs the dev environment and enables the repo's
-   pre-commit hook (regenerates synced copies so CI's drift check stays green).
+   pre-commit hook, which refuses a commit whose staged generated copies do
+   not match their staged sources. It never stages anything for you: run
+   `python3 scripts/sync_shared.py` and stage the files it lists.
 3. `uv run poe test` — the full L0 gate (pytest + ruff + generated-copy drift).
    It must be green before and after your change.
 

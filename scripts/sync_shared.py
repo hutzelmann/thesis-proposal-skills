@@ -323,16 +323,16 @@ def render_gitattributes(current: str) -> str:
     return head + block + tail
 
 
-def _materialize(dest: Path, expected: str, src_label: str, check: bool,
-                 announce_unchanged: bool = True) -> str | None:
-    """Write or verify one destination; returns its path when it has drifted.
+def _materialize(dest: Path, expected: str, src_label: str, check: bool) -> str | None:
+    """Write or verify one destination; returns its repo-relative path when it
+    has drifted (check) or was rewritten (write).
 
     The one place the write/check branch lives, so each pass below is a loop over
-    destinations and nothing else. The printed line is exactly
-    "synced <src> -> <dst>": .githooks/pre-commit reads its fourth field and
-    stages it. A hand-written document holding a materialized region passes
-    `announce_unchanged=False`, so the hook stages it only when the region was
-    rewritten, never the author's unrelated edits along with every commit.
+    destinations and nothing else. A write prints "synced <src> -> <dst>" only
+    for a file it actually changed: the pre-commit hook's refusal tells the
+    author to stage the files a sync lists, and most destinations are
+    hand-written pages (every SKILL.md, the README) whose unrelated edits must
+    never ride along with an unchanged region.
     """
     rel = dest.relative_to(REPO).as_posix()
     if check:
@@ -340,11 +340,9 @@ def _materialize(dest: Path, expected: str, src_label: str, check: bool,
         return rel if stale else None
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and dest.read_text(encoding="utf-8") == expected:
-        if announce_unchanged:
-            print(f"synced {src_label} -> {rel}")
         return None
-    # Temp file + os.replace: concurrent readers (xdist workers, anything racing
-    # the pre-commit hook) must never observe the truncation window of an
+    # Temp file + os.replace: concurrent readers (xdist workers, a second sync
+    # in a shared checkout) must never observe the truncation window of an
     # in-place write.
     mode = dest.stat().st_mode if dest.exists() else 0o644
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.")
@@ -358,7 +356,7 @@ def _materialize(dest: Path, expected: str, src_label: str, check: bool,
         tmp_file.unlink(missing_ok=True)
         raise
     print(f"synced {src_label} -> {rel}")
-    return None
+    return rel
 
 
 def _sync_attributes(check: bool) -> list[str]:
@@ -381,8 +379,7 @@ def _sync_prompt_docs(check: bool) -> list[str]:
     for rel in PROMPT_DOCS:
         doc = REPO / rel
         expected = render_prompt_doc(doc.read_text(encoding="utf-8"), prompt, rel)
-        drift.append(_materialize(doc, expected, "shared/blocks/install-prompt.md", check,
-                                  announce_unchanged=False))
+        drift.append(_materialize(doc, expected, "shared/blocks/install-prompt.md", check))
     return [rel for rel in drift if rel]
 
 
@@ -397,13 +394,19 @@ def _sync_copies(check: bool) -> list[str]:
 
 
 def sync(check: bool) -> int:
-    drift = (_sync_attributes(check) + _sync_skill_blocks(check) + _sync_prompt_docs(check)
+    """Check or write every destination. Both modes end on one line, so a run
+    that changed nothing is never mistaken for one that did not run."""
+    stale = (_sync_attributes(check) + _sync_skill_blocks(check) + _sync_prompt_docs(check)
              + _sync_copies(check))
-    if check and drift:
-        print("OUT OF SYNC (run scripts/sync_shared.py):", *drift, sep="\n  ")
+    if check and stale:
+        print("OUT OF SYNC (run scripts/sync_shared.py):", *stale, sep="\n  ")
         return 1
     if check:
         print("generated copies in sync")
+    elif stale:
+        print(f"rewrote {len(stale)} generated file(s)")
+    else:
+        print("generated copies already in sync")
     return 0
 
 

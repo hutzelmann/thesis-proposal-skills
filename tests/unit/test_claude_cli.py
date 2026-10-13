@@ -3,18 +3,21 @@ Subscription text roles (dev runner)).
 
 Everything here runs without a model and without the `claude` binary: the pure
 parts take plain values, and the async parts get a fake child process — except
-the timeout test, which spawns a real sleeping Python child to prove it is
-killed and reaped. Streams come from `data/claude_cli_streams/` (synthetic, one
+the process-handling tests, which spawn real Python children to prove a child
+is killed, reaped and closed. Streams come from `data/claude_cli_streams/` (synthetic, one
 fail-closed check per file) and the recorded-shape expired-login fixture under
 `data/routing_streams/`.
 """
 
 from __future__ import annotations
 
+import gc
 import json
 import os
+import signal
 import sys
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 import anyio
@@ -538,6 +541,18 @@ def test_no_criteria_makes_no_call_at_all(monkeypatch):
 # ---------- process handling -------------------------------------------------
 
 
+@pytest.fixture
+def collected():
+    """Collect the garbage a real child leaves before the test ends. A pipe left
+    to the collector is reported as an unraisable ResourceWarning, which
+    `filterwarnings = error` fails — in whichever test the collector happens to
+    run: on Windows CI run 38388692453 that was a re-grade test that starts no
+    process at all. Collecting here fails the test that opened the pipe."""
+    yield
+    gc.collect()
+
+
+@pytest.mark.usefixtures("collected")
 def test_timeout_kills_and_reaps_the_child(tmp_path, monkeypatch):
     spawned = []
     real_open = anyio.open_process
@@ -570,6 +585,7 @@ TRAPS_SIGTERM = (
 
 
 @pytest.mark.skipif(os.name != "posix", reason="SIGTERM handlers are POSIX")
+@pytest.mark.usefixtures("collected")
 def test_a_timed_out_child_is_asked_to_terminate_first(tmp_path, monkeypatch):
     """testing-harness spec: Time limit kills the child — a termination request
     first, so a host part-way through writing a refreshed login can finish."""
@@ -582,6 +598,7 @@ def test_a_timed_out_child_is_asked_to_terminate_first(tmp_path, monkeypatch):
     assert marker.read_text(encoding="utf-8") == "terminated"
 
 
+@pytest.mark.usefixtures("collected")
 def test_run_child_writes_stdin_and_reads_both_streams(tmp_path):
     echo = [sys.executable, "-c",
             "import sys; data = sys.stdin.read(); print(data.upper()); "
@@ -589,6 +606,36 @@ def test_run_child_writes_stdin_and_reads_both_streams(tmp_path):
     code, out, err = anyio.run(
         lambda: claude_cli.run_child(echo, "grade me", dict(os.environ), tmp_path, 30))
     assert (code, out.strip(), err.strip()) == (3, "GRADE ME", "note")
+
+
+# The child starts a grandchild that inherits its stdout and stderr, records the
+# grandchild's PID, and sleeps past the time limit. Stopping the child leaves its
+# pipes with reads pending — the state the Windows run left them in — on every
+# platform.
+SPAWNS_A_PIPE_HOLDER = (
+    "import pathlib, subprocess, sys, time\n"
+    "holder = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+    "pathlib.Path(sys.argv[1]).write_text(str(holder.pid), encoding='utf-8')\n"
+    "time.sleep(60)\n"
+)
+
+
+@pytest.mark.filterwarnings("error::ResourceWarning")
+@pytest.mark.usefixtures("collected")
+def test_a_stopped_child_leaves_no_pipe_to_the_collector(tmp_path):
+    """Windows CI run 38388692453: a timed-out child's pipes outlived the event
+    loop, and the collector reported them as unclosed transports. `run_child`
+    closes the process on every path, so nothing is left to collect even while
+    a grandchild still holds the pipes."""
+    ready = tmp_path / "holder-pid"
+    child = [sys.executable, "-c", SPAWNS_A_PIPE_HOLDER, str(ready)]
+    try:
+        with pytest.raises(SubscriptionUnavailable, match="timed out"):
+            anyio.run(lambda: claude_cli.run_child(child, "", dict(os.environ), tmp_path, 3))
+        assert ready.exists(), "the grandchild holding the pipes started within the limit"
+    finally:
+        with suppress(OSError, ValueError):
+            os.kill(int(ready.read_text(encoding="utf-8")), signal.SIGTERM)
 
 
 def test_nonzero_exit_without_a_result_reports_stderr(monkeypatch):

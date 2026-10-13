@@ -412,6 +412,7 @@ It runs in its own CI workflow on push and weekly. On the schedule, `--verbatim`
 
 - **`install_prompt`** (unanswered): passes when the agent asks the scope question and installs nothing.
 - **`install_prompt_answered`**: appends the answer "all my projects" up front, and passes when both user-level skill directories hold the full set byte-identical, each with an install record, with no `proposal-*` copy anywhere else.
+- **`install_prompt_versioned_python`** (optional, Linux only, on the maintainer's go-ahead, never in a gate): pre-answered like the above, but the host's `PATH` is a scratch folder of links to the operator's PATH executables without any `python`, `python3`, `python3.X`, `pip`, `py` or `uv` name, plus one `python3.N` linked to the runner's own interpreter (`versioned_python_path`). The three usual names and uv fail, so only the prompt's versioned-name lookup finds Python. Passes when the answered verdict passes and the final message does not send the student to install Python (`verdict_install_prompt_found_python`). It measures Claude Code on Linux; the uv-only Windows machine is a manual check.
 
 Exit statuses and the `--summary-log` line are the dev runner's. A prompt or installer that no longer names the URL the probe redirects is a runner failure (4), as is a crash. Subscription-billed, so it is not part of `poe test` or CI. The verdicts, the staging and the run's plumbing (the child's HOME and config, its stripped billing variables, one summary line per outcome) are covered offline in `tests/unit/test_install_probe.py`.
 

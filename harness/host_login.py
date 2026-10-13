@@ -156,6 +156,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePath
+from typing import TypeVar
 
 try:  # POSIX file locks: the Codex run lock; the Codex runner refuses without them
     import fcntl
@@ -1619,11 +1620,32 @@ def preflight(record: HostLogin, environ: Mapping[str, str] | None = None) -> Lo
 # ---------- which login a run used -----------------------------------------------
 
 
+_EXTENDED = "\\\\?\\"
+_EXTENDED_UNC = "\\\\?\\UNC\\"
+_P = TypeVar("_P", bound=PurePath)
+
+
+def plain_path(path: _P) -> _P:
+    """`path` without Windows' extended-length prefix (`\\\\?\\`, `\\\\?\\UNC\\`).
+
+    `os.readlink` answers in that form on Windows, and a path resolved from it
+    keeps it, so a link target is compared and labelled only after this: the
+    summary must name the harness home as `C:\\...`, and `_target_source` must
+    find it inside the harness home (Windows CI run 38385444225)."""
+    text = str(path)
+    if text.startswith(_EXTENDED_UNC):
+        return type(path)("\\\\" + text[len(_EXTENDED_UNC):])
+    if text.startswith(_EXTENDED):
+        return type(path)(text[len(_EXTENDED):])
+    return path
+
+
 def link_target(link: Path) -> Path | None:
-    """Where a credentials link points, unresolved; None when it is no link."""
+    """Where a credentials link points, unresolved and without an extended-length
+    prefix (`plain_path`); None when it is no link."""
     if not link.is_symlink():
         return None
-    target = link.readlink()
+    target = plain_path(link.readlink())
     return target if target.is_absolute() else link.parent / target
 
 

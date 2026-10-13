@@ -14,6 +14,7 @@ import ast
 from pathlib import Path
 
 import pytest
+from helpers import tracked_files
 
 REPO = Path(__file__).resolve().parents[2]
 TESTS = REPO / "tests"
@@ -329,13 +330,8 @@ def test_private_local_paths_stay_unnamed():
     ]
     if not private:
         pytest.skip("no private local paths declared")
-    import subprocess
-
-    tracked = subprocess.run(
-        ["git", "-C", str(REPO), "ls-files"], capture_output=True, text=True, check=True
-    ).stdout.splitlines()
     offenders = []
-    for rel in tracked:
+    for rel in tracked_files():
         if rel.startswith("openspec/changes/archive/"):
             continue
         try:

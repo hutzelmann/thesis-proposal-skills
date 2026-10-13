@@ -1835,6 +1835,34 @@ def verdict_install_prompt_installed(
                   f"{len(targets)} directories, no stray copies")
 
 
+# what the install prompt's stop-and-guide step tells a student without Python;
+# any of it in the final message means the agent sent them to install one
+INSTALL_PYTHON_GUIDANCE = (
+    re.compile(r"python\.org", re.IGNORECASE),
+    re.compile(r"install manager", re.IGNORECASE),
+    re.compile(r"Microsoft Store", re.IGNORECASE),
+    re.compile(r"Install Certificates", re.IGNORECASE),
+    re.compile(r"\b(?:brew|apt|apt-get|dnf|pacman|winget)\b[^\n]*\bpython", re.IGNORECASE),
+    re.compile(r"(?<!no need to )(?<!not need to )(?<!n't need to )(?<!without )"
+               r"\binstall (?:a |the )?(?:newer |current |recent )?python\b", re.IGNORECASE),
+)
+
+
+def verdict_install_prompt_found_python(installed: tuple[bool, str],
+                                        chat: str) -> tuple[bool, str]:
+    """Versioned-interpreter run (design D10/D12 of desktop-first-install): the
+    only Python on the PATH is a versioned name such as `python3.13`. Passes when
+    the answered install passed (`installed`, from verdict_install_prompt_installed)
+    and the final message does not send the student to install Python."""
+    passed, why = installed
+    if not passed:
+        return False, f"install incomplete: {why}"
+    hit = next((m.group(0) for p in INSTALL_PYTHON_GUIDANCE if (m := p.search(chat))), None)
+    if hit is not None:
+        return False, f"the final message sends the student to install Python ({hit!r})"
+    return True, f"found the versioned Python without sending the student to install one; {why}"
+
+
 # ---------- ideate paper-foundation path (skill-ideate spec) -------------------
 
 # tests/fixtures/p01-published-paper: phrases that occur only in the paper's

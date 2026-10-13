@@ -73,6 +73,7 @@ Usage:
   uv run python harness/claude_runner.py write_offtopic_reference --model sonnet
   uv run python harness/claude_runner.py install_prompt --model sonnet
   uv run python harness/claude_runner.py install_prompt_answered --model sonnet
+  uv run python harness/claude_runner.py install_prompt_versioned_python --model sonnet
   uv run python harness/claude_runner.py review_fixture --isolated --max-budget-usd 2
   uv run python harness/claude_runner.py write_from_seed --isolated --judge --keep
   uv run python harness/claude_runner.py write_from_seed --rejudge /tmp/devrun-write_from_seed-x
@@ -153,6 +154,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -205,6 +207,7 @@ from l1_checks import (
     verdict_ideate_scoped,
     verdict_import,
     verdict_install_prompt_asks_scope,
+    verdict_install_prompt_found_python,
     verdict_install_prompt_installed,
     verdict_l2_grades,
     verdict_offtopic_reference,
@@ -529,6 +532,10 @@ SCENARIOS = {
     # (run_install_probe; nothing is staged)
     "install_prompt": {"install": True},
     "install_prompt_answered": {"install": True, "answered": True},
+    # optional, Linux only, on the maintainer's go-ahead: pre-answered, with a
+    # PATH on which only a versioned python3.N answers (versioned_python_path)
+    "install_prompt_versioned_python": {"install": True, "answered": True,
+                                        "versioned_python": True},
     # the paper-foundation path's first turn: preamble pre-answered with lookups
     # declined, and no axis named, so the right turn reads the paper's framing
     # slice, says which sections it read and asks what would change. Unlike
@@ -743,6 +750,53 @@ def install_probe_verdict(answered: bool, home: Path, ws: Path, chat: str) -> tu
     return verdict_install_prompt_installed(working_tree_skills(), found, records, strays)
 
 
+# every name under which a Python (or something that reports one) answers, so
+# the versioned-interpreter variant can leave exactly one: python, python3,
+# python3.13, python3.13-config, pythonw, pip3, pydoc3, py, uv, uvx
+HIDDEN_PYTHON_RE = re.compile(r"^(?:python[0-9.]*(?:-config)?w?|pip[0-9.]*|pydoc[0-9.]*|py|"
+                              r"uvx?)(?:\.exe)?$")
+
+
+def versioned_python_path(root: Path, search_path: str, interpreter: Path,
+                          version: tuple[int, int]) -> str:
+    """A PATH of one folder: links to every executable on `search_path` (the
+    first of each name wins, as a shell would pick it) except the Python names
+    and uv, plus `python3.<minor>` linked to `interpreter`. The three usual names
+    and uv then fail, and only a lookup for versioned names finds Python
+    (design D10 of desktop-first-install)."""
+    root.mkdir(parents=True, exist_ok=True)
+    for folder in search_path.split(os.pathsep):
+        directory = Path(folder) if folder else None
+        if directory is None or not directory.is_dir():
+            continue
+        for entry in sorted(directory.iterdir()):
+            link = root / entry.name
+            if HIDDEN_PYTHON_RE.match(entry.name) or link.is_symlink() or link.exists():
+                continue
+            if entry.is_file() and os.access(entry, os.X_OK):
+                link.symlink_to(entry.resolve())
+    (root / f"python{version[0]}.{version[1]}").symlink_to(interpreter.resolve())
+    return str(root)
+
+
+def probe_search_path(scenario: dict, base: Path) -> str | None:
+    """The host's PATH for the versioned-interpreter variant; None (the
+    inherited PATH) for the others."""
+    if not scenario.get("versioned_python"):
+        return None
+    if not sys.platform.startswith("linux"):
+        raise RunnerFailure("install_prompt_versioned_python runs on Linux only")
+    return versioned_python_path(base / "bin", os.environ.get("PATH", ""),
+                                 Path(sys.executable), sys.version_info[:2])
+
+
+def probe_verdict(scenario: dict, home: Path, ws: Path, chat: str) -> tuple[bool, str]:
+    verdict = install_probe_verdict(scenario.get("answered", False), home, ws, chat)
+    if scenario.get("versioned_python"):
+        return verdict_install_prompt_found_python(verdict, chat)
+    return verdict
+
+
 def run_install_probe(args: argparse.Namespace, scenario: dict) -> int:
     """Two temp homes' worth of isolation, always: the host's config is the
     routing rig's isolated one (logged in without the real home: the harness
@@ -766,10 +820,11 @@ def run_install_probe(args: argparse.Namespace, scenario: dict) -> int:
             url = f"http://127.0.0.1:{server.server_port}"
             stage_install_source(served, url)
             events = run_claude(ws, install_request(url, answered), args.model, args.timeout,
-                                budget=args.max_budget_usd, config=config, home=home)
+                                budget=args.max_budget_usd, config=config, home=home,
+                                path=probe_search_path(scenario, base))
             save_events(events, base)
             chat = final_text(events)
-            passed, why = install_probe_verdict(answered, home, ws, chat)
+            passed, why = probe_verdict(scenario, home, ws, chat)
             out = summary(args, passed, why, events, config)
             status = EXIT_PASS if passed else EXIT_FAIL
             out["outcome"], out["exit_status"] = OUTCOMES[status], status
@@ -929,7 +984,8 @@ def surface_failure(leaks: list[SurfaceLeak], events: list[dict],
 
 def run_claude(ws: Path, request: str, model: str, timeout: int,
                budget: float | None = None, config: Path | None = None,
-               home: Path | None = None, resume: str | None = None) -> list[dict]:
+               home: Path | None = None, resume: str | None = None,
+               path: str | None = None) -> list[dict]:
     """Run the host headless and return its stream-json events.
 
     The stream, not the plain text, is what a run is judged on: the final
@@ -956,6 +1012,8 @@ def run_claude(ws: Path, request: str, model: str, timeout: int,
         # the install probe's scratch home, layered on top of the child's
         # environment so the installer can never touch the operator's skills
         env.update(HOME=str(home), USERPROFILE=str(home))
+    if path is not None:  # the versioned-interpreter probe's scratch PATH
+        env["PATH"] = path
     isolated = config is not None
     source = host_login.login_source(config, os.environ)
     seen = follow_stream(host_command(request, model, budget, resume), cwd=ws, env=env,

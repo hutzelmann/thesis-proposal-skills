@@ -17,7 +17,9 @@ Constraints that shape everything below:
 - **No markers in `SKILL.md`.** It is a page skills.sh renders.
 - **Byte identity.** Installed skill files must stay byte-identical, so `poe identify` keeps resolving hashes.
 - **Audit surface.** A shipped skill must not download code: skills.sh's audits flag remote fetch plus self-modification.
-- **Release channel.** `main` is the release channel, so this change stays on a branch until the maintainer has run each recipe.
+- **Release channel.** `main` is the release channel, so unfinished work stays off it. Task 8.0 merged this change before the recipe runs (2026-10-05); the 2026-10-13 revision again stays off `main` until it is complete.
+
+**Revision 2026-10-13.** A student's setup report (Windows, OpenCode) and the maintainer's decisions of 2026-10-13 add D12–D15: the prompt looks further for an existing Python, the skills state once what `python3` stands for, the installer lists copies in apps' own skill folders, and it ends with readiness lines. For context only: the maintainer has since decided that recipes are to be verified by an automated host-aware install probe. That is a separate, later change; this revision leaves tasks 8.1–8.5 as they are.
 
 ## Goals / Non-Goals
 
@@ -33,6 +35,8 @@ Constraints that shape everything below:
 - **Directory or store listings.** These are publishing.
 - **The installer auto-detecting which agent runs it.** Agents expose no reliable signal: the skills CLI fails to recognise Claude desktop's `AI_AGENT` value. Writing both shared directories covers 10 of 12 hosts without needing to know.
 - **Installing system software.** Python is the student's step, with guidance.
+- **Recording the interpreter in a host's instruction file.** No skill, installer line or document tells the student to write the Python command into `AGENTS.md` or `CLAUDE.md` (D13).
+- **A readiness checklist in the docs.** The installer's readiness lines (D15) land here. The checklist that explains what each check proves belongs to the later change `add-setup-readiness-guide`.
 
 ## Decisions
 
@@ -107,7 +111,7 @@ The L0 tests pin the table.
 
 Rationale:
 - Claude Code reads only `.claude/skills`; requests to add `.agents` were closed "not planned" twice. Codex/ChatGPT desktop, VS Code, the Copilot CLI and app, Cursor, Gemini CLI, OpenCode, Cline, Zed and Devin all read `~/.agents/skills`.
-- `~/.codex/skills`, `~/.cursor/skills` and `~/.copilot/skills` are never written: they are deprecated or redundant, and writing them creates duplicates.
+- `~/.codex/skills`, `~/.cursor/skills` and `~/.copilot/skills` are never written: they are deprecated or redundant, and writing them creates duplicates. Copies found there, and in OpenCode's own folders, are listed (D14).
 - A host-specific directory is written only when its app is present, so no student gains dot-folders for apps they never installed.
 
 ### D4 — Install record
@@ -143,6 +147,7 @@ The previous record, if present, provides the "previous revision" line of the ou
   - with `--scope all`, the installer checks the working directory's targets;
   - with `--scope folder`, it checks the user-level targets.
   - Copies found are listed and kept, unless `--remove-other` is given; then only their `proposal-*` folders and the record are removed.
+- **Copies in apps' own skill folders**, which the installer never writes, are listed on every run and removed only with `--remove-other` (D14).
 - **A skills-CLI lock file** (`skills-lock.json` in the working directory, or the global `~/.agents/.skill-lock.json`) next to other-scope copies is reported as an earlier terminal install, with `npx skills remove` as the tidy-up, and never touched.
 - **A folder install in the home folder** fills the all-projects directories, so it is recorded and reported as an all-projects install.
 
@@ -169,10 +174,11 @@ Prompt wording constraints:
 - The five steps in the spec's order.
 - A general prohibition: "Do not install any software yourself, and do not copy, edit or run any skill files". Output asking for an install is relayed to the student, not acted on.
 - The Windows `python` and `py -3` alternatives, the note that the Store's install manager downloads Python on first run, and the macOS hints: Install Certificates, and cancel the developer-tools dialog (its Python is 3.9).
+- The further, read-only Python probes that run only when the three usual names fail (D12).
 - A shell command to download, never a web-page reader, which converts the file. The installer runs from the folder the student has open.
 - The reload instruction, phrased host-neutrally.
 
-About 250 words. The first draft held 170, but the review showed each added clause closes a failure seen or reproduced. The live probe passes with both sonnet and haiku at this length.
+About 250 words. The first draft held 170, but the review showed each added clause closes a failure seen or reproduced. The live probe passes with both sonnet and haiku at this length. The 2026-10-13 revision adds about 50 words (D12); both variants are re-run on the final wording on the maintainer's go-ahead (task 9.10).
 
 ### D7 — Plugin manifest: one Claude marketplace file, skills only
 
@@ -251,6 +257,11 @@ Two scenarios, `install_prompt` and `install_prompt_answered`, run as `uv run po
 - *unanswered*: the final message contains a scope question naming both options, and the temp home has no `proposal-*` directory;
 - *answered*: full set byte-identical in both user-level directories, records present, and no other `proposal-*` copies anywhere under the temp home.
 
+**Optional third variant (2026-10-13): `install_prompt_versioned_python`.**
+- *Shape.* Linux only, pre-answered. The host's `PATH` is a scratch directory of links to the operator's PATH executables, minus every `python`, `python3`, `python3.X` and `uv`, plus one `python3.N` linked to a 3.11+ interpreter. The three usual names and uv therefore fail, and only the versioned-name lookup (D12) finds Python.
+- *Verdict.* `verdict_install_prompt_found_python` passes when `verdict_install_prompt_installed` passes and the final message does not send the student to install Python. Like every verdict, it has L0 tests on synthetic outcomes.
+- *When it runs.* Only on the maintainer's go-ahead ($0 on the subscription), never in a gate. It measures one host (Claude Code), not Windows: the uv-only Windows machine is task 8.7's.
+
 ### D11 — Documentation layout
 
 `docs/install.md`:
@@ -263,7 +274,7 @@ Two scenarios, `install_prompt` and `install_prompt_answered`, run as `uv run po
 3. Recipes for ChatGPT desktop (Codex), Claude desktop (plugin button, with a Python step for the Code tab), VS Code / Copilot app, Antigravity and Cursor. Each recipe:
    - opens with its stamp line `Verified YYYY-MM-DD with <app> <version>`, or `unverified` while the change is open;
    - covers getting the app, opening a folder, pasting the prompt or using the plugin button, approving the network or file access prompts, and reloading.
-4. "Any other agent": paste the prompt.
+4. "Any other agent": paste the prompt. One sentence (2026-10-13) adds that an earlier manual copy in OpenCode's own folders can shadow the installed skills, and that the installer lists it (D14). There is no OpenCode recipe until a maintainer run stamps one.
 5. "Chat-only apps" (flagged): claude.ai uses the plugin button, never the prompt.
 6. "Literature search cannot reach its sources" (renamed from "Literature search says OFFLINE"; the search reports "source degraded" or "sources: none", and only reference validation says OFFLINE). It names the six services, each app's network switch, and the macOS certificate step.
 7. "Updating" (the record's `scope` tells the student which answer to give), "Removing" (every directory the record lists, plus `npx skills remove`), and "From a terminal" (npx).
@@ -275,6 +286,109 @@ L0 tests (`test_install_docs.py`) pin:
 - every `install.md#…` anchor in the guide, the README and the prompt names an existing section;
 - the services named equal the hosts the search scripts contact;
 - the troubleshoot skill's route mapping matches the issue template.
+
+### D12 — The prompt looks further before it says "no Python" (2026-10-13)
+
+Step 1 keeps its three probes in their order: `python3`, `python`, `py -3`, with "Python was not found" counting as none. They answer on most machines, which then run no extra command. Only when none reports 3.11 or newer does the agent look further before concluding that no Python exists:
+
+| Probe | When | Finds | Why it is safe |
+|---|---|---|---|
+| `uv python find ">=3.11"` | uv is installed | uv-managed Pythons wherever uv put them, and any other it can see | it searches and never downloads (pinned in task 9.1) |
+| one lookup for versioned names such as `python3.13` on the PATH | every OS | uv's versioned executables in `~/.local/bin`; a distribution's `python3.12` beside an older `python3` | a listing; it runs nothing |
+| `py -0p` | Windows | every runtime the launcher knows, with its path, including uv (Astral) and Anaconda registrations that `py -3` passes over | a listing; it runs nothing |
+
+The agent runs the installer with the first interpreter that reports 3.11 or newer, by the name or path the probe gave. For the versioned names the prompt names the goal rather than a command, because the agent's shell varies (bash, zsh, PowerShell, cmd). The optional probe variant (D10) measures whether an agent manages it.
+
+Considered:
+- **Keep the three probes and improve "No Python yet?" only.** Leaves the live defect: a uv-only machine is told to install Python.
+- **uv and versioned names, but no `py -0p`.** Misses Anaconda on Windows, which is common on university machines. `-0p` costs one command, only on Windows, and only after three failures.
+- **The installer looks for Python itself.** It cannot: it is the program the found Python runs.
+
+Each further probe costs at most one approval click, and only on unusual machines.
+
+### D13 — One interpreter clause per script-bearing skill (2026-10-13)
+
+Every script-bearing `SKILL.md` has exactly one `${CLAUDE_SKILL_DIR}` fallback paragraph (`test_fallback_prose_names_the_unexpanded_case`). The clause is appended to it, where the agent already reads how to run a script. Draft wording, finalized in task 9.3:
+
+> `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
+
+It replaces:
+- the seven per-command Windows parentheticals: check's "Run" line, import's two (reference validation, check), reverse, supervise, write, and publish's closing sentence;
+- proposal-check's "`winget install Python.Python.3.12` / `brew install python`" advice. That becomes a link to `docs/install.md#no-python-yet`, as a full GitHub URL because an installed skill has no repository beside it. The skill's fallback of doing the checks itself, with reduced determinism stated, stays.
+
+lit-search and troubleshoot, which had no hint, gain the clause.
+
+**Why not materialized.** The paragraph it joins is worded per skill: each names its own working-directory stake. `sync_shared.py` locates `SKILL.md` regions by position before the first `##` heading, so a mid-body region would need a marker, which a rendered `SKILL.md` must not carry. A substring test over every script-bearing skill pins the clause's core instead. A negative test forbids the old parentheticals and any `winget install Python` advice.
+
+**"For the rest of the conversation", not "persist it".** A new chat probes again, at most about four commands. Writing the interpreter into `AGENTS.md` or `CLAUDE.md` was rejected (maintainer's decision, 2026-10-13):
+- it is persistent host configuration;
+- it is not portable: Claude reads `CLAUDE.md`, most other agents read `AGENTS.md`;
+- it blurs with `guidelines.md`, the only customization surface.
+
+The probing cost per session is to be measured on the Codex and Copilot host runners rather than decided from one report.
+
+**Out of this change.** Publish's `winget install --id … …` line for pandoc and typst has a syntax defect; it and a link to the guide belong to `add-setup-readiness-guide`.
+
+### D14 — Copies in apps' own skill folders (2026-10-13)
+
+`install.py` gains one data table, `NATIVE_DIRS`, of skill folders that apps read but the installer never writes (D3). Each entry carries the app, the base (home or working folder), the path, and a comment with its source and date:
+
+| App | Base | Folders |
+|---|---|---|
+| OpenCode | working folder | `.opencode/skill`, `.opencode/skills` |
+| OpenCode | home | `.config/opencode/skill`, `.config/opencode/skills` |
+| Codex | home | `.codex/skills` |
+| Cursor | home | `.cursor/skills` |
+| GitHub Copilot | home | `.copilot/skills` |
+
+**Why a copy in OpenCode's folder wins over the installed one.** Checked in `anomalyco/opencode`, branch `dev`, commit c1615b1, on 2026-10-13:
+- `packages/core/src/config/plugin/compatibility.ts` loads `skills` under the `.claude` and `.agents` roots;
+- `packages/core/src/config/plugin/skill.ts` (`ConfigSkillPlugin`) loads `skill` and `skills` under each OpenCode config directory: `.opencode` in the project folders up to the worktree root, and `~/.config/opencode`;
+- `packages/core/src/plugin/internal.ts:265-266` registers the compatibility plugin before the config skill plugin;
+- `packages/core/src/state.ts` rebuilds state by applying the registered transforms in order;
+- `packages/core/src/skill.ts`: the editor's `add` is a `Map.set`, so the last copy of a skill wins.
+
+A stale copy in an OpenCode folder therefore replaces the installed one. Task 9.1 re-checks this before code, and the table comment cites the commit. The Codex, Cursor and Copilot folders are D3's never-written list. Those apps read `~/.agents/skills` too, so a copy there is at best a duplicate and at worst a stale twin.
+
+**Detection.** On every run and in either scope, since shadowing does not depend on the scope:
+- a candidate is `<folder>/<name>` for a shipped skill name. Only a same-named copy shadows, and any other `proposal-*` folder there is not the installer's to judge;
+- it counts when it is a real folder holding a `SKILL.md`, or a link whose target holds one and lies outside every directory this run fills;
+- a link or junction that resolves into a copy this run installs is skipped: the skills CLI links agent folders that way, and such a link is not a second copy.
+
+**Output.** The copies are listed with the wording used for other-scope copies: app name, home- or folder-relative path, kept, followed by the line naming `--remove-other`. The install prompt's step 4 already makes the agent ask before re-running with it.
+
+**Removal.**
+- Only with `--remove-other`, and only the listed entries.
+- A link is removed as a link (D2), never followed.
+- A copy whose folder is reached through a link or junction (say `~/.codex/skills` linked to a dotfiles folder or a clone's `skills/`) is listed but never removed, and the output says why: the entry itself is no link, so removing it would delete the tree where the folder link points (found by the review, 2026-10-13).
+- The folder itself and everything else in it stay. There is no record there to remove.
+- `--remove-other`'s help text names both kinds of copies, and `--dry-run` says whether it would keep or remove them.
+
+**Known gap.** OpenCode also reads `.opencode` in parent folders up to the git root; only the working folder is checked. Walking upward would read folders the student did not open, so the gap is stated instead.
+
+**Mirrored in the collector.** `collect.py` restates the table, because a skill never imports from outside its folder; `test_locations_match_the_repository_installer` pins the two equal. The collector hashes copies there like any other root, so `poe identify` sees them. It adds a `[measured]` line for each such folder holding a copy, home- or workspace-relative, naming it as a copy that may shadow the installed skills. The collector's own skills folder counts as installed only when it is not one of these folders: an app that loads a hand copy runs the collector from that copy, and it must still be named (found by the review, 2026-10-13).
+
+### D15 — Readiness lines (2026-10-13)
+
+After a successful install, and in a dry run, the output ends with a short block (draft wording):
+
+```
+On this computer:
+  Python 3.14.0 ran the installer (python3.14).
+  python3 opens only the Microsoft Store; the skills use the Python above.   [Windows, only when so]
+  PDF export (optional): pandoc found, typst missing. The publish skill says what to install when you first ask for a PDF.
+  API keys (optional): an api-keys.env file is in this folder.
+```
+
+- **Presence only.**
+  - Python: `sys.version_info` and the executable's file name, never its full path, which can carry a user name.
+  - pandoc and typst: `shutil.which`; neither is run.
+  - Keys: `Path.is_file` for `api-keys.env` in the working folder and in `~/.config/thesis-proposal/`, the two file locations the lit-search scripts consult. The file is never opened, key variables in the environment are never read, and no value is ever repeated.
+
+  The readiness facts never enter the record. The reasoning matches the collector's `tool_presence`: running a tool to read its version widens the surface, and absence is the actionable fact.
+- **Store shortcut.** Detected without running it, from the App Installer package's `python3` alias under `%LOCALAPPDATA%\Microsoft\WindowsApps`, as opposed to the Python install manager's own `python3` alias. Task 9.1 pins the exact marker. The L0 tests plant that layout under a temporary `LOCALAPPDATA`, so they run on Linux.
+- **Optional is named optional.** pandoc, typst and the key file are labelled optional, so a missing one does not read as a failed install.
+- **Why lines, rather than a `--check` mode or the docs alone** (maintainer's decision, 2026-10-13). The facts are cheap at install time, and the agent relays them in step 4. The trade-off is that they do not survive into the new chat that step 5 opens. A `--check` mode would require downloading the temporary `install.py` again. The docs checklist explaining what each line proves belongs to `add-setup-readiness-guide`.
 
 ## Risks / Trade-offs
 
@@ -288,17 +402,28 @@ L0 tests (`test_install_docs.py`) pin:
 - **[Duplicate skills when a student mixes routes]** → The installer refuses beside a plugin install, and the docs state that the two routes are exclusive. Old npx folder copies are reported, not deleted silently.
 - **[Hosts reading both shared directories show the skills twice]** → Copilot CLI (first found wins) and OpenCode (later scan overwrites) keep one copy, verified from their sources. VS Code and Cursor read both directories and their duplicate handling is undocumented. The manual recipe runs (tasks 8.3 and 8.5) check it; if they show duplicates, a follow-up writes `~/.claude/skills` as links on macOS and Linux.
 - **[`install.py` at the root is a new user-side surface outside `skills/`]** → Same constraints as skill scripts: the conventions test scans it, and ruff and coverage include it. It is not part of any skill, so the skills.sh audits do not see it. The install check exercises it in CI.
+- **[The longer prompt changes agent behaviour]** (2026-10-13) → The further probes sit inside step 1 and run only after the usual three fail. Both probe variants are re-run on the final wording, with sonnet and haiku, on the maintainer's go-ahead (task 9.10).
+- **[A copy in an app's folder is the student's own work under a shipped name]** → It is listed with its path and removed only after the agent asks; the student can decline.
+- **[OpenCode changes its load order]** → The table comment carries the commit checked. Listing a copy stays useful even if it stops shadowing, because it is then a duplicate.
+- **[The Store-shortcut marker is wrong on a real machine]** → The line is informational and changes no behaviour. Task 9.1 pins the marker from documentation, and task 8.7 confirms it on Windows.
+- **[A new chat on a uv-only machine cannot find the interpreter the prompt found]** → This happens when uv's versioned executable is not on the PATH, so the clause's names all fail. Task 8.7's uv-only run checks a script-bearing skill in a new chat. If it fails, the clause also names the further probes (open question below).
+- **[Readiness lines leak a credential]** → The key file is never opened and environment keys are never read. An L0 test plants a sentinel value and asserts that it appears in no output stream and no record.
 
 ## Migration Plan
 
-1. Implement on branch `desktop-first-install`, with `poe test` green throughout.
-2. Run the dev-runner probe, both variants, on the subscription.
-3. The maintainer runs each featured recipe once from the checklist in tasks.md and reports the app and version. Stamps are filled in; a recipe not run is removed.
-4. Merge into `main`, archive the change, and run `python3 scripts/sync_shared.py` after the merge, since the generated copies carry `merge=ours`.
-5. Existing npx users need no migration: their installs keep working. Re-installing through the prompt in the same scope replaces the folders; the other scope's copies are reported for removal.
+1. Implemented on branch `desktop-first-install`, with `poe test` green throughout (tasks 1–7, done).
+2. The dev-runner probe ran, both variants, on the subscription (done).
+3. Merged into `main` on 2026-10-05, ahead of the recipe runs (task 8.0). Recipes not yet run stay stamped `unverified`.
+4. The 2026-10-13 revision (section 9 of tasks.md) is implemented off `main` and lands there as one complete commit with `poe test` green. Run `python3 scripts/sync_shared.py` after the merge, since the generated copies carry `merge=ours`.
+5. The maintainer runs each featured recipe once from the checklist in tasks.md (8.1–8.5) and the Windows check (8.7), which now also covers a uv-only machine, and reports app and version. Stamps are filled in; a recipe not run is removed.
+6. Archive the change on `main` (8.6).
+7. Existing npx users need no migration: their installs keep working. Re-installing through the prompt in the same scope replaces the folders; the other scope's copies, and copies in apps' own folders, are reported for removal.
 
 Rollback: revert the merge. Installed copies and records are inert files, and plugin users are rolled back by the next sync.
 
 ## Open Questions
 
 - Whether claude.ai's "Add marketplace" honours the plugin entry's `skills` list (see D7). The maintainer's Claude desktop run settles it; a failure there means switching the entry to a `plugin.json`-based layout, which changes data, not the approach.
+- The interpreter clause's final wording (D13). Should it also name `uv python find` and `py -0p`, for a new chat on a machine where the interpreter the prompt found is not on the PATH? Default: the approved draft, which names no further probes. Task 8.7's uv-only run decides.
+- Where the warning against using a clone of this repository as the workspace, or copying its `AGENTS.md`, lands. Default: with `add-setup-readiness-guide`'s workspace sentences, not here.
+- Whether the readiness line on keys also reports the file named by `$THESIS_PROPOSAL_KEYS`. Default: no; the two file locations only, presence only.

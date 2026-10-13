@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import sync_shared
+from helpers import copy_sync_tree
 
 REPO = Path(__file__).resolve().parents[2]
 SYNC = REPO / "scripts" / "sync_shared.py"
@@ -48,19 +49,45 @@ def test_attribute_block_covers_every_sync_destination():
     assert all((REPO / p).is_file() for p in listed)
 
 
-def test_synced_lines_stay_parseable_by_the_pre_commit_hook(capsys):
-    """.githooks/pre-commit stages the fourth field of each `synced` line.
+@pytest.fixture
+def sync_tree(tmp_path, monkeypatch):
+    """Everything the sync reads and writes, copied: the write-mode cases run on
+    the copy, so no test ever syncs the tracked tree."""
+    copy_sync_tree(tmp_path)
+    monkeypatch.setattr(sync_shared, "REPO", tmp_path)
+    monkeypatch.setattr(sync_shared, "SKILLS", tmp_path / "skills")
+    monkeypatch.setattr(sync_shared, "BLOCKS", tmp_path / "shared" / "blocks")
+    monkeypatch.setattr(sync_shared, "PROMPT_SOURCE", tmp_path / "shared/blocks/install-prompt.md")
+    monkeypatch.setattr(sync_shared, "GITATTRIBUTES", tmp_path / ".gitattributes")
+    return tmp_path
 
-    A line with a trailing note ("synced X -> y (16 paths)") makes the hook run
-    `git add 'y (16 paths)'` and abort every commit, so the format is a contract.
-    """
+
+def announced(out: str) -> list[str]:
+    """The destinations a sync run says it rewrote."""
+    return [line.split(" -> ", 1)[1] for line in out.splitlines() if line.startswith("synced ")]
+
+
+@pytest.mark.usefixtures("sync_tree")
+def test_an_in_sync_tree_announces_nothing(capsys):
+    """A sync names only what it rewrote. The pre-commit hook's refusal says
+    "stage the files it lists", so an unchanged SKILL.md — a hand-written page
+    that may carry the author's unrelated edits — must never be listed."""
     assert sync_shared.main([]) == 0
-    for line in capsys.readouterr().out.splitlines():
-        if not line.startswith("synced "):
-            continue
-        fields = line.split()
-        assert len(fields) == 4, line
-        assert (REPO / fields[3]).is_file(), line
+    out = capsys.readouterr().out
+    assert announced(out) == []
+    assert "generated copies already in sync" in out
+
+
+def test_a_sync_announces_exactly_what_it_rewrote(sync_tree, capsys):
+    voice = sync_tree / "shared" / "blocks" / "voice.md"
+    voice.write_text(voice.read_text(encoding="utf-8").rstrip("\n") + " Extra.\n",
+                     encoding="utf-8")
+    assert sync_shared.main([]) == 0
+    out = capsys.readouterr().out
+    rewritten = sorted(f"skills/{d.name}/SKILL.md" for d in sync_shared.skill_dirs())
+    assert sorted(announced(out)) == rewritten
+    assert f"rewrote {len(rewritten)} generated file(s)" in out
+    assert sync_shared.main(["--check"]) == 0
 
 
 def test_attributes_committed_and_in_sync():
@@ -150,7 +177,7 @@ def test_check_detects_a_tampered_shared_region(capsys):
 
 def test_materialize_never_exposes_a_truncated_destination(tmp_path, monkeypatch):
     """Writes go through a temp file and an atomic replace, so a concurrent
-    reader (an xdist worker, or anything racing the pre-commit hook) sees the
+    reader (an xdist worker, or a second sync in a shared checkout) sees the
     old content or the new content, never an empty file mid-truncation."""
     monkeypatch.setattr(sync_shared, "REPO", tmp_path)
     dest = tmp_path / "structure.json"
@@ -165,7 +192,7 @@ def test_materialize_never_exposes_a_truncated_destination(tmp_path, monkeypatch
         real_replace(src, dst)
 
     monkeypatch.setattr(os, "replace", spying_replace)
-    assert sync_shared._materialize(dest, "new", "shared/x", check=False) is None
+    assert sync_shared._materialize(dest, "new", "shared/x", check=False) == "structure.json"
     assert at_replace == ["old"], "destination was modified before the atomic swap"
     assert dest.read_text(encoding="utf-8") == "new"
     if os.name == "posix":
@@ -253,18 +280,17 @@ def test_check_detects_a_drifted_prompt_copy(doc_rel, prompt_tree):
     original = victim.read_text(encoding="utf-8")
     victim.write_text(original.replace("(recommended)", "(advised)", 1), encoding="utf-8")
     assert sync_shared._sync_prompt_docs(check=True) == [doc_rel]
-    assert sync_shared._sync_prompt_docs(check=False) == []
+    assert sync_shared._sync_prompt_docs(check=False) == [doc_rel]
     assert victim.read_text(encoding="utf-8") == original
+    assert sync_shared._sync_prompt_docs(check=False) == []
 
 
-def test_unchanged_documents_are_not_announced_to_the_hook(prompt_tree, capsys):
-    """The hook stages every announced destination; a README that only needed
-    no change must not be staged with the author's unrelated edits."""
+def test_a_prompt_change_announces_both_documents_and_nothing_else(prompt_tree, capsys):
+    """A README that needed no change is not named; one whose prompt region was
+    rewritten is."""
     assert sync_shared._sync_prompt_docs(check=False) == []
     assert capsys.readouterr().out == ""
     source = prompt_tree / "shared/blocks/install-prompt.md"
     source.write_text(source.read_text(encoding="utf-8") + "6. New step.\n", encoding="utf-8")
-    sync_shared._sync_prompt_docs(check=False)
-    announced = capsys.readouterr().out.split()
-    assert "README.md" in announced
-    assert "docs/install.md" in announced
+    assert sync_shared._sync_prompt_docs(check=False) == sync_shared.PROMPT_DOCS
+    assert sorted(announced(capsys.readouterr().out)) == sorted(sync_shared.PROMPT_DOCS)

@@ -9,7 +9,11 @@ The dev runner SHALL carry a probe that hands the shared install prompt, exactly
 - **unanswered** — the request is the prompt alone. The verdict SHALL pass only when the agent asks the scope question and nothing has been installed into the isolated home.
 - **pre-answered** — the request is the prompt followed by the student's answer choosing all projects. The verdict SHALL pass only when every shipped skill sits byte-identical in each user-level target directory, each holds an install record, and no skill file was written by any means other than the installer.
 
-The verdicts SHALL be functions covered by offline tests against recorded outcomes, like every other dev-runner verdict. The probe SHALL NOT join the offline suite or CI, because it needs a host install and a subscription.
+A third variant MAY be run, on Linux only:
+
+- **versioned interpreter** — pre-answered, with a search path on which no `python`, `python3` or uv answers and the only Python 3.11 or newer is a versioned name such as `python3.13`. Its verdict SHALL pass only when the pre-answered verdict passes and the agent did not tell the student to install Python. It runs only on the maintainer's go-ahead.
+
+The verdicts SHALL be functions covered by offline tests, against recorded outcomes where a run has been recorded and against synthetic outcomes otherwise, like every other dev-runner verdict. The probe SHALL NOT join the offline suite or CI, because it needs a host install and a subscription.
 
 #### Scenario: Agent skips the scope question
 
@@ -20,6 +24,11 @@ The verdicts SHALL be functions covered by offline tests against recorded outcom
 
 - **WHEN** the pre-answered run completes
 - **THEN** the probe checks the isolated home's user-level skill directories for the full shipped set, byte-identical, with an install record in each
+
+#### Scenario: Agent finds only a versioned interpreter
+
+- **WHEN** the versioned-interpreter variant runs
+- **THEN** the probe passes only when the full shipped set is installed byte-identically with records, and the agent's final message does not send the student to install Python
 
 #### Scenario: Agent copies files by hand
 

@@ -28,13 +28,12 @@ from __future__ import annotations
 
 import fnmatch
 import re
-import subprocess
 from dataclasses import dataclass
 
 import model_currency as mc
 import pytest
 import support
-from helpers import REPO, shipped_registry
+from helpers import REPO, shipped_registry, tracked_files
 
 # the vendor families the harness has used; the registry's own lines are added
 # to these at scan time, so a new vendor is covered without editing this list
@@ -202,19 +201,11 @@ def exempting(violation: Violation) -> list[Allow]:
 # ---------- the scan --------------------------------------------------------------
 
 
-def _tracked() -> list[str]:
-    out = subprocess.run(
-        ["git", "-C", str(REPO), "ls-files"], capture_output=True, text=True, check=True,
-        encoding="utf-8",
-    ).stdout
-    return out.splitlines()
-
-
 def _scan() -> list[Violation]:
     registry = shipped_registry()
     pattern = token_pattern(registry)
     found = []
-    for rel in _tracked():
+    for rel in tracked_files():
         try:
             text = (REPO / rel).read_text(encoding="utf-8")
         except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
@@ -252,7 +243,7 @@ def test_every_allowlist_entry_gives_its_reason():
 
 def test_the_scan_covers_the_tree():
     """Guards the guard: an empty `git ls-files` would make the scan vacuous."""
-    assert len(_tracked()) > 200
+    assert len(tracked_files()) > 200
 
 
 # ---------- the rules on synthetic input --------------------------------------------
