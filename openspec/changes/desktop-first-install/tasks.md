@@ -205,8 +205,13 @@ Design D12–D15. Implemented off `main`; lands there as one complete commit (ta
   - `test_repo_conventions.py` finds an L0 test for the new verdict.
 
   Do not run it live here.
-- [ ] 9.10 On the maintainer's go-ahead only ($0, subscription): run `uv run poe dev install_prompt` and `install_prompt_answered` with sonnet and haiku on the final prompt, and `install_prompt_versioned_python` with sonnet. Record verdict, cost, turns and helper telemetry in the notes, as in 6.3. Until the go-ahead, this task stays open and the notes say the prompt change is unprobed.
-- [ ] 9.11 Gate: `uv run poe test` green, `uv run poe cov` holds the floor, `uv run poe specs` validates strictly, and `uv run poe install-check` passes both arms on the revision's tree (`--ref` before committing). Then land the revision on `main` as one complete commit and run `python3 scripts/sync_shared.py` after the merge.
+- [x] 9.10 On the maintainer's go-ahead only ($0, subscription): run `uv run poe dev install_prompt` and `install_prompt_answered` with sonnet and haiku on the final prompt, and `install_prompt_versioned_python` with sonnet. Record verdict, cost, turns and helper telemetry in the notes, as in 6.3. Until the go-ahead, this task stays open and the notes say the prompt change is unprobed.
+  - *Done 2026-10-13 on the maintainer's go ("Commit + run 9.10/9.11"), on the committed revision 4a11adb, Claude Code 2.1.296, subscription:* all five PASS, no helper agents in any run.
+    - `install_prompt`: `claude-sonnet-5-5` 2 turns, `claude-haiku-5-5` 2 turns — "asked the scope question and installed nothing yet".
+    - `install_prompt_answered`: `claude-sonnet-5-5` 3 turns, `claude-haiku-5-5` 5 turns — "11 skills byte-identical with a record in 2 directories, no stray copies".
+    - `install_prompt_versioned_python`: `claude-sonnet-5-5` 5 turns — "found the versioned Python without sending the student to install one; 11 skills byte-identical with a record in 2 directories, no stray copies".
+- [x] 9.11 Gate: `uv run poe test` green, `uv run poe cov` holds the floor, `uv run poe specs` validates strictly, and `uv run poe install-check` passes both arms on the revision's tree (`--ref` before committing). Then land the revision on `main` as one complete commit and run `python3 scripts/sync_shared.py` after the merge.
+  - *Done 2026-10-13:* `poe test` 3452 passed, 2 skipped; `poe cov` 92.20% (install.py 96%); `poe specs` 18/18; the revision landed as one commit, 4a11adb; `poe install-check` on 4a11adb passed both arms ("11 skills through the skills CLI and the installer, byte-identical, records name 4a11adb9f894, smoke green"); `sync_shared.py --check` clean (no merge involved).
 
 ## Notes
 
