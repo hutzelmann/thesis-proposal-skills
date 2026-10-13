@@ -77,10 +77,14 @@ def _copilot_offline(monkeypatch):
     names a stand-in that holds no test directory, and the per-user runtime
     directory is never found, so no test writes under the real
     `/run/user/<uid>`; a Copilot workspace then lies under the test's state
-    root. Tests of those seams set them themselves."""
+    root. The kernel's Yama ptrace scope reads as the minimum the preflight
+    accepts, so no test reads the real sysctl and the suite passes on a host
+    without Yama. Tests of those seams set them themselves."""
     monkeypatch.setattr(copilot_cli, "binary", _no_real_copilot)
     monkeypatch.setattr(host_login, "temp_dirs", lambda: (L0_TEMP_STANDIN,))
     monkeypatch.setattr(copilot_cli, "runtime_dir", lambda _uid=None: None)
+    monkeypatch.setattr(copilot_cli, "ptrace_scope",
+                        lambda _path=None: copilot_cli.MIN_PTRACE_SCOPE)
 
 
 @pytest.fixture

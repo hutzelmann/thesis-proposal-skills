@@ -28,14 +28,19 @@ and every check here is the backstop, failing closed:
   1.0.91 that flag leaves an unnamed environment token unread too; the short
   commands (`--version`, the two listings) take both before the subcommand
   (`login_flags`), where the client parses them as global options.
-  Every child that writes a process log (the run, the status read, the
-  probe) writes it under its scratch directory (`--log-dir`), never into the
-  home, and the scratch is deleted with the call.
+  No child writes a process log into the home (`--log-dir`): the status read
+  writes it under its call's scratch, deleted with the call; the confinement
+  probe and the run, whose sessions the client sandboxes and whose log
+  directory it binds into the sandbox, into the log directory the deny list
+  names (`host_login.log_dir`), which the harness scans for the token's value
+  and any GitHub token and empties after the probe and after the run
+  (`drain_logs`); a finding refuses the run, or stops it, for isolation.
 - **Before the run** (`preflight_checks`, then `LOCKED` and `gate_checks`
   under the run lock): the location, the home's marker and mode, the
   clean-home allow-list, the token's prefix, a recorded stop (before the
   first child starts), `copilot --version` against COPILOT_PINNED_VERSION, the
-  machine-wide managed settings, the sandbox tools, the workspace's parent
+  machine-wide managed settings, the sandbox tools, on Linux Yama's ptrace
+  scope (`ptrace_problem`: missing or below 1 refuses), the workspace's parent
   folders (`scan_parents`); then, holding the lock, the stop and the token
   file once more (another run or a login may have changed them while this
   one waited), the model-free status read through the headless server
@@ -48,12 +53,15 @@ and every check here is the backstop, failing closed:
   pinned one, applies it to its session with `session.options.update` as
   prompt mode does, and only then runs fixed commands through
   `session.shell.executeUserRequested`; it refuses unless the sandboxed shell
-  is denied the token file, the client's and the harness's own process
-  environments, `~/.ssh`, `~/.config/gh`, `gh` and git authentication, the
-  host's shared /tmp (reading it, or writing a file the host then sees) and
-  /var/tmp, and has no token variable in its own environment, still runs the
-  skills, and reports every command as sandboxed; last, the
-  clean-home check once more, on the home as those reads left it.
+  is denied the token file, the harness's own process environment, `~/.ssh`,
+  `~/.config/gh`, `gh` and git authentication, the host's shared /tmp
+  (reading it, or writing a file the host then sees) and /var/tmp, finds no
+  token in any process environment or command line it can see (`token_scan`:
+  the client's environment reaches the sandbox through bwrap's own init, pid
+  1 of its pid namespace, which the Linux deny list masks), and has no token
+  variable in its own environment, still runs the skills, and reports every
+  command as sandboxed; last, the process-log scan and the clean-home check
+  once more, on the home as those reads left it.
 - **The work directory** (`work_root`): the workspace and every scratch home
   are made owner-only under the harness state directory where it lies
   outside the operator's home, the repository and the temporary
@@ -81,8 +89,9 @@ and every check here is the backstop, failing closed:
   growth, an unavailable read, unreadable consumption, more than twice the
   credit cap, zero nano-AIU with tokens and a reached soft cap or session
   limit record a billing stop; a run the watch stopped, a workspace breach, a
-  sandbox warning, a shell completion not reported `sandboxed`, or no shell
-  completion at all records an isolation stop. The steps after the child's
+  finding in the process logs, a sandbox warning, a shell completion not
+  reported `sandboxed`, or no shell completion at all records an isolation
+  stop. The steps after the child's
   start fail closed (`_execute`): one that
   raises still scrubs the workspace and records a billing stop. A stop — a
   damaged stop record included — refuses every later run until the operator
@@ -188,6 +197,13 @@ BUILTIN_MCP = ("github-mcp-server", "githubiq")
 SANDBOX_TOOLS = ("bwrap", "unshare", "slirp4netns", "nsenter", "iptables", "ip6tables",
                  "iptables-restore", "ip6tables-restore")
 MANAGED_SETTINGS = ("/etc/github-copilot/managed-settings.json", "/etc/github-copilot/policy.d")
+# Yama's ptrace scope (2026-10-13, the second canary; Decision 13): the
+# sandboxed shell runs as the operator's user beside the sandbox's init, whose
+# memory holds the client's environment; at scope 0 a same-user process may
+# attach to it and read the token past the /proc mask. Read, never written:
+# the harness changes no system setting (the user's portability constraint).
+YAMA_PTRACE = "/proc/sys/kernel/yama/ptrace_scope"  # a Linux path, read on Linux only
+MIN_PTRACE_SCOPE = 1
 # the client's warnings that the sandbox did not engage: 1.0.91 runtime.node
 # 6939584, 6997010 and 7013801, and the 1.0.70 wording
 SANDBOX_WARNINGS = ("Sandboxing is enabled but is not supported",
@@ -207,6 +223,10 @@ LOW_QUOTA_PERCENT = 10
 NOTIONAL_USD_PER_CREDIT = 0.01
 NANO = 1_000_000_000
 GITHUB_TOKEN_PREFIXES = host_login.GITHUB_TOKEN_PREFIXES
+# the token characters a GitHub token carries after its prefix, at least, for
+# the probe's content scan and the process-log scan: a random directory name
+# that happens to hold a prefix never counts
+TOKEN_SCAN_TAIL = 20
 SCRUBBED = "[copilot-token]"
 QUOTA_FILE = "quota.json"
 SESSION_STATE = "session-state"
@@ -567,6 +587,106 @@ def scrub_tree(root: Path, token: str | None) -> list[str]:
             if _scrub_file(path, needle):
                 hits.append(path.relative_to(root).as_posix())
     return sorted(hits)
+
+
+# -- the process logs (Decision 4, revised 2026-10-13) --
+#
+# The confinement probe's headless server and the prompt-mode run write their
+# process logs into `host_login.log_dir`, which the deny list names exactly:
+# the 1.0.91 client binds its `--log-dir` read-only into the sandbox after the
+# deny list's masks, so the scratch log directory, under a denied ancestor, was
+# readable from the sandboxed shell (measured); an entry naming the directory
+# itself masks it. After the probe and after the run the harness scans every
+# entry for the token's value or any GitHub token and empties the directory.
+
+TOKEN_TEXT = re.compile(
+    b"(?:" + b"|".join(re.escape(prefix.encode("ascii")) for prefix in GITHUB_TOKEN_PREFIXES)
+    + rb")[A-Za-z0-9_]{%d,}" % TOKEN_SCAN_TAIL)
+LOGGED_CAUSE = ("the client's process logs carried the token's value or a GitHub token, or an "
+                "entry the harness could not read as a plain file")
+LOG_REMEDY = (f"read the run's findings (the harness deleted the logs), revoke the token at "
+              f"{host_login.TOKEN_PAGE}, create a new one ({host_login.TOKEN_PAGE}/new) and run "
+              f"`{COPILOT.reset_command}`")
+
+
+def logged(data: bytes, token: str | None) -> bool:
+    """Whether a process log's bytes carry the token's value or any GitHub
+    token (TOKEN_TEXT: a prefix with a token's tail). Pure."""
+    return bool(token and token.encode("utf-8") in data) or TOKEN_TEXT.search(data) is not None
+
+
+def log_dir_problem(home: Path) -> LoginProblem | None:
+    """Make the children's process-log directory (`host_login.log_dir`) where
+    it is missing, owner-only. A name that is not an owner-only directory of
+    this user's, a link included, refuses: the harness would scan and empty
+    whatever it led to."""
+    folder = host_login.log_dir(home)
+    with suppress(OSError):
+        folder.mkdir(mode=0o700)
+    try:
+        info = os.lstat(folder)
+    except OSError:
+        info = None
+    if (info is not None and stat.S_ISDIR(info.st_mode) and not stat.S_IMODE(info.st_mode) & 0o077
+            and info.st_uid == getattr(os, "getuid", lambda: info.st_uid)()):
+        return None
+    return _problem(f"the Copilot log directory {folder} is not an owner-only directory of its own",
+                    "remove it, so the next run makes it afresh", "precondition")
+
+
+def _log_clean(name: str, fd: int, token: str | None) -> bool:
+    """One entry of the log directory: a regular file, opened without
+    following a link or blocking, whose bytes `logged` finds nothing in."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        entry = os.open(name, flags, dir_fd=fd)
+    except OSError:
+        return False
+    try:
+        if not stat.S_ISREG(os.fstat(entry).st_mode):
+            return False
+        data = b"".join(iter(partial(os.read, entry, 1 << 16), b""))
+    except OSError:
+        return False
+    finally:
+        os.close(entry)
+    return not logged(data, token)
+
+
+def _remove_entry(name: str, fd: int) -> None:
+    with suppress(OSError):
+        if stat.S_ISDIR(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
+            shutil.rmtree(name, dir_fd=fd)
+        else:
+            os.unlink(name, dir_fd=fd)
+
+
+def drain_logs(home: Path, token: str | None) -> list[str]:
+    """Scan, then empty, the children's process-log directory: the names of
+    the entries that carried the token's value or a GitHub token (`logged`),
+    are no regular file, or could not be read — fail closed. Every entry is
+    removed without being followed; the directory stays. A missing directory
+    holds nothing; one that cannot be opened as a directory without following
+    a link, or listed, is itself the finding, and is never entered."""
+    folder = host_login.log_dir(home)
+    if not os.path.lexists(folder):
+        return []
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(folder, flags)
+    except OSError:
+        return [folder.name]
+    try:
+        with os.scandir(fd) as entries:  # by descriptor: the name is never followed again
+            names = sorted(entry.name for entry in entries)
+        found = [name for name in names if not _log_clean(name, fd, token)]
+        for name in names:
+            _remove_entry(name, fd)
+        return found
+    except OSError:
+        return [folder.name]
+    finally:
+        os.close(fd)
 
 
 def ignored_env(environ: Mapping[str, str]) -> list[str]:
@@ -938,17 +1058,20 @@ def _close(proc: subprocess.Popen) -> None:
             stream.close()  # type: ignore[union-attr]
 
 
-def headless(scratch: Path, token: str | None) -> list[str]:
+def headless(log_dir: Path, token: str | None) -> list[str]:
     """The headless server's argv: HEADLESS; the token variable named
     (TOKEN_FLAGS) exactly when the child carries the token — under
     `--no-auto-login` the 1.0.91 server reads no unnamed environment token, and
     `account.getCurrentAuth` answers `{}` (task 7.4b, measured); and the
-    process log under the call's or the run's scratch directory — the server
-    writes `process-<ms>-<pid>.log` into `<COPILOT_HOME>/logs` otherwise, even
-    at log level none (task 7.4a, measured), and that scratch is deleted with
-    the call."""
+    process log in `log_dir`, never in the home — the server writes
+    `process-<ms>-<pid>.log` into `<COPILOT_HOME>/logs` otherwise, even at log
+    level none (task 7.4a, measured). The status read, which puts no session
+    in the sandbox, logs under its call's scratch, deleted with the call; the
+    confinement probe, whose session the client sandboxes, into the log
+    directory the deny list names (`host_login.log_dir`, revised 2026-10-13),
+    since the client binds its log directory into the sandbox."""
     return [COPILOT.binary, *HEADLESS, *(TOKEN_FLAGS if token else ()),
-            "--log-dir", str(scratch / "logs")]
+            "--log-dir", str(log_dir)]
 
 
 def read_status(home: Path, environ: Mapping[str, str] | None = None, *, token: str | None,
@@ -961,7 +1084,7 @@ def read_status(home: Path, environ: Mapping[str, str] | None = None, *, token: 
     Callers hold the run lock."""
     with call_scratch(environ) as scratch:
         try:
-            proc = spawn(headless(scratch, token), home=home, cwd=scratch, scratch=scratch,
+            proc = spawn(headless(scratch / "logs", token), home=home, cwd=scratch, scratch=scratch,
                          token=token, environ=environ, stdin=subprocess.PIPE, text=False)
         except OSError as exc:
             why = exc.strerror or type(exc).__name__
@@ -1438,24 +1561,61 @@ def _sandbox_check(run: Run) -> Check:
     return Check("sandbox_tools", sandbox_problem(partial(shutil.which, path=path)))
 
 
+def ptrace_scope(path: Path | str = YAMA_PTRACE) -> int | None:
+    """The kernel's Yama ptrace scope, or None when the file is missing or
+    unreadable or holds no integer. Only ever read; `path` is the L0 seam,
+    and the conftest replaces this function, so no test reads the real one."""
+    try:
+        return int(Path(path).read_text(encoding="ascii").strip())
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
+def ptrace_problem(scope: int | None, platform: str = sys.platform) -> LoginProblem | None:
+    """Mandatory on Linux (2026-10-13; Decision 13): refused unless Yama
+    reports a ptrace scope of MIN_PTRACE_SCOPE or more, since at 0, or
+    without Yama, a same-user shell in the sandbox could attach to the
+    sandbox's init and read the client's environment from its memory, past
+    the /proc mask. Other platforms keep their current behaviour (no bwrap
+    init there). The remedy changes nothing: the harness never sets a system
+    setting. Pure."""
+    if not platform.startswith("linux") or (scope is not None and scope >= MIN_PTRACE_SCOPE):
+        return None
+    found = "is not available (no Yama)" if scope is None else f"is {scope}"
+    return _problem(f"the kernel's Yama ptrace scope ({YAMA_PTRACE}) {found}: a sandboxed shell "
+                    "could attach to the sandbox's init, which holds the client's environment, "
+                    "and read the token past the /proc mask",
+                    f"run Copilot only on a Linux host whose kernel.yama.ptrace_scope is "
+                    f"{MIN_PTRACE_SCOPE} or more; the harness never changes it, and whether to "
+                    "raise it is the operator's decision for the machine", "precondition")
+
+
+def _ptrace_check(_run: Run) -> Check:
+    scope = ptrace_scope()
+    return Check("ptrace_scope", ptrace_problem(scope), "missing" if scope is None else str(scope))
+
+
 def machine_problem(environ: Mapping[str, str]) -> LoginProblem | None:
     """The preflight rows that need neither the home nor a scenario: a
-    machine-wide managed settings source, then the sandbox tools on the
-    environment's `PATH`. The status command (and so the login) reports
-    ready only when they pass, as a run's preflight would."""
-    return managed_problem() or sandbox_problem(partial(shutil.which, path=environ.get("PATH")))
+    machine-wide managed settings source, the sandbox tools on the
+    environment's `PATH`, then Yama's ptrace scope. The status command (and
+    so the login) reports ready only when they pass, as a run's preflight
+    would."""
+    return (managed_problem() or sandbox_problem(partial(shutil.which, path=environ.get("PATH")))
+            or ptrace_problem(ptrace_scope()))
 
 
 PREFLIGHT: tuple[Callable[[Run], Check], ...] = (
     _location_check, _presence_check, _clean_check, _token_check, _stop_check, _go_check,
-    _version_check, _managed_check, _sandbox_check)
+    _version_check, _managed_check, _sandbox_check, _ptrace_check)
 # The rows whose refusal leaves every later read safe to start: `--preflight-only`
 # prints them and goes on, so every check that can run does (spec: Copilot
 # preflight only). Any other refusal makes a later start unsafe — a child under
 # a refused location or in an unclean home, without the token, on another CLI
 # version, under a managed policy or beside the parent folders' files — and
 # ends the report. A run (`_require`) stops at the first refusal of any row.
-REPORTED = frozenset({"stop", "go", "sandbox_tools", "status", "model", "rosters"})
+REPORTED = frozenset({"stop", "go", "sandbox_tools", "ptrace_scope", "status", "model",
+                      "rosters"})
 # the rows `--preflight-only` prints and that never decide its outcome: a
 # recorded stop and the go hold a model call back, and the option makes none
 NOT_DECIDING = frozenset({"stop", "go"})
@@ -1588,14 +1748,19 @@ def staged_names(ws: Path) -> list[str]:
 
 # `harness_environ` reads the harness's own process, which keeps every inherited
 # variable the child builder drops (GH_TOKEN and the like, if exported): denied
-# only when the sandbox hides the host's processes, whatever the client
-# process's own dumpability says about `client_environ`
+# only when the sandbox hides the host's processes.
+# `client_environ` (revised 2026-10-13, the second canary) reads by content,
+# not by pid: the token in any process environment or command line the shell
+# can see (`token_scan`). The client's environment reaches the sandbox through
+# bwrap's own init, pid 1 of the sandbox's pid namespace, whose environment is
+# bwrap's exec-time one; the host pid the row read before does not exist there.
 # `token_env` (added 2026-10-07, review of task 8.0) reads the shell's own
 # environment: set, even empty, any of the token variables reads `readable`.
 # In the canary it is the one reading of the shell prompt mode's `bash` tool
 # gets under `--secret-env-vars` and `--no-bash-env`
 READ_TARGETS = {"token_file": "the token file",
-                "client_environ": "the client process's environment",
+                "client_environ": "a token in a process environment or command line the shell "
+                                  "can see (the client's, through the sandbox's init)",
                 "harness_environ": "the harness process's environment",
                 "ssh_dir": "the operator's ~/.ssh", "gh_config": "the operator's ~/.config/gh",
                 "token_env": "the token variables in the shell's own environment"}
@@ -1674,7 +1839,50 @@ def _measured_commands(host: ProbeHost) -> list[tuple[str, str]]:
     return commands
 
 
-def probe_commands(*, token_file: Path, server_pid: int, harness_pid: int, account: Path,
+# The content scan (2026-10-13, the second canary; Decision 13): every process
+# environment, every thread's, and every command line under /proc the shell
+# can read, searched for a token-named variable (TOKEN_ENV_VARS) or a GitHub
+# token's prefix (GITHUB_TOKEN_PREFIXES) followed by at least TOKEN_SCAN_TAIL
+# token characters (so a random directory name never counts). It prints one
+# word, never a match: `denied` for none, `readable` for any, `unknown` when
+# the search itself failed, which refuses like a hit.
+PROC_FILES = ("environ", "task/[0-9]*/environ", "cmdline")
+
+
+def unmatchable(literal: str) -> str:
+    """An extended regular expression matching `literal` whose own text does
+    not match it: its last character in a bracket expression. The scan's
+    pattern lies in its own command line (the shell's and grep's), which the
+    scan reads too, so a pattern spelled out would always count itself.
+    Word characters only. Pure."""
+    if not re.fullmatch(r"\w+", literal):
+        raise ValueError(f"not a word: {literal!r}")
+    return f"{literal[:-1]}[{literal[-1]}]"
+
+
+def token_pattern() -> str:
+    """The scan's pattern: a line (an environment entry or an argument) that
+    sets a token variable, or a GitHub token's prefix with a token's tail,
+    every literal split (`unmatchable`). Pure."""
+    names = "|".join(unmatchable(name) for name in TOKEN_ENV_VARS)
+    prefixes = "|".join(unmatchable(prefix) for prefix in GITHUB_TOKEN_PREFIXES)
+    return f"^({names})=|({prefixes})[A-Za-z0-9_]{{{TOKEN_SCAN_TAIL},}}"
+
+
+def token_scan(proc: str = "/proc") -> str:
+    """The `client_environ` row (revised 2026-10-13): one word for whether any
+    environment or command line under `proc` the shell can read carries a
+    token (`token_pattern`). A pid-free search, since the sandbox has a pid
+    namespace of its own; unreadable entries are passed over. `proc` is a
+    seam for the L0 tests' synthetic trees."""
+    root = shlex.quote(proc)
+    files = " ".join(f"{root}/[0-9]*/{name}" for name in PROC_FILES)
+    return (f"c=$(cat {files} 2>/dev/null | tr '\\0' '\\n' | grep -cE -- "
+            f"{shlex.quote(token_pattern())}); if [ \"$c\" = 0 ]; then echo denied; "
+            "elif [ -n \"$c\" ]; then echo readable; else echo unknown; fi")
+
+
+def probe_commands(*, token_file: Path, harness_pid: int, account: Path,
                    uid: int, script: Path | None,
                    host: ProbeHost | None = None) -> list[tuple[str, str]]:
     """The probe's fixed commands. Each discards its own output and prints one
@@ -1683,7 +1891,10 @@ def probe_commands(*, token_file: Path, server_pid: int, harness_pid: int, accou
     GitHub CLI directory and session bus, as a command in the sandbox could
     set them, so that a credential helper the operator configured (such as
     `gh auth git-credential`) is reached unless the sandbox denies it; the
-    child's own scratch home holds no helper and would prove nothing."""
+    child's own scratch home holds no helper and would prove nothing.
+    `client_environ` searches by content (`token_scan`), in the probe as in
+    the canary: the client's environment is held by the sandbox's init, pid 1
+    of its own pid namespace, not by any host pid (the second canary)."""
     readable = "{} >/dev/null 2>&1 && echo readable || echo denied"
     q = shlex.quote
     bus = f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus"
@@ -1691,7 +1902,7 @@ def probe_commands(*, token_file: Path, server_pid: int, harness_pid: int, accou
                 f"GH_CONFIG_DIR={q(str(account / '.config' / 'gh'))} {bus}")
     commands = [
         ("token_file", readable.format(f"cat {q(str(token_file))}")),
-        ("client_environ", readable.format(f"cat /proc/{server_pid}/environ")),
+        ("client_environ", token_scan()),
         ("harness_environ", readable.format(f"cat /proc/{harness_pid}/environ")),
         ("ssh_dir", readable.format(f"ls -A {q(str(account / '.ssh'))}")),
         ("gh_config", readable.format(f"ls -A {q(str(account / '.config' / 'gh'))}")),
@@ -1893,13 +2104,13 @@ def _row_output(name: str, result: dict, host: ProbeHost) -> str | None:
     return word
 
 
-def _probe_rows(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float,
+def _probe_rows(rpc: Rpc, run: Run, session_id: str, deadline: float,
                 host: ProbeHost | None = None) -> tuple[ProbeResult, ...]:
     host = host or ProbeHost()
     uid = os.getuid() if hasattr(os, "getuid") else 0
     calls = []
     for name, command in probe_commands(token_file=host_login.token_path(run.home),
-                                        server_pid=pid, harness_pid=os.getpid(),
+                                        harness_pid=os.getpid(),
                                         account=host_login.account_home(),
                                         uid=uid, script=_probe_script(run.ws),  # type: ignore[arg-type]
                                         host=host):
@@ -1916,7 +2127,7 @@ def _probe_rows(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float,
                  for name, result in calls)
 
 
-def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: float) -> Probe:
+def _probe_session(rpc: Rpc, run: Run, session_id: str, deadline: float) -> Probe:
     """The block the client reads, which must be the pinned one, before any
     session exists; then the session, the block applied to it, the fixed
     commands and, for a canary, its script once (`script_trial`). A block
@@ -1935,7 +2146,7 @@ def _probe_session(rpc: Rpc, run: Run, session_id: str, pid: int, deadline: floa
         if why:
             return Probe(True, why)
         with probe_host() as host:
-            rows = _probe_rows(rpc, run, session_id, pid, deadline, host)
+            rows = _probe_rows(rpc, run, session_id, deadline, host)
             trial = script_trial(rpc, run, session_id, deadline, host) if run.is_canary else None
             return Probe(True, None, rows, trial)
     finally:
@@ -1951,7 +2162,7 @@ def confinement_probe(run: Run) -> Probe:
     through `session.shell.executeUserRequested` — model-free. The probe's
     session folder is deleted afterwards."""
     session_id = str(uuid.uuid4())
-    proc = spawn(headless(run.scratch, run.token), home=run.home,  # type: ignore[arg-type]
+    proc = spawn(headless(host_login.log_dir(run.home), run.token), home=run.home,
                  cwd=run.ws, scratch=run.scratch, token=run.token,  # type: ignore[arg-type]
                  environ=run.environ,
                  stdin=subprocess.PIPE, text=False)
@@ -1965,7 +2176,7 @@ def confinement_probe(run: Run) -> Probe:
         supported = result.get("supported") if isinstance(result, dict) else None
         if supported is not True:
             return Probe(supported)
-        return _probe_session(rpc, run, session_id, proc.pid, deadline)
+        return _probe_session(rpc, run, session_id, deadline)
     finally:
         _close(proc)
         shutil.rmtree(run.home / SESSION_STATE / session_id, ignore_errors=True)
@@ -2000,7 +2211,12 @@ def _roster_check(run: Run) -> Check:
 
 def _probe_check(run: Run) -> Check:
     """The confinement probe's row; for a canary, its script's trial run in
-    the probe's session (`trial_problem`) too, once the rows pass."""
+    the probe's session (`trial_problem`) too, once the rows pass. The
+    probe's server logs into the log directory the deny list names, which
+    must be an owner-only directory first (`log_dir_problem`)."""
+    problem = log_dir_problem(run.home)
+    if problem:
+        return Check("confinement_probe", problem, "no log directory")
     probe = confinement_probe(run)
     detail = ", ".join(f"{r.name} {r.output}{'' if r.sandboxed else ' (not sandboxed)'}"
                        for r in probe.results) or probe.unapplied or "no results"
@@ -2020,6 +2236,19 @@ def _reads_clean_check(run: Run) -> Check:
     return Check("clean_after_reads", host_login.check_copilot_home(run.home))
 
 
+def _logs_check(run: Run) -> Check:
+    """The children's process-log directory as the gate's reads left it (the
+    confinement probe's server logs there): scanned and emptied
+    (`drain_logs`); a finding refuses the run for isolation before its
+    prompt-mode child, naming how many entries, never their content."""
+    found = drain_logs(run.home, run.token)
+    if not found:
+        return Check("process_logs", None, "clean")
+    return Check("process_logs", _problem(f"{LOGGED_CAUSE} after the confinement probe "
+                                          f"({len(found)} entries)", LOG_REMEDY, "isolation"),
+                 f"{len(found)} findings")
+
+
 GATE: tuple[Callable[[Run], Check], ...] = (_status_check, _model_check, _roster_check,
                                            _probe_check)
 # what a run reads again once it holds the lock, before any child: the rows the
@@ -2032,15 +2261,18 @@ def gate_checks(run: Run) -> Iterator[Check]:
     """Under one hold of the run lock: the status read and its billing guard,
     the model listing, the rosters, then the confinement probe (Decision 6).
     A refusal ends those reads unless `--preflight-only` prints and passes it
-    (REPORTED): each of these is model-free. Whatever ended them, the last row
-    is the clean-home check on the home as they left it (`_reads_clean_check`),
-    which starts nothing and is never passed over: a run stops at it before
-    its prompt-mode child, and `--preflight-only` prints it for K3."""
+    (REPORTED): each of these is model-free. Whatever ended them, the last two
+    rows are the process-log scan (`_logs_check`, which empties the log
+    directory the probe wrote into) and the clean-home check on the home as
+    they left it (`_reads_clean_check`); both start nothing and are never
+    passed over: a run stops at them before its prompt-mode child, and
+    `--preflight-only` prints them (the second for K3)."""
     for step in GATE:
         check = step(run)
         yield check
         if check.problem and check.name not in REPORTED:
             break
+    yield _logs_check(run)
     yield _reads_clean_check(run)
 
 
@@ -2091,7 +2323,9 @@ def command(scenario: Mapping, prompt: str, *, model: str, effort: str | None, s
     """The prompt-mode invocation (Decision 8): the JSON event stream, streaming
     and colour off, a session the harness names, the model verbatim, an
     allowlisted tool set per scenario, the denials, every disabling switch,
-    the sandbox, the secret token variable, scratch logs and the credit cap.
+    the sandbox, the secret token variable, the process log in the log
+    directory the deny list names (`log_dir`, never under scratch since
+    2026-10-13) and the credit cap.
     Never `--allow-all-urls`, `--add-dir`, `--plugin-dir`, `--allow-all-paths`,
     `--enable-memory`, `--share`, `--agent`, `--resume` or `--continue`. The
     canary offers the shell alone, approves no URL and keeps every denial but
@@ -2940,27 +3174,16 @@ UNMATCHED_CHARS = 200
 SHOWN_UNMATCHED = 10
 
 
-def _client_row(session_id: str) -> str:
-    """The canary's `client_environ` command. The client's pid exists only
-    after the spawn, so the shell reads the environment of any process it can
-    see whose command line carries the run's session id; the id is assembled
-    from two halves, so the command's own command line never matches."""
-    half = len(session_id) // 2
-    return (f"a={shlex.quote(session_id[:half])}; b={shlex.quote(session_id[half:])}; "
-            "r=denied; for p in /proc/[0-9]*; do tr '\\0' ' ' < \"$p/cmdline\" 2>/dev/null | "
-            "grep -qF -- \"$a$b\" && cat \"$p/environ\" >/dev/null 2>&1 && r=readable; done; "
-            "echo $r")
-
-
-def canary_commands(*, token_file: Path, session_id: str, harness_pid: int, account: Path,
+def canary_commands(*, token_file: Path, harness_pid: int, account: Path,
                     uid: int, host: ProbeHost) -> list[tuple[str, str]]:
-    """The canary's commands: the confinement probe's fixed ones (`probe_commands`),
-    without `skill_script` (no skill is staged) and with `client_environ`
-    found by the session id (`_client_row`)."""
-    rows = probe_commands(token_file=token_file, server_pid=0, harness_pid=harness_pid,
-                          account=account, uid=uid, script=None, host=host)
-    return [(name, _client_row(session_id) if name == "client_environ" else command)
-            for name, command in rows]
+    """The canary's commands: the confinement probe's fixed ones
+    (`probe_commands`), without `skill_script` (no skill is staged).
+    `client_environ` is the probe's own content scan (`token_scan`) since
+    2026-10-13: the row that looked for the run's session id matched the
+    sandbox's init, whose environment is the client's, and needed a pid the
+    probe's trial could not have."""
+    return probe_commands(token_file=token_file, harness_pid=harness_pid, account=account,
+                          uid=uid, script=None, host=host)
 
 
 def canary_script(commands: Sequence[tuple[str, str]]) -> str:
@@ -3379,6 +3602,16 @@ def _scrubbed(harness: Mapping) -> RunProblem | None:
         "isolation")), True, "isolation")
 
 
+def _logged_after(harness: Mapping) -> RunProblem | None:
+    """The process-log scan after the run (`drain_logs`): any finding is
+    untested for isolation, naming how many entries, never their content."""
+    found = harness.get("log_findings")
+    if not found:
+        return None
+    return RunProblem(refusal(_problem(f"{LOGGED_CAUSE} ({found} entries)", LOG_REMEDY,
+                                       "isolation")), True, "isolation")
+
+
 def _offered(harness: Mapping) -> list[str]:
     """The tools the run offered: the runner's record of them (the canary's
     shell alone), or a scenario's set."""
@@ -3392,6 +3625,7 @@ def _stops(harness: Mapping, scrubbed: object, billing: RunProblem | None,
            sandbox: object) -> list[tuple[str, str]]:
     breach, planted = harness.get("confinement_breach"), harness.get("workspace_breach")
     stops = [("isolation", "the token's value appeared in a child's output")] if scrubbed else []
+    stops += [("isolation", LOGGED_CAUSE)] if harness.get("log_findings") else []
     stops += [("isolation", f"the run was stopped at {breach}")] if breach else []
     stops += [("isolation", str(planted))] if planted else []
     stops += [("billing", billing.billing or billing.message)] if billing else []
@@ -3417,7 +3651,7 @@ def assess(events: list[dict], timed_out: str | None = None) -> Assessment:
     billing, billing_stop = billing_after(harness.get("before"), harness.get("after"), events, cap)
     sandbox = sandbox_after(events, str(harness.get("stderr_tail") or ""))
     own = canary_after(events)
-    problems = [scrubbed, stopped_after(harness.get("confinement_breach")),
+    problems = [scrubbed, _logged_after(harness), stopped_after(harness.get("confinement_breach")),
                 planted_after(harness.get("workspace_breach")), failure,
                 session_problem(events), billing, sandbox,
                 isolation_after(events, harness.get("roster") or [],
@@ -3518,11 +3752,13 @@ def _after_status(run: Run) -> Status | None:
 
 def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun: float,
              after: Status | None, hit: bool, timed_out: bool, breach: str | None,
-             planted: str | None = None, first_event: float | None = None) -> dict:
+             planted: str | None = None, first_event: float | None = None,
+             logged: int = 0) -> dict:
     """The runner's own record of a run: its timing and exit, the findings of
-    the watch and the workspace check, what it requested and offered, the
-    status before and after (and, for the canary, the billing guard over the
-    read after), and K5's timing and ignored-flag notice."""
+    the watch, the workspace check and the process-log scan (a count), what it
+    requested and offered, the status before and after (and, for the canary,
+    the billing guard over the read after), and K5's timing and ignored-flag
+    notice."""
     guard = status_rows(after)[0] if after is not None else None
     return {"type": "copilot.harness", "duration_ms": int((time.monotonic() - begun) * 1000),
             "exit_code": code, "stderr_tail": stderr.strip()[-800:], "timed_out": timed_out,
@@ -3532,7 +3768,7 @@ def _harness(run: Run, session_id: str, *, code: int | None, stderr: str, begun:
             "network": needs_network(run.scenario), "roster": run.roster,
             "tools": list(offered_tools(run.scenario, run.canary is not None)),
             "skill_root": str(run.ws / ".agents" / "skills"),  # type: ignore[operator]
-            "scrub_hit": hit, "before": snapshot_record(run.before),
+            "scrub_hit": hit, "log_findings": logged, "before": snapshot_record(run.before),
             "after": snapshot_record(after), "after_guard": guard.cause if guard else None,
             "first_event_ms": None if first_event is None else int((first_event - begun) * 1000),
             "sandbox_flag_notice": SANDBOX_FLAG_NOTICE in stderr,
@@ -3573,13 +3809,15 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
             timeout: float) -> tuple[list[dict], str | None]:
     """Wait for the child under the live watch, then the workspace check (the
     first thing after the child, before anything in the workspace is read or
-    written), the session file, the read after, the scrub, the snapshot and
-    the stops; the events and the time-limit message."""
+    written), the session file, the read after, the process-log scan (which
+    empties the log directory), the scrub, the snapshot and the stops; the
+    events and the time-limit message."""
     watch = ConfinementWatch(run.ws)
     out, err, timed_out, breach = _watch_child(proc, timeout, run.ws, watch)
     planted = workspace_breach(run.ws, run.ws_id, run.token)  # type: ignore[arg-type]
     records, file_hit = capture_session(run.home, session_id, run.token)
     after = _after_status(run)
+    logged = drain_logs(run.home, run.token)
     out, out_hit = scrub(out, run.token)
     err, err_hit = scrub(err, run.token)
     tree_hits = scrub_tree(run.ws, run.token)  # type: ignore[arg-type]
@@ -3588,7 +3826,7 @@ def _settle(run: Run, proc: subprocess.Popen, session_id: str, *, begun: float,
               *([canary_record(run, planted)] if run.canary is not None else []),
               _harness(run, session_id, code=proc.returncode, stderr=err, begun=begun,
                        after=after, hit=hit, timed_out=timed_out, breach=breach,
-                       planted=planted, first_event=watch.first_event_at)]
+                       planted=planted, first_event=watch.first_event_at, logged=len(logged))]
     write_snapshot(run.home, after)
     limit = f"copilot did not finish within {timeout:g}s" if timed_out else None
     assessment = assess(events, timed_out=limit)
@@ -3608,9 +3846,11 @@ def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
     and scrubbed, and a billing stop recorded (an isolation stop too, for a
     workspace breach) before the exception goes on."""
     session_id = run.session_id
-    log_dir = run.scratch / "logs"  # type: ignore[operator]
+    problem = log_dir_problem(run.home)  # the deny list names it; never under scratch
+    if problem:
+        raise CopilotRefused.of(problem)
     argv = command(run.scenario, request, model=run.model, effort=run.effort,  # type: ignore[arg-type]
-                   session_id=session_id, log_dir=log_dir, cap=run.cap,
+                   session_id=session_id, log_dir=host_login.log_dir(run.home), cap=run.cap,
                    canary=run.canary is not None)
     begun = time.monotonic()
     proc = spawn(argv, home=run.home, cwd=run.ws, scratch=run.scratch, token=run.token,  # type: ignore[arg-type]
@@ -3623,9 +3863,11 @@ def _execute(run: Run, request: str, fd: int, timeout: float) -> list[dict]:
         stop_group(proc, signal.SIGTERM)
         planted = workspace_breach(run.ws, run.ws_id, run.token)  # type: ignore[arg-type]
         scrub_tree(run.ws, run.token)  # type: ignore[arg-type]
+        logged = drain_logs(run.home, run.token)
         record_stop(run.home, "billing", AFTER_INCOMPLETE)
-        if planted:
-            record_stop(run.home, "isolation", planted)
+        for cause in (planted, LOGGED_CAUSE if logged else None):
+            if cause:
+                record_stop(run.home, "isolation", cause)
         raise
     if limit:
         raise CopilotRunFailed(limit, events)
@@ -3646,9 +3888,9 @@ def _canary_script(ws: Path, commands: Sequence[tuple[str, str]]) -> str:
 
 
 def canary_for(run: Run, host: ProbeHost) -> list[tuple[str, str]]:
-    """The canary's commands for this run: its token file, its session id, this
-    process, the operator's account and the probe's host side."""
-    return canary_commands(token_file=host_login.token_path(run.home), session_id=run.session_id,
+    """The canary's commands for this run: its token file, this process, the
+    operator's account and the probe's host side."""
+    return canary_commands(token_file=host_login.token_path(run.home),
                            harness_pid=os.getpid(), account=host_login.account_home(),
                            uid=os.getuid() if hasattr(os, "getuid") else 0, host=host)
 
@@ -3751,6 +3993,15 @@ def _sandbox_line(environ: Mapping[str, str]) -> str:
                      for tool in SANDBOX_TOOLS)
 
 
+def _ptrace_line(platform: str = sys.platform) -> str:
+    """The `ptrace_scope` line: Yama's scope as read, `missing`, or not
+    applicable off Linux (`ptrace_problem`)."""
+    if not platform.startswith("linux"):
+        return "not applicable"
+    scope = ptrace_scope()
+    return "missing" if scope is None else str(scope)
+
+
 def _auth_line(st: Status | None) -> str:
     """The `auth_type` line (task 7.4b): no read, a failed read, a read that
     found no login, and the reported type are told apart."""
@@ -3788,6 +4039,7 @@ def _status_lines(home: Path, environ: Mapping[str, str], st: Status | None, *,
         "cli_version": host_login.version_text(version),
         "pinned_version": host_login.version_text(COPILOT_PINNED_VERSION),
         "sandbox": _sandbox_line(environ),
+        "ptrace_scope": _ptrace_line(),
         "runs_use": "harness (token file)",
     }
 

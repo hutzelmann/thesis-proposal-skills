@@ -1234,8 +1234,9 @@ def test_the_deny_list_is_built_by_construction_from_the_password_entry(copilot_
     assert sandbox["auth"] == {"git": False, "gh": False}
     deny = sandbox["userPolicy"]["filesystem"]["deniedPaths"]
     state = copilot_home.parent.parent
-    assert deny == [str(tmp_path / "account"), "/run/user/4242", *host_login.temp_dirs(),
-                    str(state), str(host_login.token_path(copilot_home))]
+    assert deny == [str(tmp_path / "account"), "/run/user/4242", *host_login.proc_denials(),
+                    *host_login.temp_dirs(), str(state), str(host_login.token_path(copilot_home)),
+                    str(host_login.log_dir(copilot_home))]
     assert all(str(tmp_path / "scratch-home") not in path for path in deny)
     assert "deniedPaths" not in sandbox["userPolicy"]  # the package's path, not the docs'
     assert (settings["autoUpdate"], settings["memory"], settings["disableAllHooks"],
@@ -1250,9 +1251,31 @@ def test_a_state_root_inside_the_account_home_is_covered_by_the_home(tmp_path, m
     monkeypatch.setattr(host_login, "temp_dirs", lambda: ("/tmp", "/var/tmp/own"))
     account = tmp_path / "account"
     home = account / ".local" / "state" / "thesis-proposal-dev" / "hosts" / "copilot"
-    deny = host_login.deny_list(home, account, uid=1000)
-    assert deny == [str(account), "/run/user/1000", "/tmp", "/var/tmp/own",
-                    str(home.parent / "copilot.token")]
+    deny = host_login.deny_list(home, account, uid=1000, platform="linux")
+    assert deny == [str(account), "/run/user/1000", "/proc/1", "/tmp", "/var/tmp/own",
+                    str(home.parent / "copilot.token"), str(home.parent / "copilot.logs")]
+
+
+@pytest.mark.parametrize(("platform", "proc"), [
+    ("linux", ["/proc/1"]), ("darwin", []), ("win32", []), ("freebsd14", [])])
+def test_the_sandbox_init_is_denied_on_linux_only(platform, proc, tmp_path, monkeypatch):
+    """The second canary (2026-10-13): bwrap's init, pid 1 of the sandbox's pid
+    namespace, keeps the client's environment, token included, and the shell
+    read it through /proc. The whole `/proc/1` is denied — never `environ`
+    alone, which leaves `task/1/environ` — and only on Linux: other platforms
+    keep the list they had (the user's portability constraint)."""
+    monkeypatch.setattr(host_login, "temp_dirs", lambda: ("/tmp",))
+    account = tmp_path / "account"
+    home = account / "state" / "hosts" / "copilot"
+    deny = host_login.deny_list(home, account, uid=1000, platform=platform)
+    assert [entry for entry in deny if entry.startswith("/proc")] == proc
+    assert "/proc/1/environ" not in deny
+    assert host_login.proc_denials(platform) == tuple(proc)
+    # the process-log directory is named exactly, on every platform: the client
+    # binds its log directory into the sandbox after the masks of its ancestors
+    assert deny[-2:] == [str(host_login.token_path(home)), str(host_login.log_dir(home))]
+    assert host_login.log_dir(home) == home.parent / host_login.LOG_DIR  # beside the home
+    assert not host_login.log_dir(home).is_relative_to(home)
 
 
 @pytest.mark.parametrize(("own", "var_tmp", "expected"), [

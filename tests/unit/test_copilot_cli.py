@@ -54,6 +54,8 @@ ROOTLESS = pytest.mark.skipif(os.name != "posix" or host_login.fcntl is None
                               or os.geteuid() == 0, reason="POSIX modes, a non-root owner")
 # taken at import, before the conftest replaces the seam (no test writes under /run/user)
 REAL_RUNTIME_DIR = copilot_cli.runtime_dir
+# the same for Yama's reader: tests hand it their own files, never the real sysctl
+REAL_PTRACE_SCOPE = copilot_cli.ptrace_scope
 
 
 def stream(name: str, ws: Path = WS) -> list[dict]:
@@ -95,18 +97,21 @@ def subcommand(args):
 CMD = subcommand(ARGS)
 HEADER = "// User settings belong in settings.json.\n// This file is managed automatically.\n"
 
-def start_writes():
+def start_writes(kind):
     # what the 1.0.91 client writes when it starts (task 7.4a, measured): its
     # state file with the comment header and `firstLaunchAt`, and an empty
-    # process log under `--log-dir`, or under `<COPILOT_HOME>/logs` without it
+    # process log under `--log-dir`, or under `<COPILOT_HOME>/logs` without it;
+    # CONFIG["log_text"][kind] is what a test makes that log carry
     home = pathlib.Path(os.environ["COPILOT_HOME"])
     if not (home / "config.json").exists():
         (home / "config.json").write_text(
             HEADER + json.dumps({"firstLaunchAt": "2026-01-01T00:00:00.000Z"}), encoding="utf-8")
     logs = pathlib.Path(ARGS[ARGS.index("--log-dir") + 1]) if "--log-dir" in ARGS else home / "logs"
     logs.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG["log"] + ".logdirs", "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": kind, "log_dir": str(logs)}) + "\n")
     (logs / f"process-{int(time.time() * 1000)}-{os.getpid()}.log").write_text(
-        "", encoding="utf-8")
+        CONFIG.get("log_text", {}).get(kind, ""), encoding="utf-8")
     for name, text in CONFIG.get("home_writes", {}).items():  # e.g. a cache file
         (home / name).write_text(text, encoding="utf-8")
 
@@ -137,9 +142,8 @@ def send(message):
     sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
     sys.stdout.buffer.flush()
 
-PROBES = (("/cmdline", "client_environ"),  # the canary's row finds the client by its session
+PROBES = (("/cmdline", "client_environ"),  # the content scan over every environ and cmdline
           ("GITHUB_TOKEN+x", "token_env"), ("devrun-probe-var-", "var_tmp"),
-          (f"/proc/{os.getpid()}/environ", "client_environ"),  # this server's own pid
           (f"/proc/{os.getppid()}/environ", "harness_environ"),  # the harness that started it
           # git's row names the operator's GitHub CLI directory too, so it comes first
           ("git credential", "git_credential"), (".ssh", "ssh_dir"), (".config/gh", "gh_config"),
@@ -362,11 +366,11 @@ elif CMD[:2] == ["mcp", "list"]:
     print(json.dumps(CONFIG["mcp"]))
 elif "--headless" in ARGS:
     record("headless")
-    start_writes()
+    start_writes("headless")
     serve()
 elif "-p" in ARGS:
     record("run")
-    start_writes()
+    start_writes("run")
     run()
 '''
 
@@ -1694,7 +1698,7 @@ def probe(name: str) -> tuple[object, list[ProbeResult]]:
 
 @pytest.mark.parametrize(("name", "target", "kind"), [
     ("probe-token-readable", "the token file", "isolation"),
-    ("probe-environ-readable", "the client process's environment", "isolation"),
+    ("probe-environ-readable", "a token in a process environment or command line", "isolation"),
     ("probe-harness-environ-readable", "the harness process's environment", "isolation"),
     ("probe-gh-token", "the GitHub CLI's token", "isolation"),
     ("probe-git-credential", "git's stored credential", "isolation"),
@@ -1894,13 +1898,15 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
                                  tmp_path / "devrun-probe-write-x",
                                  tmp_path / "devrun-probe-var-x")
     commands = dict(copilot_cli.probe_commands(token_file=tmp_path / "copilot.token",
-                                               server_pid=4242, harness_pid=4343,
+                                               harness_pid=4343,
                                                account=account, uid=1000,
                                                script=tmp_path / "check.py", host=host))
     assert set(commands) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
                              "skill_script", *copilot_cli.TMP_TARGETS,
                              *copilot_cli.MEASURED_TARGETS}
     for name in (*copilot_cli.READ_TARGETS, "host_tmp", "var_tmp"):
+        if name == "client_environ":  # the content scan (test_the_content_scan_*)
+            continue
         assert commands[name].endswith("&& echo readable || echo denied")
         assert ">/dev/null 2>&1" in commands[name] or name == "token_env"
     assert str(host.var_sentinel) in commands["var_tmp"]
@@ -1915,7 +1921,10 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
                                text=True, env={"PATH": os.environ.get("PATH", ""), **value},
                                check=False)
         assert shell.stdout.strip() == word, value
-    assert "/proc/4242/environ" in commands["client_environ"]
+    # the client's environment is searched by content, never by a host pid,
+    # which does not exist in the sandbox's own pid namespace (the second canary)
+    assert commands["client_environ"] == copilot_cli.token_scan()
+    assert not re.search(r"/proc/\d", commands["client_environ"])
     assert "/proc/4343/environ" in commands["harness_environ"]
     assert "unix:path=/run/user/1000/bus" in commands["gh_token"]
     # git runs with the operator's own home, configuration, GitHub CLI directory
@@ -1932,7 +1941,7 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
     assert commands["tmp_write"] == f": > {host.marker} 2>/dev/null; echo $?"
     # without a host side, the host rows are left out (the /tmp ones then read
     # as no answer, test_the_host_tmp_rows_refuse_unless_denied)
-    bare = dict(copilot_cli.probe_commands(token_file=tmp_path / "t", server_pid=1,
+    bare = dict(copilot_cli.probe_commands(token_file=tmp_path / "t",
                                            harness_pid=2, account=account, uid=1000, script=None))
     assert not set(bare) & {*copilot_cli.MEASURED_TARGETS, *copilot_cli.TMP_TARGETS}
 
@@ -2241,6 +2250,9 @@ def test_a_run_holds_the_lock_reads_around_it_and_records_nothing_on_success(hom
     assert TOKEN not in json.dumps(run["argv"])
     assert copilot_cli.run_problem(events) is None
     assert copilot_cli.harness_record(events)["confinement_breach"] is None
+    # the probe's and the run's process logs were scanned, found clean and deleted
+    assert copilot_cli.harness_record(events)["log_findings"] == 0
+    assert list(host_login.log_dir(home).iterdir()) == []
     assert sessions(home) == []  # pruned
     assert copilot_cli.read_stop(home) == {"kind": "approval", "cause": copilot_cli.GO_USED,
                                            "at": copilot_cli.read_stop(home)["at"]}
@@ -2536,7 +2548,10 @@ def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home,
     assert sessions(home) == []
     assert calls(log)[0]["cwd"] == str(ws)
     argv = calls(log)[0]["argv"]
-    assert argv[argv.index("--log-dir") + 1] == str(run.scratch / "logs")
+    # the probe's server logs where the deny list names the directory, never
+    # under scratch, which the client would bind into the sandbox (2026-10-13)
+    assert argv[argv.index("--log-dir") + 1] == str(host_login.log_dir(home))
+    assert str(host_login.log_dir(home)) in host_login.deny_list(home, host_login.account_home())
     assert not (home / "logs").exists()
     # testing-harness spec: Copilot children name the token variable
     assert "--no-auto-login" in argv
@@ -2705,7 +2720,7 @@ def test_preflight_only_prints_the_clean_row_after_the_reads(tmp_path, monkeypat
                                                  model="copilot-fixture-a", effort=None)
     by = {c.name: c for c in checks}
     assert ready is False
-    assert list(by)[-2:] == ["confinement_probe", "clean_after_reads"]
+    assert list(by)[-3:] == ["confinement_probe", "process_logs", "clean_after_reads"]
     assert by["confinement_probe"].problem is not None
     assert by["clean"].problem is None
     assert "it holds exp-cache" in by["clean_after_reads"].problem.cause
@@ -2739,8 +2754,8 @@ def test_preflight_only_starts_no_prompt_child_and_reports_the_stop(home, tmp_pa
                                                  model="copilot-fixture-a", effort=None)
     names = [c.name for c in checks]
     assert names == ["location", "home", "clean", "token", "stop", "go", "version",
-                     "managed_settings", "sandbox_tools", "workspace", "status", "model",
-                     "rosters", "confinement_probe", "clean_after_reads"]
+                     "managed_settings", "sandbox_tools", "ptrace_scope", "workspace", "status",
+                     "model", "rosters", "confinement_probe", "process_logs", "clean_after_reads"]
     assert ready is True  # neither the stop nor the go decides the outcome
     assert next(c for c in checks if c.name == "clean_after_reads").problem is None
     stop = next(c for c in checks if c.name == "stop")
@@ -2771,8 +2786,8 @@ def test_preflight_only_goes_on_past_rows_that_leave_the_later_reads_safe(tmp_pa
                                                  model="copilot-fixture-x", effort=None)
     by = {c.name: c for c in checks}
     assert ready is False
-    assert list(by)[-5:] == ["status", "model", "rosters", "confinement_probe",
-                             "clean_after_reads"]
+    assert list(by)[-6:] == ["status", "model", "rosters", "confinement_probe",
+                             "process_logs", "clean_after_reads"]
     assert by["sandbox_tools"].problem is not None
     assert by["status"].problem is not None
     assert by["model"].problem is not None
@@ -2936,7 +2951,7 @@ def canary_cmds(tmp_path: Path, net_ns: str | None = "net:[4026531840]") -> list
     host = copilot_cli.ProbeHost(net_ns, tmp_path / "devrun-probe-tmp-x",
                                  tmp_path / "devrun-probe-write-x",
                                  tmp_path / "devrun-probe-var-x")
-    return copilot_cli.canary_commands(token_file=tmp_path / "copilot.token", session_id=SID,
+    return copilot_cli.canary_commands(token_file=tmp_path / "copilot.token",
                                        harness_pid=4343, account=tmp_path / "account", uid=1000,
                                        host=host)
 
@@ -3027,12 +3042,16 @@ def test_the_canary_commands_are_the_probe_commands_without_the_skill_script(tmp
     commands = dict(canary_cmds(tmp_path))
     assert set(commands) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
                              *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS}
-    client = commands["client_environ"]
-    assert SID not in client  # assembled from two halves: its own command line never matches
-    assert SID[:18] in client
-    assert SID[18:] in client
-    assert ">/dev/null 2>&1" in client
-    assert client.endswith("echo $r")
+    # since 2026-10-13 the canary's `client_environ` is the probe's own content
+    # scan: the session-id row matched the sandbox's init, and the trial, which
+    # runs before any process carries the id, read it `denied` trivially
+    assert commands == dict(copilot_cli.probe_commands(
+        token_file=tmp_path / "copilot.token", harness_pid=4343, account=tmp_path / "account",
+        uid=1000, script=None, host=copilot_cli.ProbeHost(
+            "net:[4026531840]", tmp_path / "devrun-probe-tmp-x", tmp_path / "devrun-probe-write-x",
+            tmp_path / "devrun-probe-var-x")))
+    assert commands["client_environ"] == copilot_cli.token_scan()
+    assert SID not in "".join(commands.values())
     assert "/proc/4343/environ" in commands["harness_environ"]
 
 
@@ -3750,3 +3769,339 @@ def test_one_go_covers_one_skill_run_whose_start_records_the_approval_stop(home,
         with pytest.raises(copilot_cli.CopilotRefused):
             copilot_cli.isolated_home(None, Namespace(scenario=scenario))
     assert len(calls(log)) == before
+
+
+# ---------- 8.0c: the pid-1 and log-directory routes (the second canary, 2026-10-13) --------
+
+LONG_TAIL = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"  # 36 synthetic token characters
+
+
+def nul(*entries: str) -> str:
+    """Entries as /proc writes an environment or a command line."""
+    return "".join(f"{entry}\0" for entry in entries)
+
+
+def proc_tree(root: Path, processes: dict[int, dict[str, str]]) -> Path:
+    """A synthetic /proc: per pid, files by their path under `/proc/<pid>/`."""
+    for pid, files in processes.items():
+        for name, text in files.items():
+            path = root / str(pid) / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(text.encode("utf-8"))
+    return root
+
+
+def scan(proc: Path, path: str | None = None) -> str:
+    """The content scan run by the host's `sh` over a synthetic tree only."""
+    return subprocess.run(["sh", "-c", copilot_cli.token_scan(str(proc))], capture_output=True,
+                          text=True, env={"PATH": path or os.environ.get("PATH", "")},
+                          check=False).stdout.strip()
+
+
+def test_the_content_scan_splits_every_literal_so_it_never_counts_itself():
+    """Verifier finding 2 (2026-10-13): the scan's pattern lies in its own
+    command line, the shell's and grep's, which the scan reads as well; each
+    literal is split by a bracket expression, so the text never matches the
+    pattern, while the pattern matches each token variable and each GitHub
+    token prefix followed by a token's tail."""
+    pattern, row = copilot_cli.token_pattern(), copilot_cli.token_scan()
+    literals = (*copilot_cli.TOKEN_ENV_VARS, *copilot_cli.GITHUB_TOKEN_PREFIXES)
+    assert {"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"} <= set(literals)
+    assert {"github_pat_", "ghp_", "gho_", "ghu_"} <= set(literals)
+    for literal in literals:
+        assert literal not in pattern, literal
+        assert literal not in row, literal
+    assert not re.search(pattern, pattern)
+    assert not re.search(pattern, row)
+    for name in copilot_cli.TOKEN_ENV_VARS:
+        assert re.search(pattern, f"{name}=x")
+        assert re.search(pattern, f"{name}=")  # set, even empty
+    for prefix in copilot_cli.GITHUB_TOKEN_PREFIXES:
+        assert re.search(pattern, f"value {prefix}{LONG_TAIL}")
+        assert not re.search(pattern, f"value {prefix}short")  # a directory name, not a token
+    assert copilot_cli.unmatchable("GH_TOKEN") == "GH_TOKE[N]"
+    with pytest.raises(ValueError, match="not a word"):
+        copilot_cli.unmatchable("a-b")
+    # one word, never a match: no output of a scanned file reaches the result
+    assert row.endswith('echo denied; elif [ -n "$c" ]; then echo readable; '
+                        "else echo unknown; fi")
+
+
+@POSIX
+@pytest.mark.parametrize(("files", "word"), [
+    ({}, "denied"),
+    ({"environ": nul("GH_TOKEN=x")}, "readable"),
+    ({"task/7/environ": nul("COPILOT_GITHUB_TOKEN=x")}, "readable"),
+    ({"cmdline": nul("env", "GITHUB_TOKEN=", "sh")}, "readable"),
+    ({"cmdline": nul("sh", "-c", f"echo github_pat_{LONG_TAIL}")}, "readable"),
+    ({"environ": nul(f"X=ghp_{LONG_TAIL}")}, "readable"),
+    ({"environ": nul(f"X=gho_{LONG_TAIL}")}, "readable"),
+    ({"environ": nul(f"X=ghu_{LONG_TAIL}")}, "readable"),
+    ({"environ": nul("X=ghp_short", "MY_GH_TOKEN=x", "PATH=/usr/bin")}, "denied"),
+], ids=["none", "environ", "thread", "cmdline-name", "pat", "ghp", "gho", "ghu", "near-misses"])
+def test_the_content_scan_finds_a_token_in_any_environment_or_command_line(files, word,
+                                                                          tmp_path):
+    """Verifier finding 2: every environment, every thread's and every command
+    line of every process the shell can see, by content rather than by pid,
+    since the sandbox has a pid namespace of its own (the second canary read
+    the client's environment through the sandbox's init, pid 1). Run by `sh`
+    over a synthetic tree only, never the host's /proc."""
+    proc = proc_tree(tmp_path / "proc", {1: {"environ": nul("PATH=/usr/bin")},
+                                         7: {"cmdline": nul("sleep", "1"), **files}})
+    assert scan(proc) == word
+
+
+@POSIX
+def test_the_content_scan_never_counts_its_own_command_line(tmp_path):
+    """Verifier finding 2: the processes that run the scan carry its text — the
+    tool's `bash -c`, the canary script's `sh`, and grep with the pattern as
+    its argument — and the scan reads their command lines too."""
+    row = copilot_cli.token_scan(str(tmp_path / "proc"))
+    proc = proc_tree(tmp_path / "proc", {
+        2: {"cmdline": nul("/bin/bash", "--norc", "--noprofile", "-c", row)},
+        3: {"cmdline": nul("sh", "-c", row), "environ": nul("PATH=/usr/bin")},
+        4: {"cmdline": nul("grep", "-cE", "--", copilot_cli.token_pattern())},
+        5: {"cmdline": nul("sh", "-c", copilot_cli.canary_script([("client_environ", row)]))}})
+    assert scan(proc) == "denied"
+
+
+@ROOTLESS
+def test_the_content_scan_passes_over_what_the_shell_cannot_read(tmp_path):
+    """Another user's process, or a non-dumpable one, is unreadable to the
+    shell, as on the host's /proc: passed over, not a failure of the scan."""
+    proc = proc_tree(tmp_path / "proc", {9: {"environ": nul("GH_TOKEN=x")}})
+    (proc / "9" / "environ").chmod(0)
+    try:
+        assert scan(proc) == "denied"
+    finally:
+        (proc / "9" / "environ").chmod(0o600)
+
+
+@POSIX
+def test_a_content_scan_that_cannot_search_reads_unknown_and_refuses(tmp_path):
+    """A scan whose search fails prints `unknown`, never `denied`, and the
+    probe refuses it like a reached target: fail closed."""
+    proc = proc_tree(tmp_path / "proc", {1: {"environ": nul("A=1")}})
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    (tools / "grep").write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+    (tools / "grep").chmod(0o755)
+    assert scan(proc, f"{tools}:{os.environ.get('PATH', '')}") == "unknown"
+    supported, results = probe("probe-ok")
+    rows = [ProbeResult(r.name, "unknown" if r.name == "client_environ" else r.output,
+                        r.sandboxed) for r in results]
+    problem = copilot_cli.probe_problem(rows, supported)
+    assert problem.kind == "isolation"
+    assert copilot_cli.READ_TARGETS["client_environ"] in problem.cause
+
+
+@POSIX
+@pytest.mark.usefixtures("home")
+def test_every_runs_probe_and_the_canarys_script_carry_the_content_scan(tmp_path, monkeypatch):
+    """Verifier finding 4: the hardened row runs in every Copilot run's probe,
+    a skill run's included, and in the canary's script and so its trial; no
+    row reads a host pid of the client."""
+    log = fake_copilot(tmp_path, monkeypatch)
+    copilot_cli.confinement_probe(probe_run(tmp_path))
+    sent = [c["params"]["command"] for c in rpc_calls(log) if c["method"] == SHELL]
+    assert copilot_cli.token_scan() in sent
+    assert copilot_cli.token_scan() in copilot_cli.canary_script(canary_cmds(tmp_path))
+    assert not hasattr(copilot_cli, "_client_row")
+
+
+@pytest.mark.parametrize(("scope", "platform", "refused"), [
+    (None, "linux", "is not available (no Yama)"), (0, "linux", "is 0"), (-1, "linux", "is -1"),
+    (1, "linux", None), (2, "linux", None), (3, "linux", None),
+    (None, "darwin", None), (0, "darwin", None), (None, "win32", None)])
+def test_the_ptrace_scope_is_mandatory_on_linux_only(scope, platform, refused):
+    """Verifier finding 1 (2026-10-13): with Yama missing or its scope below 1,
+    a same-user shell in the sandbox could attach to the sandbox's init and
+    read the client's environment from its memory, past the /proc mask. Other
+    platforms keep their behaviour. The remedy changes nothing on the host."""
+    problem = copilot_cli.ptrace_problem(scope, platform)
+    if refused is None:
+        assert problem is None
+        return
+    assert problem.kind == "precondition"
+    assert refused in problem.cause
+    assert copilot_cli.YAMA_PTRACE in problem.cause
+    assert "never changes it" in problem.remedy
+
+
+@pytest.mark.parametrize(("text", "scope"), [
+    ("0\n", 0), ("1\n", 1), ("2", 2), ("3\n", 3), ("", None), ("one\n", None), (None, None)])
+def test_the_ptrace_scope_is_read_from_the_file_it_is_given(text, scope, tmp_path):
+    """The reader is read-only and takes its path from the caller; L0 hands it
+    files of its own, never the kernel's (the conftest replaces the seam)."""
+    path = tmp_path / "ptrace_scope"
+    if text is not None:
+        path.write_text(text, encoding="ascii")
+    assert REAL_PTRACE_SCOPE(path) == scope
+    assert REAL_PTRACE_SCOPE(tmp_path) is None  # a directory
+    assert copilot_cli.YAMA_PTRACE == "/proc/sys/kernel/yama/ptrace_scope"
+    assert copilot_cli.ptrace_scope() == copilot_cli.MIN_PTRACE_SCOPE  # the conftest's stand-in
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the ptrace scope is Linux's")
+@pytest.mark.parametrize("scope", [None, 0])
+@pytest.mark.usefixtures("home")
+def test_a_low_ptrace_scope_refuses_a_run_before_its_reads(scope, tmp_path, monkeypatch):
+    """Verifier finding 1: a preflight row before the status read, the probe
+    and any prompt-mode child; `--preflight-only` prints it and goes on, and
+    the status command (and so the login) reports the host not ready."""
+    log = fake_copilot(tmp_path, monkeypatch)
+    monkeypatch.setattr(copilot_cli, "ptrace_scope", lambda _path=None: scope)
+    monkeypatch.setattr(copilot_cli, "sandbox_problem", lambda *_a, **_k: None)
+    monkeypatch.setattr(copilot_cli, "managed_problem", lambda *_a, **_k: None)
+    run = copilot_cli.new_run(ws=staged_ws(tmp_path), model="copilot-fixture-a")
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli._require(copilot_cli.preflight_checks(run))
+    assert "Yama ptrace scope" in refused.value.message
+    assert refused.value.kind == "precondition"
+    assert [c["kind"] for c in calls(log)] == ["version"]
+    row = next(c for c in copilot_cli.preflight_checks(copilot_cli.new_run())
+               if c.name == "ptrace_scope")
+    assert row.detail == ("missing" if scope is None else "0")
+    assert "ptrace_scope" in copilot_cli.REPORTED
+    assert "Yama" in copilot_cli.machine_problem(os.environ).cause
+    assert copilot_cli._ptrace_line() == ("missing" if scope is None else "0")
+    assert copilot_cli._ptrace_line("darwin") == "not applicable"
+
+
+def test_a_process_log_with_the_token_or_a_github_token_is_a_finding():
+    """Verifier finding 3: the logs are searched for the token's value and for
+    any GitHub token, a prefix with a token's tail. Pure."""
+    assert copilot_cli.logged(f"auth {TOKEN} ok".encode(), TOKEN)
+    for prefix in copilot_cli.GITHUB_TOKEN_PREFIXES:
+        assert copilot_cli.logged(f"x {prefix}{LONG_TAIL} y".encode(), None)
+        assert not copilot_cli.logged(f"x {prefix}short y".encode(), None)
+    assert not copilot_cli.logged(b"", TOKEN)
+    assert not copilot_cli.logged(b"2026-10-13 warning: nothing to see", None)
+
+
+@POSIX
+def test_drain_logs_names_each_finding_and_empties_the_directory(home, tmp_path):
+    """Verifier finding 3: after the probe and after the run every entry is
+    scanned, a link, a FIFO or a directory counted as a finding unread, and
+    the directory emptied without following anything; it stays, owner-only."""
+    assert copilot_cli.log_dir_problem(home) is None
+    folder = host_login.log_dir(home)
+    assert stat.S_IMODE(folder.stat().st_mode) == 0o700
+    (folder / "process-1-1.log").write_text("warning: fine\n", encoding="utf-8")
+    (folder / "process-2-2.log").write_text(f"oops {TOKEN}\n", encoding="utf-8")
+    (folder / "process-3-3.log").write_text(f"x ghu_{LONG_TAIL}\n", encoding="utf-8")
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep", encoding="utf-8")
+    (folder / "link.log").symlink_to(victim)
+    (folder / "sub").mkdir()
+    (folder / "sub" / "x.log").write_text("x", encoding="utf-8")
+    os.mkfifo(folder / "fifo")
+    found = copilot_cli.drain_logs(home, TOKEN)
+    assert found == ["fifo", "link.log", "process-2-2.log", "process-3-3.log", "sub"]
+    assert list(folder.iterdir()) == []
+    assert victim.read_text(encoding="utf-8") == "keep"
+    assert copilot_cli.drain_logs(home, TOKEN) == []
+
+
+@POSIX
+def test_a_log_directory_that_is_no_directory_of_its_own_is_never_entered(home, tmp_path):
+    """A link at the log directory's name is refused before any child and
+    never entered by the scan, so nothing it leads to is read or deleted; so
+    is a file there, or a directory open to others."""
+    folder = host_login.log_dir(home)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "keep.log").write_text("keep", encoding="utf-8")
+    folder.symlink_to(elsewhere)
+    assert copilot_cli.log_dir_problem(home).kind == "precondition"
+    assert copilot_cli.drain_logs(home, TOKEN) == [host_login.LOG_DIR]
+    assert (elsewhere / "keep.log").read_text(encoding="utf-8") == "keep"
+    folder.unlink()
+    folder.write_text("x", encoding="utf-8")
+    assert copilot_cli.log_dir_problem(home) is not None
+    folder.unlink()
+    folder.mkdir()
+    folder.chmod(0o750)
+    assert copilot_cli.log_dir_problem(home) is not None
+    folder.rmdir()
+    assert copilot_cli.drain_logs(home, TOKEN) == []  # none yet: nothing to scan
+    assert copilot_cli.log_dir_problem(home) is None
+    assert folder.is_dir()
+
+
+@POSIX
+def test_the_run_logs_where_the_deny_list_masks_and_a_token_there_stops_it(home, tmp_path,
+                                                                           monkeypatch):
+    """Verifier finding 3: the 1.0.91 client binds its log directory into the
+    sandbox after the deny list's masks, so the run logs into the directory
+    the deny list names exactly (measured: masked), never under scratch; the
+    log is scanned after the run beside the workspace scrub, and a GitHub
+    token there makes the run untested for isolation with an isolation stop,
+    the log deleted and no part of it saved."""
+    skip_scan(monkeypatch)
+    log = fake_copilot(tmp_path, monkeypatch, log_text={"run": f"debug ghp_{LONG_TAIL}\n"})
+    events = copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                     effort=None, cap=30, timeout=30, home=home,
+                                     scenario=claude_runner.SCENARIOS["check_report"])
+    argv = next(c["argv"] for c in calls(log) if c["kind"] == "run")
+    folder = host_login.log_dir(home)
+    assert argv[argv.index("--log-dir") + 1] == str(folder)
+    pinned = host_login.pinned_settings(home, host_login.account_home())
+    assert str(folder) in pinned["sandbox"]["userPolicy"]["filesystem"]["deniedPaths"]
+    assert copilot_cli.harness_record(events)["log_findings"] == 1
+    problem = copilot_cli.run_problem(events)
+    assert (problem.untested, problem.kind) == (True, "isolation")
+    assert copilot_cli.LOGGED_CAUSE in problem.message
+    assert LONG_TAIL not in json.dumps(events)
+    stop = copilot_cli.read_stop(home)
+    assert stop["kind"] == "isolation"
+    assert copilot_cli.LOGGED_CAUSE in stop["cause"]
+    assert list(folder.iterdir()) == []
+
+
+@POSIX
+def test_a_token_in_the_probes_process_log_refuses_the_run_before_its_child(home, tmp_path,
+                                                                           monkeypatch):
+    """The probe's server, whose session the client sandboxes, logs into the
+    same directory; a finding there refuses the run for isolation before its
+    prompt-mode child. The status reads, which sandbox no session, log under
+    their own scratch, deleted with the call."""
+    skip_scan(monkeypatch)
+    log = fake_copilot(tmp_path, monkeypatch, log_text={"headless": f"x {TOKEN}\n"})
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                effort=None, cap=30, timeout=30, home=home,
+                                scenario=claude_runner.SCENARIOS["check_report"])
+    assert refused.value.kind == "isolation"
+    assert f"{copilot_cli.LOGGED_CAUSE} after the confinement probe" in refused.value.message
+    assert TOKEN not in refused.value.message
+    assert "run" not in [c["kind"] for c in calls(log)]
+    folder = host_login.log_dir(home)
+    assert list(folder.iterdir()) == []
+    dirs = [json.loads(line)["log_dir"] for line in
+            Path(f"{log}.logdirs").read_text(encoding="utf-8").splitlines()]
+    assert dirs.count(str(folder)) == 1  # the probe's; the status read's lay under scratch
+    assert all(not Path(d).exists() for d in dirs if d != str(folder))
+    assert copilot_cli.read_stop(home) is None  # refused before any model call: no stop
+
+
+@POSIX
+def test_an_after_run_step_that_raises_still_drains_the_logs_and_stops(home, tmp_path,
+                                                                       monkeypatch):
+    """The exception path fails closed for the logs too: scanned, emptied, and
+    a finding recorded as an isolation stop beside the billing stop."""
+    skip_scan(monkeypatch)
+    fake_copilot(tmp_path, monkeypatch, log_text={"run": f"x {TOKEN}\n"})
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("synthetic failure of an after-run step")
+
+    monkeypatch.setattr(copilot_cli, "capture_session", broken)
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                effort=None, cap=30, timeout=30, home=home,
+                                scenario=claude_runner.SCENARIOS["check_report"])
+    stop = copilot_cli.read_stop(home)
+    assert stop["kind"] == "billing"
+    assert copilot_cli.LOGGED_CAUSE in stop["cause"]
+    assert list(host_login.log_dir(home).iterdir()) == []

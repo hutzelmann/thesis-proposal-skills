@@ -79,8 +79,13 @@ hooks, memory, editor auto-connect and experimental features off, custom
 agents local, and the OS sandbox pinned (no bypass, no git or gh
 credentials, no developer-tool grants) with a deny list built by construction
 from the password database: the operator's whole real home,
-`/run/user/<uid>`, the shared temporary directories (`temp_dirs`), the state
-root where it lies outside that home, and the token file. `check_copilot_home` holds the
+`/run/user/<uid>`, on Linux the sandbox's own init `/proc/1` (`proc_denials`:
+its environment is the client's, token included), the shared temporary
+directories (`temp_dirs`), the state root where it lies outside that home, the
+token file and the children's process-log directory beside the home
+(`log_dir`), which the client would otherwise bind into the sandbox. Nothing
+outside the repository and the harness's own state directory is ever changed
+(the user's constraint, 2026-10-13). `check_copilot_home` holds the
 home to an allow-list, because the client's `config.json` overrides
 `settings.json` key by key. The child environment adds `TERM=dumb`,
 `NO_COLOR=1`, `DBUS_SESSION_BUS_ADDRESS=disabled:`, `COPILOT_AUTO_UPDATE=false`,
@@ -485,6 +490,20 @@ CODEX = HostLogin(
 COPILOT_SETTINGS = "settings.json"
 COPILOT_CONFIG = "config.json"
 TOKEN_FILE = "copilot.token"
+# The process-log directory of every Copilot child whose sessions run sandboxed
+# (the confinement probe's headless server and the prompt-mode run): a sibling
+# of the home, named exactly in the deny list. The 1.0.91 client binds its
+# `--log-dir` read-only into the sandbox after the deny list's masks, so a log
+# directory under a denied ancestor stayed readable; only an entry naming the
+# directory itself masks it (2026-10-13, measured; Decision 4).
+LOG_DIR = "copilot.logs"
+# The sandbox's own init: bwrap's init is pid 1 of the sandbox's pid namespace
+# on Linux and keeps bwrap's exec-time environment region, which is the
+# client's environment, the token included (`--clearenv` does not scrub that
+# region); the sandboxed shell runs as the same user and could read it
+# through /proc. The whole directory, never its `environ` alone: `task/1/environ`
+# carries the same region (2026-10-13, the second canary; Decision 3). Linux only.
+PROC_DENIED = ("/proc/1",)
 TOKEN_PREFIX = "github_pat_"
 CLASSIC_PREFIX = "ghp_"
 # every GitHub token prefix: a value containing one is token-shaped wherever it
@@ -545,6 +564,20 @@ def token_path(home_dir: Path) -> Path:
     return home_dir.parent / TOKEN_FILE
 
 
+def log_dir(home_dir: Path) -> Path:
+    """The Copilot children's process-log directory: `<state>/hosts/copilot.logs`,
+    a sibling of the home, denied to the sandbox by name (LOG_DIR). Made,
+    scanned and emptied by `copilot_cli` only."""
+    return home_dir.parent / LOG_DIR
+
+
+def proc_denials(platform: str | None = None) -> tuple[str, ...]:
+    """The deny entries under /proc: the sandbox's init (PROC_DENIED) on Linux,
+    none elsewhere, where the client's sandbox has no bwrap init and the host
+    keeps its current list (the user's portability constraint, 2026-10-13)."""
+    return PROC_DENIED if (platform or sys.platform).startswith("linux") else ()
+
+
 def account_home(uid: int | None = None) -> Path:
     """The operator's real home from the password database, never `$HOME`: a
     child's `HOME` is a scratch directory, so a deny list built from it would
@@ -555,21 +588,24 @@ def account_home(uid: int | None = None) -> Path:
     return Path(pwd.getpwuid(os.getuid() if uid is None else uid).pw_dir)
 
 
-def deny_list(home_dir: Path, account: Path, uid: int | None = None) -> list[str]:
+def deny_list(home_dir: Path, account: Path, uid: int | None = None,
+              platform: str | None = None) -> list[str]:
     """The sandbox deny list, built by construction (Decision 3): the whole
     account home, the per-user runtime directory (the session bus and the
-    agent sockets), the temporary directories (`temp_dirs`: the shared `/tmp`,
-    which holds every other process's temporary files and the operator's
-    Claude session scratchpads, the shared `/var/tmp`, and this process's
-    own), the state root
-    where it lies outside the account home, and the token file — absolute
-    paths, so no `~` resolves under scratch."""
+    agent sockets), on Linux the sandbox's own init (`proc_denials`: `/proc/1`,
+    whose environment is the client's), the temporary directories
+    (`temp_dirs`: the shared `/tmp`, which holds every other process's
+    temporary files and the operator's Claude session scratchpads, the shared
+    `/var/tmp`, and this process's own), the state root where it lies outside
+    the account home, the token file and the children's log directory
+    (`log_dir`, which the client would otherwise bind into the sandbox) —
+    absolute paths, so no `~` resolves under scratch."""
     uid = (os.getuid() if hasattr(os, "getuid") else 0) if uid is None else uid
     state = home_dir.parent.parent
-    deny = [str(account), f"/run/user/{uid}", *temp_dirs()]
+    deny = [str(account), f"/run/user/{uid}", *proc_denials(platform), *temp_dirs()]
     if not _within(state.resolve(), account.resolve()):
         deny.append(str(state))
-    return [*deny, str(token_path(home_dir))]
+    return [*deny, str(token_path(home_dir)), str(log_dir(home_dir))]
 
 
 # Settings keys the 1.0.91 client writes into `settings.json` itself, from a

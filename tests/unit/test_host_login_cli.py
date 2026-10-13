@@ -1039,7 +1039,8 @@ def test_without_posix_file_locks_the_codex_commands_refuse_cleanly(argv, codex_
 COPILOT_STATUS_KEYS = ["home", "marker", "token_present", "auth_type", "host_ok", "plan_class",
                        "token_based_billing", "overage_permitted", "overage_count",
                        "overage_entitlement", "remaining_pct", "reset_date", "stop", "go",
-                       "clean", "cli_version", "pinned_version", "sandbox", "runs_use"]
+                       "clean", "cli_version", "pinned_version", "sandbox", "ptrace_scope",
+                       "runs_use"]
 SANDBOX_PROBLEM = copilot_cli.sandbox_problem  # the real one, before a fixture stubs it
 VERSION_READ = copilot_cli.installed_version  # the real one: it starts `copilot --version`
 POSIX_LOCKS = pytest.mark.skipif(host_login.fcntl is None, reason="the run lock needs fcntl")
@@ -1317,6 +1318,8 @@ def test_the_copilot_status_prints_exactly_its_keys_and_no_account_detail(monkey
     assert pairs["stop"].startswith("approval")
     assert (pairs["cli_version"], pairs["pinned_version"], pairs["clean"]) == (
         "1.0.91", "1.0.91", "yes")
+    # the conftest's stand-in for Yama's scope; never the kernel's in L0
+    assert pairs["ptrace_scope"] == ("1" if sys.platform.startswith("linux") else "not applicable")
     for secret in ("fixture-login-octocat", "fixture-org", "FIXTURE_REPLY_ONLY", COPILOT_TOKEN):
         assert secret not in out + err
     reads = copilot_cli.read_status.calls
