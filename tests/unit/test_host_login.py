@@ -22,7 +22,7 @@ import sys
 import threading
 import time
 from contextlib import ExitStack
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import claude_runner
 import host_login
@@ -48,10 +48,12 @@ from host_login import (
     check_presence,
     check_status,
     keep_login,
+    link_target,
     login_dir,
     login_note,
     login_remedy,
     login_source,
+    plain_path,
     refusal,
     release_claim,
     settle,
@@ -137,7 +139,7 @@ def test_newer_replacement_is_written_back_and_the_link_restored(linked):
     assert settle(link, source) is True
     assert refresh_token(source) == "refresh-1"
     assert link.is_symlink()
-    assert link.readlink() == source
+    assert link_target(link) == source
     if os.name == "posix":
         assert source.stat().st_mode & 0o777 == 0o600
 
@@ -689,7 +691,7 @@ def opted_in(request, tmp_path, monkeypatch):
 def test_prepare_config_links_the_harness_login_by_default(linked_home, tmp_path):
     config = routing.prepare_config(tmp_path / "base")
     assert (config / CREDENTIALS).is_symlink()
-    assert (config / CREDENTIALS).readlink() == linked_home / CREDENTIALS
+    assert link_target(config / CREDENTIALS) == linked_home / CREDENTIALS
 
 
 @pytest.mark.usefixtures("linked_home")
@@ -790,7 +792,7 @@ def test_a_preflight_refusal_is_untested_in_a_dev_run(harness_home):
 def test_the_opt_in_links_the_named_login_without_a_preflight(opted_in, tmp_path):
     source = store(opted_in / CREDENTIALS, now_ms() + HOUR_MS)
     config = routing.prepare_config(tmp_path / "base")
-    assert (config / CREDENTIALS).readlink() == source
+    assert link_target(config / CREDENTIALS) == source
 
 
 @pytest.mark.usefixtures("opted_in")
@@ -927,3 +929,60 @@ def test_the_write_back_target_is_the_labelled_login_directory(linked_home, opte
     config = routing.prepare_config(tmp_path / "token")
     assert login_dir(config, os.environ) is None
     assert writeback_target(config / CREDENTIALS) is None
+
+
+# ---------- link targets as Windows reports them -----------------------------------
+# On Windows `os.readlink` answers in extended-length form (`\\?\C:\...`), and a
+# path resolved from that form keeps it. Until fix-windows-l0 the dev-run summary
+# labelled the harness login `\\?\C:\...\hosts\claude`, the write-back target
+# compared unequal to the harness home, and a stale-claim refusal named the
+# operator's remedy for the harness login (Windows CI run 38385444225).
+
+EXTENDED = "\\\\?\\"
+
+
+@pytest.fixture
+def windows_readlink(monkeypatch):
+    """`Path.readlink` as Windows answers it: the target behind `\\\\?\\`."""
+    real = Path.readlink
+
+    def readlink(self):
+        target = str(real(self))
+        return type(self)(target if target.startswith(EXTENDED) else EXTENDED + target)
+
+    monkeypatch.setattr(Path, "readlink", readlink)
+
+
+@pytest.mark.parametrize(("extended", "plain"), [
+    (PureWindowsPath("\\\\?\\C:\\state\\hosts\\claude"),
+     PureWindowsPath("C:\\state\\hosts\\claude")),
+    (PureWindowsPath("\\\\?\\UNC\\server\\share\\claude"),
+     PureWindowsPath("\\\\server\\share\\claude")),
+    (PureWindowsPath("C:\\state\\hosts\\claude"), PureWindowsPath("C:\\state\\hosts\\claude")),
+    (PurePosixPath("/state/hosts/claude"), PurePosixPath("/state/hosts/claude")),
+])
+def test_plain_path_drops_only_the_extended_length_prefix(extended, plain):
+    assert plain_path(extended) == plain
+    assert type(plain_path(extended)) is type(plain)
+
+
+@pytest.mark.usefixtures("windows_readlink")
+def test_a_windows_link_target_is_compared_and_labelled_without_its_prefix(linked_home, tmp_path):
+    config = routing.prepare_config(tmp_path / "base")
+    link = config / CREDENTIALS
+    assert str(link.readlink()).startswith(EXTENDED), "the simulation must answer as Windows does"
+
+    assert link_target(link) == linked_home / CREDENTIALS
+    assert writeback_target(link) == linked_home / CREDENTIALS
+    assert login_dir(config, os.environ) == linked_home
+    assert claude_runner.login_label(config, isolated=True) == {
+        "login": "harness", "login_dir": str(linked_home)}
+    assert host_login._target_source(link_target(link)) is LoginSource.HARNESS
+
+
+@pytest.mark.usefixtures("windows_readlink")
+def test_a_windows_link_target_still_receives_the_refresh(linked_home):
+    with routing.isolated_config("test-config-") as config:
+        link = config / CREDENTIALS
+        host_refresh(link, now_ms() + 9 * HOUR_MS)
+    assert refresh_token(linked_home / CREDENTIALS) == "refresh-1"

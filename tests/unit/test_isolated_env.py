@@ -12,6 +12,7 @@ marker, so no test can print or compare a real secret.
 
 import json
 import os
+from collections.abc import Iterator, Mapping, MutableMapping
 from functools import partial
 from pathlib import Path, PurePosixPath
 
@@ -94,16 +95,50 @@ DESKTOP = {**SESSION_BINDING, **AUTH_PATH, **HOST_TUNING, **MACHINE, **ACCOUNT,
            "SOME_FUTURE_HOST_KNOB": "1"}
 
 
-@pytest.fixture
-def desktop_session(monkeypatch):
+class CaseFoldingEnviron(MutableMapping[str, str]):
+    """`os.environ` as Windows keeps it: names are case-insensitive and held
+    upper-cased, so `https_proxy` and `HTTPS_PROXY` are one variable."""
+
+    def __init__(self, source: Mapping[str, str]):
+        self._held = {name.upper(): value for name, value in source.items()}
+
+    def __getitem__(self, name: str) -> str:
+        return self._held[name.upper()]
+
+    def __setitem__(self, name: str, value: str) -> None:
+        self._held[name.upper()] = value
+
+    def __delitem__(self, name: str) -> None:
+        del self._held[name.upper()]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(dict(self._held))
+
+    def __len__(self) -> int:
+        return len(self._held)
+
+    def copy(self) -> dict[str, str]:
+        return dict(self._held)
+
+
+@pytest.fixture(params=["native", "case-folding"])
+def desktop_session(request, monkeypatch) -> dict[str, str]:
     """The process environment replaced by the synthetic one, so a failing
     comparison can only ever print fake values. pytest's own variables stay:
-    it pops them itself after the test."""
+    it pops them itself after the test.
+
+    Once as this platform's `os.environ` holds it and once as Windows' does:
+    the process environment is compared with what it holds, never with
+    DESKTOP, whose two spellings of the proxy variable are one variable there
+    (fix-windows-l0; Windows CI run 38385444225). Returns what it holds."""
+    if request.param == "case-folding":
+        monkeypatch.setattr(os, "environ", CaseFoldingEnviron(os.environ))
     for name in list(os.environ):
         if not name.startswith("PYTEST"):
             monkeypatch.delenv(name)
     for name, value in DESKTOP.items():
         monkeypatch.setenv(name, value)
+    return {name: value for name, value in os.environ.items() if not name.startswith("PYTEST")}
 
 
 # ---------- the allowlist ----------------------------------------------------
@@ -165,9 +200,8 @@ def test_the_launching_environment_is_left_alone():
     assert source == DESKTOP
 
 
-@pytest.mark.usefixtures("desktop_session")
-def test_defaults_to_the_process_environment():
-    assert isolated_env(CONFIG) == isolated_env(CONFIG, DESKTOP)
+def test_defaults_to_the_process_environment(desktop_session):
+    assert isolated_env(CONFIG) == isolated_env(CONFIG, desktop_session)
 
 
 def test_admitted_names_stay_reviewed():
@@ -227,17 +261,17 @@ def test_isolated_runner_hands_the_child_the_allowlisted_environment(monkeypatch
     assert env["ANTHROPIC_CONFIG_DIR"] == str(tmp_path / PROFILE_DIR)
 
 
-@pytest.mark.usefixtures("desktop_session")
-def test_ambient_runner_inherits_the_operator_environment_minus_billing(monkeypatch, tmp_path):
+def test_ambient_runner_inherits_the_operator_environment_minus_billing(desktop_session,
+                                                                       monkeypatch, tmp_path):
     """Ambient measures the operator's session: everything but the billing
     variables, with the connector switch off (testing-harness spec: Billing
     variables never reach the model run; Connector switch on every host child)."""
     seen = capture_run(monkeypatch)
     claude_runner.run_claude(tmp_path, "request", "haiku", 5)
-    billing = {n for n in DESKTOP if n.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))}
+    billing = {n for n in desktop_session if n.startswith(("ANTHROPIC_", "CLAUDE_CODE_USE_"))}
     assert billing
     inherited = {n: v for n, v in seen["env"].items() if not n.startswith("PYTEST")}
-    assert inherited == {**{n: v for n, v in DESKTOP.items() if n not in billing},
+    assert inherited == {**{n: v for n, v in desktop_session.items() if n not in billing},
                          **CONNECTORS_OFF}
     assert not [n for n in inherited if n.startswith("ANTHROPIC_")]
 
