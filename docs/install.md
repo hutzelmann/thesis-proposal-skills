@@ -2,6 +2,17 @@
 
 You need three things: an AI agent app on your computer, a folder for your proposals, and about five minutes. Nothing on this page needs a terminal: your agent does the installing.
 
+## What you need
+
+| To … | you need |
+|---|---|
+| develop an idea, write and review a proposal | an agent app with the skills installed — nothing else |
+| check a proposal, search literature, import a document | Python 3.11 or newer on your computer; the install prompt checks for it ([No Python yet?](#no-python-yet)). The literature search also needs network access. |
+| build a PDF (optional) | `pandoc` plus `typst` or a LaTeX installation ([PDF export](#pdf-export)) |
+| better abstracts in the literature search (optional) | a free API key; your agent offers it when it would help ([Notes](#notes)) |
+
+Your proposals folder is an empty folder of your own. Never use a copy (clone) of this repository as your proposals folder, and do not copy its `AGENTS.md` into yours: that file instructs agents that develop the skills, not the agent that helps you write.
+
 ## Which app do you use?
 
 | App | Cost | How you install |
@@ -55,7 +66,7 @@ Then tell the agent you are done.
 
 ## Recipes
 
-Each recipe says when it was last carried out end to end. If your app looks different, the prompt above is the part that matters.
+Each recipe says when it was last carried out end to end. If your app looks different, the prompt above is the part that matters. After installing, [Is everything working?](#is-everything-working) shows which parts work on your computer.
 
 ### ChatGPT desktop app
 
@@ -148,6 +159,23 @@ What does not work:
 
 If you want everything, use the free ChatGPT desktop app or VS Code with Copilot.
 
+## Is everything working?
+
+The installer's last lines, under **On this computer:**, show which Python ran it and whether `pandoc`, `typst` and an `api-keys.env` file are present. Present is not the same as working. These four checks run the real thing, and each one shows one part and leaves the rest open. Ask your agent in a new chat:
+
+1. *"Which proposal skills can you use?"* It should name eleven skills, from `proposal-check` to `proposal-write` (in the Claude desktop app they start with `thesis-proposal:`).
+   **Shows:** your app finds the skills. **Does not show:** that their programs run.
+   **If not:** start a new chat or reload skills. If some appear twice, see [Removing](#removing).
+2. *"Run the proposal-check script with `--help`."* It should print the script's usage.
+   **Shows:** a Python 3.11 or newer answers, and the agent finds the skills' programs. **Does not show:** that a check of your proposal passes, or that the network works.
+   **If not:** see [No Python yet?](#no-python-yet).
+3. *"Run one literature search for a term from my field, add nothing to any proposal, and show me the `sources:` line."* The line lists each service that answered, for example `sources: crossref(10), dblp(4)`.
+   **Shows:** the services named there are reachable from your computer and their certificates are trusted; if `openalex` is among them, your API key works. **Does not show:** that the services missing from the line are reachable, or that the results fit your topic.
+   **If not** (`sources: none`, or fewer services than you expect): see [Literature search cannot reach its sources](#literature-search-cannot-reach-its-sources).
+4. Once you have a first draft: *"Build a PDF."* The agent names the pipeline that built it, typst or LaTeX.
+   **Shows:** `pandoc` and an engine work. **Does not show:** anything about the checks or the search. You need this only if you want a PDF.
+   **If not** (a `.docx` instead of a PDF, or "pandoc not found"): see [PDF export](#pdf-export).
+
 ## Literature search cannot reach its sources
 
 Your agent may report this as "source degraded", "sources: none", or, while checking references, OFFLINE. The literature search contacts six public services:
@@ -173,6 +201,31 @@ Three other causes:
 - **On a Mac with Python from python.org:** run **Install Certificates.command** once (Applications › Python 3.x). Until then Python cannot check the services' certificates. The installer tells you when it noticed this.
 - **A university network that filters traffic.** Try another network once to tell it apart from the app's setting.
 - **Only `dblp.org`, with a note about browser verification.** DBLP sometimes answers with a short browser check instead of data. The search passes it by itself; when it cannot, your agent says so and may offer to look DBLP up in a browser. Your app's network settings are not the cause.
+
+## PDF export
+
+Writing needs no extra software, and a markdown file is a fine hand-in. A PDF needs `pandoc` plus one engine: `typst` (recommended: small and fast) or a LaTeX installation you already have (TeX Live, MiKTeX). The publish skill says what is missing when you first ask for a PDF.
+
+**With a package manager** (try this first):
+
+- Windows: `winget install --id JohnMacFarlane.Pandoc -e`, then `winget install --id Typst.Typst -e`
+- macOS: `brew install pandoc typst`
+- Linux: your distribution's package manager. Some do not package `typst` yet; then use the release archive below.
+
+**Without a package manager**, or when it fails with an error about its sources (on Windows, for example, `0x8a15000f`), do not repair or reset the package manager. Use the tool's own release archive, installed for you alone:
+
+1. Open the latest release: [typst](https://github.com/typst/typst/releases/latest), [pandoc](https://github.com/jgm/pandoc/releases/latest).
+2. Download the archive for your computer: the `.zip` for Windows; on macOS and Linux, the archive that names your system and your processor (`aarch64` or `arm64` for Apple silicon and other ARM machines, `x86_64` or `amd64` for most others). Take the archive, not an installer (`.msi`, `.pkg`, `.deb`): installers may ask for administrator rights.
+3. Compare the file with the SHA-256 digest GitHub shows beside the download (`sha256:` followed by 64 characters):
+   - Windows: `certutil -hashfile <file> SHA256`
+   - macOS: `shasum -a 256 <file>`
+   - Linux: `sha256sum <file>`
+
+   The two values must be equal; capital and small letters do not matter. If they differ, delete the file and stop.
+4. Unpack the archive and move the program inside it (`typst` or `pandoc`, ending in `.exe` on Windows, sometimes in a `bin` subfolder) into a folder that belongs to you and is already on your PATH, such as `~/.local/bin`. If no such folder is on your PATH, adding one to your user PATH is your decision; your agent should ask before it changes that setting. Never install it for all users.
+5. Open a new chat or terminal and check: `typst --version`, `pandoc --version`.
+
+Your agent can do these steps when you ask it to. It should show you each download and the digest comparison before it moves anything. On macOS, if the system refuses to open a downloaded program, use Homebrew instead; do not switch that protection off.
 
 ## Updating
 
@@ -206,7 +259,7 @@ Without `-g` it installs into the current folder only. Keep to one route: the in
 - `guidelines.md` appears if you customize the rules for your supervisor.
 - `img/` appears only if your proposal uses figures.
 
-Everything sits flat in the folder by default. If your `guidelines.md` sets `[paths] proposals` to a subfolder, the proposal and everything named after it live there instead, and `guidelines.md` stays at the top.
+Everything sits flat in your proposals folder by default, which suits one or two proposals. If the folder also holds other files of yours, or you keep several proposals there, a subfolder keeps them apart: tell your agent *"Keep my proposals in a subfolder"*, and it sets `[paths] proposals` in your `guidelines.md`. The proposal and everything named after it then live in that subfolder, while `guidelines.md` and `api-keys.env` stay at the top.
 
 Useful prompts:
 - *"Find literature for my proposal"*
@@ -218,6 +271,5 @@ Useful prompts:
 ## Notes
 
 - **Privacy.** Your proposals stay on your computer. The literature search talks to the public academic services listed above.
-- **API keys.** Optional free keys improve abstract coverage. The agent offers to walk you through the signup and stores the key in a small `api-keys.env` file in your folder, kept out of version control. To reuse one key across several proposal folders, put the file in `~/.config/thesis-proposal/api-keys.env` instead.
+- **API keys.** Optional free keys improve abstract coverage. When one would help, the agent offers to walk you through the signup, creates a small `api-keys.env` file at the top of your proposals folder with an empty line for the key, and adds that file to `.gitignore` so it stays out of version control. You paste the key into the file yourself; the agent never sees it. To use one key in more than one proposals folder, put the file in `~/.config/thesis-proposal/api-keys.env` instead.
 - **Language.** English is the default. Say *"auf Deutsch"* and the whole proposal switches to German conventions.
-- **PDF export.** Writing needs no extra software. PDF export needs `pandoc` plus one engine: `typst` (recommended, small and fast) or an existing LaTeX installation (TeX Live, MiKTeX). The publish skill detects what is available and guides the installation when you first ask for a PDF.

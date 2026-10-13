@@ -1,0 +1,1 @@
+creating that file if there is none, whether or not the workspace is a git repository yet

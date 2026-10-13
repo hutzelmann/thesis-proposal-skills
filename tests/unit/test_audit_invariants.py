@@ -89,6 +89,30 @@ def test_lit_search_keeps_no_hand_through_rule():
     assert "OPENALEX_API_KEY=` (no value" in text  # placeholder, not a value, is documented
 
 
+def test_lit_search_ignores_the_key_file_in_every_workspace():
+    """A folder that becomes a repository later must not stage the secret on its
+    first `git add .`; the ignore entry never waits for git (skill-lit-search:
+    Keyless baseline, keys as guided upgrades)."""
+    text = (REPO / "skills" / "proposal-lit-search" / "SKILL.md").read_text(encoding="utf-8")
+    assert "if the workspace is a git repo" not in text
+
+
+# Binary download steps are the pattern both auditors flag; publish rates
+# SAFE/LOW without them. The user-local fallback lives in docs/install.md only,
+# which ships in no skill (onboarding spec: User-local PDF tools).
+DOWNLOAD_STEP_TOKENS = ("releases/latest", "releases/download", "curl ", "wget ",
+                        "Invoke-WebRequest", "certutil", "shasum", "sha256sum",
+                        "Expand-Archive", "tar x")
+
+
+@pytest.mark.parametrize("path", ["skills/proposal-publish/SKILL.md",
+                                  "skills/proposal-publish/scripts/publish.py"])
+def test_publish_carries_no_download_steps(path):
+    text = (REPO / path).read_text(encoding="utf-8")
+    found = [token for token in DOWNLOAD_STEP_TOKENS if token in text]
+    assert not found, f"{path}: download steps belong in docs/install.md only: {found}"
+
+
 # -- workspace-supplied build (skill-packaging: "Audit-pattern regressions
 # caught by tests"). publish.py may start the fixed document tools by constant
 # name; it may not start a file it discovered in the user's workspace. A build

@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import publish
+from helpers import winget_problems
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -299,3 +300,41 @@ def test_w05_fixture_hands_over(tmp_path, capsys):
     assert "proposal-build.py" in capsys.readouterr().err
     assert not list(staged.glob("*.pdf"))
     assert not (staged / ".gitignore").exists()
+
+
+# -- install guidance (skill-publish: Engine resolution order) ---------------
+
+GUIDE_PDF_URL = ("https://github.com/hutzelmann/thesis-proposal-skills/blob/main/"
+                 "docs/install.md#pdf-export")
+
+
+def tools_missing_section() -> str:
+    text = (REPO / "skills" / "proposal-publish" / "SKILL.md").read_text(encoding="utf-8")
+    return text[text.index("## When tools are missing"):text.index("## Hand-in guidance")]
+
+
+def test_winget_rule_flags_the_forms_that_install_the_wrong_thing():
+    """`--id A B` searches for B restricted to id A and installs nothing;
+    without `-e` a substring match may pick another package."""
+    assert winget_problems("winget install --id JohnMacFarlane.Pandoc Typst.Typst")
+    assert winget_problems("winget install --id Typst.Typst")
+    assert winget_problems("winget install -e JohnMacFarlane.Pandoc Typst.Typst")
+    assert winget_problems("`winget install --id Typst.Typst -e`") == []
+    assert winget_problems("`winget install --source winget --exact --id Typst.Typst`") == []
+
+
+def test_install_hint_gives_one_exact_winget_command_per_tool():
+    assert winget_problems(publish.INSTALL_HINT) == []
+    for package in ("JohnMacFarlane.Pandoc", "Typst.Typst"):
+        assert f"winget install --id {package} -e" in publish.INSTALL_HINT
+
+
+def test_install_hint_links_the_guide_for_machines_without_a_package_manager():
+    assert GUIDE_PDF_URL in publish.INSTALL_HINT
+
+
+def test_skill_tool_guidance_gives_valid_winget_commands_and_the_guide_link():
+    section = tools_missing_section()
+    assert "winget install" in section
+    assert winget_problems(section) == []
+    assert GUIDE_PDF_URL in section

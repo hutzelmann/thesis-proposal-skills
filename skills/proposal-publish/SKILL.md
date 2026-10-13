@@ -68,7 +68,8 @@ proposal-build:
 
 The script reports what is missing and what it would unlock. Guide concretely, best first:
 
-- **pandoc + typst** (recommended, two single binaries): `winget install --id JohnMacFarlane.Pandoc Typst.Typst` / `brew install pandoc typst` / distro packages. Smallest install, fastest builds.
+- **pandoc + typst** (recommended, two single binaries): `winget install --id JohnMacFarlane.Pandoc -e` and `winget install --id Typst.Typst -e` / `brew install pandoc typst` / distro packages. Smallest install, fastest builds.
+- No package manager, or one that fails with an error about its sources (winget `0x8a15000f`, for example): point the user to the install guide's PDF-export section, https://github.com/hutzelmann/thesis-proposal-skills/blob/main/docs/install.md#pdf-export, rather than repairing the package manager.
 - Existing **TeX Live/MiKTeX** works as the LaTeX fallback — nothing extra needed besides pandoc.
 - Nothing installable? → `--handout` produces a clean markdown for hand-in, or suggest the user's institution machines / a colleague's setup for the final PDF.
 

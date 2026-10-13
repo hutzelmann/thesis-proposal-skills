@@ -16,6 +16,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -110,6 +111,43 @@ def followed(events: list[dict], stop: Callable[[list[dict]], bool], *, returnco
         if stop(seen):
             return Followed(seen, -15, "", stopped=True, timed_out=False)
     return Followed(seen, returncode, stderr, stopped=False, timed_out=timed_out)
+
+
+WINGET_INSTALL_RE = re.compile(r"winget install\b([^\n`]*)")
+WINGET_VALUE_OPTIONS = {"--source", "-s"}
+
+
+def winget_problems(text: str) -> list[str]:
+    """One problem per `winget install` command in `text` that does not select
+    exactly one package by exact id. winget turns a lone positional into the
+    query and filters it by `--id`, so `--id A B` matches nothing and installs
+    nothing; two positionals refuse `--id` outright (winget-cli
+    `MoveMultiQueryToSingleQueryIfNeeded`, `ArgumentForSinglePackage…`). A
+    command ends at a backtick or a line end — the shapes the publish skill,
+    its install hint and the install guide use."""
+    problems = []
+    for match in WINGET_INSTALL_RE.finditer(text):
+        tokens = match.group(1).split()
+        ids, positionals = [], []
+        exact = False
+        rest = iter(tokens)
+        for token in rest:
+            if token == "--id":
+                ids.append(next(rest, ""))
+            elif token in ("-e", "--exact"):
+                exact = True
+            elif token in WINGET_VALUE_OPTIONS:
+                next(rest, None)
+            else:
+                positionals.append(token)
+        command = match.group(0).strip()
+        if len(ids) != 1 or not ids[0]:
+            problems.append(f"{command!r}: needs exactly one --id")
+        if positionals:
+            problems.append(f"{command!r}: stray arguments {positionals} beside --id")
+        if not exact:
+            problems.append(f"{command!r}: no -e/--exact")
+    return problems
 
 
 def json_path(path: Path | str) -> str:

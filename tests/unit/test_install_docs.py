@@ -9,10 +9,15 @@ search really contacts.
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
+import publish
 import pytest
+import search
 import sync_shared
-from helpers import REPO
+from helpers import REPO, winget_problems
+
+import install
 
 GUIDE = REPO / "docs" / "install.md"
 VERIFIED_RE = re.compile(r"^\*Verified \d{4}-\d{2}-\d{2} with \S.* \S+\*$")
@@ -23,12 +28,27 @@ UNVERIFIED = "*unverified*"
 INTRODUCING_CHANGE = REPO / "openspec" / "changes" / "desktop-first-install"
 API_HOST_RE = re.compile(r"https?://((?:api|export)\.[a-z0-9.-]+|dblp\.org)")
 OFFLINE_SECTION = "Literature search cannot reach its sources"
+TIERS_SECTION = "What you need"
+CHECKLIST_SECTION = "Is everything working?"
+PDF_SECTION = "PDF export"
+# what the checklist quotes from the installer and the search (onboarding spec:
+# Setup tiers and readiness checks — the quoted output must match the scripts)
+PRESENCE_HEADING = "On this computer:"
+SOURCES_PREFIX = "sources: "
+VERSION_RE = re.compile(r"\bv?\d+\.\d+(?:\.\d+)?\b")
+LATEST_RELEASES = ("https://github.com/typst/typst/releases/latest",
+                   "https://github.com/jgm/pandoc/releases/latest")
+HASH_COMMANDS = ("certutil -hashfile", "shasum -a 256", "sha256sum")
 
 
 def section(text: str, heading: str) -> str:
     start = text.index(f"\n## {heading}\n")
     end = text.find("\n## ", start + 1)
     return text[start:end if end != -1 else len(text)]
+
+
+def guide_section(heading: str) -> str:
+    return section(GUIDE.read_text(encoding="utf-8"), heading)
 
 
 def recipes() -> list[tuple[str, str]]:
@@ -127,13 +147,18 @@ def test_every_link_into_the_guide_names_an_existing_section():
              for h in re.findall(r"^#{2,3} (.+)$", guide, re.MULTILINE)}
     sources = {"docs/install.md": guide,
                "README.md": (REPO / "README.md").read_text(encoding="utf-8"),
-               "prompt": sync_shared.PROMPT_SOURCE.read_text(encoding="utf-8")}
+               "prompt": sync_shared.PROMPT_SOURCE.read_text(encoding="utf-8"),
+               # a script message is read where no repository exists either
+               "publish.py": publish.INSTALL_HINT}
     # an installed skill has no repository beside it, so it links the guide by URL
     sources |= {md.parent.name: md.read_text(encoding="utf-8")
                 for md in sorted(REPO.glob("skills/proposal-*/SKILL.md"))}
     linked = [name for name, text in sources.items()
               if name.startswith("proposal-") and "install.md#" in text]
     assert "proposal-check" in linked, "proposal-check no longer links the guide's Python section"
+    assert "proposal-publish" in linked, "proposal-publish no longer links the guide's PDF section"
+    assert "install.md#pdf-export" in sources["publish.py"]
+    assert "docs/install.md#is-everything-working" in sources["README.md"]
     for where, text in sources.items():
         anchors = re.findall(r"\]\(#([a-z0-9-]+)\)", text) if where == "docs/install.md" else []
         anchors += re.findall(r"install\.md#([a-z0-9-]+)", text)
@@ -148,3 +173,79 @@ def test_the_issue_routes_the_troubleshoot_skill_names_exist_in_the_template():
     assert len(mapped) == 5
     for option in mapped:
         assert f"- {option}\n" in template, f"route option {option!r} is not in the template"
+
+
+# -- setup tiers, readiness checks, PDF tools (onboarding spec) --------------
+
+def checklist_items() -> list[str]:
+    return re.split(r"^\d\. ", guide_section(CHECKLIST_SECTION), flags=re.MULTILINE)[1:]
+
+
+def test_the_guide_says_what_each_kind_of_work_needs():
+    rows = [line for line in guide_section(TIERS_SECTION).splitlines()
+            if line.startswith("| ")][1:]  # the first is the header
+    assert len(rows) == 4, rows
+    writing, scripts, pdf, keys = rows
+    assert "agent app" in writing
+    assert "Python 3.11" in scripts
+    assert all(word in pdf for word in ("`pandoc`", "`typst`", "LaTeX", "optional"))
+    assert "API key" in keys
+    assert "optional" in keys
+
+
+def test_the_proposals_folder_is_never_a_clone_of_this_repository():
+    tiers = guide_section(TIERS_SECTION)
+    assert "clone" in tiers
+    assert "`AGENTS.md`" in tiers
+
+
+def test_the_checklist_has_four_checks_that_each_state_their_limits():
+    items = checklist_items()
+    assert len(items) == 4, f"expected four checks, found {len(items)}"
+    for number, item in enumerate(items, 1):
+        for label in ("**Shows:**", "**Does not show:**", "**If not"):
+            assert label in item, f"check {number} lacks {label}"
+    discovery, interpreter, network, pdf = items
+    assert "eleven" in discovery
+    assert "--help" in interpreter
+    assert "`sources:" in network
+    assert "Build a PDF" in pdf
+    assert PRESENCE_HEADING in guide_section(CHECKLIST_SECTION)
+
+
+def test_the_checklist_quotes_what_the_installer_and_the_search_print(tmp_path, capsys,
+                                                                      monkeypatch):
+    checklist = guide_section(CHECKLIST_SECTION)
+    install.report_readiness(tmp_path / "home", tmp_path)
+    assert PRESENCE_HEADING in capsys.readouterr().out
+    assert PRESENCE_HEADING in checklist
+    monkeypatch.setitem(search.SEARCH_SOURCES, "stub",
+                        SimpleNamespace(search=lambda _query, **_limit: []))
+    search.federate("readiness", 1, ["stub"])
+    err = capsys.readouterr().err.splitlines()
+    assert any(line.startswith(SOURCES_PREFIX) for line in err), err
+    assert f"`{SOURCES_PREFIX.strip()}" in checklist
+
+
+def test_the_pdf_fallback_is_version_free_and_digest_checked():
+    pdf = guide_section(PDF_SECTION)
+    assert not VERSION_RE.search(pdf), f"pinned version: {VERSION_RE.search(pdf).group(0)}"
+    for url in LATEST_RELEASES:
+        assert url in pdf
+    assert set(re.findall(r"https://github\.com/[^)\s]+/releases/[^)\s]*", pdf)) == set(
+        LATEST_RELEASES)
+    assert "SHA-256" in pdf
+    for command in HASH_COMMANDS:
+        assert command in pdf
+    assert "delete the file" in pdf
+    assert "do not repair or reset" in pdf
+    assert "sudo" not in pdf
+    assert "winget install" in pdf
+    assert winget_problems(pdf) == []
+
+
+@pytest.mark.parametrize("doc", ["docs/install.md", "README.md"])
+def test_the_workspace_root_is_called_the_proposals_folder(doc):
+    text = (REPO / doc).read_text(encoding="utf-8")
+    found = re.findall(r"\bproposal folders?\b", text, flags=re.IGNORECASE)
+    assert not found, f"{doc}: say 'proposals folder' for the workspace root: {found}"

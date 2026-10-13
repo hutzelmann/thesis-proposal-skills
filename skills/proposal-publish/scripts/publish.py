@@ -41,11 +41,20 @@ RECIPE_TARGET_RE = re.compile(rf"^{BUILD_STEM}\b[^\n]*:", re.MULTILINE)
 HANDOVER_EXIT = 3
 PROPOSAL_ENV = "PROPOSAL_PATH"
 
+# One winget command per package: `--id A B` searches for B restricted to id A
+# and installs nothing. Machines without a working package manager are sent to
+# the install guide, which carries the release-archive route; download steps
+# never live in a shipped skill.
+INSTALL_GUIDE_PDF = ("https://github.com/hutzelmann/thesis-proposal-skills/blob/main/"
+                     "docs/install.md#pdf-export")
 INSTALL_HINT = (
     "For PDF output install pandoc + typst (two single binaries):\n"
-    "  Windows: winget install --id JohnMacFarlane.Pandoc Typst.Typst\n"
+    "  Windows: winget install --id JohnMacFarlane.Pandoc -e\n"
+    "           winget install --id Typst.Typst -e\n"
     "  macOS:   brew install pandoc typst\n"
     "  Linux:   pandoc + typst via your package manager\n"
+    "No package manager, or it reports an error about its sources? See\n"
+    f"  {INSTALL_GUIDE_PDF}\n"
     "An existing TeX installation also works as fallback (only pandoc needed)."
 )
 
