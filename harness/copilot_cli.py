@@ -59,7 +59,10 @@ and every check here is the backstop, failing closed:
   token in any process environment or command line it can see (`token_scan`:
   the client's environment reaches the sandbox through bwrap's own init, pid
   1 of its pid namespace, which the Linux deny list masks), and has no token
-  variable in its own environment, still runs the skills, and reports every
+  variable in its own environment, on Linux cannot rename the staged skill
+  tree aside, make a file in it or put a link over a staged `SKILL.md`
+  (`staged_ro`: the pinned settings bind `<ws>/.agents` read-only,
+  `host_login.readonly_paths`), still runs the skills, and reports every
   command as sandboxed; last, the process-log scan and the clean-home check
   once more, on the home as those reads left it.
 - **The work directory** (`work_root`): the workspace and every scratch home
@@ -77,8 +80,10 @@ and every check here is the backstop, failing closed:
   entry (`staged_breach`: the client's `skill` tool reads its SKILL.md in the
   client's own process, outside the sandbox, and follows a link a sandboxed
   shell planted there, so a swapped staged skill could read a file under a
-  denied path — the skill-tool link escape, measured 2026-10-13), rather than
-  left to go on with the skill prompt; the stop names the breach. Every child
+  denied path — the skill-tool link escape, measured 2026-10-13; on Linux the
+  read-only bind of the staged tree keeps the shell from planting one, and
+  this check stays as defence in depth), rather than left to go on with the
+  skill prompt; the stop names the breach. Every child
   leads its own process group, and whatever ended it, the group is killed
   (`stop_group`).
 - **The workspace after the run** (`workspace_breach`), before the harness
@@ -120,7 +125,9 @@ and every check here is the backstop, failing closed:
 
 The canary (`run_copilot(…, canary=True)`, the user's decision D-c) is the
 first model call after the operator's go: the shell alone, the confinement
-probe's commands (`canary_commands`) in one script the harness writes into
+probe's commands (`canary_commands`; `staged_ro` over a placeholder skill the
+harness stages first, `stage_canary_skill`, so prompt mode's own read-only
+bind of the staged tree is read too) in one script the harness writes into
 the workspace under the lock (`canary_script`, `write_canary_script`), and
 one fixed command that runs it as the whole prompt (`CANARY_RUN`,
 `canary_prompt`), which the client's lexical path check lets through and the
@@ -292,9 +299,12 @@ LOCAL_FIXTURE_HOST = "127.0.0.1"  # where claude_runner binds its fixture server
 # `skill` stays — skills are the run's point — but it, like the file tools,
 # reads its `<ws>/.agents/skills/<name>/SKILL.md` in the client's own process,
 # outside the sandbox, and follows a link (the skill-tool link escape, measured
-# 2026-10-13). It is not removed: it is guarded by the live watch (`staged_breach`
-# on a `skill` call) and the staged-tree fingerprint before and after the child
-# (`staged_digest`, `staged_changes`).
+# 2026-10-13). It is not removed: on Linux the pinned settings bind the staged
+# tree `<ws>/.agents` read-only inside the sandbox (`host_login.readonly_paths`),
+# so the shell can plant no link there, which the probe and the canary confirm
+# (`staged_ro`); the live watch (`staged_breach` on a `skill` call) and the
+# staged-tree fingerprint before and after the child (`staged_digest`,
+# `staged_changes`) stay as defence in depth, and are the only guard elsewhere.
 BASE_TOOLS = ("bash", "read_bash", "write_bash", "stop_bash", "list_bash", "skill",
               "report_intent", "update_todo")
 HELPER_TOOLS = ("task", "read_agent", "list_agents", "write_agent")
@@ -1851,7 +1861,8 @@ def staged_digest(ws: Path) -> dict[str, str]:
     directory, or `UNSAFE:<why>` for an entry the harness must not follow (a
     link, FIFO, socket, device, hard link or a directory closed to its owner)
     and `UNREADABLE` for one it could not examine. An absent or replaced tree
-    is `{}` (the canary stages none). `workspace_entries` lstats without
+    is `{}` (a baseline run stages none; the canary stages its placeholder
+    skill, `stage_canary_skill`). `workspace_entries` lstats without
     following, so a regular-file digest reads a real file, never a link's
     target."""
     root = ws / STAGED_DIR
@@ -1929,6 +1940,19 @@ TMP_TARGETS = {"host_tmp": "a file in the host's /tmp",
                "tmp_write": "a write into the host's /tmp",
                "var_tmp": "a file in the host's /var/tmp"}
 REQUIRED_PROBES = (*READ_TARGETS, *AUTH_TARGETS, "python", *TMP_TARGETS)
+# The staged skill tree, read-only in the sandbox (added 2026-10-13, Decision 13;
+# the pinned `readonlyPaths` entry, `host_login.readonly_paths`): over a staged
+# `SKILL.md` the shell must fail to rename `.agents` aside, to make a file in it
+# and to put a link over that `SKILL.md` (`staged_command`); any one that
+# succeeds reads `writable`. Asked wherever the pinned settings carry the entry
+# (Linux) and a skill is staged (`staged_target`), and required then: in a skill
+# run when the workspace holds a staged skill, in the canary always, since the
+# harness stages its placeholder skill there (`stage_canary_skill`).
+STAGED_TARGETS = {"staged_ro": "the staged skill tree (a rename of .agents, a new file in it or "
+                               "a link over a staged SKILL.md)"}
+# the name `staged_ro` renames `.agents` to, and the file it tries to make in it
+STAGED_ASIDE = ".agents-probe"
+STAGED_PROBE_FILE = ".devrun-probe"
 # Measured and printed, not refused by the probe (Decision 13, network):
 # whether the sandboxed shell shares the harness's network namespace (`shared`
 # or `private`). K6 read `private`. The canary, the one reading of the
@@ -2029,9 +2053,33 @@ def token_scan(proc: str = "/proc") -> str:
             "elif [ -n \"$c\" ]; then echo readable; else echo unknown; fi")
 
 
+def staged_command(skill_file: Path) -> str:
+    """The `staged_ro` row (Decision 13, added 2026-10-13) over one staged
+    `<ws>/.agents/skills/<name>/SKILL.md`: rename `.agents` aside
+    (STAGED_ASIDE), make a file in it (STAGED_PROBE_FILE), put a link over that
+    `SKILL.md`. One word: `denied` when all three fail, `writable` when any
+    succeeds, `unknown` when the shell does not see the staged file, which
+    measures nothing. A rename or a file that succeeded is undone at once; a
+    link that succeeded stays, for the checks that follow: in the probe it
+    refuses the run before its child, in the canary the staged tree's
+    fingerprint and the workspace check after the child name it too
+    (`staged_changes`, `workspace_breach`). One line, no output of its own.
+    Pure."""
+    q = shlex.quote
+    tree = skill_file.parents[2]  # <ws>/.agents
+    aside, made = tree.with_name(STAGED_ASIDE), tree / STAGED_PROBE_FILE
+    return (f"f={q(str(skill_file))}; a={q(str(tree))}; b={q(str(aside))}; "
+            f"n={q(str(made))}; if [ ! -f \"$f\" ]; then echo unknown; else r=0; "
+            "mv \"$a\" \"$b\" 2>/dev/null && { r=1; mv \"$b\" \"$a\" 2>/dev/null; }; "
+            "touch \"$n\" 2>/dev/null && { r=1; rm -f \"$n\" 2>/dev/null; }; "
+            "ln -sf /dev/null \"$f\" 2>/dev/null && r=1; "
+            "if [ \"$r\" = 0 ]; then echo denied; else echo writable; fi; fi")
+
+
 def probe_commands(*, token_file: Path, harness_pid: int, account: Path,
                    uid: int, script: Path | None,
-                   host: ProbeHost | None = None) -> list[tuple[str, str]]:
+                   host: ProbeHost | None = None,
+                   staged: Path | None = None) -> list[tuple[str, str]]:
     """The probe's fixed commands. Each discards its own output and prints one
     word or its exit code, so no output of the target ever leaves the sandbox.
     `git credential fill` runs with the operator's real home, configuration,
@@ -2041,7 +2089,9 @@ def probe_commands(*, token_file: Path, harness_pid: int, account: Path,
     child's own scratch home holds no helper and would prove nothing.
     `client_environ` searches by content (`token_scan`), in the probe as in
     the canary: the client's environment is held by the sandbox's init, pid 1
-    of its own pid namespace, not by any host pid (the second canary)."""
+    of its own pid namespace, not by any host pid (the second canary).
+    `staged_ro` is asked over `staged`, a staged `SKILL.md`, when one is given
+    (`staged_target`)."""
     readable = "{} >/dev/null 2>&1 && echo readable || echo denied"
     q = shlex.quote
     bus = f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus"
@@ -2064,6 +2114,8 @@ def probe_commands(*, token_file: Path, harness_pid: int, account: Path,
     if script is not None:
         commands.append(("skill_script", f"python3 {q(str(script))} --help >/dev/null 2>&1; "
                                          "echo $?"))
+    if staged is not None:
+        commands.append(("staged_ro", staged_command(staged)))
     return commands + _measured_commands(host or ProbeHost())
 
 
@@ -2093,16 +2145,28 @@ class Probe:
     trial: Trial | None = None
 
 
+def _reached(by: Mapping[str, ProbeResult]) -> list[str]:
+    """The targets the shell reached: a read, host /tmp or staged-tree row
+    (the last where asked) other than `denied`, or `gh`/`git` authentication
+    that exits 0 or printed no exit code. Pure."""
+    guarded = {**READ_TARGETS, **TMP_TARGETS,
+               **{name: label for name, label in STAGED_TARGETS.items() if name in by}}
+    reached = [label for name, label in guarded.items() if by[name].output != "denied"]
+    return reached + [label for name, label in AUTH_TARGETS.items()
+                      if _exit_code(by[name].output) in (None, 0)]
+
+
 def probe_problem(results: Sequence[ProbeResult], supported: object = True,
                   unapplied: str | None = None, *,
-                  what: str = "the confinement probe") -> LoginProblem | None:
+                  what: str = "the confinement probe", staged: bool = False) -> LoginProblem | None:
     """Pure over the probe's results (Decision 13), or the canary's (`what`).
     A session the pinned sandbox block was not applied to refuses for
     isolation, before any row; so does any target readable, a host /tmp row
-    other than `denied`, `gh`/`git` authentication that exits 0, or a command
-    the client did not report as sandboxed. A probe that could not run, or a
-    skill line that fails, refuses as a precondition. The message names the
-    targets, never any output."""
+    other than `denied`, a staged-tree row other than `denied` (required when
+    `staged`, judged wherever asked), `gh`/`git` authentication that exits 0,
+    or a command the client did not report as sandboxed. A probe that could
+    not run, or a skill line that fails, refuses as a precondition. The
+    message names the targets, never any output."""
     if supported is not True:
         return _problem("the client reports that this host cannot run its sandbox",
                         f"install {', '.join(SANDBOX_TOOLS)} and check that `bwrap --ro-bind / "
@@ -2111,14 +2175,12 @@ def probe_problem(results: Sequence[ProbeResult], supported: object = True,
         return _problem(f"{what} could not put its session in the pinned sandbox: "
                         f"{unapplied}", UNAPPLIED_REPORT, "isolation")
     by = {r.name: r for r in results}
-    missing = [name for name in REQUIRED_PROBES if by.get(name) is None or by[name].output is None]
+    required = (*REQUIRED_PROBES, *(STAGED_TARGETS if staged else ()))
+    missing = [name for name in required if by.get(name) is None or by[name].output is None]
     if missing:
         return _problem(f"{what} gave no answer for {', '.join(missing)}",
                         UNAVAILABLE_REMEDY, "precondition")
-    reached = [label for name, label in {**READ_TARGETS, **TMP_TARGETS}.items()
-               if by[name].output != "denied"]
-    reached += [label for name, label in AUTH_TARGETS.items() if _exit_code(by[name].output) in (
-        None, 0)]
+    reached = _reached(by)
     if reached:
         return _problem(f"{what} reached {', '.join(reached)} from the sandboxed shell",
                         PROBE_REPORT, "isolation")
@@ -2140,6 +2202,24 @@ def probe_problem(results: Sequence[ProbeResult], supported: object = True,
 def _probe_script(ws: Path) -> Path | None:
     scripts = sorted((ws / ".agents" / "skills").glob("*/scripts/*.py"))
     return scripts[0] if scripts else None
+
+
+def guards_staged(platform: str | None = None) -> bool:
+    """Whether the pinned settings keep the staged skill tree read-only on this
+    platform (`host_login.readonly_paths`: Linux), so that the probe and the
+    canary ask, and require, `staged_ro`."""
+    return bool(host_login.readonly_paths(platform))
+
+
+def staged_target(ws: Path, platform: str | None = None) -> Path | None:
+    """The staged `SKILL.md` the `staged_ro` row works on: the first regular
+    one under `<ws>/.agents/skills/*/`, where the platform guards the tree
+    (`guards_staged`); None otherwise, and then the row is not asked."""
+    if not guards_staged(platform):
+        return None
+    found = sorted(path for path in (ws / STAGED_DIR).glob("*/SKILL.md")
+                   if not path.is_symlink() and path.is_file())
+    return found[0] if found else None
 
 
 def _completions(notes: Iterable[dict]) -> dict[str, dict]:
@@ -2260,7 +2340,8 @@ def _probe_rows(rpc: Rpc, run: Run, session_id: str, deadline: float,
                                         harness_pid=os.getpid(),
                                         account=host_login.account_home(),
                                         uid=uid, script=_probe_script(run.ws),  # type: ignore[arg-type]
-                                        host=host):
+                                        host=host,
+                                        staged=staged_target(run.ws)):  # type: ignore[arg-type]
         reply = rpc.call("session.shell.executeUserRequested",
                          {"sessionId": session_id, "requestId": uuid.uuid4().hex,
                           "command": command}, deadline)
@@ -2368,7 +2449,10 @@ def _probe_check(run: Run) -> Check:
     probe = confinement_probe(run)
     detail = ", ".join(f"{r.name} {r.output}{'' if r.sandboxed else ' (not sandboxed)'}"
                        for r in probe.results) or probe.unapplied or "no results"
-    problem = probe_problem(probe.results, probe.supported, probe.unapplied)
+    # `staged_ro` is required wherever the tree is guarded and a skill is staged:
+    # the roster check recorded the staged names (the canary's placeholder too)
+    problem = probe_problem(probe.results, probe.supported, probe.unapplied,
+                            staged=guards_staged() and bool(run.staged))
     if probe.trial is not None:
         detail += f"; {trial_detail(probe.trial)}"
         problem = problem or trial_problem(probe.trial)
@@ -3107,8 +3191,11 @@ def staged_breach(ws: Path | None) -> str | None:
     """A link, FIFO, socket, device or hard link in the staged skill tree
     `<ws>/.agents/skills`, or the tree itself replaced by a link — which the
     client's `skill` tool, running outside the sandbox, would follow off the
-    tree — or None when the tree is clean or absent (the canary stages none).
-    Reads nothing; `unsafe_entries` lstats without following."""
+    tree — or None when the tree is clean or absent (a baseline run stages
+    none). Reads nothing; `unsafe_entries` lstats without following. On Linux
+    the pinned read-only bind keeps the shell from planting one in the first
+    place (`staged_ro`); this stays as defence in depth, and the only guard
+    elsewhere."""
     if ws is None:
         return None
     root = ws / STAGED_DIR
@@ -3387,6 +3474,19 @@ def version_after(events: list[dict]) -> RunProblem | None:
 # re-escape (no quotes, backslashes, `$`, absolute path or line break).
 CANARY_SCRIPT = ".devrun-canary.sh"
 CANARY_RUN = f"sh {CANARY_SCRIPT}"
+# The canary's placeholder skill (added 2026-10-13): staged into its workspace
+# before anything reads it, so the confinement probe and the canary's script
+# have a staged tree to try `staged_ro` on, and the client lists it as the
+# workspace's one project skill. It holds no instructions and no script; the
+# canary offers no `skill` tool, so it is never loaded.
+CANARY_SKILL = "devrun-staged-probe"
+CANARY_SKILL_TEXT = (
+    "---\n"
+    f"name: {CANARY_SKILL}\n"
+    "description: A placeholder the dev runner stages for its sandbox check. It holds no "
+    "instructions.\n"
+    "---\n\n"
+    "This placeholder holds no instructions.\n")
 CANARY_END = "canary end"
 # one row of the script's output: `canary <name> <word>`
 CANARY_LINE = re.compile(r"^canary (\w+) (\S+)$")
@@ -3395,7 +3495,8 @@ CANARY_PROMPT = (
     "below exactly as written. Do not read, change or explain the file it runs, do not change "
     "or add to the command, and run nothing else. When it has finished, reply with the word done.")
 # what a probe command prints: one word of the probe's vocabulary, or an exit code
-PROBE_WORD = re.compile(r"^(?:denied|readable|shared|private|unknown|\d+)$")
+# (`writable`: `staged_ro`, since 2026-10-13)
+PROBE_WORD = re.compile(r"^(?:denied|readable|writable|shared|private|unknown|\d+)$")
 NOT_CONFIRMED = "the canary did not confirm prompt mode's sandbox"
 CANARY_PASSED = ("the canary confirmed prompt mode's sandbox: its one command run once to its end "
                  "and nothing else, its script unchanged, every probe row answered and as "
@@ -3431,15 +3532,18 @@ SHOWN_UNMATCHED = 10
 
 
 def canary_commands(*, token_file: Path, harness_pid: int, account: Path,
-                    uid: int, host: ProbeHost) -> list[tuple[str, str]]:
+                    uid: int, host: ProbeHost,
+                    staged: Path | None = None) -> list[tuple[str, str]]:
     """The canary's commands: the confinement probe's fixed ones
-    (`probe_commands`), without `skill_script` (no skill is staged).
-    `client_environ` is the probe's own content scan (`token_scan`) since
-    2026-10-13: the row that looked for the run's session id matched the
-    sandbox's init, whose environment is the client's, and needed a pid the
-    probe's trial could not have."""
+    (`probe_commands`), without `skill_script` (the placeholder skill has no
+    script), with `staged_ro` over the placeholder's `SKILL.md` (`staged`,
+    `stage_canary_skill`; since 2026-10-13 the first reading of the staged
+    tree's read-only bind in prompt mode). `client_environ` is the probe's own
+    content scan (`token_scan`) since 2026-10-13: the row that looked for the
+    run's session id matched the sandbox's init, whose environment is the
+    client's, and needed a pid the probe's trial could not have."""
     return probe_commands(token_file=token_file, harness_pid=harness_pid, account=account,
-                          uid=uid, script=None, host=host)
+                          uid=uid, script=None, host=host, staged=staged)
 
 
 def canary_script(commands: Sequence[tuple[str, str]]) -> str:
@@ -3583,12 +3687,14 @@ def _trial_failure(trial: Trial, words: Mapping[str, str], closed: bool) -> str 
     return None
 
 
-def trial_problem(trial: Trial) -> LoginProblem | None:
+def trial_problem(trial: Trial, staged: bool | None = None) -> LoginProblem | None:
     """Pure over the trial (Decision 13, the trial): a script that could not
     be written or run, did not reach its closing line, left a row without
     its tagged line or took longer than TRIAL_LIMIT_S refuses the canary as
     a precondition; its rows then go through `probe_problem`, `tmp_write`
-    judged on the host and each row's sandbox report the call's."""
+    judged on the host and each row's sandbox report the call's, `staged_ro`
+    required where the platform guards the staged tree (`staged`, by default
+    `guards_staged`: the canary always stages its placeholder skill)."""
     words, closed = script_words(trial.output)
     why = _trial_failure(trial, words, closed)
     if why:
@@ -3597,7 +3703,8 @@ def trial_problem(trial: Trial) -> LoginProblem | None:
     seen = {"tmp_seen": trial.tmp_seen}
     rows = [ProbeResult(name, _canary_word(name, words, seen), trial.sandboxed is True)
             for name in trial.names]
-    return probe_problem(rows, what="the canary's trial script")
+    return probe_problem(rows, what="the canary's trial script",
+                         staged=guards_staged() if staged is None else staged)
 
 
 def trial_detail(trial: Trial) -> str:
@@ -3731,12 +3838,13 @@ def _net_problem(reading: CanaryReading) -> RunProblem | None:
         "sockets and loopback services", NET_REMEDY, "isolation")), True, "isolation")
 
 
-def _rows_problem(events: list[dict]) -> RunProblem | None:
+def _rows_problem(events: list[dict], staged: bool | None = None) -> RunProblem | None:
     """The canary's rows: an unanswered row first, naming the call's state
     (a refusal by the client's permission check with its own remedy); then
-    the probe's rules (`probe_problem`), the network namespace
-    (`_net_problem`) and the shell calls beyond the one fixed command
-    (`_unmatched_problem`)."""
+    the probe's rules (`probe_problem`, `staged_ro` required where the
+    platform guards the staged tree: `staged`, by default `guards_staged`),
+    the network namespace (`_net_problem`) and the shell calls beyond the one
+    fixed command (`_unmatched_problem`)."""
     reading = canary_rows(events)
     missing = [r.name for r in reading.rows if r.output is None]
     if missing:
@@ -3745,7 +3853,8 @@ def _rows_problem(events: list[dict]) -> RunProblem | None:
             f"unanswered: {unanswered_why(reading)}",
             REFUSED_REMEDY if reading.call == CALL_REFUSED else MISSING_REMEDY,
             "precondition")), True, "precondition")
-    problem = probe_problem(list(reading.rows), what="the canary")
+    problem = probe_problem(list(reading.rows), what="the canary",
+                            staged=guards_staged() if staged is None else staged)
     if problem is not None:
         return RunProblem(refusal(problem), True, problem.kind)
     return _net_problem(reading) or _unmatched_problem(reading.unmatched)
@@ -4169,12 +4278,37 @@ def _canary_script(ws: Path, commands: Sequence[tuple[str, str]]) -> str:
             "precondition")) from exc
 
 
+def stage_canary_skill(ws: Path) -> Path:
+    """Stage the canary's placeholder skill (CANARY_SKILL) into its workspace:
+    `<ws>/.agents/skills/<name>/SKILL.md`, owner-only directories and a file
+    created exclusively, never through a link; its path. A workspace that
+    refuses it refuses the canary as a precondition, before any child and
+    with no stop: without a staged tree, `staged_ro` would measure nothing."""
+    folder = ws / STAGED_DIR / CANARY_SKILL
+    try:
+        for part in (ws / ".agents", ws / STAGED_DIR, folder):
+            part.mkdir(mode=0o700)
+        fd = os.open(folder / "SKILL.md",
+                     os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(CANARY_SKILL_TEXT)
+    except OSError as exc:
+        raise CopilotRefused.of(_problem(
+            f"the canary could not stage its placeholder skill in the workspace "
+            f"({exc.__class__.__name__})",
+            "report it: the workspace is the harness's own, made empty for the canary",
+            "precondition")) from exc
+    return folder / "SKILL.md"
+
+
 def canary_for(run: Run, host: ProbeHost) -> list[tuple[str, str]]:
     """The canary's commands for this run: its token file, this process, the
-    operator's account and the probe's host side."""
+    operator's account, the probe's host side and the placeholder skill's
+    `SKILL.md` where the platform guards the staged tree (`staged_target`)."""
     return canary_commands(token_file=host_login.token_path(run.home),
                            harness_pid=os.getpid(), account=host_login.account_home(),
-                           uid=os.getuid() if hasattr(os, "getuid") else 0, host=host)
+                           uid=os.getuid() if hasattr(os, "getuid") else 0, host=host,
+                           staged=staged_target(run.ws))  # type: ignore[arg-type]
 
 
 def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: int,
@@ -4187,14 +4321,17 @@ def run_copilot(ws: Path, request: str, *, model: str, effort: str | None, cap: 
     token and record the approval stop), the status read before, the model
     listing, the rosters and the confinement probe, the run (whose child holds
     the lock too), the session file, the read after, the scrub and the stops.
-    The canary (D-c) ignores `request`: the probe's commands for this run
-    (`canary_for`), built under the lock, go into the workspace's script
-    (`_canary_script`) and its prompt is the one command that runs it
-    (`canary_prompt`), with the probe's host side (`probe_host`) kept until the
-    child is checked. Raises
+    The canary (D-c) ignores `request`: its placeholder skill is staged first
+    (`stage_canary_skill`), before the scan and the staged tree's
+    fingerprint; the probe's commands for this run (`canary_for`), built
+    under the lock, go into the workspace's script (`_canary_script`) and its
+    prompt is the one command that runs it (`canary_prompt`), with the
+    probe's host side (`probe_host`) kept until the child is checked. Raises
     `host_login.RunLockRefused`, `CopilotRefused` (untested) or
     `CopilotRunFailed` (checked by `timeout_problem`); the events it returns
     are checked afterwards by `run_problem`."""
+    if canary:
+        stage_canary_skill(ws)
     problem = scan_problem(ws)
     if problem:
         raise CopilotRefused.of(problem)
@@ -4227,12 +4364,15 @@ def preflight_report(ws: Path, scenario: Mapping, *, model: str, effort: str | N
     other refusal makes a later start unsafe and ends it. A recorded stop and
     the go (read for the canary or a skill run, as `canary` says) do not
     decide the outcome (NOT_DECIDING). No prompt-mode child starts, and the
-    probe's session folder is deleted."""
+    probe's session folder is deleted. The canary's workspace holds its
+    placeholder skill, as its run's does (`stage_canary_skill`)."""
     run = new_run(environ, ws=ws, scenario=scenario, model=model, effort=effort,
                   is_canary=canary)
     checks = list(preflight_checks(run))
     if any(c.problem and c.name not in REPORTED for c in checks):
         return checks, False
+    if canary:
+        stage_canary_skill(ws)
     checks.append(Check("workspace", scan_problem(ws)))
     if checks[-1].problem:
         return checks, False

@@ -2021,7 +2021,8 @@ def copilot_preflight_only(args: argparse.Namespace) -> int:
     Exit 0 when every other check passes, 3 otherwise (a held run lock and a
     refused child environment included); no prompt-mode child. The
     workspace is made in the Copilot work directory, as a run's is; the
-    canary's stays empty, as its run's does."""
+    canary's holds only its placeholder skill, as its run's does
+    (`copilot_cli.stage_canary_skill`)."""
     scenario = SCENARIOS.get(args.scenario, {})
     try:
         ws = new_workspace(HOSTS["copilot"], args.scenario)

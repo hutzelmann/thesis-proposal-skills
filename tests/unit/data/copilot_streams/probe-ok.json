@@ -73,6 +73,11 @@
       "name": "token_env",
       "output": "denied",
       "sandboxed": true
+    },
+    {
+      "name": "staged_ro",
+      "output": "denied",
+      "sandboxed": true
     }
   ]
 }

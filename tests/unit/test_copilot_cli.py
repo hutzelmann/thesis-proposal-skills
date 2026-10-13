@@ -148,7 +148,8 @@ def send(message):
     sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
     sys.stdout.buffer.flush()
 
-PROBES = (("/cmdline", "client_environ"),  # the content scan over every environ and cmdline
+PROBES = (("/.agents-probe", "staged_ro"),  # its paths name the workspace, so it comes first
+          ("/cmdline", "client_environ"),  # the content scan over every environ and cmdline
           ("GITHUB_TOKEN+x", "token_env"), ("devrun-probe-var-", "var_tmp"),
           (f"/proc/{os.getppid()}/environ", "harness_environ"),  # the harness that started it
           # git's row names the operator's GitHub CLI directory too, so it comes first
@@ -163,7 +164,7 @@ def probe_name(command):
 HOME = pathlib.Path(os.environ.get("COPILOT_HOME", "."))
 SANDBOXED = set()  # the sessions `session.options.update` put in the home's sandbox block
 UNCONFINED = {"gh_token": "0", "git_credential": "128", "python": "0", "skill_script": "0",
-              "net_ns": "shared", "tmp_write": "0"}
+              "net_ns": "shared", "tmp_write": "0", "staged_ro": "writable"}
 
 def home_sandbox():
     return json.loads((HOME / "settings.json").read_text(encoding="utf-8")).get("sandbox")
@@ -2117,7 +2118,126 @@ def test_the_probe_commands_print_one_word_and_name_no_output(tmp_path):
     # as no answer, test_the_host_tmp_rows_refuse_unless_denied)
     bare = dict(copilot_cli.probe_commands(token_file=tmp_path / "t",
                                            harness_pid=2, account=account, uid=1000, script=None))
-    assert not set(bare) & {*copilot_cli.MEASURED_TARGETS, *copilot_cli.TMP_TARGETS}
+    assert not set(bare) & {*copilot_cli.MEASURED_TARGETS, *copilot_cli.TMP_TARGETS,
+                            *copilot_cli.STAGED_TARGETS}
+    # `staged_ro` is asked over a staged SKILL.md only (`staged_target`)
+    staged = tmp_path / "ws" / ".agents" / "skills" / "proposal-check" / "SKILL.md"
+    with_tree = dict(copilot_cli.probe_commands(token_file=tmp_path / "t", harness_pid=2,
+                                                account=account, uid=1000, script=None,
+                                                staged=staged))
+    assert set(with_tree) - set(bare) == set(copilot_cli.STAGED_TARGETS)
+    assert with_tree["staged_ro"] == copilot_cli.staged_command(staged)
+
+
+def staged_tree(tmp_path: Path, name: str = "proposal-check") -> tuple[Path, Path]:
+    """A workspace with one staged skill; its `SKILL.md`."""
+    ws = tmp_path / "ws"
+    skill = ws / ".agents" / "skills" / name / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: x\n---\n", encoding="utf-8")
+    return ws, skill
+
+
+def test_the_staged_command_is_one_line_naming_the_tree_and_no_output(tmp_path):
+    """testing-harness spec: Staged tree rename refused — `staged_ro` tries
+    the rename of `.agents` aside, a new file in it and a link over the
+    staged `SKILL.md`, each with its errors discarded, and prints one word."""
+    ws, skill = staged_tree(tmp_path)
+    command = copilot_cli.staged_command(skill)
+    assert "\n" not in command
+    quoted = {name: shlex.quote(str(path)) for name, path in (
+        ("f", skill), ("a", ws / ".agents"), ("b", ws / copilot_cli.STAGED_ASIDE),
+        ("n", ws / ".agents" / copilot_cli.STAGED_PROBE_FILE))}
+    for name, value in quoted.items():
+        assert f"{name}={value};" in command
+    for attempt in ('mv "$a" "$b" 2>/dev/null', 'touch "$n" 2>/dev/null',
+                    'ln -sf /dev/null "$f" 2>/dev/null'):
+        assert attempt in command
+    assert set(re.findall(r"echo (\w+)", command)) == {"unknown", "denied", "writable"}
+    assert all(copilot_cli.PROBE_WORD.match(w) for w in ("unknown", "denied", "writable"))
+
+
+@POSIX
+def test_the_staged_command_reads_writable_on_a_writable_tree_and_undoes_what_it_can(tmp_path):
+    """Run by `sh` over a synthetic tree only: on a writable tree the rename
+    and the new file succeed and are undone at once, the link stays (the
+    run is refused before its child); a tree the shell cannot see reads
+    `unknown`."""
+    ws, skill = staged_tree(tmp_path)
+
+    def word() -> str:
+        return subprocess.run(["sh", "-c", copilot_cli.staged_command(skill)], capture_output=True,
+                              text=True, check=True).stdout.strip()
+
+    assert word() == "writable"
+    assert (ws / ".agents").is_dir()  # the rename undone
+    assert not (ws / copilot_cli.STAGED_ASIDE).exists()
+    assert not (ws / ".agents" / copilot_cli.STAGED_PROBE_FILE).exists()  # the file removed
+    assert skill.is_symlink()  # the link stays, for the checks that follow
+    skill.unlink()
+    assert word() == "unknown"
+
+
+@ROOTLESS
+def test_the_staged_command_reads_denied_when_every_attempt_fails(tmp_path):
+    """The bind's effect, approximated on the host by modes (the sandbox's own
+    reading is the probe's and the canary's): no rename of `.agents`, no file
+    in it, no link over the `SKILL.md` — `denied`, and the tree unchanged."""
+    ws, skill = staged_tree(tmp_path)
+    closed = (skill.parent, ws / ".agents", ws)
+    for folder in closed:
+        folder.chmod(0o500)
+    try:
+        out = subprocess.run(["sh", "-c", copilot_cli.staged_command(skill)],
+                             capture_output=True, text=True, check=True)
+    finally:
+        for folder in reversed(closed):
+            folder.chmod(0o700)
+    assert (out.stdout.strip(), out.stderr) == ("denied", "")
+    assert not skill.is_symlink()
+    assert sorted(p.name for p in ws.iterdir()) == [".agents"]
+
+
+@pytest.mark.parametrize(("platform", "guarded"), [
+    ("linux", True), ("darwin", False), ("win32", False)])
+def test_the_staged_row_follows_the_pinned_read_only_entry(platform, guarded, tmp_path):
+    """`staged_ro` is asked where the pinned settings carry the read-only
+    entry (`host_login.readonly_paths`: Linux), over the first regular staged
+    `SKILL.md`; never over a link, and not without a staged tree."""
+    assert copilot_cli.guards_staged(platform) is guarded
+    assert copilot_cli.staged_target(tmp_path / "empty", platform) is None
+    ws, skill = staged_tree(tmp_path, "proposal-b")
+    first = ws / ".agents" / "skills" / "proposal-a" / "SKILL.md"
+    first.parent.mkdir()
+    if os.name == "posix":
+        first.symlink_to(skill)  # a link is never the row's target
+    assert copilot_cli.staged_target(ws, platform) == (skill if guarded else None)
+
+
+@pytest.mark.parametrize(("rows", "staged", "kind", "named"), [
+    ({"staged_ro": "writable"}, True, "isolation", "the staged skill tree"),
+    ({"staged_ro": "writable"}, False, "isolation", "the staged skill tree"),  # asked: judged
+    ({"staged_ro": "unknown"}, True, "isolation", "the staged skill tree"),
+    ({"staged_ro": None}, True, "precondition", "gave no answer for staged_ro"),
+    ({}, True, "precondition", "gave no answer for staged_ro"),
+    ({}, False, None, None),  # a baseline run: no staged tree, no row
+    ({"staged_ro": "denied"}, True, None, None),
+])
+def test_the_staged_row_refuses_unless_denied_and_is_required_where_staged(rows, staged, kind,
+                                                                           named):
+    """testing-harness spec: Staged skill tree read-only in the sandbox; Staged
+    tree rename refused — the row reads `denied` or refuses for isolation,
+    naming the tree and never the word; where the tree is guarded and a
+    skill is staged, a missing answer refuses as a precondition."""
+    supported, results = probe("probe-ok")
+    results = [r for r in results if r.name != "staged_ro"]
+    results += [ProbeResult(name, word, True) for name, word in rows.items()]
+    problem = copilot_cli.probe_problem(results, supported, staged=staged)
+    if kind is None:
+        assert problem is None
+        return
+    assert (problem.kind, named in problem.cause) == (kind, True)
+    assert not re.search(r"\b(?:writable|unknown|denied)\b", refusal(problem))
 
 
 def test_no_scenario_prompt_names_a_skill_by_slash_command():
@@ -2442,8 +2562,9 @@ def test_a_report_that_arrives_is_still_compared_with_the_roster():
 
 
 def test_a_canary_records_the_confirmation_rather_than_requiring_it(tmp_path):
-    """The canary stages no skill: its roster is the bundled names alone, and
-    its own record turns the requirement off (Decision 13, passing)."""
+    """The canary stages only its placeholder skill (since 2026-10-13): its
+    roster is the bundled names and the placeholder, and its own record turns
+    the requirement off (Decision 13, passing)."""
     events = canary_events(tmp_path)
     assert copilot_cli.isolation_findings(events, copilot_cli.harness_record(events),
                                           loaded=False) == []
@@ -2888,11 +3009,15 @@ def test_the_probe_runs_through_the_headless_shell_and_deletes_its_session(home,
     run.token, run.scratch = TOKEN, copilot_cli.make_scratch("devrun-test-")
     found = copilot_cli.confinement_probe(run)
     assert (found.supported, found.unapplied) == (True, None)
+    # `staged_ro` where the pinned settings guard the staged tree (Linux)
+    staged = copilot_cli.guards_staged()
     assert {r.name for r in found.results} == {
         *copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python", "skill_script",
-        *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS}
+        *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS,
+        *(copilot_cli.STAGED_TARGETS if staged else ())}
     assert all(r.sandboxed is True for r in found.results)
-    assert copilot_cli.probe_problem(found.results, found.supported, found.unapplied) is None
+    assert copilot_cli.probe_problem(found.results, found.supported, found.unapplied,
+                                     staged=staged) is None
     by = {r.name: r.output for r in found.results}
     assert by["tmp_write"] == "denied"  # judged on the host: the fake wrote nothing there
     assert list(host_tmp.iterdir()) == []  # the sentinel removed
@@ -3039,6 +3164,53 @@ def test_the_short_children_take_the_credential_flags_before_the_subcommand(toke
     assert by_kind["skills"]["argv"] == [*flags, "skill", "list", "--json"]
     assert by_kind["mcp"]["argv"] == [*flags, "mcp", "list", "--json"]
     assert all(c["token_ok"] is bool(token) for c in by_kind.values())
+
+
+GUARDED = pytest.mark.skipif(not copilot_cli.guards_staged(),
+                             reason="the pinned settings guard the staged tree on Linux")
+
+
+@POSIX
+@GUARDED
+def test_a_writable_staged_tree_refuses_the_skill_run_before_its_child(home, tmp_path,
+                                                                      monkeypatch):
+    """testing-harness spec: Staged tree rename refused — end to end through
+    the fake client: the probe asks `staged_ro` over the staged
+    `proposal-check`, reads `writable`, and the run is refused for isolation
+    before any prompt-mode child, naming the staged tree, never the word."""
+    skip_scan(monkeypatch)
+    log = fake_copilot(tmp_path, monkeypatch, probe="probe-staged-writable")
+    ws = staged_ws(tmp_path)
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.run_copilot(ws, "check", model="copilot-fixture-a", effort=None, cap=30,
+                                timeout=30, home=home,
+                                scenario=claude_runner.SCENARIOS["check_report"])
+    assert refused.value.kind == "isolation"
+    assert "the staged skill tree" in refused.value.message
+    assert "writable" not in refused.value.message
+    assert "run" not in [c["kind"] for c in calls(log)]
+    skill = ws / ".agents" / "skills" / "proposal-check" / "SKILL.md"
+    asked = [c["params"]["command"] for c in rpc_calls(log)
+             if c["method"] == SHELL and copilot_cli.STAGED_ASIDE in c["params"]["command"]]
+    assert asked == [copilot_cli.staged_command(skill)]
+
+
+@POSIX
+@GUARDED
+def test_a_staged_skill_without_its_row_refuses_the_probe(home, tmp_path, monkeypatch):
+    """Where the tree is guarded and the roster recorded a staged skill, a
+    probe that did not ask `staged_ro` measured nothing: refused as a
+    precondition, before any prompt-mode child."""
+    skip_scan(monkeypatch)
+    log = fake_copilot(tmp_path, monkeypatch)
+    monkeypatch.setattr(copilot_cli, "staged_target", lambda *_a, **_k: None)
+    with pytest.raises(copilot_cli.CopilotRefused) as refused:
+        copilot_cli.run_copilot(staged_ws(tmp_path), "check", model="copilot-fixture-a",
+                                effort=None, cap=30, timeout=30, home=home,
+                                scenario=claude_runner.SCENARIOS["check_report"])
+    assert refused.value.kind == "precondition"
+    assert "gave no answer for staged_ro" in refused.value.message
+    assert "run" not in [c["kind"] for c in calls(log)]
 
 
 @POSIX
@@ -3300,13 +3472,20 @@ SID = "22222222-2222-4222-8222-222222222222"
 PROBE_OK_WORDS = {r["name"]: r["output"] for r in load("probe-ok")["results"]}  # type: ignore[index]
 
 
+def placeholder(tmp_path: Path) -> Path:
+    """The canary's placeholder `SKILL.md` in `<tmp_path>/ws`, never created."""
+    return tmp_path / "ws" / ".agents" / "skills" / copilot_cli.CANARY_SKILL / "SKILL.md"
+
+
 def canary_cmds(tmp_path: Path, net_ns: str | None = "net:[4026531840]") -> list[tuple[str, str]]:
+    """The canary's commands as Linux builds them: `staged_ro` over the
+    placeholder skill among them."""
     host = copilot_cli.ProbeHost(net_ns, tmp_path / "devrun-probe-tmp-x",
                                  tmp_path / "devrun-probe-write-x",
                                  tmp_path / "devrun-probe-var-x")
     return copilot_cli.canary_commands(token_file=tmp_path / "copilot.token",
                                        harness_pid=4343, account=tmp_path / "account", uid=1000,
-                                       host=host)
+                                       host=host, staged=placeholder(tmp_path))
 
 
 SCRIPT_SHA = "a" * 64  # the canary script's digest as the runner records it
@@ -3363,7 +3542,8 @@ def canary_events(tmp_path: Path, *, words: dict | None = None, skip: tuple = ()
         {"type": "copilot.harness", "duration_ms": 5000, "exit_code": 0, "stderr_tail": "",
          "timed_out": False, "session_id": SID, "cap": 30, "model": "copilot-fixture-a",
          "effort": None, "helpers": 0, "network": False, "tools": ["bash"],
-         "roster": ["customize-cloud-agent", "github-pr-media"],
+         "roster": ["customize-cloud-agent", copilot_cli.CANARY_SKILL, "github-pr-media"],
+         "staged": [copilot_cli.CANARY_SKILL],
          "skill_root": str(tmp_path / "ws" / ".agents" / "skills"), "scrub_hit": False,
          "before": snapshot, "after": snapshot, "after_guard": guard, "first_event_ms": 400,
          "sandbox_flag_notice": True, "cli_version": "1.0.91"}]
@@ -3394,15 +3574,18 @@ def test_the_canary_command_offers_the_shell_alone_and_keeps_the_other_denials()
 def test_the_canary_commands_are_the_probe_commands_without_the_skill_script(tmp_path):
     commands = dict(canary_cmds(tmp_path))
     assert set(commands) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
-                             *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS}
+                             *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS,
+                             *copilot_cli.STAGED_TARGETS}
     # since 2026-10-13 the canary's `client_environ` is the probe's own content
     # scan: the session-id row matched the sandbox's init, and the trial, which
-    # runs before any process carries the id, read it `denied` trivially
+    # runs before any process carries the id, read it `denied` trivially; and
+    # `staged_ro` works on the placeholder skill the harness staged
     assert commands == dict(copilot_cli.probe_commands(
         token_file=tmp_path / "copilot.token", harness_pid=4343, account=tmp_path / "account",
         uid=1000, script=None, host=copilot_cli.ProbeHost(
             "net:[4026531840]", tmp_path / "devrun-probe-tmp-x", tmp_path / "devrun-probe-write-x",
-            tmp_path / "devrun-probe-var-x")))
+            tmp_path / "devrun-probe-var-x"), staged=placeholder(tmp_path)))
+    assert commands["staged_ro"] == copilot_cli.staged_command(placeholder(tmp_path))
     assert commands["client_environ"] == copilot_cli.token_scan()
     assert SID not in "".join(commands.values())
     assert "/proc/4343/environ" in commands["harness_environ"]
@@ -3474,8 +3657,11 @@ def trial_of(tmp_path: Path, *, words: dict | None = None, skip: tuple = (),
     ({"sandboxed": None}, "isolation", "as sandboxed"),
     ({"words": {"token_file": "readable"}}, "isolation", "the token file"),
     ({"tmp_seen": True}, "isolation", "a write into the host's /tmp"),
+    ({"words": {"staged_ro": "writable"}}, "isolation", "the staged skill tree"),
+    ({"words": {"staged_ro": "unknown"}}, "isolation", "the staged skill tree"),
+    ({"skip": ("staged_ro",)}, "precondition", "no tagged line with a probe word for staged_ro"),
 ], ids=["unclosed", "row-missing", "too-slow", "not-written", "not-sandboxed", "reached",
-        "tmp-reached"])
+        "tmp-reached", "staged-writable", "staged-unseen", "staged-missing"])
 def test_the_canary_script_trial_refuses_before_any_model_call(change, kind, named, tmp_path):
     """testing-harness spec: Canary script fails in the probe's session —
     the script run once in the probe's sandboxed session (review of task
@@ -3486,7 +3672,20 @@ def test_the_canary_script_trial_refuses_before_any_model_call(change, kind, nam
     problem = copilot_cli.trial_problem(trial_of(tmp_path, **change))
     assert problem.kind == kind
     assert named in problem.cause
-    assert not re.search(r"\breadable\b", refusal(problem))
+    assert not re.search(r"\b(?:readable|writable)\b", refusal(problem))
+
+
+def test_a_trial_without_the_staged_row_refuses_where_the_tree_is_guarded(tmp_path):
+    """testing-harness spec: Staged skill tree read-only in the sandbox — the
+    canary always stages its placeholder, so where the pinned settings guard
+    the staged tree a script without `staged_ro` measured nothing and refuses
+    as a precondition; elsewhere the row is not asked."""
+    names = tuple(n for n, _ in canary_cmds(tmp_path) if n != "staged_ro")
+    trial = trial_of(tmp_path, names=names)
+    problem = copilot_cli.trial_problem(trial, staged=True)
+    assert (problem.kind, "gave no answer for staged_ro" in problem.cause) == (
+        "precondition", True)
+    assert copilot_cli.trial_problem(trial, staged=False) is None
 
 
 def test_the_trial_detail_counts_rows_and_never_prints_one(tmp_path):
@@ -3563,8 +3762,11 @@ def test_a_canary_with_every_row_confirmed_passes_and_records_no_stop(tmp_path):
     assert report["canary_rows"]["net_ns"]["output"] == "private"
     assert report["canary_rows"]["tmp_write"]["output"] == "denied"  # judged on the host
     assert report["canary_rows"]["gh_token"]["output"] == "1"
-    # a skill run without the loaded-skills report stays untested
+    assert report["canary_rows"]["staged_ro"]["output"] == "denied"
+    # a skill run without the loaded-skills report, and without the staged
+    # names to confirm it from the roster, stays untested
     skill_run = [e for e in events if e["type"] != "copilot.canary"]
+    copilot_cli.harness_record(skill_run).pop("staged")
     assert "loaded skills could not be confirmed" in copilot_cli.assess(skill_run).problem.message
 
 
@@ -3577,6 +3779,10 @@ def test_a_canary_with_every_row_confirmed_passes_and_records_no_stop(tmp_path):
     ({"words": {"var_tmp": "readable"}}, "isolation", "a file in the host's /var/tmp"),
     ({"words": {"token_env": "readable"}}, "isolation",
      "the token variables in the shell's own environment"),
+    # the first literal reading of the staged tree's read-only bind in prompt
+    # mode (2026-10-13): a rename, a file or a link that succeeded
+    ({"words": {"staged_ro": "writable"}}, "isolation", "the staged skill tree"),
+    ({"skip": ("staged_ro",)}, "precondition", "staged_ro"),
     ({"words": {"python": "127"}}, "precondition", "the skills' interpreter"),
     ({"skip": ("ssh_dir",)}, "precondition", "ssh_dir"),
     ({"repeat": ("ssh_dir",)}, "precondition", "ssh_dir"),
@@ -3611,7 +3817,10 @@ def test_an_unsandboxed_canary_completion_is_untested_for_isolation(tmp_path):
 
 
 ALL_ROWS = {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS, "python",
-            *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS}
+            *copilot_cli.TMP_TARGETS, *copilot_cli.MEASURED_TARGETS, *copilot_cli.STAGED_TARGETS}
+# the rows an end-to-end canary asks on this platform: `staged_ro` only where
+# the pinned settings guard the staged tree (Linux)
+HOST_ROWS = ALL_ROWS - (set() if copilot_cli.guards_staged() else set(copilot_cli.STAGED_TARGETS))
 
 
 def test_a_canary_command_the_client_refused_answers_no_row(tmp_path):
@@ -3844,9 +4053,11 @@ def _canary_setup(home: Path, tmp_path: Path, monkeypatch, **extra) -> Path:
     words = {name: [word, True] for name, word in PROBE_OK_WORDS.items()}
     words["tmp_write"] = ["0", True]
     words.update(extra.pop("words", {}))
-    # an empty workspace: the client lists its bundled skills only
-    bundled = [{"name": name, "source": "builtin"} for name in copilot_cli.BUILTIN_SKILLS]
-    return fake_copilot(tmp_path, monkeypatch, skills=bundled, session=session, canary=words,
+    # a workspace holding the placeholder skill alone (since 2026-10-13): the
+    # client lists it as the one project skill beside its bundled ones
+    roster = [*({"name": name, "source": "builtin"} for name in copilot_cli.BUILTIN_SKILLS),
+              {"name": copilot_cli.CANARY_SKILL, "source": "project"}]
+    return fake_copilot(tmp_path, monkeypatch, skills=roster, session=session, canary=words,
                         canary_model="copilot-fixture-a", **extra)
 
 
@@ -3868,9 +4079,7 @@ def test_a_canary_end_to_end_passes_and_records_every_row(home, tmp_path, monkey
     [line] = [json.loads(text) for text in summary.read_text(encoding="utf-8").splitlines()]
     assert status == claude_runner.EXIT_PASS, line["why"]
     assert (line["scenario"], line["label"]) == ("canary", claude_runner.CANARY_LABEL)
-    assert set(line["canary_rows"]) == {*copilot_cli.READ_TARGETS, *copilot_cli.AUTH_TARGETS,
-                                        "python", *copilot_cli.TMP_TARGETS,
-                                        *copilot_cli.MEASURED_TARGETS}
+    assert set(line["canary_rows"]) == HOST_ROWS
     assert all(row["sandboxed"] is True for row in line["canary_rows"].values())
     assert line["canary_rows"]["tmp_write"]["output"] == "denied"
     assert line["canary_call"] == copilot_cli.CALL_RAN  # the fake read the script it ran
@@ -3921,7 +4130,7 @@ def test_a_canary_end_to_end_refused_by_the_client_keeps_the_script_and_names_th
     assert status == claude_runner.EXIT_UNTESTED
     [line] = [json.loads(text) for text in summary.read_text(encoding="utf-8").splitlines()]
     assert line["canary_call"] == copilot_cli.CALL_REFUSED
-    assert set(line["canary_unanswered"]) == ALL_ROWS
+    assert set(line["canary_unanswered"]) == HOST_ROWS
     stop = copilot_cli.read_stop(home)
     assert stop["kind"] == "isolation"
     ws = Path(line["workspace"])
@@ -3950,7 +4159,7 @@ def test_a_canary_whose_script_became_a_directory_reads_as_changed_not_a_crash(
     assert status == claude_runner.EXIT_UNTESTED
     [line] = [json.loads(text) for text in summary.read_text(encoding="utf-8").splitlines()]
     assert line["canary_call"] == copilot_cli.CALL_CHANGED
-    assert set(line["canary_unanswered"]) == ALL_ROWS
+    assert set(line["canary_unanswered"]) == HOST_ROWS
     stop = copilot_cli.read_stop(home)
     assert stop["kind"] == "isolation"
     assert copilot_cli.NOT_CONFIRMED in stop["cause"]
@@ -3958,21 +4167,76 @@ def test_a_canary_whose_script_became_a_directory_reads_as_changed_not_a_crash(
 
 
 @POSIX
-def test_the_canary_preflight_stages_nothing(home, tmp_path, monkeypatch, capsys):
+def test_the_canary_stages_its_placeholder_skill_before_anything_reads_the_workspace(
+        home, tmp_path, monkeypatch, capsys):
+    """testing-harness spec: Canary stages a placeholder skill (2026-10-13) —
+    the kept workspace holds the placeholder alone, unchanged; the client's
+    listing ran in it and named it, the runner recorded it as staged, and,
+    where the pinned settings guard the staged tree, the canary's script
+    tried `staged_ro` on its `SKILL.md`."""
+    log = _canary_setup(home, tmp_path, monkeypatch)
+    summary = tmp_path / "canary.jsonl"
+    status = claude_runner.main([*CANARY_RUN, "--keep", "--summary-log", str(summary)])
+    capsys.readouterr()
+    [line] = [json.loads(text) for text in summary.read_text(encoding="utf-8").splitlines()]
+    assert status == claude_runner.EXIT_PASS, line["why"]
+    ws = Path(line["workspace"])
+    try:
+        skill = ws / ".agents" / "skills" / copilot_cli.CANARY_SKILL / "SKILL.md"
+        assert skill.read_text(encoding="utf-8") == copilot_cli.CANARY_SKILL_TEXT
+        assert [p.name for p in (ws / ".agents" / "skills").iterdir()] == [
+            copilot_cli.CANARY_SKILL]
+        assert stat.S_IMODE(skill.parent.stat().st_mode) == 0o700
+        [listing] = [c for c in calls(log) if c["kind"] == "skills"]
+        assert listing["cwd"] == str(ws)
+        events = claude_runner.load_events(ws)
+        harness = copilot_cli.harness_record(events)
+        assert harness["staged"] == [copilot_cli.CANARY_SKILL]
+        assert copilot_cli.CANARY_SKILL in harness["roster"]
+        assert harness["skill_findings"] == []  # the staged tree as staged
+        [record] = [e for e in events if e["type"] == "copilot.canary"]
+        commands = dict(record["commands"])
+        if copilot_cli.guards_staged():
+            assert commands["staged_ro"] == copilot_cli.staged_command(skill)
+        else:
+            assert "staged_ro" not in commands
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_a_workspace_that_refuses_the_placeholder_refuses_the_canary(tmp_path):
+    """The placeholder is created exclusively: a workspace that already holds
+    one, or cannot take it, refuses the canary as a precondition."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    staged = copilot_cli.stage_canary_skill(ws)
+    assert staged == ws / ".agents" / "skills" / copilot_cli.CANARY_SKILL / "SKILL.md"
+    assert copilot_cli.staged_names(ws) == [copilot_cli.CANARY_SKILL]
+    with pytest.raises(copilot_cli.CopilotRefused) as again:
+        copilot_cli.stage_canary_skill(ws)
+    assert again.value.kind == "precondition"
+    assert "placeholder skill" in again.value.message
+
+
+@POSIX
+def test_the_canary_preflight_stages_only_its_placeholder(home, tmp_path, monkeypatch, capsys):
     """testing-harness spec: Copilot preflight only; Canary script fails in
     the probe's session — the canary's `--preflight-only` runs its script
     once in the probe's sandboxed session (review of task 8.0a), owner
-    read-only as the canary writes it, and removes it again."""
+    read-only as the canary writes it, and removes it again; its workspace
+    holds the placeholder skill, as its run's does (2026-10-13)."""
     log = _canary_setup(home, tmp_path, monkeypatch)
     status = claude_runner.main([*CANARY_RUN, "--preflight-only"])
     out = capsys.readouterr().out
     assert status == claude_runner.EXIT_PASS, out
-    assert "rosters: ok — customize-cloud-agent, github-pr-media" in out
+    assert (f"rosters: ok — customize-cloud-agent, {copilot_cli.CANARY_SKILL}, "
+            "github-pr-media") in out
     assert "go: ok — canary (go given" in out
     assert "var_tmp denied" in out
     assert "token_env denied" in out
     assert "skill_script" not in out
-    rows = len(ALL_ROWS)
+    assert ("staged_ro denied" in out) is copilot_cli.guards_staged()
+    rows = len(HOST_ROWS)
     assert f"canary script: {rows} of {rows} rows answered, closing line" in out
     assert Path(f"{log}.trial").read_text(encoding="utf-8").split() == ["0o400"]
     trial = [c["params"] for c in rpc_calls(log)

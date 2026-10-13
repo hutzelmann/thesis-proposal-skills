@@ -83,7 +83,10 @@ from the password database: the operator's whole real home,
 its environment is the client's, token included), the shared temporary
 directories (`temp_dirs`), the state root where it lies outside that home, the
 token file and the children's process-log directory beside the home
-(`log_dir`), which the client would otherwise bind into the sandbox. Nothing
+(`log_dir`), which the client would otherwise bind into the sandbox; on Linux
+also the staged skill tree read-only (`readonly_paths`: the relative entry
+`.agents`, which the client resolves against each session's working
+directory, the workspace). Nothing
 outside the repository and the harness's own state directory is ever changed
 (the user's constraint, 2026-10-13). `check_copilot_home` holds the
 home to an allow-list, because the client's `config.json` overrides
@@ -504,6 +507,20 @@ LOG_DIR = "copilot.logs"
 # through /proc. The whole directory, never its `environ` alone: `task/1/environ`
 # carries the same region (2026-10-13, the second canary; Decision 3). Linux only.
 PROC_DENIED = ("/proc/1",)
+# The staged skill tree, read-only inside the sandbox (2026-10-13, measured at
+# $0; Decision 3): the client's `skill` tool reads `<ws>/.agents/skills/<name>/
+# SKILL.md` in its own process, outside the sandbox, and follows a link the
+# sandboxed shell planted there. A relative `readonlyPaths` entry is resolved by
+# 1.0.91 against the session's working directory — the workspace, whatever the
+# run's — and bound `--ro-bind <ws>/.agents <ws>/.agents`, so the shell can
+# neither swap, rename (EBUSY), remove (EROFS), touch or hard-link out of the
+# tree, nor unmount or remount it from a user namespace of its own (locked
+# mounts). `.agents` itself, never `.agents/skills` alone, which `mv .agents
+# .agents-old` and a re-planted tree bypass. A missing `.agents` is skipped
+# without a word; the harness stages it before the child. Linux only: elsewhere
+# the client's sandbox is no bwrap, and the host keeps its current settings
+# (the user's portability constraint, 2026-10-13).
+STAGED_READONLY = (".agents",)
 TOKEN_PREFIX = "github_pat_"
 CLASSIC_PREFIX = "ghp_"
 # every GitHub token prefix: a value containing one is token-shaped wherever it
@@ -578,6 +595,14 @@ def proc_denials(platform: str | None = None) -> tuple[str, ...]:
     return PROC_DENIED if (platform or sys.platform).startswith("linux") else ()
 
 
+def readonly_paths(platform: str | None = None) -> tuple[str, ...]:
+    """The sandbox's read-only entries: the staged skill tree (STAGED_READONLY),
+    relative, so the client resolves it against each session's working
+    directory, on Linux; none elsewhere, where the host keeps its current
+    settings (the user's portability constraint, 2026-10-13)."""
+    return STAGED_READONLY if (platform or sys.platform).startswith("linux") else ()
+
+
 def account_home(uid: int | None = None) -> Path:
     """The operator's real home from the password database, never `$HOME`: a
     child's `HOME` is a scratch directory, so a deny list built from it would
@@ -617,14 +642,20 @@ def deny_list(home_dir: Path, account: Path, uid: int | None = None,
 CLIENT_WRITTEN_SETTINGS: Mapping[str, object] = {"bashEnv": False}
 
 
-def pinned_settings(home_dir: Path, account: Path, uid: int | None = None) -> dict:
+def pinned_settings(home_dir: Path, account: Path, uid: int | None = None,
+                    platform: str | None = None) -> dict:
     """The Copilot home's `settings.json` (Decision 3): auto-update, the switch
     to automatic model selection, hooks, memory, editor auto-connect,
     experimental features and the shell's start-up file (`bashEnv`, which
     `--no-bash-env` also writes there) off, custom agents local, a file token
     store, and the OS sandbox pinned — enabled, no bypass, no developer-tool
     grants, no git or gh credentials — with the deny list at the key path the
-    1.0.91 package reads, `sandbox.userPolicy.filesystem.deniedPaths`."""
+    1.0.91 package reads, `sandbox.userPolicy.filesystem.deniedPaths`, and on
+    Linux the staged skill tree read-only beside it
+    (`sandbox.userPolicy.filesystem.readonlyPaths`, `readonly_paths`)."""
+    filesystem: dict[str, list[str]] = {"deniedPaths": deny_list(home_dir, account, uid, platform)}
+    if readonly := readonly_paths(platform):
+        filesystem["readonlyPaths"] = list(readonly)
     return {
         "autoUpdate": False, **CLIENT_WRITTEN_SETTINGS, "continueOnAutoMode": False,
         "customAgents": {"defaultLocalOnly": True}, "disableAllHooks": True,
@@ -632,8 +663,7 @@ def pinned_settings(home_dir: Path, account: Path, uid: int | None = None) -> di
         "storeTokenPlaintext": True,
         "sandbox": {"enabled": True, "allowBypass": False, "allowDevToolAccess": False,
                     "auth": {"git": False, "gh": False},
-                    "userPolicy": {"filesystem": {
-                        "deniedPaths": deny_list(home_dir, account, uid)}}},
+                    "userPolicy": {"filesystem": filesystem}},
     }
 
 
@@ -1389,7 +1419,8 @@ def check_copilot_home(home_dir: Path, account: Path | None = None,
     """The Copilot home is clean (`copilot_offenders`, or the list a caller
     already read); refused naming the offending key paths or entries, with the
     reset remedy. Settings that differ — a home seeded before the pinned
-    settings changed, such as the deny list's temporary directories (D-b) —
+    settings changed, such as the deny list's temporary directories (D-b) or
+    the staged skill tree's read-only entry (`readonly_paths`, 2026-10-13) —
     cannot be removed, only seeded again, so their remedy is the reset alone."""
     offenders = copilot_offenders(home_dir, account) if offenders is None else offenders
     if not offenders:

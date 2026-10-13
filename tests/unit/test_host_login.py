@@ -1278,6 +1278,54 @@ def test_the_sandbox_init_is_denied_on_linux_only(platform, proc, tmp_path, monk
     assert not host_login.log_dir(home).is_relative_to(home)
 
 
+@pytest.mark.parametrize(("platform", "readonly"), [
+    ("linux", [".agents"]), ("darwin", None), ("win32", None), ("freebsd14", None)])
+def test_the_staged_tree_is_read_only_on_linux_only(platform, readonly, tmp_path, monkeypatch):
+    """testing-harness spec: Staged skill tree read-only in the sandbox
+    (2026-10-13, measured at $0): one relative entry, `.agents` — which 1.0.91
+    resolves against each session's working directory, the workspace — beside
+    the deny list, never `.agents/skills` alone (a renamed `.agents` and a
+    re-planted tree bypass it), and only on Linux: other platforms keep the
+    settings they had (the user's portability constraint)."""
+    monkeypatch.setattr(host_login, "temp_dirs", lambda: ("/tmp",))
+    account = tmp_path / "account"
+    home = account / "state" / "hosts" / "copilot"
+    filesystem = host_login.pinned_settings(home, account, uid=1000,
+                                            platform=platform)["sandbox"]["userPolicy"][
+        "filesystem"]
+    assert filesystem.get("readonlyPaths") == readonly
+    assert set(filesystem) == ({"deniedPaths", "readonlyPaths"} if readonly else {"deniedPaths"})
+    assert filesystem["deniedPaths"] == host_login.deny_list(home, account, uid=1000,
+                                                             platform=platform)
+    assert list(host_login.readonly_paths(platform)) == (readonly or [])
+    # relative: resolved against the session's working directory, never a home
+    assert all(not entry.startswith(("/", "~", "$")) for entry in readonly or [])
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the entry is pinned on Linux")
+def test_a_home_seeded_before_the_staged_tree_was_read_only_needs_a_reset(copilot_home):
+    """testing-harness spec: Staged skill tree read-only in the sandbox — a
+    home seeded before the entry was pinned reads unclean, naming the key
+    path, and the remedy is the reset alone (the operator's step); so does an
+    entry narrowed to `.agents/skills`, which a rename of `.agents` bypasses."""
+    path = copilot_home / "settings.json"
+    seeded = json.loads(path.read_text(encoding="utf-8"))
+    assert seeded["sandbox"]["userPolicy"]["filesystem"]["readonlyPaths"] == [".agents"]
+    assert host_login.check_copilot_home(copilot_home) is None
+    for change, named in ((lambda f: f.pop("readonlyPaths"),
+                           "missing key sandbox.userPolicy.filesystem.readonlyPaths"),
+                          (lambda f: f.update(readonlyPaths=[".agents/skills"]),
+                           "sandbox.userPolicy.filesystem.readonlyPaths differs")):
+        old = json.loads(json.dumps(seeded))
+        change(old["sandbox"]["userPolicy"]["filesystem"])
+        path.write_text(json.dumps(old), encoding="utf-8")
+        problem = host_login.check_copilot_home(copilot_home)
+        assert named in problem.cause
+        assert problem.remedy.startswith(f"run `{COPILOT.reset_command}`, which seeds the pinned "
+                                         "settings again")
+        assert "remove" not in problem.remedy
+
+
 @pytest.mark.parametrize(("own", "var_tmp", "expected"), [
     ("/tmp", True, ("/tmp", "/var/tmp")),
     ("/tmp/claude-1000", True, ("/tmp", "/var/tmp")),  # inside /tmp: covered by it
