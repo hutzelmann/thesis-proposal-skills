@@ -367,7 +367,7 @@ If Plus has not been bought when sections 0 to 6 are done, mark each task here a
 
   ~~*Pending: user action, then live check (2026-10-06).*~~
   *Done 2026-10-13: passed without a `--reset`.* The 6.3 login was made on the Plus account, so it already carries the plan: the 6.5 read is ready (exit 0), plan `plus`, the credits block present with no credits available, both windows at 0%.
-- [ ] 7.3 The first Codex model call: **gated on the user's explicit go**, asked for in chat with the planned command. It uses plan quota, not money. Command: `uv run poe dev check_report --host codex --model <slug the user names> --keep`. Pass requires all of these:
+- [x] 7.3 The first Codex model call: **gated on the user's explicit go**, asked for in chat with the planned command. It uses plan quota, not money. Command: `uv run poe dev check_report --host codex --model <slug the user names> --keep`. Pass requires all of these:
   - the outcome is not untested for a billing, login or isolation reason;
   - the summary records the CLI version, `effort_served`, and quota before and after;
   - the kept events hold `codex.session`, `codex.turn_context` and `codex.token_count` with `rate_limits` and `plan_type` (X4);
@@ -386,6 +386,13 @@ If Plus has not been bought when sections 0 to 6 are done, mark each task here a
   - **Cause 3: the served model was not read.** `codex.turn_context` carried `{"model": "gpt-6.1-sol", "effort": null}`, but the summary read `"model": "unreported"`. By design, only a reroute named the served model.
   - **Seen in passing, not acted on.** The harness home keeps the run's thread after `sessions/` is deleted. `state_5.sqlite` has a `threads` row naming the workspace, the model, the provider and the first user message, and `thread_history_1.sqlite` has the four items above. The prompts are synthetic, but "delete the session record" does not cover these copies.
   - **Next:** 7.3a, then the rerun on a new go. The command is unchanged.
+  *Attempt 2, 2026-10-13, after 7.3a, on the user's new go in chat (Q20: "Go (Recommended)"): PASSED.* Same command; outcome PASS, exit 0, "6/6 oracle errors surfaced, file untouched", one turn, 32 s (`duration_ms` 32039). Kept workspace `/tmp/devrun-check_report-vsrzax8h`.
+  - The summary records `cli_version` 0.160.0, served model `gpt-6.1-sol` (from `codex.turn_context`), `effort_served` unreported (the turn context's effort is null), and the quota before and after.
+  - The kept events hold `codex.session`, `codex.turn_context` and `codex.token_count` with `rate_limits` and `plan_type` plus (X4): 5-hour window 1% used afterwards, weekly 0%, credits `has_credits` false, balance 0.
+  - `codex.skills` carries `roots` {`r0`: the workspace's `.agents/skills`} and offers only `r0/proposal-check/SKILL.md` (X9).
+  - Shell commands inside code mode arrive as `command_execution` items: 5 of them, beside 2 agent messages.
+  - After the run, `fuser -v <home>/.harness-run.lock` shows no holder.
+  - The final chat names `proposal-review` in passing; the advisory handoff probe is Claude-only and did not run here.
 - [x] 7.3a Apply the findings of 7.3 attempt 1. This is autonomous and L0 only, with no model call. The feature move falls under the user's Q7b rule ("plumbing allowed with a reason"). Design: Codex facts, Decisions 5, 10 and 12, and Risks. Spec: the isolation paragraph, the effort line, the served-model line, and the scenarios "Skill offered through a root alias" (new) and "Codex run reports no cost".
   - `code_mode_host` moves from `DISABLED_FEATURES` to `ALLOWED_FEATURES`, with its reason and the live evidence in the comment. Nothing else is enabled.
   - Offline check, 2026-10-13, under `unshare -rn` with scratch `CODEX_HOME` and `HOME` in `~/.cache/thesis-proposal-dev/offline-codemode-check`, no login, so no model call was possible. The directory was deleted afterwards.
