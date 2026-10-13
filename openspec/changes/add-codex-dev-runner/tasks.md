@@ -296,9 +296,10 @@ Ground rules for every task below:
 
 ## 6. CLI update and rehearsal on the free plan (D6(b), no model call)
 
-- [ ] 6.1 **USER ACTION:** `sudo pacman -S openai-codex` (to 0.160 or later). The agent then runs `codex --version` and records the version string here. Pass: at or above `CODEX_MIN_VERSION`.
+- [x] 6.1 **USER ACTION:** `sudo pacman -S openai-codex` (to 0.160 or later). The agent then runs `codex --version` and records the version string here. Pass: at or above `CODEX_MIN_VERSION`.
 
-  *Pending: user action (2026-10-06).* The installed CLI is 0.133.0, below the minimum; the preflight refuses it with the update remedy (pinned by `test_codex_version_parses_and_refuses_an_old_cli`).
+  ~~*Pending: user action (2026-10-06).* The installed CLI is 0.133.0, below the minimum; the preflight refuses it with the update remedy (pinned by `test_codex_version_parses_and_refuses_an_old_cli`).~~
+  *Done 2026-10-13 (recorded late; the update itself ran 2026-10-05 23:20:39 +0200, pacman `upgraded openai-codex (0.133.0-1 -> 0.160.0-1)`): passed.* `codex --version` prints `codex-cli 0.160.0`, equal to `CODEX_MIN_VERSION` (0, 160, 0). No model call. ChatGPT Plus is not bought and no harness Codex home exists yet, so 6.2 (X7) is next and 6.3 onward wait on the user.
 - [ ] 6.2 X7, run by the agent, with no login and no network, so no model call is possible:
   1. Create an empty scratch `CODEX_HOME` at `${XDG_CACHE_HOME:-~/.cache}/thesis-proposal-dev/x7-probe`, holding only `PINNED_CONFIG_TOML`, and an empty scratch `HOME` beside it. The session scratchpad and its parent both lie under `/tmp`, where Codex refuses to place its helper binaries, so they are not used here. Before running, confirm that the resolved scratch `CODEX_HOME` lies neither inside the directory `python3 -c 'import tempfile; print(tempfile.gettempdir())'` prints nor inside the repository; if it does (for example because `XDG_CACHE_HOME` points into `/tmp`), stop and report.
   2. Run `unshare -rn env -i PATH="$PATH" HOME=<scratch-home> CODEX_HOME=<scratch-codex-home> codex features list <the run's --disable flags>`. Record each feature's name and state.
