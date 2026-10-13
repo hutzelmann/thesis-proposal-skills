@@ -9,7 +9,7 @@
   "models": {
     "anthropic/claude-haiku-4.5": {
       "verdict": "failing",
-      "enabled": true,
+      "enabled": false,
       "tasks": {
         "customize_override": "fail",
         "ideate_longrun": "untested",
@@ -30,6 +30,31 @@
         "proposal-reverse": "untested",
         "proposal-review": "fail",
         "proposal-write": "fail"
+      }
+    },
+    "anthropic/claude-haiku-5.5": {
+      "verdict": "untested",
+      "enabled": true,
+      "tasks": {
+        "customize_override": "untested",
+        "ideate_longrun": "untested",
+        "import_messy": "untested",
+        "publish_build": "untested",
+        "reverse_from_harvest": "untested",
+        "review_fixture": "untested",
+        "review_fixture_de": "untested",
+        "review_hollow": "untested",
+        "title_alarm": "untested",
+        "write_from_seed": "untested"
+      },
+      "skills": {
+        "proposal-customize": "untested",
+        "proposal-ideate": "untested",
+        "proposal-import": "untested",
+        "proposal-publish": "untested",
+        "proposal-reverse": "untested",
+        "proposal-review": "untested",
+        "proposal-write": "untested"
       }
     },
     "anthropic/claude-opus-5.5": {

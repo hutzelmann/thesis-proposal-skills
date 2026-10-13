@@ -15,7 +15,7 @@
 # `uv run poe models` compares everything here against the public catalog
 # (networked, read-only).
 
-prices_as_of = 2026-10-05
+prices_as_of = 2026-10-13
 # New version lines in a roster vendor namespace created after this date are
 # reported (never written) by the currency check. Moved by hand only.
 lines_reviewed_as_of = 2026-08-06
@@ -28,10 +28,40 @@ lines_reviewed_as_of = 2026-08-06
 [roles]
 judge = "openrouter/anthropic/claude-haiku-4.5"   # matrix L2 judge (held)
 # persona defaults to judge
-smoke = "openrouter/anthropic/claude-haiku-4.5"   # metered smoke model; an enabled roster entry
+smoke = "openrouter/anthropic/claude-haiku-5.5"   # metered smoke model; an enabled roster entry
 dev_judge = "claude-sonnet-5-5"                   # subscription CLI full ID, never an alias
 dev_judge_effort = "medium"
 
+[[models]]
+id = "openrouter/anthropic/claude-haiku-5.5"
+family = "anthropic"
+tier = "cheap"
+input_price = 0.1
+output_price = 0.5
+cache_read_price = 0.01
+cache_write_price = 0.125
+enabled = true
+# Routing, not a matrix cell. Re-measured on this row's model when it replaced
+# haiku 4.5 (2026-10-13, routing rig, claude.ai surfaces closed, CLI 2.1.296,
+# served model logged per case in logs/routing/20261013-113156.json):
+# write-polish-collision reached proposal-write 2/3; the two bug-report cases
+# reached proposal-troubleshoot 3/6 (collision 1/3, oblique 2/3). Haiku 4.5 had
+# measured 0/3 on polish with synced surfaces present and 0/33 on the bug-report
+# requests (2026-10-05-route-polish-to-write and
+# 2026-10-05-route-bug-reports-to-troubleshoot, measurement.md).
+note = "with all skills installed, polishing and editing requests are not reliably routed to proposal-write (2/3 on the routing rig, 2026-10-13) — use sonnet or opus for such passes; questions about a misbehaving skill or a bug to report often go unanswered by proposal-troubleshoot (3/6 on the routing rig, 2026-10-13) — invoke it by name (/proposal-troubleshoot in Claude Code) or use sonnet or opus"
+
+# The previous haiku row, kept when haiku 5.5 replaced it (2026-10-13): its
+# measured verdict is the only shipped `fail`, proposal-troubleshoot warns users
+# still on it (GitHub Copilot serves it), and the matrix judge and persona are
+# held on it until a full re-baseline. Disabled, so no matrix run spends on it;
+# untracked, so the weekly currency check never proposes replacing it again.
+# Its note: with only proposal-write installed (dev runner) haiku 4.5 loads it
+# for a polishing request 3/3, but with all skills installed (routing rig) the
+# polish case reached no skill, 0/3 before and after the description edit
+# (2026-10-05-route-polish-to-write/measurement.md); it loaded
+# proposal-troubleshoot in 0 of 33 bug-report measurements
+# (2026-10-05-route-bug-reports-to-troubleshoot/measurement.md).
 [[models]]
 id = "openrouter/anthropic/claude-haiku-4.5"
 family = "anthropic"
@@ -40,16 +70,8 @@ input_price = 1.0
 output_price = 5.0
 cache_read_price = 0.1
 cache_write_price = 1.25
-enabled = true
-# Routing, not a matrix cell: with only proposal-write installed (dev runner)
-# haiku loads it for a polishing request 3/3, but with all skills installed
-# (routing rig) the polish case reaches no skill, 0/3 before and after the
-# description edit (2026-10-05-route-polish-to-write/measurement.md).
-# Second clause: on the routing rig haiku loaded proposal-troubleshoot in 0 of 33
-# measurements of "did a skill misbehave / is this a bug to report" requests,
-# under the shipped description and under a widened one alike; sonnet routed
-# the self-contained cases 7/7 (2026-10-05-route-bug-reports-to-troubleshoot/
-# measurement.md).
+enabled = false
+track = false
 note = "with all skills installed, polishing and editing requests are not reliably routed to proposal-write (0/3 on the routing rig, 2026-10-05) — use sonnet or opus for such passes; questions about a misbehaving skill or a bug to report are answered without loading proposal-troubleshoot (0/33 on the routing rig, 2026-10-05) — invoke it by name (/proposal-troubleshoot in Claude Code) or use sonnet or opus"
 
 [[models]]
@@ -58,7 +80,7 @@ family = "anthropic"
 tier = "mid"
 input_price = 2.0
 output_price = 10.0
-cache_read_price = 0.2
+cache_read_price = 0.1
 cache_write_price = 2.5
 enabled = true
 
@@ -79,6 +101,7 @@ tier = "cheap"
 input_price = 0.1
 output_price = 0.5
 cache_read_price = 0.01
+cache_write_price = 0.125
 enabled = true
 # The account's data policy pinned the previous luna to Azure, whose strict
 # tool-schema validation rejected Inspect's text_editor tool before the model
@@ -94,6 +117,7 @@ tier = "mid"
 input_price = 2.0
 output_price = 12.0
 cache_read_price = 0.2
+cache_write_price = 2.5
 enabled = true
 
 [[models]]
@@ -103,15 +127,16 @@ tier = "frontier"
 input_price = 2.0
 output_price = 10.0
 cache_read_price = 0.1
+cache_write_price = 2.5
 enabled = true
 
 [[models]]
 id = "openrouter/deepseek/deepseek-v4-pro-0813"
 family = "open-weight"
 tier = "cheap"
-input_price = 0.66
-output_price = 1.98
-cache_read_price = 0.022
+input_price = 1.32
+output_price = 3.96
+cache_read_price = 0.044
 enabled = true
 
 [[models]]
@@ -122,6 +147,7 @@ price_endpoint = "alibaba"   # Qwen is served by Alibaba's provider slug
 input_price = 2.0
 output_price = 6.0
 cache_read_price = 0.25
+cache_write_price = 2.5
 enabled = true
 
 [[models]]
