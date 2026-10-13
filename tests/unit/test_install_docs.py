@@ -94,6 +94,23 @@ def test_the_prompt_keeps_the_agent_away_from_skill_files_and_system_software():
     assert "(recommended)" in prompt
 
 
+def test_the_prompt_looks_further_before_it_reports_no_python():
+    """A uv-only or Anaconda-only machine answers to none of the three usual
+    names; the prompt has the agent look (never download) before it sends the
+    student to install a Python they already have (installation spec, design D12)."""
+    prompt = sync_shared.PROMPT_SOURCE.read_text(encoding="utf-8")
+    assert 'uv python find ">=3.11"' in prompt
+    assert "uv python install" not in prompt
+    assert "versioned names" in prompt
+    assert "python3.13" in prompt
+    assert "py -0p" in prompt
+    usual = prompt.index("py -3 --version")
+    guidance = prompt.index("stop and tell me how to install it")
+    for further in ('uv python find ">=3.11"', "versioned names", "py -0p"):
+        assert usual < prompt.index(further) < guidance, f"{further} is out of order"
+    assert "without downloading or installing anything" in prompt[usual:guidance]
+
+
 def test_the_prompt_stops_where_it_cannot_install():
     """Pasted into a cloud sandbox, the installer would succeed in a container that
     is gone in the next chat; the prompt makes the agent stop and say so."""
@@ -111,6 +128,12 @@ def test_every_link_into_the_guide_names_an_existing_section():
     sources = {"docs/install.md": guide,
                "README.md": (REPO / "README.md").read_text(encoding="utf-8"),
                "prompt": sync_shared.PROMPT_SOURCE.read_text(encoding="utf-8")}
+    # an installed skill has no repository beside it, so it links the guide by URL
+    sources |= {md.parent.name: md.read_text(encoding="utf-8")
+                for md in sorted(REPO.glob("skills/proposal-*/SKILL.md"))}
+    linked = [name for name, text in sources.items()
+              if name.startswith("proposal-") and "install.md#" in text]
+    assert "proposal-check" in linked, "proposal-check no longer links the guide's Python section"
     for where, text in sources.items():
         anchors = re.findall(r"\]\(#([a-z0-9-]+)\)", text) if where == "docs/install.md" else []
         anchors += re.findall(r"install\.md#([a-z0-9-]+)", text)

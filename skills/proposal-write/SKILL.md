@@ -81,13 +81,13 @@ Write in the proposal's `lang`. German: canonical German section titles (see `re
 
 ## Verify before you report
 
-Never report a writing pass you have not checked. Run (Windows: `py` instead of `python3`):
+Never report a writing pass you have not checked. Run:
 
 ```
 python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <slug>.md
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory, where `<slug>.md` stays: the fallback changes where the script is found, never where you work or write. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory, where `<slug>.md` stays: the fallback changes where the script is found, never where you work or write. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
 Fix every error it reports — except the three findings below, the first of which the script counts as an error — then run it again, until the only findings left are the ones the source material caused. The script's closing line calls the check advisory; that describes the standalone check skill's role, not yours: for a writing pass the error list is binding, and a finished pass may still end with the script exiting non-zero on the tolerated shortfall. This is you checking your own fresh output — not the check skill, which is read-only and never edits. Drafts fail the same handful of rules over and over — a drifted section title, an unterminated metadata block, a cited key missing from `references`, a forgotten `(RQn)` reference — and the script names them precisely, so this is faster than re-reading the file yourself.
 

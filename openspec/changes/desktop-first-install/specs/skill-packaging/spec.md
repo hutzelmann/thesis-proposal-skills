@@ -10,10 +10,27 @@ A skill's instructions SHALL address its own scripts through the host's skill-di
 
 A skill that cannot locate a script it ships SHALL say so, and SHALL say what consequently went unverified. It SHALL NOT silently substitute its own inspection for a deterministic script: the script exists because the agent's unaided judgement is not equivalent to it.
 
+Every script-bearing skill SHALL state once, beside its script-location fallback, that `python3` in its commands stands for any Python 3.11 or newer that answers on the machine — `python`, the `py` launcher, or a versioned name such as `python3.13` — and that the agent keeps the interpreter that worked for the rest of the conversation. The skill's instructions SHALL NOT scatter platform-specific interpreter hints across individual commands. Guidance for a missing Python SHALL point to the install guide rather than prescribe a package-manager command pinned to one Python version. No skill SHALL tell the agent to record the interpreter in a host's instruction file.
+
 #### Scenario: Windows machine without python3 alias
 
-- **WHEN** a script-bearing skill runs where only the `py` launcher exists
-- **THEN** the skill detects and uses it or guides the user, rather than failing opaquely
+- **WHEN** a script-bearing skill runs on Windows where `python3` is missing or opens only the Microsoft Store, and Python 3.11 or newer answers as `python`, through the `py` launcher, or under a versioned name such as `python3.14`
+- **THEN** the agent runs the skill's commands with that interpreter and keeps it for the rest of the conversation, rather than failing opaquely or telling the user that Python is missing
+
+#### Scenario: Only a versioned interpreter
+
+- **WHEN** a script-bearing skill runs on any operating system where neither `python3` nor `python` answers with 3.11 or newer, but a versioned name such as `python3.13` does
+- **THEN** the agent runs the skill's commands with that versioned name and keeps it for the rest of the conversation
+
+#### Scenario: No Python at all
+
+- **WHEN** proposal-check runs and no Python 3.11 or newer answers on the machine
+- **THEN** it says so, points the user to the install guide's section on installing Python, and performs the script's checks itself with reduced determinism stated; no script-bearing skill names a version-pinned install command
+
+#### Scenario: Interpreter statement present in every script-bearing skill
+
+- **WHEN** the offline suite inspects the skills that ship scripts
+- **THEN** each states what `python3` stands for exactly once, beside its script-location fallback, and none carries a per-command platform interpreter hint
 
 #### Scenario: Agent runs a documented script command
 

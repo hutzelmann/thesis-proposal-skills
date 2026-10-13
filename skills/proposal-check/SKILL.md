@@ -28,15 +28,15 @@ Resolve the proposal file: explicit user mention wins; exactly one markdown file
 
 ## Step 1 — deterministic script
 
-Run (use `py` instead of `python3` on Windows if needed):
+Run:
 
 ```
 python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <proposal.md>
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
-- Requires Python ≥ 3.11. If Python is missing, tell the user how to install it (python.org, or `winget install Python.Python.3.12` / `brew install python`) and perform the script's checks yourself as well as possible, stating that determinism is reduced.
+- Requires Python ≥ 3.11. If none answers, say so, point the user to https://github.com/hutzelmann/thesis-proposal-skills/blob/main/docs/install.md#no-python-yet and perform the script's checks yourself as well as possible, stating that determinism is reduced.
 - The script reads `references/structure.json` (canonical skeleton) and the workspace `guidelines.md` TOML override automatically — first beside the proposal, else in the working directory (the workspace root when proposals live in a configured subdirectory). Run it from the workspace root so that second position resolves.
 - Relay its two buckets verbatim: mechanical errors, mechanical warnings (possible false positives — say so). Never claim semantic rules passed.
 

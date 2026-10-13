@@ -8,6 +8,7 @@ computes it differently, every submitted report becomes unidentifiable.
 """
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -773,3 +774,64 @@ def test_locations_match_the_repository_installer():
     assert {rel for _, rel in install.PLUGIN_FOLDERS} <= plugin_dirs
     assert collect.CLAUDE_SYNCED == install.CLAUDE_SYNCED
     assert collect.VSCODE_PLUGIN == install.VSCODE_PLUGIN
+    assert collect.NATIVE_DIRS == install.NATIVE_DIRS
+
+
+def test_a_copy_in_an_apps_own_folder_is_hashed_and_named(home):
+    """A hand copy in OpenCode's folder beside an installer install: its files are
+    hashed, and the report names the folder home-relative (design D14)."""
+    plant_record(home / ".agents/skills")
+    opencode = home / ".config/opencode/skills"
+    plant_skill(opencode)
+    (opencode / "proposal-check" / "SKILL.md").write_text("hand edited\n", encoding="utf-8")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert ("[measured] skill copies in ~/.config/opencode/skills (OpenCode's own skill "
+            "folder), which may shadow the installed skills: proposal-check") in lines
+    assert str(home) not in "\n".join(lines)
+    assert opencode.resolve() / "proposal-check" in collect.installed_skills(Path.cwd())
+    hashes, _ = collect.hash_lines(Path.cwd())
+    blob = collect.git_blob_hash(b"hand edited\n")
+    assert any(ln.startswith("proposal-check/SKILL.md ") and blob in ln for ln in hashes)
+
+
+def test_a_collector_run_from_the_shadowing_copy_still_names_it(home, monkeypatch):
+    """The student hand-copied the skills into OpenCode's folder, so OpenCode
+    runs this collector from there: that folder is the shadowing copy, not the
+    installed one, and the line naming it must still appear (design D14)."""
+    plant_record(home / ".agents/skills")
+    opencode = home / ".config/opencode/skills"
+    plant_skill(opencode)
+    plant_skill(opencode, "proposal-troubleshoot")
+    monkeypatch.setattr(collect, "HERE", opencode / "proposal-troubleshoot" / "scripts")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert ("[measured] skill copies in ~/.config/opencode/skills (OpenCode's own skill "
+            "folder), which may shadow the installed skills: proposal-check, "
+            "proposal-troubleshoot") in lines
+
+
+@pytest.mark.usefixtures("home")
+def test_a_copy_in_the_workspace_opencode_folder_is_named_workspace_relative():
+    plant_skill(Path.cwd() / ".opencode/skill")
+    lines = collect.install_lines(Path.cwd(), None)
+    assert any(ln.startswith("[measured] skill copies in ./.opencode/skill (OpenCode")
+               for ln in lines)
+
+
+def test_a_folder_holding_only_unshipped_or_incomplete_entries_is_not_named(home):
+    plant_skill(home / ".cursor/skills", "proposal-not-shipped")
+    (home / ".cursor/skills/proposal-check").mkdir()
+    assert not any(".cursor" in ln for ln in collect.install_lines(Path.cwd(), None))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink creation needs privileges")
+def test_a_link_from_an_apps_folder_into_the_installed_copy_is_hashed_once(home):
+    installed = home / ".agents/skills"
+    plant_record(installed)
+    (home / ".codex/skills").mkdir(parents=True)
+    (home / ".codex/skills/proposal-check").symlink_to(installed / "proposal-check",
+                                                         target_is_directory=True)
+    lines = collect.install_lines(Path.cwd(), None)
+    assert not any(".codex" in ln for ln in lines), "a link into the installed copy is no copy"
+    found = [p for p in collect.installed_skills(Path.cwd()) if p.name == "proposal-check"]
+    assert (installed / "proposal-check").resolve() in found
+    assert len([p for p in found if p.is_relative_to(home)]) == 1, "hashed once"

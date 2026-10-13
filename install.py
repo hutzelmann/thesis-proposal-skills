@@ -11,7 +11,10 @@ It fetches the default branch of github.com/hutzelmann/thesis-proposal-skills,
 copies every `skills/proposal-*` folder byte-for-byte into the agent skill
 directories of the chosen scope, and writes an install record beside them.
 Running it again is the update. It runs no skill script and touches nothing
-but `proposal-*` folders, its own staging folders, and its own record.
+but `proposal-*` folders, its own staging folders, and its own record. Copies
+of the skills in the other scope, or in apps' own skill folders it never fills,
+are listed, and removed only with --remove-other. The output ends with what the
+computer has ready (Python, PDF tools, an API-key file), by presence only.
 
 Exit codes: 0 installed, 1 usage, 2 environment (Python, network, files),
 3 refused because another install of the same skills would conflict.
@@ -95,6 +98,33 @@ HOST_DIRS = (
     HostDir("Kiro", (".kiro",), ".kiro/skills", ".kiro/skills"),
 )
 
+# Skill folders that apps read but this installer never fills (design D3 and
+# D14): a copy of a shipped skill there, made by hand or by an older tool, can be
+# loaded instead of the installed one, or beside it. Listed on every run, removed
+# only with --remove-other. (app, base, folder): base is "home" or "folder", the
+# working folder. Checked 2026-10-13:
+# - OpenCode: anomalyco/opencode dev c1615b1db9c2e7a955f2be1024e84bb74c90cc6b.
+#   packages/core/src/config/plugin/skill.ts loads skill/ and skills/ under
+#   .opencode and ~/.config/opencode, after the .claude and .agents folders
+#   (plugin/internal.ts:265-266), and the last copy of a name wins
+#   (skill.ts:100-101). OpenCode also reads .opencode in parent folders up to the
+#   git root; only the working folder is checked here.
+# - Codex: openai/codex 90f00bd, codex-rs/ext/skills/src/host_roots.rs:96, the
+#   deprecated $CODEX_HOME/skills, still read.
+# - Cursor: cursor.com/docs/context/skills, ~/.cursor/skills.
+# - GitHub Copilot: docs.github.com, "About agent skills", ~/.copilot/skills.
+# The troubleshooting collector restates this table; an offline test keeps the
+# two equal.
+NATIVE_DIRS = (
+    ("OpenCode", "folder", ".opencode/skill"),
+    ("OpenCode", "folder", ".opencode/skills"),
+    ("OpenCode", "home", ".config/opencode/skill"),
+    ("OpenCode", "home", ".config/opencode/skills"),
+    ("Codex", "home", ".codex/skills"),
+    ("Cursor", "home", ".cursor/skills"),
+    ("GitHub Copilot", "home", ".copilot/skills"),
+)
+
 # A plugin install of the same skills next to copied ones loads every skill
 # twice, so the installer refuses when it sees one. Each app records its plugin
 # installs differently; cache folders alone are no evidence (Claude keeps an
@@ -124,6 +154,18 @@ CERT_NOTICE = (
 )
 # messages for the end of the report, collected while running
 NOTICES: list[str] = []
+
+# Readiness lines (design D15): presence only. Nothing named here is run or
+# opened, and none of it enters the install record.
+PDF_TOOLS = ("pandoc", "typst")
+KEY_FILE = "api-keys.env"
+USER_KEY_DIR = ".config/thesis-proposal"  # the user-level key location the skills consult
+# On Windows, the App Installer package owns the python/python3 App Execution
+# Aliases that only open the Microsoft Store; the Python install manager's own
+# aliases sit in a PythonSoftwareFoundation.* package folder beside it (pinned
+# 2026-10-13, task 9.1 of desktop-first-install; confirmed live by task 8.7).
+STORE_ALIAS_PACKAGE = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe"
+PYTHON_ALIAS_PACKAGES = "PythonSoftwareFoundation.*"
 
 
 class UsageError(Exception):
@@ -439,6 +481,57 @@ def terminal_lock(home: Path, cwd: Path) -> bool:
     return any(p.is_file() for p in (cwd / "skills-lock.json", home / ".agents/.skill-lock.json"))
 
 
+def inside(path: Path, directory: Path) -> bool:
+    try:
+        path.relative_to(directory.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def native_copy(entry: Path, targets: list[Path]) -> bool:
+    """Whether an entry in an app's own skill folder is a copy of a skill: a real
+    folder holding its SKILL.md, or a link to one elsewhere. A link (or a linked
+    parent folder) that resolves into a directory this run fills is the installed
+    copy itself, not a second one."""
+    if not present(entry):
+        return False
+    try:
+        resolved = entry.resolve()
+    except (OSError, RuntimeError):
+        return False
+    if any(inside(resolved, t) for t in targets):
+        return False
+    return (resolved / SKILL_FILE).is_file()
+
+
+def through_linked_folder(entry: Path, base: Path) -> bool:
+    """Whether a folder between the base and the entry is a link or junction, as
+    when ~/.codex/skills links to a dotfiles folder: removing the entry would then
+    delete files at the link's target, outside the listed folder."""
+    folder = entry.parent
+    while folder != base and folder != folder.parent:
+        if is_link(folder):
+            return True
+        folder = folder.parent
+    return False
+
+
+def native_copies(home: Path, cwd: Path, targets: list[Path],
+                  names: list[str]) -> list[tuple[str, Path, bool]]:
+    """(app, entry, linked) for each shipped skill found in an app's own skill
+    folder; linked is True when the folder is reached through a link, and such a
+    copy is listed but never removed."""
+    found: list[tuple[str, Path, bool]] = []
+    for app, base, rel in NATIVE_DIRS:
+        root = home if base == "home" else cwd
+        for name in names:
+            entry = root / rel / name
+            if entry not in [p for _, p, _ in found] and native_copy(entry, targets):
+                found.append((app, entry, through_linked_folder(entry, root)))
+    return found
+
+
 # --------------------------------------------------------------------------
 # writing
 # --------------------------------------------------------------------------
@@ -520,6 +613,58 @@ def remove_copies(directory: Path, names: list[str]) -> None:
 
 
 # --------------------------------------------------------------------------
+# what the computer has ready: presence only, nothing is run or opened
+# --------------------------------------------------------------------------
+
+def store_python3_only(local_app_data: str | None, search_path: str | None) -> bool:
+    """Whether `python3` on this Windows PATH is only the App Installer's alias
+    that opens the Microsoft Store. Read from the alias folders without running
+    anything; callable on any system, so the offline tests can plant a layout."""
+    if not local_app_data:
+        return False
+    aliases = Path(local_app_data) / "Microsoft" / "WindowsApps"
+    if not os.path.lexists(aliases / STORE_ALIAS_PACKAGE / "python3.exe"):
+        return False
+    if any(os.path.lexists(p / "python3.exe") for p in aliases.glob(PYTHON_ALIAS_PACKAGES)):
+        return False  # the Python install manager (or a Store Python) answers instead
+    for folder in (search_path or "").split(os.pathsep):
+        folder = folder.strip().strip('"')
+        if folder and os.path.lexists(Path(folder) / "python3.exe"):
+            return same_place(Path(folder), aliases)
+    return False
+
+
+def readiness_lines(home: Path, cwd: Path, windows: bool) -> list[str]:
+    version = ".".join(str(part) for part in sys.version_info[:3])
+    executable = Path(sys.executable).name or "python"  # never the full path
+    lines = [f"Python {version} ran the installer ({executable})."]
+    if windows and store_python3_only(os.environ.get("LOCALAPPDATA"), os.environ.get("PATH")):
+        lines.append("python3 opens only the Microsoft Store; the skills use the Python above.")
+    found_tools = [tool for tool in PDF_TOOLS if shutil.which(tool)]
+    tools = ", ".join(tool + (" found" if tool in found_tools else " missing")
+                      for tool in PDF_TOOLS)
+    missing = "" if len(found_tools) == len(PDF_TOOLS) else (
+        " Only PDF export needs them; the publish skill says what to install when you first "
+        "ask for a PDF.")
+    lines.append(f"PDF export (optional): {tools}.{missing}")
+    key_places = [("this folder", cwd / KEY_FILE),
+                  (display(home / USER_KEY_DIR, home, cwd), home / USER_KEY_DIR / KEY_FILE)]
+    found = [label for label, path in key_places if path.is_file()]
+    if found:
+        lines.append(f"API keys (optional): an {KEY_FILE} file is in " + " and in ".join(found)
+                     + ".")
+    else:
+        lines.append(f"API keys (optional): no {KEY_FILE} file in "
+                     + " or in ".join(label for label, _ in key_places) + ".")
+    return lines
+
+
+def report_readiness(home: Path, cwd: Path) -> None:
+    lines = readiness_lines(home, cwd, os.name == "nt")
+    print("On this computer:\n" + "\n".join(f"  {line}" for line in lines))
+
+
+# --------------------------------------------------------------------------
 # main
 # --------------------------------------------------------------------------
 
@@ -528,7 +673,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--scope", choices=("all", "folder"),
                         help="all = for all your projects; folder = only the current folder")
     parser.add_argument("--remove-other", action="store_true",
-                        help="also remove copies installed earlier in the other scope")
+                        help="also remove copies installed earlier in the other scope, "
+                        "and copies of these skills in other apps' own skill folders")
     parser.add_argument("--source", help="install from this URL, zip file or directory "
                         "instead of the default branch (for testing)")
     parser.add_argument("--dry-run", action="store_true",
@@ -546,17 +692,87 @@ def short(revision: str) -> str:
     return revision[:7] if SHA_RE.match(revision) else revision
 
 
-def report_others(others: list[Path], removed: bool, home: Path, cwd: Path) -> None:
-    listed = "\n".join(f"  {display(p, home, cwd)}" for p in others)
+class Plan:
+    """What one run installs, and the copies it found elsewhere."""
+
+    def __init__(self, args: argparse.Namespace, home: Path, cwd: Path) -> None:
+        self.home, self.cwd = home, cwd
+        self.remove_other = args.remove_other
+        self.scope = effective_scope(args.scope, home, cwd)
+        self.targets = target_dirs(self.scope, home, cwd)
+        self.source = load_source(args.source)
+        names = self.source.names
+        self.others = other_copies(self.scope, home, cwd, self.targets, names)
+        self.native = native_copies(home, cwd, self.targets, names)
+
+    def show(self, path: Path) -> str:
+        return display(path, self.home, self.cwd)
+
+    @property
+    def shown(self) -> list[str]:
+        return [self.show(d) for d in self.targets]
+
+    def native_listing(self, separator: str, linked: bool | None = None) -> str:
+        """The copies in apps' own folders; only those reached through a linked
+        folder (True), only the others (False), or all of them (None)."""
+        return separator.join(f"{self.show(p)} ({app})" for app, p, through in self.native
+                              if linked is None or through == linked)
+
+    @property
+    def native_removable(self) -> list[Path]:
+        return [p for _, p, through in self.native if not through]
+
+    @property
+    def native_linked(self) -> bool:
+        return any(through for _, _, through in self.native)
+
+
+def report_copies(plan: Plan) -> None:
+    """Copies the run did not install: in the other scope's directories, and in
+    apps' own skill folders. Kept, unless --remove-other was given."""
+    removed = plan.remove_other
+    if plan.others:
+        listed = "\n".join(f"  {plan.show(p)}" for p in plan.others)
+        print(("Removed the earlier copies in the other scope:\n" if removed else
+               "Earlier copies in the other scope are still there, so your agent may see two "
+               "versions:\n") + listed)
+    if plan.native and not removed:
+        print("Copies in other apps' own skill folders are still there, and those apps may "
+              "load them instead of the installed skills:\n  " + plan.native_listing("\n  "))
+    if removed and plan.native_removable:
+        print("Removed the copies in other apps' own skill folders:\n  "
+              + plan.native_listing("\n  ", linked=False))
+    if removed and plan.native_linked:
+        print("Kept these copies in other apps' own skill folders, because the folder is "
+              "reached through a link and removing them would delete files where the link "
+              "points. Those apps may load them instead of the installed skills; remove "
+              "them by hand if they are copies:\n  "
+              + plan.native_listing("\n  ", linked=True))
     if removed:
-        print("Removed the earlier copies in the other scope:\n" + listed)
         return
-    print("Earlier copies in the other scope are still there, so your agent may see two "
-          "versions:\n" + listed + "\nTo remove them, run this installer again with "
-          "--remove-other added.")
-    if terminal_lock(home, cwd):
+    print("To remove them, run this installer again with --remove-other added.")
+    if plan.others and terminal_lock(plan.home, plan.cwd):
         print("They were installed earlier from a terminal (npx skills); its lock file is "
               "left as it is, and `npx skills remove` tidies it up.")
+
+
+def report_dry_run(plan: Plan) -> None:
+    action = "remove" if plan.remove_other else "keep"
+    print(f"Would install {len(plan.source.names)} skills (revision "
+          f"{short(plan.source.revision)}) into:")
+    print("\n".join(f"  {s}" for s in plan.shown))
+    if plan.others:
+        print(f"Would {action} copies in the other scope: "
+              + ", ".join(plan.show(p) for p in plan.others))
+    if plan.native and not plan.remove_other:
+        print("Would keep copies in other apps' own skill folders: "
+              + plan.native_listing(", "))
+    if plan.remove_other and plan.native_removable:
+        print("Would remove copies in other apps' own skill folders: "
+              + plan.native_listing(", ", linked=False))
+    if plan.remove_other and plan.native_linked:
+        print("Would keep copies in other apps' own skill folders that are reached through "
+              "a linked folder: " + plan.native_listing(", ", linked=True))
 
 
 def run(args: argparse.Namespace, home: Path, cwd: Path) -> int:
@@ -568,22 +784,18 @@ def run(args: argparse.Namespace, home: Path, cwd: Path) -> int:
               "remove the plugin first if you want this installer to manage them instead. "
               "Having both loads every skill twice.")
         return EXIT_CONFLICT
-
-    scope = effective_scope(args.scope, home, cwd)
-    targets = target_dirs(scope, home, cwd)
-    source = load_source(args.source)
-    previous = next((r for r in map(read_record, targets) if r), None)
-    others = other_copies(scope, home, cwd, targets, source.names)
-    shown = [display(d, home, cwd) for d in targets]
-
+    plan = Plan(args, home, cwd)
     if args.dry_run:
-        print(f"Would install {len(source.names)} skills (revision {short(source.revision)}) into:")
-        print("\n".join(f"  {s}" for s in shown))
-        if others:
-            print("Would " + ("remove" if args.remove_other else "keep") + " copies in the other "
-                  "scope: " + ", ".join(display(p, home, cwd) for p in others))
-        return EXIT_OK
+        report_dry_run(plan)
+    else:
+        install(plan)
+    report_readiness(home, cwd)
+    return EXIT_OK
 
+
+def install(plan: Plan) -> None:
+    scope, targets, source, shown = plan.scope, plan.targets, plan.source, plan.shown
+    previous = next((r for r in map(read_record, targets) if r), None)
     record = {
         "package": PACKAGE,
         "installer": RECORD_FORMAT,
@@ -597,22 +809,23 @@ def run(args: argparse.Namespace, home: Path, cwd: Path) -> int:
     for directory in targets:
         install_into(directory, source, read_record(directory))
         write_record(directory, record)
-    if others and args.remove_other:
-        for directory in {p.parent for p in others}:
+    if plan.remove_other:
+        for directory in {p.parent for p in plan.others}:
             remove_copies(directory, source.names)
+        for entry in plan.native_removable:
+            remove_entry(entry)  # a link goes as a link; its target stays
 
     was = short(recorded_revision(previous)) if previous else "not installed"
     print(f"Installed {len(source.names)} thesis-proposal skills, revision "
           f"{short(source.revision)} (before: {was}), for "
           + ("all your projects" if scope == "all" else "this folder only") + ":")
     print("\n".join(f"  {s}" for s in shown))
-    if others:
-        report_others(others, args.remove_other, home, cwd)
+    if plan.others or plan.native:
+        report_copies(plan)
     for notice in NOTICES:
         print(notice)
     print("Next: start a new chat (or reload skills, if your app has that) so your agent "
           "picks up the skills.")
-    return EXIT_OK
 
 
 def main(argv: list[str] | None = None) -> int:

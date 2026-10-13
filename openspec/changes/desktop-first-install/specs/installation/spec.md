@@ -12,7 +12,7 @@ The repository SHALL provide one install prompt, written for the agent rather th
 
 The prompt SHALL first tell the agent to stop when it cannot run commands on the student's own computer — a cloud sandbox, a virtual machine, a chat-only app — and to point the student to the install guide's section on such apps: an install there would land in a container that is gone with the conversation. It SHALL then direct the agent, in this order:
 
-1. confirm that Python 3.11 or newer is available (`python3`, `python`, or the `py` launcher on Windows); if it is missing or older, stop, give the student the steps for their operating system, and resume only when the student says it is installed;
+1. confirm that Python 3.11 or newer is available, trying `python3`, `python`, and the `py` launcher on Windows first. When none of them reports 3.11 or newer, look further before concluding that none exists, by means that only look and never download or install: ask uv, where it is installed, for a Python 3.11 or newer; look once for versioned interpreter names such as `python3.13` on the search path; and on Windows list every runtime the `py` launcher knows. Use the first interpreter found that reports 3.11 or newer. Only when none does, stop, give the student the steps for their operating system, and resume only when the student says it is installed;
 2. ask the student whether to install for all their projects or only for the current folder, presenting all projects as the recommended choice;
 3. download the installer unchanged from the repository's default branch with a shell command, and run it with the chosen scope from the folder the student has open;
 4. relay what the installer printed, and ask the student before re-running it with any option the output names;
@@ -32,8 +32,18 @@ The prompt SHALL forbid the agent to install any software, and to copy, edit, or
 
 #### Scenario: Python is missing
 
-- **WHEN** an agent carrying out the prompt finds no Python 3.11 or newer
+- **WHEN** an agent carrying out the prompt finds no Python 3.11 or newer, neither under the usual names nor through uv, a versioned name, or the launcher's list of runtimes
 - **THEN** it stops before downloading anything, tells the student how to install Python on their operating system, and installs nothing itself
+
+#### Scenario: Python only under another name
+
+- **WHEN** `python3`, `python` and `py -3` report no Python 3.11 or newer, but uv, a versioned name such as `python3.14`, or the `py` launcher's list of runtimes finds one
+- **THEN** the agent runs the installer with that interpreter, does not tell the student to install Python, and downloads or installs nothing to find it
+
+#### Scenario: Usual names answer
+
+- **WHEN** `python3`, `python` or `py -3` reports Python 3.11 or newer
+- **THEN** the agent runs none of the further lookups
 
 #### Scenario: Scope not yet chosen
 
@@ -138,7 +148,11 @@ Every skill directory the installer fills SHALL receive an install record naming
 
 The installer SHALL detect an existing plugin install of this package from each app's own record of its installs, including a plugin added with Claude's plugin button and synced into Claude Code. It SHALL refuse to install beside one, naming the plugin route's own update path and the alternative of removing the plugin first, because both together load every skill twice. A plugin cache folder alone SHALL NOT count as an install, since apps keep an uninstalled plugin's cache for a while.
 
-It SHALL detect copies of the shipped skills in the other scope's directories and SHALL list them, naming an earlier terminal install when the skills CLI's lock file is there, and leaving that file untouched. It SHALL remove those copies only when the user passes an explicit removal option. Apart from those copies, the skills retired upstream and its own staging leftovers, it SHALL delete nothing.
+It SHALL detect copies of the shipped skills in the other scope's directories and SHALL list them, naming an earlier terminal install when the skills CLI's lock file is there, and leaving that file untouched. It SHALL remove those copies only when the user passes an explicit removal option.
+
+On every run, whatever the scope, it SHALL also look in the skill folders that apps read but the installer never fills: OpenCode's own folders in the working folder and in the user's configuration, and the user-level folders of Codex, Cursor and Copilot. An app can load a copy there instead of the installed one. It SHALL list each copy of a shipped skill it finds there, a real folder holding the skill's instructions or a link to one elsewhere, with the wording it uses for other-scope copies. It SHALL skip a link that resolves into a copy the same run installs. It SHALL remove such copies only with the same explicit removal option, removing a link without following it and leaving everything else in those folders untouched. A copy whose folder is itself reached through a link or junction SHALL be listed but never removed, with the reason stated, because removing it would delete files where that link points. A dry run SHALL name them without removing anything. These folders SHALL form one data table, each entry annotated with its source and the date it was checked. The troubleshooting collector restates that table, and an offline check SHALL fail when the two differ.
+
+Apart from those copies, the skills retired upstream and its own staging leftovers, it SHALL delete nothing.
 
 #### Scenario: Plugin install present
 
@@ -159,6 +173,57 @@ It SHALL detect copies of the shipped skills in the other scope's directories an
 
 - **WHEN** a folder-scope install already exists and the student installs for all projects
 - **THEN** the installer completes, lists the folder-scope copies with their paths, and keeps them unless the removal option was given
+
+#### Scenario: Manual copy in an app's own skill folder
+
+- **WHEN** a copy of a shipped skill, made by hand, sits in OpenCode's skill folder inside the working folder or in the user's OpenCode configuration
+- **THEN** the installer completes, lists that copy with the app's name and its path, and keeps it unless the removal option was given
+
+#### Scenario: Removal of copies in apps' own folders
+
+- **WHEN** the installer runs with the removal option and such copies were found
+- **THEN** exactly the listed skill copies are removed, and every other entry in those folders remains as it was
+
+#### Scenario: Link into the installed copy
+
+- **WHEN** an app's own skill folder holds a link or junction that resolves into a copy the same run installs
+- **THEN** the installer neither lists nor removes it
+
+#### Scenario: App folder reached through a link
+
+- **WHEN** an app's own skill folder is a link or junction to a folder elsewhere, such as a dotfiles folder, that holds a copy of a shipped skill, and the installer runs with the removal option
+- **THEN** it lists that copy as kept, says it was kept because its folder is reached through a link, and the folder the link points to remains as it was
+
+#### Scenario: Dry run with copies in apps' own folders
+
+- **WHEN** a dry run finds such copies
+- **THEN** its output names them and whether a run would keep or remove them, and nothing is removed
+
+### Requirement: Installer reports what the computer has ready
+
+After a successful install, and in a dry run, the installer SHALL end its output with readiness lines that state presence only:
+
+- the version of the Python that ran it;
+- on Windows, whether `python3` there is only the Microsoft Store's shortcut;
+- whether `pandoc` and `typst`, which only PDF export needs, are found;
+- whether an `api-keys.env` file, which only the optional API keys need, exists in the working folder or in the user-level location the skills' scripts consult.
+
+The installer SHALL NOT run any of those programs to produce the lines. It SHALL NOT open a key file, and SHALL NOT print, log or record any credential value. The readiness facts SHALL NOT be written into the install record. A line SHALL NOT name the user's home folder. Each optional item SHALL be marked optional, so that a missing one does not read as a failed install.
+
+#### Scenario: PDF tools missing
+
+- **WHEN** neither `pandoc` nor `typst` is found
+- **THEN** the install still succeeds, and the readiness lines say both are missing and that only PDF export needs them
+
+#### Scenario: Store shortcut only
+
+- **WHEN** on Windows the only `python3` is the Microsoft Store's shortcut
+- **THEN** a readiness line says so, without running it, and names the Python that ran the installer as the one the skills can use
+
+#### Scenario: Key file present
+
+- **WHEN** an `api-keys.env` holding a key exists in the working folder
+- **THEN** a readiness line says that a key file was found there, and no part of its content appears in the standard output, the error output, or any install record
 
 ### Requirement: Plugin definition for apps with a plugin button
 

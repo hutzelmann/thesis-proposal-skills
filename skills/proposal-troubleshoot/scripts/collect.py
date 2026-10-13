@@ -140,6 +140,18 @@ PLUGIN_CACHES = (  # (app, its plugin install folder for this package, relative 
 CLAUDE_SYNCED = ".claude/plugins/synced"
 # VS Code's agent-plugin clone of this repository, under its user-data folder
 VSCODE_PLUGIN = "agentPlugins/github.com/hutzelmann/thesis-proposal-skills"
+# Skill folders apps read that the installer never fills; a copy there may be
+# loaded instead of the installed skills. (app, base, folder): base is "home" or
+# "folder", the workspace. The installer's NATIVE_DIRS, with its sources.
+NATIVE_DIRS = (
+    ("OpenCode", "folder", ".opencode/skill"),
+    ("OpenCode", "folder", ".opencode/skills"),
+    ("OpenCode", "home", ".config/opencode/skill"),
+    ("OpenCode", "home", ".config/opencode/skills"),
+    ("Codex", "home", ".codex/skills"),
+    ("Cursor", "home", ".cursor/skills"),
+    ("GitHub Copilot", "home", ".copilot/skills"),
+)
 # the skills CLI's lock for global (-g) installs; read for presence only
 GLOBAL_LOCKS = (".agents/.skill-lock.json",)
 # Claude marks a superseded or uninstalled plugin version before deleting it
@@ -167,6 +179,45 @@ def _existing(candidates: list[Path]) -> list[Path]:
 def copy_roots(workspace: Path) -> list[Path]:
     """Directories the installer or the skills CLI may have filled."""
     return _existing([base / rel for base in (workspace, Path.home()) for rel in COPY_DIRS])
+
+
+def native_folders(workspace: Path) -> list[tuple[str, str, Path]]:
+    """(app, shown path, folder) for each app's own skill folder. The shown path
+    is built from the table, home- or workspace-relative, never resolved."""
+    return [(app, ("~/" if base == "home" else "./") + rel,
+             (Path.home() if base == "home" else workspace) / rel)
+            for app, base, rel in NATIVE_DIRS]
+
+
+def native_roots(workspace: Path) -> list[Path]:
+    return _existing([folder for _, _, folder in native_folders(workspace)])
+
+
+def native_lines(workspace: Path) -> list[str]:
+    """One line per app's own skill folder holding a copy of a shipped skill that
+    is not the installed copy itself (a link into it is skipped). When this script
+    itself runs from an app's own folder, that folder is the hand copy in
+    question, not the installed one, so it does not count as installed."""
+    anchor = _existing([HERE.parent.parent])
+    if set(anchor) & set(native_roots(workspace)):
+        anchor = []
+    installed = _existing([*anchor, *copy_roots(workspace)])
+    shipped = {p.name for p in HERE.parent.parent.glob(SKILL_PREFIX + "*") if p.is_dir()}
+    lines = []
+    for app, shown, folder in native_folders(workspace):
+        copies = []
+        for name in sorted(shipped):
+            try:
+                resolved = (folder / name).resolve()
+            except OSError:
+                continue
+            if (resolved / "SKILL.md").is_file() and not any(
+                    resolved.is_relative_to(root) for root in installed):
+                copies.append(name)
+        if copies:
+            lines.append(f"[measured] skill copies in {shown} ({app}'s own skill folder), which "
+                         f"may shadow the installed skills: {', '.join(copies)}")
+    return lines
 
 
 def plugin_bases() -> list[tuple[str, Path]]:
@@ -209,7 +260,8 @@ def skill_roots(workspace: Path) -> list[Path]:
     copies, the per-agent symlink trees of the skills CLI, and plugin installs.
     """
     plugins = [root for _, root in plugin_installs()]
-    return _existing([HERE.parent.parent, *copy_roots(workspace), *plugins])
+    return _existing([HERE.parent.parent, *copy_roots(workspace), *native_roots(workspace),
+                      *plugins])
 
 
 def installed_skills(workspace: Path) -> list[Path]:
@@ -325,6 +377,7 @@ def install_lines(workspace: Path, lock: Path | None) -> list[str]:
         lines.append(record_line(shown_root(root, workspace), data))
     plugins = sorted({app for app, _ in plugin_installs()})
     lines += [f"[measured] plugin install found for {app}" for app in plugins]
+    lines += native_lines(workspace)
     if lock is not None:
         lines.append("[measured] installer lock record copied to `skills-lock.json` "
                      "(source and install method; carries no commit identifier)")

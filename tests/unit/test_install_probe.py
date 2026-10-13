@@ -9,7 +9,9 @@ child's environment and the summary line are pinned without a model.
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 import tempfile
 import zipfile
 from contextlib import contextmanager
@@ -30,7 +32,11 @@ from claude_runner import (
     main,
 )
 from helpers import REPO, followed
-from l1_checks import verdict_install_prompt_asks_scope, verdict_install_prompt_installed
+from l1_checks import (
+    verdict_install_prompt_asks_scope,
+    verdict_install_prompt_found_python,
+    verdict_install_prompt_installed,
+)
 
 import install
 
@@ -390,3 +396,78 @@ def test_a_crash_is_a_runner_failure_with_its_line(probe, monkeypatch, tmp_path,
     assert line["why"] == "runner crashed: RuntimeError('verdict crashed')"
     assert line["config"] == "isolated"
     assert "Traceback" in capsys.readouterr().err
+
+
+# ---------- the versioned-interpreter variant (design D10, D12) ----------------
+
+INSTALLED = (True, "11 skills byte-identical with a record in 2 directories, no stray copies")
+
+
+def test_found_python_passes_when_installed_without_install_advice():
+    passed, why = verdict_install_prompt_found_python(
+        INSTALLED, "Found Python 3.13 as python3.13 and installed the skills for all your "
+                   "projects. No need to install Python. Start a new chat to use them.")
+    assert passed, why
+
+
+@pytest.mark.parametrize("chat", [
+    "No Python 3.11 was found. Install it from python.org, then tell me.",
+    "Please install Python with the Python install manager from the Microsoft Store.",
+    "You need to install a newer Python first: sudo apt install python3.12",
+    "I could not find Python. Install Python, then run Install Certificates.command.",
+])
+def test_found_python_fails_when_the_student_is_sent_to_install_python(chat):
+    passed, why = verdict_install_prompt_found_python(INSTALLED, chat)
+    assert not passed
+    assert "install Python" in why
+
+
+def test_found_python_fails_on_an_incomplete_install():
+    passed, why = verdict_install_prompt_found_python(
+        (False, ".agents/skills: no install record"), "Installed with python3.13.")
+    assert not passed
+    assert why.startswith("install incomplete: .agents/skills")
+
+
+def executable(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the variant is Linux only")
+def test_the_path_builder_leaves_no_python_name_but_the_versioned_one(tmp_path):
+    first, second = tmp_path / "usr-bin", tmp_path / "local-bin"
+    hidden = ["python", "python3", "python3.12", "python3.12-config", "python3-config",
+              "pythonw", "pip", "pip3", "pip3.12", "pydoc3", "py", "uv", "uvx"]
+    for name in [*hidden, "ls", "node", "claude"]:
+        executable(first / name)
+    executable(second / "python3.13")
+    executable(second / "ls")  # a later folder's duplicate: the first one wins
+    (first / "notes.txt").write_text("not executable", encoding="utf-8")
+    interpreter = executable(tmp_path / "real" / "python3.14")
+    path = claude_runner.versioned_python_path(
+        tmp_path / "bin", os.pathsep.join([str(first), "", str(second), str(tmp_path / "gone")]),
+        interpreter, (3, 14))
+    assert path == str(tmp_path / "bin")
+    names = sorted(p.name for p in (tmp_path / "bin").iterdir())
+    assert names == ["claude", "ls", "node", "python3.14"]
+    assert [n for n in names if claude_runner.HIDDEN_PYTHON_RE.match(n)] == ["python3.14"]
+    assert (tmp_path / "bin" / "python3.14").resolve() == interpreter.resolve()
+    assert (tmp_path / "bin" / "ls").resolve() == (first / "ls").resolve()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the variant is Linux only")
+def test_the_versioned_variant_hands_the_host_the_scratch_path(probe, tmp_path):
+    probe["stdout"] = host_stdout("Installed.")
+    log = tmp_path / "log.jsonl"
+    # nothing landed in the probe home, so the verdict fails; the PATH is what is pinned
+    assert main(["install_prompt_versioned_python", "--summary-log", str(log)]) == EXIT_FAIL
+    [call] = probe["calls"]
+    assert call["request"].endswith(claude_runner.ANSWER)
+    folder = Path(call["env"]["PATH"])
+    assert folder.name == "bin"
+    assert folder.parent == Path(call["cwd"]).parent
+    [line] = logged(log)
+    assert "install incomplete" in line["why"]

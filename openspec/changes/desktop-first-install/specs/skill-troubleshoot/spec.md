@@ -23,7 +23,7 @@ The first rung SHALL be the possibility that the user's installed skills predate
 
 ### Requirement: Install identified from workspace evidence
 
-The report SHALL carry enough to identify which revision of the skills produced the problem, drawn only from what the workspace and the user's skill directories already hold: the repository installer's record where one exists, the CLI's lock record where one exists, and a content hash of every installed skill file found in the workspace's skill directories, the user-level skill directories, and the plugin install locations of the featured apps. Hashes SHALL cover shipped scripts and reference data, not only instruction files, because a changed script is as capable of causing the problem as changed instructions. The report SHALL name the install route the evidence points to — installer, plugin, CLI, or unknown.
+The report SHALL carry enough to identify which revision of the skills produced the problem, drawn only from what the workspace and the user's skill directories already hold: the repository installer's record where one exists, the CLI's lock record where one exists, and a content hash of every installed skill file found in the workspace's skill directories, the user-level skill directories, the plugin install locations of the featured apps, and the apps' own skill folders that the repository's installer lists but never fills. Hashes SHALL cover shipped scripts and reference data, not only instruction files, because a changed script is as capable of causing the problem as changed instructions. The report SHALL name the install route the evidence points to — installer, plugin, CLI, or unknown. It SHALL name each of the apps' own skill folders that holds a copy, relative to the home or the workspace, as one that may shadow the installed skills. Its list of those folders SHALL equal the installer's, enforced offline.
 
 The repository SHALL provide a maintainer-side means of resolving a submitted hash set to the revision that produced it, and of naming any file that matches no known revision as locally modified. Identification SHALL NOT depend on data shipped inside the skills, because installs predating any such addition are exactly the ones most likely to be reported.
 
@@ -36,6 +36,16 @@ The repository SHALL provide a maintainer-side means of resolving a submitted ha
 
 - **WHEN** a skill directory holds the repository installer's record
 - **THEN** the report carries the recorded revision, scope and source, names the route as the installer, and still carries the recomputed hashes
+
+#### Scenario: Copy in an app's own skill folder
+
+- **WHEN** a copy of a shipped skill sits in an app's own skill folder, such as OpenCode's in the user's configuration, beside an installer install
+- **THEN** the report carries that copy's hashes and a line naming the folder home-relative as one that may shadow the installed skills, and no user name
+
+#### Scenario: Collector run from the shadowing copy
+
+- **WHEN** the app loaded the troubleshoot skill itself from its own skill folder, so the collector runs from the copy that shadows an installer install
+- **THEN** the report still names that folder as one that may shadow the installed skills
 
 #### Scenario: Lock record absent
 

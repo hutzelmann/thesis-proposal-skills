@@ -782,3 +782,420 @@ def test_the_installer_still_parses_on_an_old_interpreter():
     for node in [*module_level, *defaults]:
         names = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
         assert "UTC" not in names, "datetime.UTC is 3.11+; use it inside a function"
+
+
+# ---------- copies in apps' own skill folders (design D14) ------------------
+
+
+def plant_skill(folder: Path, name: str = "proposal-check", body: str = "hand copy") -> Path:
+    (folder / name).mkdir(parents=True, exist_ok=True)
+    (folder / name / "SKILL.md").write_text(body, encoding="utf-8")
+    return folder / name
+
+
+def native_folder(home: Path, cwd: Path, app_dir: str) -> Path:
+    base = next(base for _app, base, rel in install.NATIVE_DIRS if rel == app_dir)
+    return (home if base == "home" else cwd) / app_dir
+
+
+HAND_COPIES = [".opencode/skills", ".config/opencode/skill", ".codex/skills", ".cursor/skills",
+               ".copilot/skills"]
+
+
+@pytest.mark.parametrize("scope", ["all", "folder"])
+def test_hand_copies_in_apps_own_folders_are_listed_and_kept(env, tmp_path, capsys, scope):
+    home, cwd = env
+    planted = [plant_skill(native_folder(home, cwd, rel)) for rel in HAND_COPIES]
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    code, out, _ = run("--scope", scope, "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    for copy in planted:
+        assert install.display(copy, home, cwd) in out, f"{copy} not listed"
+        assert (copy / "SKILL.md").read_text(encoding="utf-8") == "hand copy", "kept"
+    for app in ("OpenCode", "Codex", "Cursor", "GitHub Copilot"):
+        assert f"({app})" in out
+    assert "./.opencode/skills/proposal-check (OpenCode)" in out
+    assert "~/.config/opencode/skill/proposal-check (OpenCode)" in out
+    assert "--remove-other" in out
+
+
+@pytest.mark.parametrize("scope", ["all", "folder"])
+def test_remove_other_removes_exactly_the_listed_copies(env, tmp_path, capsys, scope):
+    home, cwd = env
+    folder = native_folder(home, cwd, ".opencode/skills")
+    listed = plant_skill(folder)
+    mine = plant_skill(folder, "my-own-skill", "mine")
+    unshipped = plant_skill(folder, "proposal-mine", "mine")
+    (folder / "notes.txt").write_text("mine", encoding="utf-8")
+    codex = plant_skill(home / ".codex/skills")
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    code, out, _ = run("--scope", scope, "--remove-other", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert "Removed the copies in other apps' own skill folders" in out
+    assert not listed.exists()
+    assert not codex.exists()
+    assert (mine / "SKILL.md").read_text(encoding="utf-8") == "mine"
+    assert (unshipped / "SKILL.md").read_text(encoding="utf-8") == "mine", \
+        "a proposal-* folder that is not a shipped skill is not the installer's to judge"
+    assert (folder / "notes.txt").is_file()
+    assert (home / ".codex/skills").is_dir(), "the folder itself stays"
+
+
+def test_a_folder_without_a_skill_file_is_not_a_copy(env, tmp_path, capsys):
+    home, _ = env
+    stray = home / ".cursor/skills/proposal-check"
+    stray.mkdir(parents=True)
+    (stray / "README.md").write_text("not a skill", encoding="utf-8")
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    code, out, _ = run("--scope", "all", "--remove-other", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert ".cursor" not in out
+    assert (stray / "README.md").is_file()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges")
+@pytest.mark.parametrize("scope", ["all", "folder"])
+def test_a_link_into_the_installed_copy_is_neither_listed_nor_removed(
+        env, tmp_path, capsys, scope):
+    """The skills CLI links agent folders into the shared copy; that is not a second copy."""
+    home, cwd = env
+    base = home if scope == "all" else cwd
+    installed = base / ".agents/skills/proposal-check"
+    link = home / ".codex/skills/proposal-check"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(installed, target_is_directory=True)
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    code, out, _ = run("--scope", scope, "--remove-other", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert ".codex" not in out
+    assert link.is_symlink()
+    assert (link / "SKILL.md").read_bytes().startswith(b"---")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges")
+def test_a_whole_folder_linked_to_a_target_is_not_a_copy(env, tmp_path, capsys):
+    home, _ = env
+    (home / ".agents/skills").mkdir(parents=True)
+    (home / ".cursor").mkdir()
+    (home / ".cursor/skills").symlink_to(home / ".agents/skills", target_is_directory=True)
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    code, out, _ = run("--scope", "all", "--remove-other", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert ".cursor" not in out
+    assert (home / ".agents/skills/proposal-check/SKILL.md").is_file()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges")
+def test_a_copy_in_a_folder_linked_elsewhere_is_listed_but_never_removed(
+        env, tmp_path, capsys):
+    """~/.codex/skills linked to a dotfiles folder (or a clone's skills/): the copy
+    is not a link itself, so removing it would delete the tree at the link's target."""
+    home, _ = env
+    dotfiles = tmp_path / "dotfiles" / "skills"
+    elsewhere = plant_skill(dotfiles, body="my own work")
+    (home / ".codex").mkdir()
+    (home / ".codex/skills").symlink_to(dotfiles, target_is_directory=True)
+    direct = plant_skill(home / ".cursor/skills")
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    _, out, _ = run("--scope", "all", "--dry-run", "--remove-other", "--source", zip_path,
+                    capsys=capsys)
+    assert "Would remove copies in other apps' own skill folders: " \
+           "~/.cursor/skills/proposal-check (Cursor)" in out
+    assert "reached through a linked folder: ~/.codex/skills/proposal-check (Codex)" in out
+    code, out, _ = run("--scope", "all", "--remove-other", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert "Removed the copies in other apps' own skill folders:\n" \
+           "  ~/.cursor/skills/proposal-check (Cursor)\n" in out
+    assert "reached through a link" in out
+    assert "  ~/.codex/skills/proposal-check (Codex)" in out
+    assert not direct.exists()
+    assert (elsewhere / "SKILL.md").read_text(encoding="utf-8") == "my own work", \
+        "nothing is deleted through a linked folder"
+    assert (home / ".codex/skills").is_symlink()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="directory junctions are a Windows feature")
+def test_a_junction_into_the_installed_copy_is_neither_listed_nor_removed(env, tmp_path, capsys):
+    import _winapi
+
+    home, _ = env
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    assert run("--scope", "all", "--source", zip_path, capsys=capsys)[0] == 0
+    link = home / ".codex/skills/proposal-check"
+    link.parent.mkdir(parents=True)
+    _winapi.CreateJunction(str(home / ".agents/skills/proposal-check"), str(link))
+    code, out, _ = run("--scope", "all", "--remove-other", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert ".codex" not in out
+    assert install.is_link(link)
+    assert (link / "SKILL.md").is_file()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges")
+def test_a_link_to_a_copy_elsewhere_is_listed_and_removed_as_a_link(env, tmp_path, capsys):
+    home, _ = env
+    elsewhere = plant_skill(tmp_path / "elsewhere", body="my own work")
+    link = home / ".config/opencode/skills/proposal-check"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(elsewhere, target_is_directory=True)
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    _, out, _ = run("--scope", "all", "--source", zip_path, capsys=capsys)
+    assert "~/.config/opencode/skills/proposal-check (OpenCode)" in out
+    assert link.is_symlink()
+    run("--scope", "all", "--remove-other", "--source", zip_path, capsys=capsys)
+    assert not link.is_symlink()
+    assert not link.exists()
+    assert (elsewhere / "SKILL.md").read_text(encoding="utf-8") == "my own work", \
+        "the link's target is never touched"
+
+
+def test_dry_run_names_copies_in_apps_folders_and_removes_nothing(env, tmp_path, capsys):
+    home, cwd = env
+    copy = plant_skill(cwd / ".opencode/skill")
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    _, out, _ = run("--scope", "all", "--dry-run", "--source", zip_path, capsys=capsys)
+    assert "Would keep copies in other apps' own skill folders: " \
+           "./.opencode/skill/proposal-check (OpenCode)" in out
+    _, out, _ = run("--scope", "all", "--dry-run", "--remove-other", "--source", zip_path,
+                    capsys=capsys)
+    assert "Would remove copies in other apps' own skill folders" in out
+    assert (copy / "SKILL.md").is_file()
+    assert not (home / ".claude").exists()
+
+
+@pytest.mark.parametrize("scope", ["all", "folder"])
+def test_no_app_folder_is_ever_created(env, tmp_path, capsys, scope):
+    home, cwd = env
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    run("--scope", scope, "--remove-other", "--source", zip_path, capsys=capsys)
+    for _app, base, rel in install.NATIVE_DIRS:
+        assert not ((home if base == "home" else cwd) / rel).exists(), rel
+    assert not (home / ".codex").exists()
+    assert not (cwd / ".opencode").exists()
+
+
+def test_the_apps_own_folders_table_is_the_documented_one():
+    """Design D14, checked 2026-10-13 (sources in the table's comment). The
+    installer never writes these, so none may coincide with a target."""
+    assert install.NATIVE_DIRS == (
+        ("OpenCode", "folder", ".opencode/skill"),
+        ("OpenCode", "folder", ".opencode/skills"),
+        ("OpenCode", "home", ".config/opencode/skill"),
+        ("OpenCode", "home", ".config/opencode/skills"),
+        ("Codex", "home", ".codex/skills"),
+        ("Cursor", "home", ".cursor/skills"),
+        ("GitHub Copilot", "home", ".copilot/skills"),
+    )
+    written = set(install.SHARED_DIRS) | {h.user_dir for h in install.HOST_DIRS} \
+        | {h.folder_dir for h in install.HOST_DIRS if h.folder_dir}
+    assert not written & {rel for _app, _base, rel in install.NATIVE_DIRS}
+
+
+# ---------- readiness lines (design D15) ----------------------------------------
+
+
+def tool_path(monkeypatch, tmp_path: Path, *tools: str) -> None:
+    """A PATH holding only stub executables for `tools`."""
+    folder = tmp_path / "bin"
+    folder.mkdir(exist_ok=True)
+    for tool in tools:
+        stub = folder / (tool + (".exe" if sys.platform == "win32" else ""))
+        stub.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+        stub.chmod(0o755)
+    monkeypatch.setenv("PATH", str(folder))
+
+
+@pytest.mark.usefixtures("env")
+def test_missing_pdf_tools_are_optional_and_do_not_fail_the_install(tmp_path, capsys,
+                                                                   monkeypatch):
+    tool_path(monkeypatch, tmp_path)
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    code, out, _ = run("--scope", "all", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert "On this computer:" in out
+    assert "PDF export (optional): pandoc missing, typst missing." in out
+    assert "Only PDF export needs them" in out
+    assert out.rstrip().splitlines()[-1].startswith("  API keys (optional)"), \
+        "the readiness lines end the output"
+
+
+@pytest.mark.usefixtures("env")
+def test_found_pdf_tools_are_reported_without_running_them(tmp_path, capsys, monkeypatch):
+    tool_path(monkeypatch, tmp_path, "pandoc", "typst")
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("the installer ran a program to produce a readiness line")
+
+    monkeypatch.setattr(install.subprocess, "run", forbidden)
+    monkeypatch.setattr(install.subprocess, "Popen", forbidden)
+    code, out, _ = run("--scope", "all", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert "PDF export (optional): pandoc found, typst found." in out
+
+
+def test_the_python_line_names_the_version_and_file_name_only(env, tmp_path, capsys,
+                                                             monkeypatch):
+    home, _ = env
+    monkeypatch.setattr(sys, "executable", str(home / "tools" / "python3.13"))
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    _, out, _ = run("--scope", "all", "--source", zip_path, capsys=capsys)
+    version = ".".join(str(p) for p in sys.version_info[:3])
+    assert f"Python {version} ran the installer (python3.13)." in out
+    assert "tools" not in out
+
+
+def windows_aliases(local: Path, *packages: str) -> Path:
+    """An App Execution Alias layout: top-level aliases plus per-package folders."""
+    aliases = local / "Microsoft" / "WindowsApps"
+    aliases.mkdir(parents=True)
+    (aliases / "python3.exe").write_bytes(b"")
+    for package in packages:
+        (aliases / package).mkdir()
+        (aliases / package / "python3.exe").write_bytes(b"")
+    return aliases
+
+
+def test_the_store_shortcut_is_told_apart_from_the_install_manager(tmp_path):
+    store = windows_aliases(tmp_path / "store", install.STORE_ALIAS_PACKAGE)
+    assert install.store_python3_only(str(tmp_path / "store"), str(store))
+    manager = windows_aliases(tmp_path / "manager", install.STORE_ALIAS_PACKAGE,
+                              "PythonSoftwareFoundation.PythonManager_qbz5n2kfra8p0")
+    assert not install.store_python3_only(str(tmp_path / "manager"), str(manager))
+    uv_bin = tmp_path / "uv-bin"
+    uv_bin.mkdir()
+    (uv_bin / "python3.exe").write_bytes(b"")
+    first = f"{uv_bin}{install.os.pathsep}{store}"
+    assert not install.store_python3_only(str(tmp_path / "store"), first), \
+        "a real python3 earlier on the PATH answers instead"
+    assert not install.store_python3_only(None, str(store))
+    assert not install.store_python3_only(str(tmp_path / "nothing"), str(store))
+
+
+def test_the_store_shortcut_line_appears_only_on_windows(env, tmp_path, monkeypatch):
+    home, cwd = env
+    aliases = windows_aliases(tmp_path / "local", install.STORE_ALIAS_PACKAGE)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("PATH", str(aliases))
+    store_line = "python3 opens only the Microsoft Store; the skills use the Python above."
+    assert store_line in install.readiness_lines(home, cwd, windows=True)
+    assert store_line not in install.readiness_lines(home, cwd, windows=False)
+
+
+SENTINEL = "sk-SENTINEL-0000-do-not-print"
+
+
+def guard_key_files(monkeypatch) -> None:
+    """Fail the test if anything opens a key file."""
+    real_open = open
+
+    def watched_open(file, *args, **kwargs):
+        if str(file).endswith(install.KEY_FILE):
+            raise AssertionError("a key file was opened")
+        return real_open(file, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", watched_open)
+    monkeypatch.setattr(install.io, "open", watched_open)
+    for name in ("read_text", "read_bytes", "open"):
+        real = getattr(Path, name)
+
+        def watched(self, *args, _real=real, **kwargs):
+            if self.name == install.KEY_FILE:
+                raise AssertionError("a key file was opened")
+            return _real(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, name, watched)
+
+
+def all_records(*roots: Path) -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for root in roots
+                     for p in root.rglob(install.RECORD_NAME))
+
+
+def test_key_files_are_reported_present_and_never_read(env, tmp_path, capsys, monkeypatch):
+    home, cwd = env
+    (cwd / install.KEY_FILE).write_text(f"S2_API_KEY={SENTINEL}\n", encoding="utf-8")
+    user_keys = home / install.USER_KEY_DIR / install.KEY_FILE
+    user_keys.parent.mkdir(parents=True)
+    user_keys.write_text(f"OPENALEX_API_KEY={SENTINEL}\n", encoding="utf-8")
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    guard_key_files(monkeypatch)
+    code, out, err = run("--scope", "all", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert ("API keys (optional): an api-keys.env file is in this folder and in "
+            "~/.config/thesis-proposal.") in out
+    monkeypatch.undo()
+    records = all_records(home)
+    assert SENTINEL not in out + err + records
+    for fact in ("pandoc", "typst", "api-keys", "Microsoft Store", "ran the installer"):
+        assert fact not in records, f"readiness fact {fact!r} entered the record"
+
+
+@pytest.mark.usefixtures("env")
+def test_no_key_file_names_both_places(tmp_path, capsys):
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    _, out, _ = run("--scope", "all", "--source", zip_path, capsys=capsys)
+    assert ("API keys (optional): no api-keys.env file in this folder or in "
+            "~/.config/thesis-proposal.") in out
+
+
+def test_a_dry_run_ends_with_the_readiness_lines(env, tmp_path, capsys, monkeypatch):
+    tool_path(monkeypatch, tmp_path, "pandoc")
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    code, out, _ = run("--scope", "all", "--dry-run", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    assert "On this computer:" in out
+    assert "pandoc found, typst missing" in out
+    assert not (env[0] / ".claude").exists()
+
+
+def test_a_refused_install_prints_no_readiness_lines(env, tmp_path, capsys):
+    copilot_folder(env[0])
+    zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    code, out, _ = run("--scope", "all", "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_CONFLICT
+    assert "On this computer:" not in out
+
+
+# ---------- a user name and spaces in every path (task 9.6) -------------------
+
+
+@pytest.mark.parametrize("scope", ["all", "folder"])
+def test_a_home_with_a_user_name_and_spaces_never_shows_the_name(tmp_path, monkeypatch, capsys,
+                                                                 scope):
+    home = tmp_path / "Erika Musterfrau"
+    cwd = home / "My Proposals"
+    cwd.mkdir(parents=True)
+    isolate(monkeypatch, home)
+    monkeypatch.chdir(cwd)
+    tool_path(monkeypatch, tmp_path)
+    opencode_folder = plant_skill(cwd / ".opencode/skills")
+    opencode_user = plant_skill(home / ".config/opencode/skills")
+    (cwd / install.KEY_FILE).write_text(f"S2_API_KEY={SENTINEL}\n", encoding="utf-8")
+    (home / install.USER_KEY_DIR).mkdir(parents=True)
+    (home / install.USER_KEY_DIR / install.KEY_FILE).write_text(SENTINEL, encoding="utf-8")
+    skills = skill_set("proposal-check", "proposal-write")
+    zip_path = str(make_zip(tmp_path / "src.zip", skills))
+    other = "folder" if scope == "all" else "all"
+    assert run("--scope", other, "--source", zip_path, capsys=capsys)[0] == 0
+    code, out, err = run("--scope", scope, "--source", zip_path, capsys=capsys)
+    assert code == install.EXIT_OK
+    base = home if scope == "all" else cwd
+    for rel in install.SHARED_DIRS:
+        for name, files in skills.items():
+            assert files_under(base / rel / name) == files
+    records = all_records(home)
+    prefix = "~/" if scope == "all" else "./"
+    assert f'"{prefix}.agents/skills"' in records
+    other_prefix = "./" if scope == "all" else "~/"
+    assert f"  {other_prefix}.claude/skills/proposal-check" in out, "other-scope listing"
+    assert "./.opencode/skills/proposal-check (OpenCode)" in out
+    assert "~/.config/opencode/skills/proposal-check (OpenCode)" in out
+    assert ("an api-keys.env file is in this folder and in ~/.config/thesis-proposal."
+            in out)
+    for text in (out, err, records):
+        assert "Erika Musterfrau" not in text
+        assert "Erika" not in text
+        assert SENTINEL not in text
+    assert opencode_folder.is_dir()
+    assert opencode_user.is_dir()
