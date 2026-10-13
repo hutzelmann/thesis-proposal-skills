@@ -733,6 +733,108 @@ def test_a_feature_line_the_parser_does_not_read_refuses(line):
     assert codex_cli.features_problem(f"\n{listing('ok')}\n\n", codex_cli.ALLOWED_FEATURES) is None
 
 
+def test_a_multi_word_stage_parses():
+    """testing-harness spec: Multi-word feature stage (codex-cli 0.160 prints
+    `under development`)."""
+    rows, unparsed = codex_cli.parse_features(
+        "agent_message_board                      under development  false\n"
+        "multi_agent                              stable             true\n")
+    assert unparsed == []
+    assert rows == {"agent_message_board": ("under development", False),
+                    "multi_agent": ("stable", True)}
+
+
+def test_a_pinned_removed_feature_reading_true_passes(monkeypatch):
+    """testing-harness spec: Removed feature reading enabled. `tui_app_server`
+    passes because REMOVED_ENABLED pins it, not because of its stage: without
+    the pin the same listing refuses."""
+    line = "tui_app_server                           removed            true\n"
+    assert "tui_app_server" in codex_cli.REMOVED_ENABLED
+    assert codex_cli.features_problem(f"{listing('0160-ok')}{line}",
+                                      codex_cli.ALLOWED_FEATURES) is None
+    monkeypatch.setattr(codex_cli, "REMOVED_ENABLED",
+                        codex_cli.REMOVED_ENABLED - {"tui_app_server"})
+    problem = codex_cli.features_problem(f"{listing('0160-ok')}{line}",
+                                         codex_cli.ALLOWED_FEATURES)
+    assert problem is not None
+    assert "tui_app_server" in problem.cause
+
+
+@pytest.mark.parametrize("name", ["x7_fixture_feature", "apps"])
+def test_an_unpinned_removed_feature_reading_true_refuses(name):
+    """testing-harness spec: Removed feature reading enabled. A feature that
+    graduates to `removed` while still on, a surface feature the run disables
+    (`apps`) included, refuses and is named."""
+    line = f"{name:<40} removed            true\n"
+    problem = codex_cli.features_problem(f"{listing('0160-ok')}{line}",
+                                         codex_cli.ALLOWED_FEATURES)
+    assert problem is not None
+    assert name in problem.cause
+    assert problem.remedy != codex_cli.FEATURES_PARSER
+
+
+def test_the_removed_pin_holds_no_disabled_or_allowed_feature():
+    """A disabled feature reading true refuses at any stage, so the pin of
+    removed features reading true never names one; nor does it shadow the
+    allowlist or the subagent feature."""
+    pinned = codex_cli.REMOVED_ENABLED
+    assert not pinned & set(codex_cli.DISABLED_FEATURES)
+    assert not pinned & set(codex_cli.ALLOWED_FEATURES)
+    assert codex_cli.SUBAGENT_FEATURE not in pinned
+
+
+def test_an_unknown_enabled_feature_at_another_stage_refuses():
+    """testing-harness spec: Feature outside the allowlist, at each stage but `removed`."""
+    for stage in ("under development", "experimental", "stable", "deprecated"):
+        line = f"x7_fixture_feature                       {stage:<18} true\n"
+        problem = codex_cli.features_problem(f"{listing('0160-ok')}{line}",
+                                             codex_cli.ALLOWED_FEATURES)
+        assert problem is not None
+        assert "x7_fixture_feature" in problem.cause
+        assert problem.remedy != codex_cli.FEATURES_PARSER
+
+
+@pytest.mark.parametrize("line", [
+    "x7_fixture_feature  under development  pending  false",  # five fields, junk stage
+    "x7_fixture_feature  stable  stable  stable  true",  # five fields, repeated stage
+    "x7_fixture_feature  beta  true",  # a stage 0.160 does not print
+    "under development  true",  # a stage with no name
+])
+def test_a_garbage_feature_row_refuses(line):
+    """testing-harness spec: Feature listing line the parser does not read. A
+    row is a name, a known stage and a known state, nothing else."""
+    problem = codex_cli.features_problem(f"{listing('0160-ok')}{line}\n",
+                                         codex_cli.ALLOWED_FEATURES)
+    assert problem is not None
+    assert problem.remedy == codex_cli.FEATURES_PARSER
+    assert line.strip() in problem.cause
+
+
+def test_the_0160_listing_after_the_run_flags_passes():
+    """The X7 listing (codex-cli 0.160.0, reduced) under the run's `--disable`
+    flags: passes without helpers; with `multi_agent` enabled it passes only
+    for a scenario that allows helpers."""
+    plain = listing("0160-ok")
+    rows, unparsed = codex_cli.parse_features(plain)
+    assert unparsed == []
+    assert rows["multi_agent"] == ("stable", False)
+    assert {name for name, (_, on) in rows.items() if on} >= set(codex_cli.ALLOWED_FEATURES)
+    assert not {name for name, (_, on) in rows.items() if on} & set(codex_cli.DISABLED_FEATURES)
+    removed_on = {name for name, (stage, on) in rows.items()
+                  if on and stage == codex_cli.REMOVED_STAGE}
+    assert removed_on == codex_cli.REMOVED_ENABLED  # the pin is exactly what X7 measured
+    check_report = claude_runner.SCENARIOS["check_report"]
+    assert codex_cli.features_problem(plain, codex_cli.allowed_features(check_report)) is None
+    helpers = plain.replace("multi_agent                              stable             false",
+                            "multi_agent                              stable             true")
+    assert helpers != plain
+    supervise = claude_runner.SCENARIOS["supervise_scope"]
+    assert codex_cli.features_problem(helpers, codex_cli.allowed_features(supervise)) is None
+    refused = codex_cli.features_problem(helpers, codex_cli.allowed_features(check_report))
+    assert refused is not None
+    assert "multi_agent" in refused.cause
+
+
 def test_codex_tool_calls_map_each_item_to_its_canonical_name():
     """design Decision 11, each row."""
     calls = codex_cli.codex_tool_calls(stream("skill-read"))

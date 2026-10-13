@@ -27,7 +27,9 @@ backstop, failing closed:
   when the plan is not Plus or Pro (so the free-plan rehearsal's login refuses
   every run), when a window is at 90 % or more, or when a limit is reached
   (`quota_problem`). Then `codex features list` must show nothing enabled
-  outside the allowlist (`features_problem`).
+  outside the allowlist (`features_problem`); a feature at the `removed`
+  stage is ignored only when `REMOVED_ENABLED` pins it, since some read true
+  even when disabled (live check X7, codex-cli 0.160.0).
 - **After the run**, the session record (`$CODEX_HOME/sessions/…`) is reduced
   into `codex.*` records beside the exec events and deleted
   (`capture_rollout`); its provider, plan report, credits, limit state and
@@ -86,20 +88,42 @@ from hosts import RunView, needs_network
 
 # ---------- the command (design Decisions 5 and 6) ---------------------------------------
 
-# Pinned from `codex features list` at CODEX_MIN_VERSION, starting from 0.133's
-# default-on set; live check X7 confirms it. Each is passed as `--disable`,
-# which rejects an unknown name, so a renamed feature fails the run loudly.
+# Pinned from `codex features list` at CODEX_MIN_VERSION (0.160.0, live check X7
+# on 2026-10-13): every default-on feature that adds surface or reach. Each is
+# passed as `--disable`, which rejects an unknown name, so a renamed feature
+# fails the run loudly; 0.160 accepted every name here.
 DISABLED_FEATURES = (
+    # 0.133's default-on set, all still accepted at 0.160 (`plugin_hooks` is
+    # `removed` there; it stays because `--disable` still accepts it)
     "browser_use_external", "in_app_browser", "plugin_hooks", "plugin_sharing", "tool_suggest",
     "skill_mcp_dependency_install", "workspace_dependencies", "guardian_approval", "goals",
     "fast_mode", "apps", "plugins", "hooks", "memories", "image_generation", "browser_use",
     "computer_use",
+    # default-on at 0.160 (X7): surface or reach beyond the shell and the workspace
+    "daemon_auto_start", "remote_plugin", "skill_search", "mentions_v2", "worktrees",
+    "browser_use_full_cdp_access", "code_mode_host", "realtime_conversation", "in_app_chat",
+    "in_app_dictation", "in_app_local_automation", "in_app_updates", "auth_elicitation",
+    "tool_call_mcp_elicitation", "write_stdin_approval",
 )
 # the subagent feature, enabled only for scenarios that declare `helpers`
 SUBAGENT_FEATURE = "multi_agent"
-# what may read enabled; anything else refuses the run until a reviewed change
-# updates DISABLED_FEATURES
-ALLOWED_FEATURES = ("shell_tool", "unified_exec")
+# What may read enabled; anything else, bar a `removed` row in REMOVED_ENABLED,
+# refuses the run until a reviewed change updates DISABLED_FEATURES or this list.
+ALLOWED_FEATURES = (
+    "shell_tool",  # the shell is how the run reads its skill and works the workspace
+    "unified_exec",  # the shell tool's execution backend
+    # plumbing, default-on at 0.160 (X7): no tool, surface or reach of its own
+    "shell_snapshot",  # caches the shell's start-up environment between commands
+    "unified_exec_tty",  # gives the shell tool's commands a terminal
+    "content_item_kinds",  # how tool output items are typed in the event protocol
+    "enable_request_compression",  # compresses requests to the provider; transport only
+    "compaction_image_budget",  # caps the images kept through context compaction
+    "unbounded_connection_retries",  # retries a dropped provider connection; transport only
+    "system_proxy_fallback",  # honours the system proxy for the CLI's own connection
+    "sleep_tool",  # lets the model wait between polls of a running command
+    "view_image",  # shows the model an image file the shell tool could read anyway
+    "guardian_reuse_parent_compaction",  # acts only for guardian_approval, which is disabled
+)
 # the host's explicit levels, without `ultra`, which hands work to subagents
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # D4(a), network only where a scenario needs it: `needs_network` and
@@ -594,20 +618,42 @@ def read_quota(home: Path, environ: Mapping[str, str] | None = None) -> Quota:
 _ON, _OFF = {"true", "on", "enabled", "yes"}, {"false", "off", "disabled", "no"}
 
 
-def parse_features(listing: str) -> tuple[dict[str, bool], list[str]]:
-    """`codex features list` as (states, unparsed lines): every non-blank line
-    must be one `name stage state` row whose state is a known word. Anything
-    else is returned as unparsed, so a format change refuses rather than
-    hides an enabled feature (fail-closed). Shaped after 0.133's local
-    output; X7 confirms the 0.160 format."""
-    states, unparsed = {}, []
+# The stages codex-cli 0.160.0 prints (X7, 2026-10-13). A stage outside this set
+# is a format change and refuses, like any other line the parser does not read.
+FEATURE_STAGES = frozenset({"under development", "experimental", "stable", "deprecated",
+                            "removed"})
+REMOVED_STAGE = "removed"
+# The `removed` features 0.160 lists reading true after the run's flags (X7,
+# 2026-10-13); five of them stay true even under `--disable` (`item_ids`,
+# `resize_all_images`, `terminal_resize_reflow`,
+# `tool_search_always_defer_mcp_tools`, `tui_app_server`). The stage does not
+# make a feature inert: a removed row still follows `--disable`/`--enable`. So
+# only these names are ignored at that stage; any other removed feature reading
+# true refuses, which catches a surface feature that graduates to `removed`
+# while still on. No DISABLED_FEATURES name may appear here.
+REMOVED_ENABLED = frozenset({
+    "collaboration_modes", "item_ids", "resize_all_images", "sqlite", "steer",
+    "terminal_resize_reflow", "tool_search_always_defer_mcp_tools", "tui_app_server",
+    "unified_exec_zsh_fork",
+})
+
+
+def parse_features(listing: str) -> tuple[dict[str, tuple[str, bool]], list[str]]:
+    """`codex features list` as ({name: (stage, enabled)}, unparsed lines).
+    Every non-blank line must be one row: the name as its first token, the
+    state as its last, a known on/off word, and a known stage between them,
+    which may take several words (`under development`, as 0.160 prints it).
+    Anything else is returned as unparsed, so a format change refuses rather
+    than hides an enabled feature (fail-closed)."""
+    rows, unparsed = {}, []
     for line in listing.splitlines():
         parts = line.split()
-        if len(parts) == 3 and parts[2].lower() in _ON | _OFF:
-            states[parts[0]] = parts[2].lower() in _ON
+        stage = " ".join(parts[1:-1]).lower()
+        if len(parts) >= 3 and stage in FEATURE_STAGES and parts[-1].lower() in _ON | _OFF:
+            rows[parts[0]] = (stage, parts[-1].lower() in _ON)
         elif parts:
             unparsed.append(line.strip())
-    return states, unparsed
+    return rows, unparsed
 
 
 FEATURES_PARSER = "report it: the feature listing does not match the parser"
@@ -616,15 +662,18 @@ FEATURES_PARSER = "report it: the feature listing does not match the parser"
 def features_problem(listing: str, allowed: Sequence[str]) -> LoginProblem | None:
     """Refuse when a line of the listing does not parse, when the listing
     shows no feature state at all, or when anything outside `allowed` reads
-    enabled: a precondition of the run."""
-    states, unparsed = parse_features(listing)
+    enabled, except a `removed` row pinned in `REMOVED_ENABLED`: a
+    precondition of the run."""
+    rows, unparsed = parse_features(listing)
     if unparsed:
         return LoginProblem(f"`codex features list` printed a line the parser does not read: "
                             f"{unparsed[0]!r}", FEATURES_PARSER, CODEX.name, "precondition")
-    if not states:
+    if not rows:
         return LoginProblem("`codex features list` reported no feature states", FEATURES_PARSER,
                             CODEX.name, "precondition")
-    extra = sorted(name for name, enabled in states.items() if enabled and name not in allowed)
+    extra = sorted(name for name, (stage, enabled) in rows.items()
+                   if enabled and name not in allowed
+                   and not (stage == REMOVED_STAGE and name in REMOVED_ENABLED))
     if extra:
         return LoginProblem(f"features outside the allowlist read enabled: {', '.join(extra)}",
                             "report it: the pinned feature list does not match this CLI",

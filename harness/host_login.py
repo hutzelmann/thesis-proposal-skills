@@ -400,9 +400,10 @@ CLAUDE = HostLogin(
 
 # The Codex home's configuration (design Decision 5), written before the first
 # login and compared key by key on every run. The stdlib has no TOML writer, so
-# this is one fixed text and one parse, and an L0 test holds them equal. The key
-# names are unverified for 0.160 until live check X7; every run also passes
-# `--strict-config`, which fails a misspelled key visibly.
+# this is one fixed text and one parse, and an L0 test holds them equal. Live
+# check X7 (2026-10-13) found every key accepted by codex-cli 0.160.0 under
+# `exec --strict-config`; every run passes that flag, which fails a misspelled
+# or unknown key visibly.
 PINNED_CONFIG_TOML = """\
 model_provider = "openai"
 forced_login_method = "chatgpt"

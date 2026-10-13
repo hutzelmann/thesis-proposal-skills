@@ -1,9 +1,10 @@
 # Codex dev-runner stream fixtures
 
 Synthetic inputs for the Codex host of the dev runner (`harness/codex_cli.py`,
-change `add-codex-dev-runner`). **Every file here is synthetic.** None was
-recorded: no ChatGPT login existed in the harness home when they were written,
-and no Codex model call was made. The field names follow the Codex sources at
+change `add-codex-dev-runner`). **Every file here is synthetic** except
+`features-0160-ok.txt`, a reduction of a feature listing the real CLI printed
+offline (below). None was recorded from a run: no ChatGPT login existed in the
+harness home when they were written, and no Codex model call was made. The field names follow the Codex sources at
 the pinned minimum CLI version, tag `rust-v0.160.0`:
 
 - `codex-rs/exec/src/exec_events.rs` and
@@ -65,10 +66,16 @@ Claude.
 | `quota-error.json` | synthetic JSON-RPC error answer to `account/rateLimits/read`, app-server protocol v2 @ rust-v0.160.0 | a JSON-RPC error answer: refused as an unavailable read |
 | `features-ok.txt` | synthetic, columns shaped after `codex features list` (name, stage, state); the 0.133 default-on set from the brief | only `shell_tool` and `unified_exec` read enabled: passes |
 | `features-extra-on.txt` | synthetic, columns shaped after `codex features list` (name, stage, state) as the CLI printed it at 0.133; `features-ok.txt` plus `realtime_conversation` | one more feature reads enabled: refused, the feature named |
+| `features-0160-ok.txt` | reduced from `codex features list` with the run's `--disable` flags for a scenario without helpers, codex-cli 0.160.0, live check X7 rerun on 2026-10-13 (empty scratch `CODEX_HOME` holding only the pinned config, no login, `unshare -rn`); 63 of 154 rows kept: every pinned, allowed and subagent feature, every `removed` feature reading true, and a few rows of each other stage | the 0.160 shape: two-word stage `under development`, `removed` features reading true; passes without helpers and, with `multi_agent` flipped to true, for a helpers scenario |
 
-The feature listing's exact format at 0.160 is unverified; live check X7
-(add-codex-dev-runner task 6.2) confirms the parser and the pinned
-`DISABLED_FEATURES` against the real CLI with no login and no network. Until
-then the parser fails closed: any non-blank line that is not one `name stage
-state` row refuses the run, so a changed format reads as a refusal, never as
-a listing with the enabled feature missing.
+Live check X7 (add-codex-dev-runner task 6.2, 2026-10-13) found that codex-cli
+0.160.0 prints the two-word stage `under development` and that several
+`removed` features read true even under `--disable`. The parser therefore
+reads a row as the name (first token), a known stage (the tokens between) and
+a known on/off state (last token), and the allowlist check ignores a
+`removed` row reading true only when `REMOVED_ENABLED` pins its name (the nine
+X7 measured); any other removed feature reading true refuses, since a removed
+row still follows the flags. It still fails closed: any other
+non-blank line, a stage 0.160 does not print included, refuses the run, so a
+changed format reads as a refusal, never as a listing with the enabled feature
+missing.

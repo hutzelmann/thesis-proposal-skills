@@ -42,7 +42,7 @@ Five parts SHALL differ per host, each behind one adapter per host: the host's c
 - validate its configuration strictly, so that an unknown configuration key fails the run rather than being ignored;
 - sandbox the run to the workspace. Network access is granted only to scenarios that need it: those whose skill or sibling skills include import, literature search or reverse, and those that serve a fixture over localhost;
 - enable subagents only for scenarios that declare a helper allowance;
-- disable every other host feature that is on by default, through the host's validated feature switch. Before the run, it SHALL refuse when the host's feature listing still shows a feature enabled outside that allowlist;
+- disable every other host feature that is on by default and adds a tool, a surface or reach beyond the shell and the workspace, through the host's validated feature switch. A default-on feature that adds none of these MAY stay on only when the allowlist names it with its reason. Before the run, it SHALL refuse when the host's feature listing still shows a feature enabled outside that allowlist; a feature the listing marks as removed and reading enabled SHALL be ignored by that check only when a pinned list of removed features measured reading enabled names it, and no feature the run disables is on that list. A listing row is a name, a stage of one or more words and an on/off state; the run SHALL refuse on any listing line it does not read that way, or whose stage is not one the host is known to print;
 - keep the host's session record while the run lasts, read it after the run, and then delete it.
 
 **Isolation.** A Codex run SHALL see only the skills under test, installed in the workspace where Codex discovers repository skills. Its home directory and XDG base directories SHALL be scratch directories belonging to the run, so the operator's user-scope skills, shell start-up files and key files are not visible to it. After the run, it SHALL count as untested in either of these cases:
@@ -90,6 +90,18 @@ After the run, before the runner reads or writes anything in the workspace, it S
 #### Scenario: Feature outside the allowlist
 - **WHEN** the host's feature listing shows a feature enabled outside the allowlist
 - **THEN** the run is refused as untested before any Codex run starts, and the message names the feature
+
+#### Scenario: Multi-word feature stage
+- **WHEN** the host's feature listing prints a row whose stage has several words, such as `under development`
+- **THEN** the row is read as its name, that stage and its state, and a listing whose other rows pass does not refuse the run
+
+#### Scenario: Removed feature reading enabled
+- **WHEN** the host's feature listing shows a feature outside the allowlist enabled at the removed stage, after the run's disable switches
+- **THEN** the check ignores it only when the pinned list of removed features measured reading enabled names it; an unpinned removed feature reading enabled, a disabled feature reading enabled at any stage, and a feature outside the allowlist enabled at any other stage each refuse the run and are named
+
+#### Scenario: Feature listing line the parser does not read
+- **WHEN** the host's feature listing contains a line that is not one name, one known stage and one on/off state, such as a header, an annotated state or a row of five fields
+- **THEN** the run is refused as untested before any Codex run starts, and the message quotes the line
 
 #### Scenario: Effort not served
 - **WHEN** a Codex run requested an effort and its session record reports another
