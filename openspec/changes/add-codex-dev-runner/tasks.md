@@ -330,9 +330,10 @@ Ground rules for every task below:
   - Rerun 5.1 and X7 (record under 6.2).
 
   *Done 2026-10-13.* `uv run poe test` green; X7 rerun passed (under 6.2).
-- [ ] 6.3 X1, **USER ACTION:** in a terminal, `uv run poe host-login codex` with the free ChatGPT account. Add `--device-auth` only if it is enabled in the ChatGPT security settings. The agent then runs `uv run poe host-status codex`. Pass requires all of these: `marker: yes`, `logged_in: yes`, `auth_method: chatgpt`, `config_pinned: yes`, `clean: yes`, `features_ok: yes`. Record the values, booleans and enums only. From here on the home holds a free-plan login. Every `--host codex` run refuses on the plan rule before any `exec`, and no agent starts one before task 7.3.
+- [x] 6.3 X1, **USER ACTION:** in a terminal, `uv run poe host-login codex` with the free ChatGPT account. Add `--device-auth` only if it is enabled in the ChatGPT security settings. The agent then runs `uv run poe host-status codex`. Pass requires all of these: `marker: yes`, `logged_in: yes`, `auth_method: chatgpt`, `config_pinned: yes`, `clean: yes`, `features_ok: yes`. Record the values, booleans and enums only. From here on the home holds a free-plan login. Every `--host codex` run refuses on the plan rule before any `exec`, and no agent starts one before task 7.3.
 
-  *Pending: user action, then live check (2026-10-06).*
+  ~~*Pending: user action, then live check (2026-10-06).*~~
+  *Done 2026-10-13: passed, on the Plus account directly.* The user had bought Plus, so the free-plan rehearsal was skipped and this login also serves 7.2. The user ran `uv run poe host-login codex` (browser flow, no `--device-auth`); `uv run poe host-status codex` read `marker: yes`, `logged_in: yes`, `auth_method: chatgpt`, `config_pinned: yes`, `clean: yes`, `features_ok: yes` (under the 9e0f48c feature policy), `cli_version: 0.160.0`, `stop: none`. The user's own `~/.codex/auth.json` mtime stayed 1780433511 (2026-06-02) before and after.
 - [ ] 6.4 X8, **USER ACTION** (observation, no command beyond these):
   1. With a ChatGPT session open in the desktop app or on the web, run `uv run poe host-logout codex`, then `uv run poe host-login codex`.
   2. Confirm that the other session still works without a new sign-in.
@@ -340,7 +341,7 @@ Ground rules for every task below:
   The agent records `stat -c %Y ~/.codex/auth.json` before and after (mtime only), and it must be unchanged. Pass: both hold. Then set `host_login.X8_PASSED = True`, which swaps the caveat for "Your own Codex login is not affected" in every message, and confirm that `uv run poe test` stays green. Do it here if this change is not yet archived, otherwise as a task in `record-codex-streams`. If the other session was signed out, keep `X8_PASSED = False`, document it in the README, and relay it to the user.
 
   *Pending: user action (2026-10-06).* `X8_PASSED` is False; the L0 tests cover both values.
-- [ ] 6.5 X4b, run by the agent, with no model call: `uv run poe host-status codex --quota`. Record:
+- [x] 6.5 X4b, run by the agent, with no model call: `uv run poe host-status codex --quota`. Record:
   - whether the handshake answered;
   - the window durations and used percentages;
   - the plan type;
@@ -348,22 +349,24 @@ Ground rules for every task below:
 
   On the free plan the command exits 3 by design, because the plan rule refuses; that is not a failure of X4b. Pass: an answer with at least one window. If the handshake fails, D2(a) makes Codex unusable. Record the failure and relay the D2 choice to the user. If the answer carries no credits block, record it and tell the user that every run will refuse on that read until the Plus answer in 7.2 shows the block, or a reviewed change relaxes the rule. Do not change either refusal on your own.
 
-  *Pending: live check (2026-10-06)*, after 6.1 and 6.3.
+  ~~*Pending: live check (2026-10-06)*, after 6.1 and 6.3.~~
+  *Done 2026-10-13: passed.* `uv run poe host-status codex --quota` exited 0: the handshake answered; `plan plus`; 5-hour window 0% used (resets 2026-10-13 14:21 UTC); weekly window 0% used (resets 2026-10-20 09:21 UTC); a credits block is present with no credits (`credits none`). No model call.
 
 ## 7. After Plus (gated)
 
 If Plus has not been bought when sections 0 to 6 are done, mark each task here as deferred, and carry it into the proposal of `record-codex-streams` before archiving.
 
-- [ ] 7.1 **USER ACTION** (in ChatGPT settings, no command):
+- [x] 7.1 **USER ACTION** (in ChatGPT settings, no command):
   - set the Codex credit balance to 0, with automatic reload off;
   - optionally turn "Improve the model for everyone" off.
 
   Confirm here, yes or no only.
 
-  *Pending: user action (2026-10-06).*
-- [ ] 7.2 **USER ACTION:** `uv run poe host-login codex --reset`, so that the login carries the Plus plan. The agent runs `uv run poe host-status codex --quota`. Pass: ready (exit 0), the plan type reads `plus`, and a credits block is present with a zero balance and no credits available. Record the window usage. If the credits block is absent, every run refuses; record it and relay the choice to the user, whose relaxation of the rule would go through `openspec-update-change`. Do not proceed to 7.3 meanwhile.
+  ~~*Pending: user action (2026-10-06).*~~ *2026-10-13: yes.* The user confirmed automatic reload is off; the quota read in 6.5 shows no credits.
+- [x] 7.2 **USER ACTION:** `uv run poe host-login codex --reset`, so that the login carries the Plus plan. The agent runs `uv run poe host-status codex --quota`. Pass: ready (exit 0), the plan type reads `plus`, and a credits block is present with a zero balance and no credits available. Record the window usage. If the credits block is absent, every run refuses; record it and relay the choice to the user, whose relaxation of the rule would go through `openspec-update-change`. Do not proceed to 7.3 meanwhile.
 
-  *Pending: user action, then live check (2026-10-06).*
+  ~~*Pending: user action, then live check (2026-10-06).*~~
+  *Done 2026-10-13: passed without a `--reset`.* The 6.3 login was made on the Plus account, so it already carries the plan: the 6.5 read is ready (exit 0), plan `plus`, the credits block present with no credits available, both windows at 0%.
 - [ ] 7.3 The first Codex model call: **gated on the user's explicit go**, asked for in chat with the planned command. It uses plan quota, not money. Command: `uv run poe dev check_report --host codex --model <slug the user names> --keep`. Pass requires all of these:
   - the outcome is not untested for a billing, login or isolation reason;
   - the summary records the CLI version, `effort_served`, and quota before and after;
