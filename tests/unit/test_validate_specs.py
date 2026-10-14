@@ -678,8 +678,9 @@ def test_the_pin_is_a_plain_version():
 
 def test_the_pin_lives_in_one_place():
     """The weekly bump rewrites one line. A version spelled anywhere else would
-    stay behind: as an npx spelling, as a second constant, or in prose."""
-    spelled = re.compile(r"openspec@\d|OPENSPEC_VERSION = ")
+    stay behind: as an npx spelling, as a second constant, or in prose. Only a
+    version literal counts: the currency script names the pin line's pattern."""
+    spelled = re.compile(r'openspec@\d|OPENSPEC_VERSION = "\d')
     offenders = []
     for rel in sorted({*tracked_files(), "scripts/validate_specs.py"}):
         if rel.startswith("openspec/changes/") or rel.startswith("tests/"):
