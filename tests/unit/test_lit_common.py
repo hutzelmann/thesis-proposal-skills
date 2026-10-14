@@ -104,7 +104,7 @@ def test_search_rejects_unknown_source(tmp_path):
     result = subprocess.run(
         [_sys.executable, str(REPO / "skills" / "proposal-lit-search" / "scripts" / "search.py"),
          "query", "--sources", "dblp,evilmodule"],
-        capture_output=True, text=True, cwd=tmp_path,
+        capture_output=True, encoding="utf-8", cwd=tmp_path,
     )
     assert result.returncode == 2
     assert "unknown source" in result.stderr

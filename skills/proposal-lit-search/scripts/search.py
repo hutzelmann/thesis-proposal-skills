@@ -61,6 +61,7 @@ def federate(query: str, limit: int, sources: list[str]) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    common.utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("query")
     parser.add_argument("--limit", type=int, default=10)

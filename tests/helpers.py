@@ -88,6 +88,27 @@ def run_check(proposal: Path, *extra: str) -> CheckRun:
     return CheckRun(returncode=code, stdout=buffer.getvalue())
 
 
+# cleared beside fake_home_env: collect.py looks there first for the skills CLI's lock
+FAKE_HOME_UNSET = ("XDG_STATE_HOME",)
+
+
+def fake_home_env(home: Path) -> dict[str, str]:
+    """The variables `install.py` and `collect.py` read to find the user's home
+    and apps, every one pointing into `home`. For a child's environment as
+    well as for `fake_home`."""
+    return {"HOME": str(home), "USERPROFILE": str(home),
+            "APPDATA": str(home / "AppData" / "Roaming")}
+
+
+def fake_home(monkeypatch, home: Path) -> None:
+    """Make `home` the user's home for this test: `fake_home_env` set,
+    `FAKE_HOME_UNSET` cleared."""
+    for name, value in fake_home_env(home).items():
+        monkeypatch.setenv(name, value)
+    for name in FAKE_HOME_UNSET:
+        monkeypatch.delenv(name, raising=False)
+
+
 def fixture_proposal(fixture: str) -> Path:
     """The one proposal markdown file in a fixture directory."""
     return next(p for p in sorted((FIXTURES / fixture).glob("*.md")) if is_fixture_proposal(p))

@@ -1342,7 +1342,7 @@ def aggregate_status(statuses: list[int]) -> int:
 
 def run_check(ws: Path, proposal: str) -> str:
     result = subprocess.run(
-        [sys.executable, str(CHECK), str(ws / proposal)], capture_output=True, text=True
+        [sys.executable, str(CHECK), str(ws / proposal)], capture_output=True, encoding="utf-8"
     )
     return result.stdout
 

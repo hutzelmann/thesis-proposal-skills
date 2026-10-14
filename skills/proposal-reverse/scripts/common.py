@@ -19,6 +19,7 @@ import os
 import re
 import socket
 import ssl
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -646,3 +647,21 @@ def to_csl_yaml(items: list[dict]) -> str:
         if abstract := item.get("abstract"):
             lines.append(f"  abstract: {_yaml_scalar(abstract[:1500])}")
     return "\n".join(lines) + "\n"
+
+
+# ---------- output streams -------------------------------------------------------
+
+def utf8_output() -> None:
+    """Write stdout and stderr as UTF-8, whatever encoding the platform chose.
+
+    A Windows pipe is encoded in the ANSI code page (cp1252 in Western Europe),
+    so printing a character outside it raised UnicodeEncodeError. Each stream
+    keeps its error handler, which reconfigure() would otherwise reset to
+    strict, and its newline handling; a stream without reconfigure() (a
+    caller's StringIO, or None without a console) is left alone. The same in
+    every script family (tests/unit/test_utf8_output.py).
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors=stream.errors)

@@ -828,12 +828,30 @@ def install(plan: Plan) -> None:
           "picks up the skills.")
 
 
+def utf8_output() -> None:
+    """Write stdout and stderr as UTF-8, whatever encoding the platform chose.
+
+    A Windows pipe is encoded in the ANSI code page (cp1252 in Western Europe),
+    so printing a character outside it raised UnicodeEncodeError. Each stream
+    keeps its error handler, which reconfigure() would otherwise reset to
+    strict, and its newline handling; a stream without reconfigure() (a
+    caller's StringIO, or None without a console) is left alone. The same in
+    every script family (tests/unit/test_utf8_output.py).
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors=stream.errors)
+
+
 def main(argv: list[str] | None = None) -> int:
     if sys.version_info < MIN_PYTHON:
         print(f"This installer needs Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer; this is "
               f"{sys.version_info[0]}.{sys.version_info[1]}. Install a current Python from "
               "https://www.python.org/downloads/ and run it again.", file=sys.stderr)
         return EXIT_ENV
+    # after the version gate, which stays first (installation spec)
+    utf8_output()
     try:
         args = parse_args(argv)
     except UsageError as exc:

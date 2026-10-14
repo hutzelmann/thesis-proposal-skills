@@ -19,7 +19,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from helpers import FIXTURES, REPO
+from helpers import FIXTURES, REPO, fake_home
 
 import install
 
@@ -50,20 +50,13 @@ def make_zip(path: Path, skills: dict[str, dict[str, bytes]], comment: str | Non
     return path
 
 
-def isolate(monkeypatch, home: Path) -> None:
-    """Every place the installer looks for the user's apps, inside `home`."""
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
-
-
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """A fake home and a proposal folder inside it, the agent's working directory."""
     home = tmp_path / "home"
     cwd = home / "proposals"
     cwd.mkdir(parents=True)
-    isolate(monkeypatch, home)
+    fake_home(monkeypatch, home)
     monkeypatch.chdir(cwd)
     return home, cwd
 
@@ -284,7 +277,7 @@ def test_working_directory_equal_to_home_is_not_its_own_other_scope(
         tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     home.mkdir()
-    isolate(monkeypatch, home)
+    fake_home(monkeypatch, home)
     monkeypatch.chdir(home)
     zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
     run("--scope", "all", "--source", zip_path, capsys=capsys)
@@ -298,7 +291,7 @@ def test_folder_scope_in_the_home_folder_is_an_all_projects_install(
         tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     home.mkdir()
-    isolate(monkeypatch, home)
+    fake_home(monkeypatch, home)
     monkeypatch.chdir(home)
     zip_path = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
     code, out, _ = run("--scope", "folder", "--source", zip_path, capsys=capsys)
@@ -551,7 +544,7 @@ def test_the_shipped_skills_install_and_run_from_their_installed_location(
     done = subprocess.run(
         [sys.executable, str(root / "proposal-check/scripts/check.py"),
          str(FIXTURES / "f15-format-broken" / "broken-format.md")],
-        capture_output=True, text=True, check=False,
+        capture_output=True, encoding="utf-8", check=False,
     )
     assert done.returncode != 0
     assert "ERROR" in done.stdout
@@ -1166,7 +1159,7 @@ def test_a_home_with_a_user_name_and_spaces_never_shows_the_name(tmp_path, monke
     home = tmp_path / "Erika Musterfrau"
     cwd = home / "My Proposals"
     cwd.mkdir(parents=True)
-    isolate(monkeypatch, home)
+    fake_home(monkeypatch, home)
     monkeypatch.chdir(cwd)
     tool_path(monkeypatch, tmp_path)
     opencode_folder = plant_skill(cwd / ".opencode/skills")

@@ -28,6 +28,7 @@ from collect import (
     sibling_artifacts,
     strip_personal_data,
 )
+from helpers import fake_home
 
 import install
 
@@ -625,10 +626,7 @@ def home(tmp_path, monkeypatch):
     """A fake home holding nothing yet, and a workspace outside it."""
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
-    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    fake_home(monkeypatch, home)
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)

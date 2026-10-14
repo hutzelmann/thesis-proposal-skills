@@ -84,6 +84,7 @@ def enrich_bare_dois(items: list[dict]) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    common.utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("seeds", nargs="+", metavar="DOI")
     parser.add_argument("--limit-per-seed", type=int, default=20)

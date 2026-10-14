@@ -51,7 +51,7 @@ def test_oracle_holds(oracle_path: Path):
     # the fixture directory is the workspace root: the check's guidelines
     # chain ends at the working directory, which is where w07 keeps its file
     result = subprocess.run(
-        [sys.executable, str(CHECK), str(proposals[0])], capture_output=True, text=True,
+        [sys.executable, str(CHECK), str(proposals[0])], capture_output=True, encoding="utf-8",
         cwd=oracle_path.parent,
     )
     expected = oracle["check"]
@@ -89,7 +89,7 @@ def test_oracle_rule_identifiers_hold(oracle_path: Path):
     proposals = fixture_proposals(oracle_path.parent)
     result = subprocess.run(
         [sys.executable, str(CHECK), str(proposals[0]), "--json"],
-        capture_output=True, text=True, cwd=oracle_path.parent,
+        capture_output=True, encoding="utf-8", cwd=oracle_path.parent,
     )
     assert result.returncode == oracle["check"]["exit_code"]
     data = json.loads(result.stdout)

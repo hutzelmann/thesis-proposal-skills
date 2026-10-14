@@ -222,7 +222,10 @@ def ensure_gitignore(workspace: Path) -> None:
 
 
 def run(cmd: list[str]) -> None:
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # pandoc and typst write UTF-8 on every platform; text=True would decode it
+    # in the ANSI code page on Windows and raise on `Ł` (C5 81) even after a
+    # successful build. Replaced, not raised: this text only reaches a diagnostic
+    result = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         sys.exit(f"build failed: {' '.join(cmd[:2])} …\n{result.stderr.strip()[-2000:]}")
 
@@ -292,7 +295,24 @@ def build(proposal: Path, kind: str, tool: str) -> list[Path]:
     return [docx]
 
 
+def utf8_output() -> None:
+    """Write stdout and stderr as UTF-8, whatever encoding the platform chose.
+
+    A Windows pipe is encoded in the ANSI code page (cp1252 in Western Europe),
+    so printing a character outside it raised UnicodeEncodeError. Each stream
+    keeps its error handler, which reconfigure() would otherwise reset to
+    strict, and its newline handling; a stream without reconfigure() (a
+    caller's StringIO, or None without a console) is left alone. The same in
+    every script family (tests/unit/test_utf8_output.py).
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors=stream.errors)
+
+
 def main(argv: list[str] | None = None) -> int:
+    utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("proposal", type=Path)
     parser.add_argument("--handout", action="store_true",

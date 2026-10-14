@@ -93,6 +93,7 @@ def merge(entry: dict, record: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    common.utf8_output()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("proposal", type=Path)
     proposal = parser.parse_args(argv).proposal

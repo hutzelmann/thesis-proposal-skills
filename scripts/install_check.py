@@ -95,7 +95,7 @@ def run_smoke(workdir: Path, installed_root: Path) -> tuple[bool, str]:
     script = installed_root / "proposal-check" / "scripts" / "check.py"
     result = subprocess.run(
         [sys.executable, str(script), proposal.name],
-        cwd=workdir, capture_output=True, text=True, check=False,
+        cwd=workdir, capture_output=True, encoding="utf-8", check=False,
     )
     if result.returncode != 1:
         return False, (f"expected exit 1 with findings, got {result.returncode}: "
@@ -192,7 +192,7 @@ def installer_arm(src: Path, archive: Path, revision: str, base: Path,
     home.mkdir()
     result = subprocess.run(
         [sys.executable, str(src / "install.py"), "--scope", "all", "--source", str(archive)],
-        cwd=workdir, env=isolated_env(home), capture_output=True, text=True, check=False,
+        cwd=workdir, env=isolated_env(home), capture_output=True, encoding="utf-8", check=False,
         timeout=300,
     )
     if result.returncode != 0:
