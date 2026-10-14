@@ -1,0 +1,296 @@
+{
+  "about": "Requirements over OpenSpec's length limit, with their length as OpenSpec measures it (scripts/validate_specs.py). A listed requirement may get shorter, never longer; an unlisted one may not pass the limit. `python3 scripts/validate_specs.py --update-baseline` records shorter, moved and removed ones, and never adds or lengthens an entry: to accept one deliberately, edit this file, and the diff is the review.",
+  "changes": {
+    "add-setup-readiness-guide": {
+      "skill-lit-search": {
+        "Keyless baseline, keys as guided upgrades": 1217
+      },
+      "skill-publish": {
+        "Engine resolution order": 821
+      },
+      "user-onboarding": {
+        "Setup tiers and readiness checks in the install guide": 2101,
+        "User-local PDF tools when no package manager works": 1040,
+        "Users never work in this repository": 719
+      }
+    },
+    "desktop-first-install": {
+      "installation": {
+        "Existing installs are never silently duplicated or deleted": 2074,
+        "Install scope is an explicit choice": 854,
+        "Installer delivers the shipped skills byte-identically": 1799,
+        "Installer reports what the computer has ready": 852,
+        "One install prompt, carried out by the user's agent": 2146,
+        "Plugin definition for apps with a plugin button": 650
+      },
+      "skill-packaging": {
+        "Installation verified against the tracked tree": 925,
+        "User-side script constraints": 2443
+      },
+      "skill-troubleshoot": {
+        "Install identified from workspace evidence": 1385,
+        "Stale install answered before anything else": 740
+      },
+      "testing-harness": {
+        "Install prompt probed on the dev runner": 1555
+      },
+      "user-onboarding": {
+        "Chat-only apps flagged honestly": 519,
+        "Concrete agent walkthroughs": 561,
+        "Issue template mirrors the generated report": 539,
+        "Literature-search network guidance": 600,
+        "README names the path for a problem": 630,
+        "Supervisors can provision a cohort": 551
+      }
+    }
+  },
+  "specs": {
+    "guidance-model": {
+      "A workspace methodology branch declares its own content contract": 605,
+      "Canonical proposal structure": 1300,
+      "Case studies declare their case, sources, and limits": 794,
+      "Citation scope": 1778,
+      "Coarse timeline section": 710,
+      "Construction goals have a home": 1319,
+      "Controlled experiments plan hypotheses, design, and analysis": 1077,
+      "Degree-level guidance": 1035,
+      "Forbidden content": 638,
+      "Formalization boundary": 1416,
+      "Model evaluations fix data, baselines, and analysis in advance": 817,
+      "Readiness classification": 4498,
+      "Reference floor is not a reference target": 1060,
+      "Research involving human participants": 640,
+      "Research-question count bounds": 659,
+      "Significance and result type at the contribution's close": 539,
+      "Substance tests": 4719,
+      "Systematic reviews assess primary-study quality": 932,
+      "The methodology set is closed per workspace": 698,
+      "Thesis title quality": 960,
+      "Title alarm is raised and justified, never silently blocked": 964,
+      "Workspace layout and the proposal location": 1288,
+      "Workspace override file": 1135
+    },
+    "proposal-file-format": {
+      "A rename moves the whole family": 1370,
+      "Blocking-TODO split between proposal and notes": 553,
+      "Citation syntax and key constraints": 654,
+      "Companion notes file": 717,
+      "Language inference": 702,
+      "Proposal family under one handle": 1447,
+      "Single-file proposal with trailing metadata block": 1403,
+      "Skill prose must not drift from the format contract": 539,
+      "Visible TODO markers": 515,
+      "Working material stays out of the workspace": 1883
+    },
+    "skill-check": {
+      "Agent pass for non-mechanical issues": 820,
+      "Agent pass judges title quality": 580,
+      "Citation scanning excludes code and honours an escape": 568,
+      "Deterministic mechanical checks": 1674,
+      "Document-shape defects are named, not only their consequences": 904,
+      "Estimated length warning": 579,
+      "Findings carry stable identifiers": 643,
+      "Hindsight leakage reported as a warning": 2919,
+      "Machine-readable output mode": 556,
+      "Orphaned companions reported as a warning": 2854,
+      "Override file resolution chain": 523,
+      "Proposal status on request": 1473,
+      "Proposal-location value validated, misplacement reported": 781,
+      "Read-only run enforced without file mutation": 905,
+      "Reference-density advisory warning": 1204,
+      "Repeated citations reported as a warning": 1200,
+      "Retired override keys are reported, never ignored": 576,
+      "Review currency warning": 4061,
+      "Single-agent execution": 657,
+      "Title tells reported as warnings": 579,
+      "Two-bucket honest reporting": 521,
+      "Warning-class pattern checks": 1963,
+      "Workspace methodology declarations are validated and merged": 693
+    },
+    "skill-customize": {
+      "Dialog-driven override management": 512,
+      "Methodology branches are a customization": 584,
+      "Proposal-location customization": 838
+    },
+    "skill-ideate": {
+      "Coverage-guided convergence and early stop": 1621,
+      "Entry paths for prepared students": 6399,
+      "Grounding is not bibliography-building": 629,
+      "Level-steered ideation": 634,
+      "Literature-grounded ideation": 1421,
+      "Named choices questioned Socratically": 899,
+      "Notes file as session memory": 613,
+      "Provisional handle resolved at seeding": 1135,
+      "Research-group scoping": 3822,
+      "Seeds the proposal file": 3281,
+      "Socratic interaction style": 1360,
+      "Working title raised, never finalized": 555
+    },
+    "skill-import": {
+      "Citation form conversion": 556,
+      "Import names the continuation path": 706,
+      "Import to standard format": 1342,
+      "Imported references are validated and complemented": 616,
+      "Notes file seeded at import": 690,
+      "Output lands in the workspace": 724,
+      "Personal data stripped on import": 759,
+      "Single-context execution": 660
+    },
+    "skill-lit-search": {
+      "Academic sources with judged relevance": 988,
+      "Browser fallback for a blocked source": 1485,
+      "Credential resolution without directory traversal": 694,
+      "Excluded literature recorded in the notes file": 508,
+      "Keyless baseline, keys as guided upgrades": 932,
+      "Level-aware literature stance": 541,
+      "Multi-source federation with graceful degradation": 990,
+      "Search converges and hands over": 919,
+      "Search output sized for what a host shows": 1280,
+      "Single-context execution": 733,
+      "Verification pages passed or explained": 3187
+    },
+    "skill-packaging": {
+      "Audit-pattern regressions caught by tests": 961,
+      "Commit-time drift check": 728,
+      "Cross-skill identical blocks materialized from one source": 981,
+      "Descriptions state what the skill does and when to use it": 510,
+      "Frontmatter contract": 1274,
+      "Functional self-containment": 1208,
+      "Installation verified against the tracked tree": 710,
+      "Load-bearing sentences pinned offline": 635,
+      "Opening structure and mandate wording enforced offline": 953,
+      "Pre-publish local security gate": 543,
+      "Script output encoding": 1117,
+      "Stage handoff at stopping points": 3240,
+      "Uniform failure-path report offer": 1227,
+      "Uniform skill opening structure": 1673,
+      "User-side script constraints": 1605,
+      "Workspace-files block in every skill": 2156
+    },
+    "skill-publish": {
+      "Author-in-text citation rendering": 549,
+      "Bibliography presentation": 763,
+      "Build hands over to the student": 898,
+      "Compact output and citation style": 711,
+      "Contract passed to a workspace build definition": 714,
+      "Hand-in export": 803,
+      "No fallback to the built-in pipeline": 777,
+      "Title block and section levels sourced from the body": 888,
+      "Workspace-supplied build definition takes precedence": 1201
+    },
+    "skill-reverse": {
+      "Harvest record as an inspectable intermediate": 634,
+      "Output bounded by its source, and reported as such": 811,
+      "Reference shortfall escalated before it is reported": 700,
+      "Selective reading of the source thesis": 681,
+      "Single-context execution": 738,
+      "The knowledge cut": 608
+    },
+    "skill-review": {
+      "Content-level review scope": 1386,
+      "Degree-level review lenses": 1134,
+      "Named choices held to the swap test": 2020,
+      "Persisted, actionable output": 1476,
+      "Research questions recorded in the review": 1202,
+      "Review hands over a bounded revision path": 1412,
+      "Review rounds converge": 1095,
+      "Single-context execution": 2075,
+      "Three-tier substance verdict": 1683,
+      "Title assessed as its own dimension": 1063
+    },
+    "skill-supervise": {
+      "Borderline verdict deferred to the supervisor": 760,
+      "Claims verified before hand-over": 2114,
+      "Decorative names reach the student as a question": 1074,
+      "Draft-only delivery and feedback separation": 538,
+      "Findings reused from check and review, curated to pressing points": 2494,
+      "Handoff stays in chat": 580,
+      "Level-calibrated feedback bar": 624,
+      "Literature grounded by consent": 4281,
+      "Raw submission intake and normalization": 666,
+      "Resubmission intake": 1697,
+      "Single-context execution": 4171,
+      "Student-facing feedback with disclosure and steering": 2932,
+      "Verdict expressed as proposal state": 1885,
+      "Workload volume check": 2953
+    },
+    "skill-troubleshoot": {
+      "Companion artifacts inventoried at hash level": 906,
+      "Graded redaction with the most protective default": 1067,
+      "Install identified from workspace evidence": 769,
+      "Measured facts distinguished from self-reported ones": 889,
+      "Non-defect causes named as such": 847,
+      "Report stays local and is delivered by the user": 758,
+      "Reproduction seed only where reduction is possible": 597,
+      "Support verdicts shipped as skill data": 2334,
+      "Triage precedes collection": 648
+    },
+    "skill-write": {
+      "Citation form selection": 578,
+      "Citation scope in writing passes": 1416,
+      "Density pass binding per writing pass": 576,
+      "Level-aware contribution close and research questions": 880,
+      "Notes file consumed and maintained while writing": 723,
+      "One writer per file": 585,
+      "Refinement preserves author content": 706,
+      "Self-verification before reporting": 2026,
+      "Substance gate": 1608,
+      "Timeline written, never invented": 711,
+      "Title negotiated once research questions exist": 1001,
+      "Writing pass hands over": 1647
+    },
+    "standard-conformance": {
+      "External conformance validator as a canary": 757
+    },
+    "testing-harness": {
+      "A conditions change invalidates comparison": 1331,
+      "Baseline comparison arm": 631,
+      "CI provides the document toolchain": 535,
+      "Cache reuse probe": 978,
+      "Citation-practice coverage": 2221,
+      "Closing-note shape guard": 605,
+      "Codex plan billing guard": 5188,
+      "Copilot plan billing guard": 12234,
+      "Cost-gated matrix execution": 2412,
+      "Currency warning at the cost gate": 616,
+      "Dev-runner cost and helper-agent telemetry": 15332,
+      "Dev-runner host adapters": 31024,
+      "Epoch-based support classification": 705,
+      "Export paths are verified by building real documents": 547,
+      "Generated model-support report": 1082,
+      "Handoff coverage": 4009,
+      "Harness-owned host logins": 26206,
+      "Inverted-hybrid runners": 2800,
+      "Isolated child environment": 4805,
+      "Isolated measurement environment": 8597,
+      "Measured environments carry no eval definitions": 692,
+      "Measurements name the served model": 1905,
+      "Model currency check": 2131,
+      "Model identifiers live only in the registry": 1692,
+      "Multi-turn ideation testing": 2416,
+      "Off-topic-reference resolution covered": 1253,
+      "Paper-foundation reading bound covered": 2068,
+      "Pinned model registry": 2390,
+      "Prompt caching on Anthropic matrix rows": 1608,
+      "Proposal-family coverage": 3449,
+      "Read-only mandate measured under a compound request": 524,
+      "Readiness coverage": 2303,
+      "Review-currency coverage": 2879,
+      "Route determined by the first skill invocation": 1084,
+      "Routing dataset covers canonical, oblique, and contested phrasings": 546,
+      "Routing reported as a confusion matrix": 1762,
+      "Scoping-vocabulary containment measured against a non-aligned idea": 1285,
+      "Subscription text roles (dev runner)": 6577,
+      "Substance-test names consistent across guidance, skills, specs and pins": 1283,
+      "Substance-verdict coverage": 1067,
+      "Supervise feedback coverage": 2609,
+      "Swap-test anchor coverage": 3507,
+      "Title-alarm coverage": 582,
+      "Weekly model-bump pull request": 1530
+    },
+    "user-onboarding": {
+      "README names the path for a problem": 596,
+      "Supervisors can discover methodology configurability": 708
+    }
+  }
+}

@@ -60,8 +60,15 @@ host-logout = "python harness/host_login.py logout"
 audit = "python scripts/audit_scan.py"
 audit-status = "python scripts/audit_status.py"
 identify = "python scripts/identify_release.py"
-# the one place the OpenSpec CLI version is pinned; CI calls this task
-specs = "npx -y @fission-ai/openspec@1.7.0 validate --all --strict"
+# the OpenSpec gate; CI calls this task. The CLI runs through npx (networked
+# on first use) at OPENSPEC_VERSION in scripts/validate_specs.py, the one place
+# the OpenSpec CLI version is pinned: validate --all --strict, with requirements
+# over the length limit held to openspec/long-requirements.json (a ratchet)
+specs = "python3 scripts/validate_specs.py"
+# the OpenSpec pin vs npm's latest release, plus the local CLI and the
+# generatedBy stamp of .claude/skills: networked, read-only, not part of `test`
+# (L0 stubs every source); the weekly workflow runs it in write mode
+openspec-currency = "python3 scripts/openspec_currency.py"
 _sync_dev = "uv sync --dev"
 _hooks = "git config core.hooksPath .githooks"
 # generated copies merge to ours and are then regenerated from the source; an

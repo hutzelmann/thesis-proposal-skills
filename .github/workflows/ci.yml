@@ -6,7 +6,8 @@ on:
   pull_request:
   # A pull request opened with GITHUB_TOKEN triggers no pull_request run, and
   # workflow_dispatch is the one event that token may trigger: the weekly
-  # model-currency workflow dispatches CI on its bump branch through it.
+  # model-currency and openspec-currency workflows dispatch CI on their bump
+  # branches through it.
   workflow_dispatch:
 
 jobs:
@@ -28,7 +29,9 @@ jobs:
         run: uv run poe test
       - name: Coverage floor
         run: uv run poe cov
-      - name: Spec validation (pinned in the poe task)
+      # OpenSpec is pinned in scripts/validate_specs.py; the task runs it with the
+      # long-requirement ratchet (openspec/long-requirements.json)
+      - name: Spec validation (OpenSpec pinned in scripts/validate_specs.py)
         run: uv run poe specs
 
   # The skills run on the student's machine, and a good share of those are

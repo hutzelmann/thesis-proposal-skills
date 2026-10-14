@@ -8,7 +8,7 @@ Instructions for AI agents working **on this repository** (skill development and
 
 ## Spec-first workflow (mandatory)
 
-`openspec/specs/` is the source of truth, managed with OpenSpec. Any behavior change runs the loop: propose (change folder with proposal, spec deltas, tasks) → human review → implement → archive. Pure refactors/tooling/docs set `skip_specs: true` in the change's `.openspec.yaml`. Validate with `openspec validate --all --strict`. Agent integration files under `.claude/` are regenerated with `openspec init --tools <agent>` and are not committed — except `.claude/settings.json`, which a `.gitignore` exception keeps tracked.
+`openspec/specs/` is the source of truth, managed with OpenSpec. Any behavior change runs the loop: propose (change folder with proposal, spec deltas, tasks) → human review → implement → archive. Pure refactors/tooling/docs set `skip_specs: true` in the change's `.openspec.yaml`. Validate with `uv run poe specs`, the gate CI runs: `scripts/validate_specs.py` runs the OpenSpec CLI at its `OPENSPEC_VERSION`, the one place the OpenSpec CLI version is pinned, with `validate --all --strict`, and fails on every error or warning except a requirement over OpenSpec's 500-character limit that `openspec/long-requirements.json` records at no less than its current length. That includes an open change's MODIFIED text, which OpenSpec itself measures only after the archive. Write new requirements under the limit (detail goes into scenarios); `--update-baseline` records a long requirement that got shorter, moved or went away, and never accepts a new or longer one. `uv run poe openspec-currency` compares the pin with npm's latest release, the local CLI and the `generatedBy` stamp of `.claude/skills`, and a weekly workflow proposes a pin bump as a pull request. Agent integration files under `.claude/` are regenerated with `openspec init --tools <agent>` and are not committed — except `.claude/settings.json`, which a `.gitignore` exception keeps tracked.
 
 **Use the OpenSpec tooling; never hand-roll it.** Humans enter the loop through the `/opsx:*` slash commands (`/opsx:propose`, `/opsx:apply`, `/opsx:archive`). Agents invoke the matching skills instead — `openspec-propose`, `openspec-apply-change`, `openspec-archive-change`, `openspec-update-change`, `openspec-sync-specs`, `openspec-explore` — which carry their own `allowed-tools: Bash(openspec:*)` grant. Inside them, drive the CLI: `openspec new change`, `openspec instructions <artifact>`, `openspec status --change <id>`, `openspec archive`. Never create, move, or delete a change folder by hand (`mkdir -p openspec/changes/…`, `mv … openspec/changes/archive/…`, `rm -rf …/specs/…`), and never hand-write an artifact the CLI would scaffold.
 
@@ -63,7 +63,8 @@ uv run poe setup                   # once per clone: dev env + core.hooksPath (p
 uv run poe test                    # L0 chain: pytest + ruff + generated-copy drift check — must stay green
 uv run poe test-fast               # inner loop: parallel, without the pandoc/typst builds (~3s)
 uv run poe cov                     # coverage with the 78% floor
-uv run poe specs                   # openspec validate --all --strict, CLI version pinned here for CI
+uv run poe specs                   # the OpenSpec gate CI runs: validate --all --strict at the version pinned in scripts/validate_specs.py, long requirements held to openspec/long-requirements.json (networked: npx)
+uv run poe openspec-currency       # the OpenSpec pin vs npm's latest, the local CLI and the .claude/skills stamp (networked, read-only); exit 1 = pin behind, 2 = unknown
 uv run poe dev <scenario> --model haiku   # default for Anthropic models: real Claude Code on the subscription, $0 while the plan's extra usage stays off: billing variables are stripped from every model run (claude_runner passthrough); the alias runs the host's current haiku, not the matrix row
 uv run poe smoke                   # subscription: the core scenarios on the dev runner, isolated and budget-capped, write_from_seed judged, closing summary
 uv run poe smoke-inspect           # metered, cost-gated, only when the Inspect wiring changed: [roles].smoke × core tasks × 1 epoch via OpenRouter
@@ -112,7 +113,7 @@ Raw invocations behind them, plus commands without a poe task:
 uv run pytest                      # L0: all tests, no model calls
 uv run ruff check .                # lint
 python3 scripts/sync_shared.py --check   # generated-copy drift check
-openspec validate --all --strict   # spec validity
+python3 scripts/validate_specs.py --update-baseline   # record shorter, moved or removed long requirements; never adds or lengthens an entry, never run in CI
 uv run inspect eval harness/skill_evals.py@<task> --model openrouter/...   # metered and ungated — prefer poe matrix --models/--tasks; see "Metered model calls"
 ```
 

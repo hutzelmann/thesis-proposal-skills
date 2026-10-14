@@ -1,0 +1,26 @@
+{
+  "id": "sample-unicode",
+  "title": "sample-unicode",
+  "overview": "A synthetic capability whose long requirement holds a character outside the Basic Multilingual Plane.",
+  "requirementCount": 1,
+  "requirements": [
+    {
+      "name": "Long rule with a symbol",
+      "text": "The sample gate SHALL count the mathematical symbol 𝔸 the way JavaScript counts it, as two UTF-16 code units, and this requirement is long on purpose so that the validator reports it. It SHALL carry enough words to pass the limit: a first clause about inputs, a second clause about outputs, a third clause about the error conditions that follow from both, and a fourth that repeats the first three in a shorter form. The text SHALL then add an example, then another example, then a closing sentence that adds nothing new to the rule at all.",
+      "scenarios": [
+        {
+          "name": "Symbol counted twice",
+          "rawText": "- **WHEN** the gate measures this requirement\n- **THEN** the symbol adds two to its length"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "format": "openspec"
+  },
+  "root": {
+    "path": "/synthetic",
+    "source": "nearest"
+  }
+}

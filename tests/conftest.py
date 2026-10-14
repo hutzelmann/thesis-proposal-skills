@@ -20,7 +20,9 @@ import common
 import copilot_cli
 import host_login
 import model_currency
+import openspec_currency
 import pytest
+import validate_specs
 from helpers import (
     COPILOT_TOKEN,
     FIXTURES,
@@ -127,6 +129,27 @@ def _model_catalog_offline(monkeypatch):
     the error the gate already handles keeps such tests free of any knowledge
     of the catalog."""
     monkeypatch.setattr(model_currency, "fetch_json", failing_fetch("network disabled in L0 tests"))
+
+
+class RealOpenSpecStarted(AssertionError):
+    """Raised by the OpenSpec gate's CLI runner in every L0 test that did not replace it."""
+
+
+def _no_real_openspec(*_args: object) -> object:
+    raise RealOpenSpecStarted("L0 never starts the OpenSpec CLI through npx: replace "
+                              "validate_specs.run_cli with a replay of recorded output")
+
+
+@pytest.fixture(autouse=True)
+def _openspec_offline(monkeypatch):
+    """L0 is offline by construction for the OpenSpec gate and its currency
+    check too (bump-openspec): the gate's CLI runner raises loudly, since npx
+    would download the pinned package, and the registry fetch fails the way
+    an unreachable registry does, which the check already reads as unknown.
+    The two test files that exercise them replace both with recordings."""
+    monkeypatch.setattr(validate_specs, "run_cli", _no_real_openspec)
+    monkeypatch.setattr(openspec_currency, "fetch_json",
+                        failing_fetch("network disabled in L0 tests"))
 
 
 @pytest.fixture(autouse=True)

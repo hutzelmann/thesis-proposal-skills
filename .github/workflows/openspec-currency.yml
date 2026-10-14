@@ -1,0 +1,128 @@
+name: OpenSpec currency
+
+# Weekly check of the spec gate's OpenSpec pin (OPENSPEC_VERSION in
+# scripts/validate_specs.py) against npm's latest release (testing-harness spec:
+# OpenSpec version kept current). A bump arrives as one pull request from a
+# fixed branch that changes the pin and nothing else, and the pull request is
+# the review: nothing here calls a model, reads a secret beyond the built-in
+# token, rewrites the long-requirement baseline, or merges.
+#
+# A pull request opened with GITHUB_TOKEN triggers no pull_request workflow, so
+# this workflow dispatches ci.yml on the bump branch itself, where `uv run poe
+# specs` validates with the new version. If the new version reports something
+# the pinned one did not, that run is red until the maintainer fixes the specs
+# or, for a long requirement, shortens it or edits openspec/long-requirements.json,
+# and pushes the result. From then on the branch carries a maintainer commit and
+# is never overwritten, whether its pull request is open or closed, until a
+# merged pull request has carried that tip into main. Deleting the branch lets
+# the next run start over. If the checks do not show on the pull request,
+# closing and reopening it is the fallback.
+
+on:
+  schedule:
+    - cron: "17 7 * * 1" # Mondays 07:17 UTC, after the model-currency slot
+  workflow_dispatch:
+
+concurrency: openspec-currency
+
+permissions:
+  contents: write # push the bump branch
+  pull-requests: write # open, edit, comment on and close the bump pull request
+  actions: write # dispatch ci.yml on the bump branch
+
+env:
+  BRANCH: openspec-currency/bump
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Plain python3, no uv: the checker is standard library only.
+      - name: Check the pin against npm (write mode)
+        id: check
+        run: |
+          set +e
+          python3 scripts/openspec_currency.py --write --json \
+            --pr-body "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/report.json"
+          status=$?
+          set -e
+          if [ "$status" -eq 2 ]; then
+            echo "::error::OpenSpec currency unknown: the npm registry could not be read"
+            exit 1
+          fi
+          # Fail closed: a crash exits 1 like a pin that is behind, so the report
+          # is what tells the two apart. Only a 0 or 1 that ends in a JSON report
+          # is a verdict; anything else stops before a PR is closed or pushed.
+          if [ "$status" -gt 1 ] || ! jq -e '(.status | type == "string") and (.warnings | type == "array")' \
+              "$RUNNER_TEMP/report.json" > /dev/null; then
+            echo "::error::the OpenSpec currency check failed (exit $status) without a report"
+            exit 1
+          fi
+          {
+            echo "## OpenSpec currency"
+            echo
+            jq -r '"- pin `\(.pin)`, npm latest `\(.latest)`: **\(.status)**", (.warnings[] | "- warning: \(.)"), (.notes[] | "- note: \(.)")' \
+              "$RUNNER_TEMP/report.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if git diff --quiet -- scripts/validate_specs.py; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Main is current — close an obsolete bump pull request
+        if: steps.check.outputs.changed == 'false'
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr close "$pr" --comment "main is current: this week's OpenSpec currency check found nothing to bump."
+          fi
+
+      - name: Open or update the bump pull request
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          # Inspect the branch as it is now and lease the push against exactly the
+          # inspected commit, so a push landing after the inspection fails the push.
+          git fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>/dev/null \
+            || git update-ref -d "refs/remotes/origin/$BRANCH"
+          expected=$(git rev-parse -q --verify "refs/remotes/origin/$BRANCH" || true)
+          if [ -n "$expected" ]; then
+            # Like Dependabot: once anyone but this workflow has committed to the
+            # bump branch (a spec fix, a baseline edit), it is never overwritten,
+            # open pull request or not. The one exception is a tip that a merged
+            # pull request already carried into main: nothing on it is left to lose.
+            others=$(git log "origin/main..$expected" --format='%an' | grep -v -x 'github-actions\[bot\]' || true)
+            merged=$(gh pr list --head "$BRANCH" --state merged --limit 100 --json headRefOid --jq '.[].headRefOid')
+            if [ -n "$others" ] && ! printf '%s\n' "$merged" | grep -q -x -F "$expected"; then
+              { echo "A newer OpenSpec release. The branch carries commits by others, so it was left untouched."
+                echo "To start over from main instead, delete the branch \`$BRANCH\`."
+                echo; cat "$RUNNER_TEMP/body.md"; } > "$RUNNER_TEMP/comment.md"
+              target=${pr:-$(gh pr list --head "$BRANCH" --state all --limit 1 --json number --jq '.[0].number // empty')}
+              if [ -n "$target" ]; then
+                gh pr comment "$target" --body-file "$RUNNER_TEMP/comment.md"
+              fi
+              echo "::warning::$BRANCH carries commits by others and was left untouched"
+              exit 0
+            fi
+          fi
+          latest=$(jq -r '.latest' "$RUNNER_TEMP/report.json")
+          git switch -C "$BRANCH"
+          git add scripts/validate_specs.py
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore(openspec): bump the spec gate to OpenSpec $latest"
+          git push --force-with-lease="refs/heads/$BRANCH:$expected" origin "HEAD:refs/heads/$BRANCH"
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "OpenSpec currency: bump the spec gate to $latest" \
+              --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "OpenSpec currency: bump the spec gate to $latest" --body-file "$RUNNER_TEMP/body.md"
+          fi
+          gh workflow run ci.yml --ref "$BRANCH"

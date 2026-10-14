@@ -1,0 +1,66 @@
+{
+  "id": "sample-gate",
+  "title": "sample-gate",
+  "overview": "A synthetic capability that exists only to record the shapes the OpenSpec CLI prints for a spec gate.",
+  "requirementCount": 5,
+  "requirements": [
+    {
+      "name": "Short rule",
+      "text": "The sample gate SHALL accept a short requirement without comment.",
+      "scenarios": [
+        {
+          "name": "Short text",
+          "rawText": "- **WHEN** a requirement is short\n- **THEN** no length warning is printed"
+        }
+      ]
+    },
+    {
+      "name": "Long rule",
+      "text": "The sample gate SHALL carry a requirement whose text runs well past the length limit, so that the validator reports it by index. It SHALL keep going with clauses that would belong in scenarios: when the first condition holds it does one thing, when the second holds it does another, and when neither holds it does a third. It SHALL also name every edge case inline, the empty input, the oversized input and the input in the wrong encoding, each with its own consequence. Finally it SHALL restate the whole rule once more in different words, which is the habit the warning exists to discourage in the first place. This change adds one more sentence, so the modified text is longer than the text the spec holds.",
+      "scenarios": [
+        {
+          "name": "Long text",
+          "rawText": "- **WHEN** the gate validates this spec\n- **THEN** the validator reports the requirement as very long"
+        }
+      ]
+    },
+    {
+      "name": "Middle rule",
+      "text": "The sample gate SHALL keep a third requirement after the long one, so the long one sits at index one. This change makes it long as well: it SHALL name the first case it covers, the second case it covers, and the case where both apply at once, and it SHALL describe what each case accepts, what each case returns and what each case does when its input is missing. It SHALL close with a note on ordering and a note on retries, which is more than a short rule needs, and the validator never measures it while it is a MODIFIED delta.",
+      "scenarios": [
+        {
+          "name": "Middle text",
+          "rawText": "- **WHEN** a requirement follows a long one\n- **THEN** its index is two"
+        }
+      ]
+    },
+    {
+      "name": "Long addition",
+      "text": "The sample gate SHALL receive, from this open change, a requirement long enough for the validator to report it by name rather than by index. It SHALL describe its first case at length, then its second case at the same length, then a third case that combines the first two, and it SHALL list the inputs each case accepts and the outputs each case produces. It SHALL close with a note on what happens when the inputs arrive out of order, and a second note on what happens when they never arrive, which is more than one requirement should hold.",
+      "scenarios": [
+        {
+          "name": "Reported by name",
+          "rawText": "- **WHEN** the gate validates this change\n- **THEN** the validator names this requirement as very long"
+        }
+      ]
+    },
+    {
+      "name": "Short addition",
+      "text": "The sample gate SHALL receive a short requirement from this change as well.",
+      "scenarios": [
+        {
+          "name": "Not reported",
+          "rawText": "- **WHEN** the gate validates this change\n- **THEN** this requirement draws no warning"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "format": "openspec"
+  },
+  "root": {
+    "path": "/synthetic",
+    "source": "nearest"
+  }
+}
