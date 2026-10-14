@@ -97,7 +97,7 @@ Green run, 2026-10-13, after sections 2–4: the same four test files → 218 pa
 
 ## 5. Verification
 
-- [ ] 5.1 Manual, Windows and Mac. Run this in the same session as `desktop-first-install` task 8.7, not as a landing gate. It stays open after landing until that run:
+- [x] 5.1 Moved on 2026-10-14, at the maintainer's decision, into `desktop-first-install` task 8.7, which runs in the same Windows/Mac session; this change was archived before that run so that `add-proposal-folders` could change "Users never work in this repository" after it. The checks as originally planned, Windows and Mac, in the same session as `desktop-first-install` task 8.7, not as a landing gate:
   1. Run both winget lines from the guide on a machine with a working winget source, and confirm that each installs its tool.
   2. On a machine whose winget source errors (or with winget skipped), follow the archive route for typst once: latest release, `certutil -hashfile` against the page's digest, a user-owned folder on PATH, `typst --version`.
   3. On a Mac, if one is available, confirm whether a browser-downloaded typst archive opens, or whether the Homebrew sentence is needed as written.

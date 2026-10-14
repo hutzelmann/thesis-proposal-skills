@@ -1,19 +1,6 @@
 {
   "about": "Requirements over OpenSpec's length limit, with their length as OpenSpec measures it (scripts/validate_specs.py). A listed requirement may get shorter, never longer; an unlisted one may not pass the limit. `python3 scripts/validate_specs.py --update-baseline` records shorter, moved and removed ones, and never adds or lengthens an entry: to accept one deliberately, edit this file, and the diff is the review.",
   "changes": {
-    "add-setup-readiness-guide": {
-      "skill-lit-search": {
-        "Keyless baseline, keys as guided upgrades": 1217
-      },
-      "skill-publish": {
-        "Engine resolution order": 821
-      },
-      "user-onboarding": {
-        "Setup tiers and readiness checks in the install guide": 2101,
-        "User-local PDF tools when no package manager works": 1040,
-        "Users never work in this repository": 719
-      }
-    },
     "desktop-first-install": {
       "installation": {
         "Existing installs are never silently duplicated or deleted": 2074,
@@ -141,7 +128,7 @@
       "Browser fallback for a blocked source": 1485,
       "Credential resolution without directory traversal": 694,
       "Excluded literature recorded in the notes file": 508,
-      "Keyless baseline, keys as guided upgrades": 932,
+      "Keyless baseline, keys as guided upgrades": 1217,
       "Level-aware literature stance": 541,
       "Multi-source federation with graceful degradation": 990,
       "Search converges and hands over": 919,
@@ -173,6 +160,7 @@
       "Build hands over to the student": 898,
       "Compact output and citation style": 711,
       "Contract passed to a workspace build definition": 714,
+      "Engine resolution order": 821,
       "Hand-in export": 803,
       "No fallback to the built-in pipeline": 777,
       "Title block and section levels sourced from the body": 888,
@@ -290,7 +278,10 @@
     },
     "user-onboarding": {
       "README names the path for a problem": 596,
-      "Supervisors can discover methodology configurability": 708
+      "Setup tiers and readiness checks in the install guide": 2101,
+      "Supervisors can discover methodology configurability": 708,
+      "User-local PDF tools when no package manager works": 1040,
+      "Users never work in this repository": 719
     }
   }
 }

@@ -53,7 +53,7 @@ Results SHALL be merged and deduplicated across sources by DOI or normalized tit
 - **THEN** the missing-key note appears once, and every other distinct note of the run appears once as well
 
 ### Requirement: Keyless baseline, keys as guided upgrades
-The default installation SHALL work fully without any API key. Optional keys only improve rate limits, abstracts, or coverage. The skill SHALL detect missing/exhausted keys (including quota errors) and degrade cleanly. When a free key would help, the skill SHALL offer agent-guided setup around one central key file at the workspace root, shared by every proposal in that workspace: state the concrete benefit, point to the signup location, create or update the key file with a named placeholder for the key, ensure version-control ignores cover the file, have the user paste the key value into the file themselves, and validate the result with a test call that reads the file mechanically. The secret value SHALL NOT pass through the agent: the agent never asks the user to provide the value in conversation and never reads, echoes, logs, or writes it. An error caused by a missing key SHALL name every location that was consulted.
+The default installation SHALL work fully without any API key. Optional keys only improve rate limits, abstracts, or coverage. The skill SHALL detect missing/exhausted keys (including quota errors) and degrade cleanly. When a free key would help, the skill SHALL offer agent-guided setup around one central key file at the workspace root, shared by every proposal in that workspace: state the concrete benefit, point to the signup location, create or update the key file with a named placeholder for the key, ensure version-control ignores cover the file, have the user paste the key value into the file themselves, and validate the result with a test call that reads the file mechanically. Ensuring the ignores SHALL NOT depend on whether the workspace is under version control yet: the skill SHALL add the key file to the ignore file at the workspace root, creating that ignore file when none exists, so that a folder turned into a repository later never stages the secret. The secret value SHALL NOT pass through the agent: the agent never asks the user to provide the value in conversation and never reads, echoes, logs, or writes it. An error caused by a missing key SHALL name every location that was consulted.
 
 #### Scenario: No keys configured
 - **WHEN** the user runs a search with zero keys configured
@@ -70,6 +70,10 @@ The default installation SHALL work fully without any API key. Optional keys onl
 #### Scenario: Guided setup hand-off
 - **WHEN** the user accepts guided key setup
 - **THEN** the agent creates or updates the workspace-root key file with an empty placeholder entry, directs the user to paste the key into that file, and verifies afterwards by running a search — without the key value ever appearing in the conversation or in any agent-written content
+
+#### Scenario: Workspace not under version control
+- **WHEN** the user accepts guided key setup in a workspace that is not a git repository and has no ignore file
+- **THEN** the agent creates the ignore file at the workspace root with an entry for the key file before the user pastes the key, exactly as it would in a repository
 
 #### Scenario: User offers the key in chat
 - **WHEN** the user pastes an API key value into the conversation

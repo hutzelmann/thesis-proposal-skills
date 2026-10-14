@@ -113,6 +113,15 @@
   - in a new chat, ask for a check of a proposal and confirm that the script-bearing skill runs with that interpreter, per the interpreter clause. If it cannot find it, settle design D13's open question: the clause also names the further probes.
 
   Correct the "No Python yet?" subsection if any of that differs. On a Mac, likewise confirm that the python.org installer followed by Install Certificates.command leaves the literature search working. Record the app, Windows build, Python and uv versions in the notes.
+
+  In the same session, the install guide's PDF-export checks, moved here from `add-setup-readiness-guide` task 5.1 when that change was archived on 2026-10-14 (its design D-sections and wording now live in `openspec/changes/archive/2026-10-14-add-setup-readiness-guide/`):
+  - run both winget lines from the guide on a machine with a working winget source, and confirm that each installs its tool;
+  - on a machine whose winget source errors (or with winget skipped), follow the archive route for typst once: latest release, `certutil -hashfile` against the page's digest, a user-owned folder on PATH, `typst --version`;
+  - on a Mac, if one is available, confirm whether a browser-downloaded typst archive opens, or whether the Homebrew sentence is needed as written.
+
+  Correct `docs/install.md`'s "PDF export" wording only where the run differs, and record the winget version alongside the Windows build.
+
+  Also confirm `utf8-script-output` on a real Windows pipe: run a check of a proposal whose references name an author outside cp1252 (such as `Ł`), and confirm the output arrives intact (`openspec/changes/archive/2026-10-14-utf8-script-output/`).
 - [ ] 8.6 After section 9 is complete: remove any recipe not run (with the matching edit to `test_install_docs.py::test_the_featured_apps_have_recipes`), re-run `python3 scripts/sync_shared.py`, and archive the change on `main`. Archiving makes `test_install_docs.py` reject any recipe still stamped `unverified`.
 
 ## 9. Revision 2026-10-13: finding Python, the interpreter clause, apps' own folders, readiness lines

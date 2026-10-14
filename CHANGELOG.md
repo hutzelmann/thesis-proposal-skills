@@ -19,7 +19,7 @@ The suite gets this changelog and version numbers, and from now on installs rece
 - This changelog says, per release, what changed for students, supervisors and workspaces; the suite's history since its first publication appears as releases 0.1.0 to 0.8.0, each tagged on the commit it describes. ([add-changelog](openspec/changes/archive/2026-10-14-add-changelog/))
 - `proposal-review` ends each review with a `## Research questions reviewed` section that copies the proposal's numbered research questions verbatim, and `proposal-check` warns `review-questions-changed` once those questions have changed, so its status read treats a review that may describe an earlier version as superseded. ([mark-review-currency](openspec/changes/archive/2026-10-14-mark-review-currency/))
 - `proposal-check` warns `companion-orphaned` when a review, kept files or other companion files carry a slug that has no proposal, notes file or harvest record, when a family file lies at the workspace root outside a configured proposal location, or when a figure link points under another slug; the workspace's own files are never reported. ([tighten-proposal-family](openspec/changes/archive/2026-10-14-tighten-proposal-family/))
-- `docs/install.md` opens with what each kind of work needs (an agent app for writing, Python 3.11 or newer for checks and literature search, pandoc with typst or LaTeX for PDF export), says the proposals folder is never a clone of this repository, and gains "Is everything working?" checks and a "PDF export" section with a digest-checked fallback (0ba4a2e).
+- `docs/install.md` opens with what each kind of work needs (an agent app for writing, Python 3.11 or newer for checks and literature search, pandoc with typst or LaTeX for PDF export), says the proposals folder is never a clone of this repository, and gains "Is everything working?" checks and a "PDF export" section with a digest-checked fallback ([add-setup-readiness-guide](openspec/changes/archive/2026-10-14-add-setup-readiness-guide/)).
 
 ### Changed
 
@@ -33,12 +33,12 @@ The suite gets this changelog and version numbers, and from now on installs rece
 
 - The skills' scripts and `install.py` write their output as UTF-8 on every platform, so a character such as the `Ł` in an author's name no longer aborts them in a Windows console or pipe, and `proposal-publish` reads pandoc and typst messages as UTF-8. ([utf8-script-output](openspec/changes/archive/2026-10-14-utf8-script-output/))
 - `proposal-lit-search` reports an arXiv failure by its cause (verification page, unexpected content, malformed feed, HTTP status, network) as it does for the other sources, instead of reporting a web page as invalid XML or as zero results; a 404 is no longer retried, and snowballing prints each source note once per run. ([classify-arxiv-answers](openspec/changes/archive/2026-10-13-classify-arxiv-answers/))
-- `proposal-publish`'s Windows hint gives one `winget install --id … -e` command per tool, since the previous combined command installed nothing, and the hint points to the install guide's PDF-export section when no package manager works (0ba4a2e).
+- `proposal-publish`'s Windows hint gives one `winget install --id … -e` command per tool, since the previous combined command installed nothing, and the hint points to the install guide's PDF-export section when no package manager works ([add-setup-readiness-guide](openspec/changes/archive/2026-10-14-add-setup-readiness-guide/)).
 
 ### Security
 
 - `proposal-lit-search` queries arXiv over HTTPS, parses an arXiv answer only when it starts as an Atom feed so no document type or entity definition reaches the XML parser, and notes an unexpected failure by its error type only, never with server text. ([classify-arxiv-answers](openspec/changes/archive/2026-10-13-classify-arxiv-answers/))
-- `proposal-lit-search` adds `api-keys.env` to the workspace's `.gitignore` whether or not the folder is a git repository yet, so a folder that becomes one later does not commit the key (0ba4a2e).
+- `proposal-lit-search` adds `api-keys.env` to the workspace's `.gitignore` whether or not the folder is a git repository yet, so a folder that becomes one later does not commit the key ([add-setup-readiness-guide](openspec/changes/archive/2026-10-14-add-setup-readiness-guide/)).
 
 ### For contributors
 
