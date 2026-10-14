@@ -2,9 +2,10 @@
 """Stamp `metadata.version` into every SKILL.md as part of the publish sequence.
 
 The version is semantic and has exactly one source of truth: `[project] version`
-in `pyproject.toml`. Publishing means bumping it there (patch for fixes, minor
-for new behavior or skills, major for breaking workspace-facing changes), running
-this script, and committing the stamp (`chore(publish): stamp <version>`), so the
+in `pyproject.toml`. Publishing means `uv run poe release` (scripts/changelog.py),
+which picks the version from CHANGELOG.md's [Unreleased] entries, bumps it
+there, stamps through `stamp_text` below, and commits the stamp
+(`chore(publish): stamp <version>`) with its annotated tag, so the
 published tree names its snapshot and `poe identify` resolves a bug report
 without walking history. Installs are git snapshots of `main` (the installer
 fetches its archive, the plugin marketplace syncs it, `npx skills add` clones

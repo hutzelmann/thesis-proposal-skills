@@ -18,9 +18,17 @@ checkouts fetch no tags.
 
 `notes X.Y.Z` prints one release's body, for `gh release create --notes-file`.
 
+`release` (`poe release`) cuts a release locally: it picks the version the
+Unreleased entries require, refuses 1.0.0 until the readiness gate holds, adds
+a model-support entry when the roster or a verdict moved, moves the entries
+under the new heading, sets pyproject and uv.lock, stamps every SKILL.md,
+re-runs the gate, commits exactly those files and creates the annotated tag.
+It never pushes; it prints the push and `gh release` commands instead.
+
 Usage:
     python3 scripts/changelog.py check
     python3 scripts/changelog.py notes 0.8.0
+    python3 scripts/changelog.py release [--bump minor|--version 1.0.0] [--dry-run]
 """
 
 from __future__ import annotations
@@ -32,8 +40,11 @@ import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from itertools import pairwise
 from pathlib import Path
+
+import stamp_version  # sibling script: one stamp format for `release` and the manual path
 
 REPO = Path(__file__).resolve().parent.parent
 REPO_URL = "https://github.com/hutzelmann/thesis-proposal-skills"
@@ -296,6 +307,315 @@ def notes(text: str, version: str) -> str | None:
     return None
 
 
+# ---------- release (add-release-command) ------------------------------------
+
+BUMPS = ("patch", "minor", "major")
+ONE_ZERO: Version = (1, 0, 0)
+# The 1.0.0 readiness gate, agreed with the maintainer on 2026-10-14: the
+# desktop install verified (its change archived) and every model in the README
+# summary measured. Edit this list deliberately; the diff is the review.
+READINESS_OPEN_CHANGES = ("desktop-first-install",)
+SUMMARY_START, SUMMARY_END = "<!-- model-support:start -->", "<!-- model-support:end -->"
+RELEASE_PATHS = ("CHANGELOG.md", "pyproject.toml", "uv.lock")
+# main holds releases only and moves by fast-forward; work integrates on develop
+# (add-changelog design D7).
+MAIN, DEVELOP = "main", "develop"
+
+
+class ReleaseRefused(Exception):
+    """A precondition of `release` does not hold; the message says which."""
+
+
+def required_bump(unreleased: Release, current: Version) -> str:
+    if any(e.startswith("- **Breaking:**") for e in unreleased.entries):
+        return "major" if current >= ONE_ZERO else "minor"
+    return "minor" if unreleased.by_category.get("Added") else "patch"
+
+
+def bumped(current: Version, kind: str) -> Version:
+    major, minor, patch = current
+    if kind == "major":
+        return (major + 1, 0, 0)
+    if kind == "minor":
+        return (major, minor + 1, 0)
+    return (major, minor, patch + 1)
+
+
+def choose_version(unreleased: Release, current: Version, bump: str | None,
+                   explicit: str | None) -> tuple[Version, str]:
+    """The version to cut and why; refuses anything below what the entries need."""
+    need = required_bump(unreleased, current)
+    floor = bumped(current, need)
+    if explicit:
+        version = tuple(int(p) for p in explicit.split("."))
+        if len(version) != 3 or version < floor:  # type: ignore[operator]
+            raise ReleaseRefused(f"{explicit} is below {vstr(floor)}, which the entries "
+                                 f"require ({need} bump over {vstr(current)})")
+        return version, f"explicit --version over {vstr(current)}"  # type: ignore[return-value]
+    if bump and BUMPS.index(bump) < BUMPS.index(need):
+        raise ReleaseRefused(f"--bump {bump} is lower than the entries require ({need})")
+    kind = bump or need
+    return bumped(current, kind), f"{kind} bump over {vstr(current)} (entries require {need})"
+
+
+def _lead_and_marker(body: list[str]) -> tuple[str, str]:
+    first = next((i for i, line in enumerate(body) if line.startswith("### ")), len(body))
+    head = body[:first]
+    marker = next((line for line in head
+                   if len(line) > 2 and line.startswith("_") and line.endswith("_")), "")
+    lead = "\n".join(line for line in head if line != marker).strip()
+    return marker, lead
+
+
+def render_categories(by_category: dict[str, list[str]]) -> list[str]:
+    out: list[str] = []
+    for category in CATEGORIES:
+        if by_category.get(category):
+            out += [f"### {category}", "", *by_category[category], ""]
+    return out
+
+
+def cut(text: str, version: str, date: str, extra_changed: list[str]) -> str:
+    """Move [Unreleased] under `## [version] - date`; reset it; fix compare links."""
+    cl = parse(text)
+    unreleased, newest = cl.releases[0], cl.numbered()[0]
+    marker, lead = _lead_and_marker(unreleased.body)
+    if not lead:
+        raise ReleaseRefused("[Unreleased] has no lead paragraph to open the release with")
+    by_category = {c: list(e) for c, e in unreleased.by_category.items()}
+    by_category.setdefault("Changed", []).extend(extra_changed)
+    lines = text.splitlines()
+    start, end = unreleased.line - 1, newest.line - 1
+    section = [f"## [{version}] - {date}", "", lead, "", *render_categories(by_category)]
+    head = [lines[start], "", marker, ""] if marker else [lines[start], ""]
+    new = lines[:start] + head + section + lines[end:]
+    old_tag, new_tag = f"v{newest.title}", f"v{version}"
+    out = "\n".join(new) + "\n"
+    old_link = f"[{UNRELEASED}]: {REPO_URL}/compare/{old_tag}...HEAD"
+    new_links = (f"[{UNRELEASED}]: {REPO_URL}/compare/{new_tag}...HEAD\n"
+                 f"[{version}]: {REPO_URL}/compare/{old_tag}...{new_tag}")
+    if old_link not in out:
+        raise ReleaseRefused(f"compare link not found: {old_link}")
+    return out.replace(old_link, new_links, 1)
+
+
+def set_project_version(text: str, version: str) -> str:
+    head, sep, tail = text.partition("[project]")
+    return head + sep + re.sub(r'(?m)^version = "[^"]*"', f'version = "{version}"', tail, count=1)
+
+
+def set_lock_version(text: str, version: str) -> str:
+    return re.sub(r'(name = "thesis-proposal-skills"\nversion = )"[^"]*"',
+                  rf'\g<1>"{version}"', text, count=1)
+
+
+def summary_rows(readme: str) -> dict[str, str]:
+    """`model -> verdict` from the README's generated model-support table."""
+    if SUMMARY_START not in readme or SUMMARY_END not in readme:
+        return {}
+    region = readme.split(SUMMARY_START, 1)[1].split(SUMMARY_END, 1)[0]
+    rows: dict[str, str] = {}
+    for line in region.splitlines():
+        cells = [c.strip() for c in line.split("|")]
+        if len(cells) > 3 and cells[1].startswith("`"):
+            rows[cells[1].strip("`")] = cells[2]
+    return rows
+
+
+def readiness_problems(root: Path) -> list[str]:
+    problems = [f"OpenSpec change {name} is still open"
+                for name in READINESS_OPEN_CHANGES
+                if (root / "openspec" / "changes" / name).is_dir()]
+    readme = root / "README.md"
+    rows = summary_rows(readme.read_text(encoding="utf-8")) if readme.is_file() else {}
+    problems += [f"model-support summary reads untested for {model}"
+                 for model, verdict in rows.items() if "untested" in verdict]
+    return problems
+
+
+def prose_name(model_id: str) -> str:
+    """'router/vendor/family-size-2.0' -> 'Family Size 2.0': a prose name, never an ID."""
+    words = model_id.rsplit("/", 1)[-1].split("-")
+    return " ".join("GPT" if w == "gpt" else w[:1].upper() + w[1:] for w in words)
+
+
+def roster(models_toml: str) -> list[str]:
+    data = tomllib.loads(models_toml)
+    return [m["id"] for m in data.get("models", []) if m.get("enabled", True)]
+
+
+def model_support_line(old_roster: list[str], new_roster: list[str],
+                       old_verdicts: dict[str, str], new_verdicts: dict[str, str]) -> str | None:
+    def clean(verdict: str) -> str:
+        return re.sub(r"^[^\w]+", "", verdict).strip()
+
+    old, new = {prose_name(m) for m in old_roster}, {prose_name(m) for m in new_roster}
+    before = {prose_name(k): clean(v) for k, v in old_verdicts.items()}
+    after = {prose_name(k): clean(v) for k, v in new_verdicts.items()}
+    parts = []
+    if added := sorted(new - old):
+        parts.append("joins the roster: " + ", ".join(added))
+    if retired := sorted(old - new):
+        parts.append("leaves the roster: " + ", ".join(retired))
+    rejudged = sorted(n for n in new & old if n in before and n in after and before[n] != after[n])
+    if rejudged:
+        parts.append("re-judged: " + ", ".join(f"{n} ({before[n]} → {after[n]})" for n in rejudged))
+    if not parts:
+        return None
+    return "- Model support: " + "; ".join(parts) + " (see the README's Model support table)."
+
+
+def git(root: Path, *args: str, check: bool = True) -> str:
+    proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
+                          check=False)
+    if check and proc.returncode != 0:
+        raise ReleaseRefused(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+    return proc.stdout
+
+
+def previous_ref(cl: Changelog, resolve: Callable[[str], str | None]) -> str | None:
+    newest = cl.numbered()[0]
+    return resolve(f"v{newest.title}") or newest.commit
+
+
+def model_line_since(root: Path, ref: str | None) -> str | None:
+    new_toml, new_readme = root / "harness" / "models.toml", root / "README.md"
+    if ref is None or not new_toml.is_file() or not new_readme.is_file():
+        return None
+    old_toml = git(root, "show", f"{ref}:harness/models.toml", check=False)
+    if not old_toml:
+        return None
+    old_readme = git(root, "show", f"{ref}:README.md", check=False)
+    return model_support_line(roster(old_toml), roster(new_toml.read_text(encoding="utf-8")),
+                              summary_rows(old_readme),
+                              summary_rows(new_readme.read_text(encoding="utf-8")))
+
+
+def stamp_skills(root: Path, version: str) -> list[Path]:
+    touched = []
+    for skill_md in sorted(root.glob("skills/proposal-*/SKILL.md")):
+        text = skill_md.read_text(encoding="utf-8")
+        skill_md.write_text(stamp_version.stamp_text(text, version, skill_md), encoding="utf-8")
+        touched.append(skill_md)
+    return touched
+
+
+@dataclass
+class Plan:
+    version: str
+    reason: str
+    text: str
+    model_line: str | None
+
+
+def plan_release(root: Path, args: argparse.Namespace,
+                 resolve: Callable[[str], str | None]) -> Plan:
+    cl = parse((root / "CHANGELOG.md").read_text(encoding="utf-8"))
+    if not cl.releases or cl.releases[0].title != UNRELEASED or not cl.numbered():
+        raise ReleaseRefused("CHANGELOG.md needs [Unreleased] above at least one release")
+    unreleased, current = cl.releases[0], cl.numbered()[0].version
+    if not unreleased.entries:
+        raise ReleaseRefused("[Unreleased] has no entries")
+    version, reason = choose_version(unreleased, current, args.bump, args.version)  # type: ignore[arg-type]
+    if version >= ONE_ZERO and (blockers := readiness_problems(root)):
+        raise ReleaseRefused("1.0.0 readiness gate: " + "; ".join(blockers))
+    line = model_line_since(root, previous_ref(cl, resolve))
+    text = cut((root / "CHANGELOG.md").read_text(encoding="utf-8"), vstr(version), args.date,
+               [line] if line else [])
+    return Plan(vstr(version), reason, text, line)
+
+
+def refuse_unsafe_tree(root: Path, version: str, resolve: Callable[[str], str | None]) -> None:
+    dirty = git(root, "status", "--porcelain", "--", *RELEASE_PATHS, "skills/*/SKILL.md")
+    if dirty.strip():
+        raise ReleaseRefused("uncommitted edits in files the release writes:\n" + dirty)
+    if resolve(f"v{version}"):
+        raise ReleaseRefused(f"tag v{version} already exists")
+    if git(root, "log", "--format=%h", f"-Sversion: {version}", "--", "skills/").strip():
+        raise ReleaseRefused(f"{version} is already stamped in history")
+
+
+def has_branch(root: Path, name: str) -> bool:
+    return bool(git(root, "rev-parse", "--verify", "-q", f"refs/heads/{name}", check=False).strip())
+
+
+def release_branch(root: Path) -> str:
+    """Releases are cut on `develop`, which `main` then fast-forwards to. Before
+    `develop` exists (the 0.9.0 transition) `main` itself may cut one."""
+    current = git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    if current == DEVELOP:
+        if has_branch(root, MAIN) and not _is_ancestor(root, MAIN):
+            raise ReleaseRefused(f"`{MAIN}` has commits `{DEVELOP}` lacks; it can no longer "
+                                 "fast-forward to a release")
+        return current
+    if current == MAIN and not has_branch(root, DEVELOP):
+        return current
+    raise ReleaseRefused(f"releases are cut on `{DEVELOP}` (current branch: {current})")
+
+
+def _is_ancestor(root: Path, ref: str) -> bool:
+    proc = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", ref, "HEAD"],
+                          capture_output=True, check=False)
+    return proc.returncode == 0
+
+
+def fast_forward_main(root: Path) -> str:
+    """Move `main` to the release commit; never touches a checked-out `main`."""
+    listing = git(root, "worktree", "list", "--porcelain")
+    for block in listing.split("\n\n"):
+        if f"branch refs/heads/{MAIN}" in block.splitlines():
+            path = block.splitlines()[0].removeprefix("worktree ")
+            return f"  git -C {path} merge --ff-only {DEVELOP}   # `{MAIN}` is checked out there"
+    old = git(root, "rev-parse", "--verify", "-q", f"refs/heads/{MAIN}", check=False).strip()
+    git(root, "update-ref", f"refs/heads/{MAIN}", "HEAD", *([old] if old else []))
+    return ""
+
+
+def apply_release(root: Path, plan: Plan, resolve: Callable[[str], str | None]) -> None:
+    (root / "CHANGELOG.md").write_text(plan.text, encoding="utf-8")
+    for name, setter in (("pyproject.toml", set_project_version), ("uv.lock", set_lock_version)):
+        path = root / name
+        if path.is_file():
+            path.write_text(setter(path.read_text(encoding="utf-8"), plan.version),
+                            encoding="utf-8")
+    skills = stamp_skills(root, plan.version)
+    if problems := check(root, resolve):
+        raise ReleaseRefused("changelog check fails after the cut (files left modified):\n"
+                             + "\n".join(f"- {p}" for p in problems))
+    paths = [p for p in RELEASE_PATHS if (root / p).is_file()]
+    paths += [s.relative_to(root).as_posix() for s in skills]
+    git(root, "add", "--", *paths)
+    git(root, "commit", "-m", f"chore(publish): stamp {plan.version}")
+    git(root, "tag", "-a", f"v{plan.version}", "-m", f"Release v{plan.version}")
+
+
+def run_release(root: Path, args: argparse.Namespace,
+                resolve: Callable[[str], str | None] | None = None) -> int:
+    resolve = resolve or git_tag_commit(root)
+    try:
+        plan = plan_release(root, args, resolve)
+        print(f"release {plan.version}: {plan.reason}")
+        if args.dry_run:
+            print(notes(plan.text, plan.version) or "", end="")
+            return 0
+        branch = release_branch(root)
+        refuse_unsafe_tree(root, plan.version, resolve)
+        apply_release(root, plan, resolve)
+        ff_note = fast_forward_main(root) if branch == DEVELOP else ""
+    except ReleaseRefused as refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 1
+    tag = f"v{plan.version}"
+    moved = f"`{MAIN}` fast-forwarded" if branch == DEVELOP and not ff_note else "committed"
+    branches = f"{DEVELOP} {MAIN}" if branch == DEVELOP else MAIN
+    print(f"{moved} and tagged {tag}. Nothing was pushed. To publish, run yourself:\n"
+          + (f"{ff_note}\n" if ff_note else "")
+          + f"  git push origin {branches} {tag}\n"
+          f"  python3 scripts/changelog.py notes {plan.version} > /tmp/{tag}.md\n"
+          f"  gh release create {tag} --title {tag} --notes-file /tmp/{tag}.md")
+    return 0
+
+
 def run_notes(root: Path, version: str) -> int:
     body = notes((root / "CHANGELOG.md").read_text(encoding="utf-8"), version)
     if body is None:
@@ -320,13 +640,18 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("check", help="run the changelog gate")
     notes_cmd = sub.add_parser("notes", help="print one release's body")
     notes_cmd.add_argument("version")
+    rel = sub.add_parser("release", help="cut a release locally: stamp, commit, tag")
+    rel.add_argument("--bump", choices=BUMPS, help="raise the bump the entries require")
+    rel.add_argument("--version", help="cut exactly this version (needed for 1.0.0)")
+    rel.add_argument("--date", default=date.today().isoformat(), help="release date")
+    rel.add_argument("--dry-run", action="store_true", help="print the plan, write nothing")
     args = parser.parse_args(argv)
     if args.command == "notes":
         return run_notes(args.root, args.version)
+    if args.command == "release":
+        return run_release(args.root, args)
     return run_check(args.root)
 
 
 if __name__ == "__main__":
     sys.exit(main())
-
-

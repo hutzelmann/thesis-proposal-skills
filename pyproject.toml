@@ -60,6 +60,8 @@ host-logout = "python harness/host_login.py logout"
 audit = "python scripts/audit_scan.py"
 audit-status = "python scripts/audit_status.py"
 identify = "python scripts/identify_release.py"
+# cut a release locally: CHANGELOG section, pyproject + uv.lock, stamp, commit, tag; never pushes
+release = "python3 scripts/changelog.py release"
 changelog = "python3 scripts/changelog.py check"
 # the OpenSpec gate; CI calls this task. The CLI runs through npx (networked
 # on first use) at OPENSPEC_VERSION in scripts/validate_specs.py, the one place
