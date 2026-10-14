@@ -11,7 +11,7 @@ failing run would write them.
 from __future__ import annotations
 
 import pytest
-from helpers import FIXTURES, fixture_proposal
+from helpers import FIXTURES, f04_numbered_questions, fixture_proposal, review_with_record
 from l1_checks import (
     MEETING_PROMISE,
     clarify_early_items,
@@ -23,6 +23,7 @@ from l1_checks import (
     verdict_review_converged,
     verdict_review_dependency,
     verdict_review_ready,
+    verdict_review_records_questions,
     verdict_supervise_pointers,
     verdict_supervise_points,
     verdict_supervise_ready_block,
@@ -216,6 +217,73 @@ def test_promoted_bait_is_named_even_when_the_tier_moved():
 ])
 def test_converged_review_failures(review, fragment):
     ok, why = verdict_review_converged(PROPOSAL, PROPOSAL, review, NAME)
+    assert not ok
+    assert fragment in why
+
+
+# ---------- review_record ------------------------------------------------------
+#
+# The review closes on a record of the research questions it judged: the items
+# of the proposal's numbered list, verbatim (skill-review spec: research
+# questions recorded in the review). f04 states an overarching question in
+# prose before four numbered ones, so it is the shape a loose record gets wrong.
+
+F04 = fixture_proposal("f04-dsr-vendor-heavy").read_text(encoding="utf-8")
+F04_NAME = "zero-trust-referenzmodell-review.md"
+F28_QUESTIONS = [line[3:] for line in PROPOSAL.splitlines() if line[:3] in {"1. ", "2. ", "3. "}]
+F04_QUESTIONS = f04_numbered_questions()
+OVERARCHING = F04.split("Die übergeordnete Forschungsfrage lautet: ", 1)[1].split("\n", 1)[0]
+DE_TITLE = "## Begutachtete Forschungsfragen"
+
+
+def test_the_record_fixtures_have_the_expected_shape():
+    assert len(F28_QUESTIONS) == 3
+    assert len(F04_QUESTIONS) == 4
+    assert OVERARCHING.startswith("Wie kann ein Referenzmodell")
+
+
+@pytest.mark.parametrize("title", ["## Research questions reviewed", DE_TITLE])
+def test_a_verbatim_record_passes(title):
+    review = review_with_record(READY, F28_QUESTIONS, title)
+    ok, why = verdict_review_records_questions(PROPOSAL, PROPOSAL, review, NAME)
+    assert ok, why
+    assert "3 research questions" in why
+
+
+def test_a_verbatim_record_of_the_numbered_sub_questions_passes():
+    review = review_with_record(READY, F04_QUESTIONS, DE_TITLE)
+    ok, why = verdict_review_records_questions(F04, F04, review, F04_NAME)
+    assert ok, why
+    assert "4 research questions" in why
+
+
+def test_the_record_layout_does_not_count():
+    review = review_with_record(READY, F28_QUESTIONS, marker="-")
+    ok, why = verdict_review_records_questions(PROPOSAL, PROPOSAL, review, NAME)
+    assert ok, why
+
+
+PARAPHRASED = F28_QUESTIONS[1].replace("Under which failure categories", "For which failure types")
+
+
+@pytest.mark.parametrize(("proposal", "current", "review", "fragment"), [
+    (PROPOSAL, PROPOSAL + "edited\n", review_with_record(READY, F28_QUESTIONS),
+     "modified the proposal"),
+    (PROPOSAL, PROPOSAL, None, f"{NAME} not written"),
+    (PROPOSAL, PROPOSAL, READY, "no `## Research questions reviewed` section"),
+    (PROPOSAL, PROPOSAL, READY + "\n## Research questions reviewed\n\nNone.\n",
+     "record lists no question"),
+    (PROPOSAL, PROPOSAL,
+     review_with_record(READY, [F28_QUESTIONS[0], PARAPHRASED, F28_QUESTIONS[2]]),
+     "RQ2 differs"),
+    (PROPOSAL, PROPOSAL, review_with_record(READY, F28_QUESTIONS[:2]),
+     "RQ3 missing from the record"),
+    (F04, F04, review_with_record(READY, [OVERARCHING, *F04_QUESTIONS], DE_TITLE),
+     "RQ1 differs, RQ2 differs, RQ3 differs, RQ4 differs, RQ5 not in the proposal"),
+], ids=["proposal changed", "review missing", "record missing", "record empty",
+        "RQ2 paraphrased", "question dropped", "overarching question recorded"])
+def test_record_failures_name_their_cause(proposal, current, review, fragment):
+    ok, why = verdict_review_records_questions(proposal, current, review, NAME)
     assert not ok
     assert fragment in why
 

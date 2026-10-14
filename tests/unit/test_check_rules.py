@@ -870,6 +870,19 @@ def test_min_references_rejects_a_negative_or_non_integer_override():
         assert rules_of(check.rule_min_references(ctx)) == ["min-references-invalid"], bad
 
 
+def test_research_question_count_rule_reports_six_questions_under_the_default_bound():
+    """Six numbered questions trip the default bound of five, under an
+    identifier from the closed set — no fixture carries six questions."""
+    extra = "".join(f"{n}. To what degree does latency change under setting {n}?\n"
+                    for n in (4, 5, 6))
+    text = CLEAN.replace("project domains?\n", "project domains?\n" + extra)
+    found = [f for f in check.rule_research_questions(context(text))
+             if f.message.endswith("allowed")]
+    assert [(f.rule, f.message) for f in found] == [
+        ("research-questions-too-many", "6 research questions — at most 5 allowed")]
+    assert "research-questions-too-many" in check.RULE_IDS
+
+
 # Identifiers this file produces that no fixture happens to carry. Listed
 # explicitly so `test_every_declared_identifier_is_reachable` stays honest
 # rather than being weakened to a subset check.
@@ -908,6 +921,7 @@ COVERED_BY_UNIT_TESTS = {
     "metadata-block-multiple",
     "guidelines-toml-parse",
     "research-questions-not-a-list",
+    "research-questions-too-many",
     "research-question-unreferenced",
     "author-name-typed-bracketed",
     "author-name-typed-in-text",

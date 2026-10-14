@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from helpers import f04_numbered_questions, review_with_record
 from l1_checks import (
     disallowed_errors,
     disallowed_rules,
@@ -29,6 +30,7 @@ from l1_checks import (
     verdict_seed,
     verdict_title_alarm,
     verdict_troubleshoot_model_rung,
+    without_rq_record,
 )
 
 REPO = Path(__file__).resolve().parents[2]
@@ -1139,6 +1141,80 @@ def test_verdict_review_localized_still_enforces_the_structural_check_first():
     )
     assert not passed
     assert "modified the proposal" in why
+
+
+# ---- the research-questions record is not part of the review's shape ---------
+#
+# A review closes on a numbered record of the questions it judged, copied
+# verbatim. The verdicts that judge the review's own shape read it without the
+# record, or a numbered record would make bulleted findings look enumerated and
+# German questions would make an English review look German.
+
+F04_QUESTIONS = f04_numbered_questions()
+BULLETED_REVIEW = "- RQ2 overlaps RQ1 — merge them.\n- The delta is implicit.\n"
+
+
+def test_a_numbered_record_does_not_make_bulleted_findings_enumerated():
+    review = review_with_record(BULLETED_REVIEW, ["Which A?", "Which B?"])
+    passed, why = verdict_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review, "p-review.md")
+    assert not passed
+    assert why == "review not enumerated"
+    titled = review_with_record("- The title reaches your certificate; abstract it.\n",
+                                ["Which A?"])
+    passed, why = verdict_title_alarm(TITLED, TITLED, titled, "r.md")
+    assert not passed
+    assert why == "review not enumerated"
+
+
+def test_a_german_record_does_not_make_an_english_review_german():
+    review = review_with_record(ENUMERATED_REVIEW, F04_QUESTIONS)
+    passed, why = verdict_review_localized(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review,
+                                           "p-review.md")
+    assert not passed
+    assert "written in German" in why
+
+
+def test_a_german_review_with_its_record_stays_german():
+    review = review_with_record(GERMAN_REVIEW, F04_QUESTIONS, "## Begutachtete Forschungsfragen")
+    passed, why = verdict_review_localized(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review,
+                                           "p-review.md")
+    assert passed, why
+
+
+def test_a_test_name_in_the_record_is_not_a_cited_test():
+    one_test = ("Verdict: no viable thesis core — the swap test fails.\n\n"
+                "1. Everything is generic.\n")
+    review = review_with_record(one_test, ["How large is the delta between the two tools?"])
+    passed, why = verdict_hollow_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review,
+                                        "p-review.md")
+    assert not passed
+    assert "at least two" in why
+
+
+def test_a_title_mention_in_the_record_does_not_raise_the_title():
+    review = review_with_record("1. RQ2 overlaps RQ1 — merge them.\n",
+                                ["Which title wording do certificate offices accept?"])
+    passed, why = verdict_title_alarm(TITLED, TITLED, review, "r.md")
+    assert not passed
+    assert "never raises the title" in why
+
+
+def test_without_rq_record_cuts_every_record_and_keeps_the_rest():
+    review = ("1. A finding.\n\n## Research questions reviewed\n\n1. Q?\n\n"
+              "## Notes\n\nkept\n\n### begutachtete forschungsfragen\n\n- F?\n")
+    assert without_rq_record(review) == "1. A finding.\n\n## Notes\n\nkept\n\n"
+    assert without_rq_record(ENUMERATED_REVIEW) == ENUMERATED_REVIEW
+
+
+def test_without_rq_record_keeps_what_follows_the_record_list():
+    review = "1. A finding.\n\n## Research questions reviewed\n\n1. Q?\n\nA closing note.\n"
+    assert without_rq_record(review) == "1. A finding.\n\nA closing note.\n"
+
+
+def test_without_rq_record_cuts_a_nested_record_once():
+    review = ("1. A finding.\n\n## Research questions reviewed\n\n1. Q?\n\n"
+              "### Research questions reviewed\n\n1. Q?\n")
+    assert without_rq_record(review) == "1. A finding.\n\n"
 
 
 # ---- verdict_seed -----------------------------------------------------------

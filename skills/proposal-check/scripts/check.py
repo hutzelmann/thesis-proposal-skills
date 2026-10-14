@@ -5,7 +5,9 @@ Stdlib-only (Python >= 3.11). Reads the proposal's markdown — leading `# ` tit
 line, emphasized subtitle paragraph, sections, and the trailing references
 metadata block (narrow extraction — no general YAML parsing) — plus the
 canonical skeleton from references/structure.json and an optional workspace
-guidelines.md TOML override block. The proposal's language is inferred from the
+guidelines.md TOML override block. Where the proposal's review file exists, it
+is read for the record of the research questions it judged, never written. The
+proposal's language is inferred from the
 subtitle wording, falling back to a majority of canonical section titles.
 
 Output: two-bucket report (mechanical errors / mechanical warnings) plus a
@@ -104,6 +106,7 @@ RULE_IDS = (
     "forbidden-section",
     # research questions
     "research-questions-not-a-list",
+    "research-questions-too-many",
     "research-question-unreferenced",
     # citations and references
     "citation-undefined",
@@ -128,6 +131,8 @@ RULE_IDS = (
     "metadata-author-key",
     "confidentiality-marker",
     "hindsight-leakage",
+    # the review beside the proposal
+    "review-questions-changed",
 )
 
 
@@ -1191,11 +1196,71 @@ def rule_forbidden_sections(ctx: Context) -> list[Finding]:
     return out
 
 
+# ---------- research questions ------------------------------------------------
+#
+# One definition of "one research question", shared by the count rule and the
+# review-currency comparison: an item starts at an unindented list marker and
+# runs to the next one, a blank line, a heading or the section's end. Indented
+# lines, nested list items included, continue it, and so does a lazy unindented
+# line. The proposal side accepts ordered markers only; a review's record of
+# the questions it judged also accepts bullets.
+
+ORDERED_MARKER = re.compile(r"\d+[.)](?:\s|$)")
+ANY_MARKER = re.compile(r"(?:\d+[.)]|[-*+])(?:\s|$)")
+HEADING_LINE = re.compile(r"#{1,6}\s")
+# `---`, `* * *`, `___`: tested before ANY_MARKER, which `* * *` would match
+THEMATIC_BREAK = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+
+# typographic variants an agent, an editor or a chat window swaps without
+# changing what is asked: curly, low-9 and reversed single and double quotes;
+# hyphen, non-breaking hyphen (NFKC already turns it into the hyphen), en dash,
+# em dash and minus sign
+QUOTE_DASH_FOLD = {
+    **dict.fromkeys((0x2018, 0x2019, 0x201A, 0x201B), "'"),
+    **dict.fromkeys((0x201C, 0x201D, 0x201E, 0x201F), '"'),
+    **dict.fromkeys((0x2010, 0x2011, 0x2013, 0x2014, 0x2212), "-"),
+}
+
+
+def list_items(section: str, bullets: bool = False) -> list[str]:
+    """The items of a section's unindented list, each with its continuation
+    lines, marker removed and lines joined by newlines."""
+    marker = ANY_MARKER if bullets else ORDERED_MARKER
+    items: list[list[str]] = []
+    current: list[str] | None = None
+    for line in section.split("\n"):
+        if m := marker.match(line):
+            current = [line[m.end():]]
+            items.append(current)
+        elif not line.strip() or HEADING_LINE.match(line):
+            current = None
+        elif current is not None:
+            current.append(line)
+    return ["\n".join(parts) for parts in items]
+
+
+def normalize_question(text: str) -> str:
+    """A question as the currency comparison reads it: invisible format
+    characters removed (category Cf: soft hyphen, zero-width space, word
+    joiner, byte-order mark), compatibility forms normalized, whitespace
+    collapsed, quote and dash variants folded. Letter case, wording and every
+    other punctuation mark still count. The removal comes first: `split` sees
+    no whitespace in those characters, and NFKC never produces one."""
+    visible = "".join(c for c in text if unicodedata.category(c) != "Cf")
+    return " ".join(unicodedata.normalize("NFKC", visible).split()).translate(QUOTE_DASH_FOLD)
+
+
+def research_questions(ctx: Context) -> list[str]:
+    """The questions the proposal declares: the ordered-list items of its
+    canonical research-questions section."""
+    return list_items(section_text(ctx.body, ctx.titles["research_questions"][ctx.lang]))
+
+
 def rule_research_questions(ctx: Context) -> list[Finding]:
     rq_title = ctx.titles["research_questions"][ctx.lang]
     rq_section = section_text(ctx.body, rq_title)
     meth_section = section_text(ctx.body, ctx.meth_heads[0]) if ctx.meth_heads else ""
-    rq_items = re.findall(r"^\d+[.)]\s+", rq_section, re.MULTILINE)
+    rq_items = research_questions(ctx)
     out = []
     if rq_section and not rq_items:
         out.append(error(
@@ -1217,6 +1282,103 @@ def rule_research_questions(ctx: Context) -> list[Finding]:
         if meth_section and f"(RQ{n})" not in meth_section
     ]
     return out
+
+
+# ---------- review currency ---------------------------------------------------
+#
+# A review closes on a record of the research questions it judged (skill-review:
+# research questions recorded in the review). The check compares that record
+# with the questions the proposal declares now and warns when they differ. It
+# reads the review and never writes to it; a review without a record, or one it
+# cannot read, gives no finding.
+
+RQ_RECORD_TITLES = ("Research questions reviewed", "Begutachtete Forschungsfragen")
+RQ_RECORD_HEADING = re.compile(
+    r"^#{1,6}[ \t]+(?:" + "|".join(map(re.escape, RQ_RECORD_TITLES)) + r")[ \t]*$",
+    re.MULTILINE | re.IGNORECASE)
+
+
+def review_path(proposal: Path) -> Path:
+    """The review file the review skill writes for this proposal; the one
+    place this script derives its name. The suffix is the `review` entry of
+    the family's role table, applied to the stem whatever its shape: a
+    classification through family_member() would name no review for a stem
+    that is not a slug, such as `My Proposal`."""
+    suffix = next(s for s, role in COMPANION_SUFFIXES.items() if role == REVIEW)
+    return proposal.with_name(proposal.stem + suffix + ".md")
+
+
+def rq_record_end(review: str, start: int) -> int:
+    """Where a record whose heading ends at `start` ends: with its first list,
+    at the next heading, at a thematic break, or at the first line after a
+    blank line that is neither a list item nor indented. Notes below the
+    record, bullets included, are therefore no recorded questions."""
+    pos, listed, after_blank = start, False, False
+    for line in review[start:].split("\n"):
+        if HEADING_LINE.match(line) or THEMATIC_BREAK.match(line):
+            return pos
+        if ANY_MARKER.match(line):
+            listed = True
+        elif listed and after_blank and line.strip() and not line[0].isspace():
+            return pos
+        after_blank = not line.strip()
+        pos += len(line) + 1
+    return len(review)
+
+
+def rq_record_spans(review: str) -> list[tuple[int, int, int]]:
+    """(heading start, list start, end) of every research-questions record in
+    a review, each ending with its first list (rq_record_end)."""
+    return [(m.start(), m.end(), rq_record_end(review, m.end()))
+            for m in RQ_RECORD_HEADING.finditer(review)]
+
+
+def recorded_questions(review: str) -> list[str] | None:
+    """The questions the last record lists — the record closes the file, so a
+    review pasted in above it does not win. None when there is no record."""
+    spans = rq_record_spans(review)
+    if not spans:
+        return None
+    _, start, end = spans[-1]
+    return list_items(review[start:end], bullets=True)
+
+
+def question_changes(recorded: list[str], current: list[str]) -> list[tuple[int, str]]:
+    """Each position where the two lists differ, as (position, kind): `changed`,
+    `added` (the proposal has it, the record not) or `removed` (the reverse).
+    Data, not text: the finding words it, and no consumer parses that wording."""
+    out = []
+    for n in range(1, max(len(recorded), len(current)) + 1):
+        if n > len(recorded):
+            out.append((n, "added"))
+        elif n > len(current):
+            out.append((n, "removed"))
+        elif normalize_question(recorded[n - 1]) != normalize_question(current[n - 1]):
+            out.append((n, "changed"))
+    return out
+
+
+def review_findings(proposal_path: Path, ctx: Context) -> list[Finding]:
+    """`review-questions-changed` when the review's record differs from the
+    questions the proposal declares. Positions only, never a question's text,
+    so a report that leaves the workspace carries no proposal wording through
+    it. A review that cannot be read is silent: this script runs inside six
+    skills, and a file it does not own must never break them."""
+    path = review_path(proposal_path)
+    try:
+        review = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    recorded = recorded_questions(review)
+    current = research_questions(ctx)
+    changes = question_changes(recorded, current) if recorded and current else []
+    if not changes:
+        return []
+    named = ", ".join(f"RQ{n} {kind}" for n, kind in changes)
+    return [warn("review-questions-changed",
+                 f"`{path.name}` judged research questions that differ from the current "
+                 f"ones ({named}) — the review may describe an earlier version of the "
+                 "proposal; a fresh review replaces it, so leave the review file as it is")]
 
 
 def mask_code(body: str) -> str:
@@ -1856,6 +2018,8 @@ def check_findings(proposal_path: Path, structure: dict, overrides: dict,
     ctx = build_context(body, meta, structure, overrides)
     for rule in RULES:
         findings += rule(ctx)
+    # last: it concerns the review beside the proposal, not the proposal's text
+    findings += review_findings(proposal_path, ctx)
     return findings
 
 

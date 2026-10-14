@@ -1,0 +1,1 @@
+an ordered list of the items of the proposal's numbered research-question list, each copied verbatim in the proposal's order, and nothing else — no overarching question the section states in prose, and a nested item stays inside its question. No record when that section numbers no question; exactly one when you overwrite an earlier review.

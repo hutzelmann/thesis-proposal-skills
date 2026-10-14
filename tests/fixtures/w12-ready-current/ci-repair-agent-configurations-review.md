@@ -28,3 +28,9 @@ None.
 ## Optional refinements
 
 1. **Introduction, first sentence.** "hours of diagnosis per incident" carries a figure the cited benchmark paper may not report in that form; either quote its number or drop the quantity.
+
+## Research questions reviewed
+
+1. To what degree does the repair rate on reproducible build failures differ between a single-agent and a planner–executor configuration when both run on the same model?
+2. Under which failure categories does access to the full build log change the repair rate of either configuration?
+3. To what degree do accepted repairs from the two architectures differ in patch size and in their judged maintainability?

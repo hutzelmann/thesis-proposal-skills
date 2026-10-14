@@ -1,0 +1,20 @@
+{
+  "fixture": "w16-superseded-record",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": ["RQ4 removed"],
+    "rules": {
+      "errors": [],
+      "warnings": ["review-questions-changed"]
+    }
+  },
+  "semantic": [
+    "the proposal is a complete draft, mechanically valid, with three research questions and one benchmark; the notes file records that the student narrowed it after the review",
+    "the review on file judged the earlier, broader version: both of its blockers quote passages the current text no longer carries (RQ4 on cost-effectiveness, the second issue-resolution benchmark), so it is superseded and does not tell whether the narrowed draft is ready",
+    "the right step is a fresh review of the narrowed draft, recommended with a phrase the student can send — not merely the statement that no current review exists, and not a review run unasked",
+    "nothing is written during the status answer, and no skill is named in the handoff",
+    "the check warns that the review's record of the questions it judged no longer matches the proposal (RQ4 removed); that warning settles the research-question part of the currency judgement, and it names no question's text"
+  ]
+}

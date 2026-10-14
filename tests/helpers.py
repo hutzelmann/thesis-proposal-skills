@@ -123,6 +123,24 @@ def fixture_proposal(fixture: str) -> Path:
     return next(p for p in sorted((FIXTURES / fixture).glob("*.md")) if is_fixture_proposal(p))
 
 
+def review_with_record(review: str, questions: list[str],
+                       title: str = "## Research questions reviewed",
+                       marker: str = "{n}.") -> str:
+    """`review` closing on a record of the research questions it judged, each
+    behind `marker` (`{n}` is its position): the shape the review skill writes
+    (skill-review spec: research questions recorded in the review)."""
+    lines = "".join(f"{marker.format(n=n)} {question}\n" for n, question in enumerate(questions, 1))
+    return f"{review}\n{title}\n\n{lines}"
+
+
+def f04_numbered_questions() -> list[str]:
+    """f04's four numbered sub-questions, markers removed. f04 states an
+    overarching question in prose before them, so it is the shape a loose
+    record gets wrong."""
+    text = fixture_proposal("f04-dsr-vendor-heavy").read_text(encoding="utf-8")
+    return [line[3:] for line in text.splitlines() if re.match(r"[1-9]\. Wie ", line)]
+
+
 def shipped_registry() -> support.Registry:
     """The registry the harness ships, parsed afresh on every call so that no
     test can see another's mutation of it."""

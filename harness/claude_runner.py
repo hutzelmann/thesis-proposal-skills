@@ -223,6 +223,7 @@ from l1_checks import (
     verdict_review_converged,
     verdict_review_dependency,
     verdict_review_ready,
+    verdict_review_records_questions,
     verdict_review_swap_anchored,
     verdict_review_swap_decorative,
     verdict_scoping_containment,
@@ -350,6 +351,15 @@ SCENARIOS = {
         "proposal": "ci-repair-agent-configurations.md",
         "request": "I revised ci-repair-agent-configurations.md after your last review — "
                    "please review it again. Is it ready for my supervisor now?",
+    },
+    # the review's closing record of the research questions it judged
+    # (testing-harness spec: review-currency coverage): review_ready's inputs,
+    # judged on the record alone, through check.py's own extractor
+    "review_record": {
+        "fixture": "f28-open-decisions",
+        "skill": "proposal-review",
+        "proposal": "ci-repair-agent-configurations.md",
+        "request": READINESS_REVIEW_REQUEST,
     },
     # supervisor side of the overblocking control: a standard-format proposal
     # used as-is, so normalization is a no-op and the feedback's tier, points
@@ -768,6 +778,7 @@ REVIEW_VERDICTS = {
     "review_ready": verdict_review_ready,
     "review_dependency": verdict_review_dependency,
     "review_converge": verdict_review_converged,
+    "review_record": verdict_review_records_questions,
     "review_swap_decorative": partial(verdict_review_swap_decorative, tool=SWAP_PAIR_TOOL),
     "review_swap_anchored": partial(verdict_review_swap_anchored, tool=SWAP_PAIR_TOOL),
 }

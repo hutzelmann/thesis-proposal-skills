@@ -98,6 +98,20 @@ def is_enumerated_review(text: str) -> bool:
     )
 
 
+def without_rq_record(review: str) -> str:
+    """The review without its research-questions records, located exactly as
+    check.py locates them. The record is a numbered list of the proposal's own
+    questions, copied verbatim and possibly in another language: the verdicts
+    that judge the review's shape read it without the record, so a numbered
+    record cannot make bulleted findings enumerated, nor German questions an
+    English review German, nor a question's wording a cited finding."""
+    kept, pos = [], 0
+    for start, _, end in CHECK_SCRIPT.rq_record_spans(review):
+        kept.append(review[pos:max(pos, start)])
+        pos = max(pos, end)
+    return "".join(kept) + review[pos:]
+
+
 def parse_grade(completion: str) -> bool:
     matches = re.findall(r"GRADE:\s*([CI])", completion)
     return bool(matches) and matches[-1] == "C"
@@ -147,7 +161,7 @@ def verdict_review(original: str, current: str | None, review: str | None,
         return False, f"review modified the proposal ({detail})"
     if not review:
         return False, f"{review_name} not written"
-    if not is_enumerated_review(review):
+    if not is_enumerated_review(without_rq_record(review)):
         return False, "review not enumerated"
     return True, "review file present, proposal untouched"
 
@@ -175,15 +189,16 @@ def verdict_title_alarm(original: str, current: str | None, review: str | None,
     untouched (which the Inspect agent loop is known to violate anyway)."""
     if not review:
         return False, f"{review_name} not written"
-    if not is_enumerated_review(review):
+    findings = without_rq_record(review)
+    if not is_enumerated_review(findings):
         return False, "review not enumerated"
     before, after = title_line(original), title_line(current)
     # a bare "title" match is not enough — a review that merely quotes the file's
     # own heading, or a cited work's title, would pass it. The guidance tells the
     # skill to name the certificate consequence whenever it raises the title, so
     # that word is the cheap deterministic proof the rule was actually applied.
-    raised = re.search(r"\btitles?\b|\btitels?\b", review, re.IGNORECASE) and re.search(
-        r"certificate|zeugnis", review, re.IGNORECASE
+    raised = re.search(r"\btitles?\b|\btitels?\b", findings, re.IGNORECASE) and re.search(
+        r"certificate|zeugnis", findings, re.IGNORECASE
     )
     if not raised:
         return False, "review never raises the title as a finding of its own"
@@ -727,7 +742,8 @@ def verdict_review_localized(original: str, current: str | None, review: str | N
     ok, why = verdict_review(original, current, review, review_name)
     if not ok:
         return False, why
-    if sum(1 for word in signals if word in (review or "")) < minimum:
+    findings = without_rq_record(review or "")
+    if sum(1 for word in signals if word in findings) < minimum:
         return False, f"review does not appear to be written in {language}"
     return True, f"{language} review file present, proposal untouched"
 
@@ -748,7 +764,7 @@ def verdict_hollow_review(original: str, current: str | None, review: str | None
     head = " ".join((review or "").splitlines()[:5]).lower()
     if "no viable thesis core" not in head:
         return False, "verdict 'no viable thesis core' not in the review's opening lines"
-    low = (review or "").lower().replace("method fit", "method-fit")
+    low = without_rq_record(review or "").lower().replace("method fit", "method-fit")
     cited = [t for t in SUBSTANCE_TESTS if t in low]
     if len(cited) < 2:
         return False, (f"substance tests cited: {', '.join(cited) or 'none'} — "
@@ -911,6 +927,43 @@ def verdict_review_converged(original: str, current: str | None, review: str | N
         return False, (f"earlier round marks {resolved} blocker(s) resolved, "
                        f"{resolved_needed} expected")
     return True, f"converged: ready, {resolved} earlier blocker(s) resolved, nothing promoted"
+
+
+# check.py's change kinds (question_changes), worded for this verdict: the
+# record is under test against the proposal, not the other way round
+RECORD_DIFFERENCE = {"changed": "differs", "added": "missing from the record",
+                     "removed": "not in the proposal"}
+
+
+def proposal_questions(text: str) -> list[str]:
+    """The research questions a proposal declares, found as check.py finds them."""
+    body, meta = CHECK_SCRIPT.split_proposal(text)
+    ctx = CHECK_SCRIPT.build_context(body, meta, CHECK_SCRIPT.load_structure(None), {})
+    return CHECK_SCRIPT.research_questions(ctx)
+
+
+def verdict_review_records_questions(original: str, current: str | None, review: str | None,
+                                     review_name: str) -> tuple[bool, str]:
+    """review_record: the review closes on a record of the research questions it
+    judged — the items of the proposal's numbered list, verbatim and in order,
+    nothing else (skill-review spec: research questions recorded in the review).
+    Extracted and compared by check.py's own functions, so this verdict and the
+    check's review-questions-changed warning cannot disagree."""
+    if current != original:
+        return False, "review modified the proposal"
+    if not review:
+        return False, f"{review_name} not written"
+    recorded = CHECK_SCRIPT.recorded_questions(review)
+    if recorded is None:
+        return False, f"no `## {CHECK_SCRIPT.RQ_RECORD_TITLES[0]}` section in {review_name}"
+    if not recorded:
+        return False, "record lists no question"
+    declared = proposal_questions(original)
+    changes = CHECK_SCRIPT.question_changes(recorded, declared)
+    if changes:
+        named = [f"RQ{position} {RECORD_DIFFERENCE[kind]}" for position, kind in changes]
+        return False, f"record does not match the proposal: {', '.join(named)}"
+    return True, f"record lists the proposal's {len(declared)} research questions verbatim"
 
 
 # The swap test's check of named choices (testing-harness spec: swap-test anchor

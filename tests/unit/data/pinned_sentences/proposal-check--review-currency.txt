@@ -1,0 +1,1 @@
+A `review-questions-changed` warning from the script settles the research questions: the review judged other ones and is superseded, whatever the size of the difference, and counts as superseded in the routes below.
