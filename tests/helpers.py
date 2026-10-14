@@ -303,3 +303,81 @@ def copy_sync_tree(dest: Path) -> Path:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
     return dest
+
+
+# ---------- changelog (scripts/changelog.py) ---------------------------------
+
+CHANGELOG_URL = "https://github.com/hutzelmann/thesis-proposal-skills"
+
+# A minimal changelog that passes every check: Unreleased, two retroactive
+# releases, the legacy era, compare links. Each failure case edits one line.
+CHANGELOG_SAMPLE = f"""# Changelog
+
+Header text.
+
+## [Unreleased]
+
+_On `develop`, not yet released._
+
+A lead for the next release.
+
+### Added
+
+- Something new ([b-change](openspec/changes/archive/2026-10-15-b-change/))
+
+## [0.2.0] - 2026-08-01
+
+_Retroactive release, tagged at bbbbbbb on 2026-10-14. Published 2026-08-01._
+
+Lead.
+
+### Changed
+
+- **Breaking:** A thing changed.
+
+### For contributors
+
+- A tool.
+
+## [0.1.0] - 2026-07-30
+
+_Retroactive release, tagged at aaaaaaa on 2026-10-14. Published 2026-07-30._
+
+Lead.
+
+### Added
+
+- The first thing ([a-change](openspec/changes/archive/2026-07-29-a-change/))
+
+## Before the skills: LaTeX template (legacy-latex-template)
+
+Prose.
+
+[Unreleased]: {CHANGELOG_URL}/compare/v0.2.0...HEAD
+[0.2.0]: {CHANGELOG_URL}/compare/v0.1.0...v0.2.0
+[0.1.0]: {CHANGELOG_URL}/compare/legacy-latex-template...v0.1.0
+"""
+
+_SKILL_STUB = "---\nname: {name}\ndescription: x\nlicense: MIT\n{meta}---\n\n# Body\n"
+
+
+def changelog_root(root: Path, text: str = CHANGELOG_SAMPLE, *, stamp: str | None = None,
+                   project: str = "0.1.0", archived: dict[str, str] | None = None) -> Path:
+    """A tree holding what `changelog.check` reads: CHANGELOG.md, pyproject, two
+    skills (stamped or not), and archive folders (name -> proposal text)."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "CHANGELOG.md").write_text(text, encoding="utf-8")
+    (root / "pyproject.toml").write_text(f'[project]\nversion = "{project}"\n', encoding="utf-8")
+    meta = f"metadata:\n  version: {stamp}\n" if stamp else ""
+    for name in ("proposal-one", "proposal-two"):
+        skill = root / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(_SKILL_STUB.format(name=name, meta=meta),
+                                        encoding="utf-8")
+    folders = archived if archived is not None else {"2026-07-29-a-change": "",
+                                                     "2026-10-15-b-change": ""}
+    for folder, proposal in folders.items():
+        path = root / "openspec" / "changes" / "archive" / folder
+        path.mkdir(parents=True)
+        (path / "proposal.md").write_text(proposal, encoding="utf-8")
+    return root

@@ -235,6 +235,8 @@ Your agent can do these steps when you ask it to. It should show you each downlo
 
 When a skill misbehaves, update first. It resolves more problems than anything else.
 
+What each version changed is in the [changelog](../CHANGELOG.md); entries marked **Breaking** say what to adjust in an existing proposal or `guidelines.md`.
+
 ## Removing
 
 - **Installed with the prompt:** ask your agent to open `.thesis-proposal-install.json` (in `~/.agents/skills`, or in your folder's `.agents/skills`), then delete the `proposal-*` folders and that file in every folder listed under `directories`. Usually those are `~/.agents/skills` and `~/.claude/skills`, plus Antigravity's or Kiro's skills folder if you have those apps. These folders are hidden by default.

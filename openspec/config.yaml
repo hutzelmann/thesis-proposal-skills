@@ -9,24 +9,31 @@ schema: spec-driven
 #     We use conventional commits
 #     Domain: e-commerce platform
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+# Per-artifact rules. The Changelog line feeds CHANGELOG.md (release-history
+# spec); scripts/changelog.py check fails on a change archived without either
+# a CHANGELOG.md link to its archive folder or `Changelog: internal`.
+rules:
+  proposal:
+    - >-
+      End the proposal with one line `Changelog: <sentence>` that says, for a
+      student, supervisor or workspace maintainer, what changes for them, in
+      plain present tense; prefix it with `**Breaking:**` when something they
+      already have (a proposal file, guidelines.md, a workspace build, an
+      install, an output file a skill reads back) stops working or is read
+      differently. Write `Changelog: internal` instead when no user can notice
+      the change (harness, tests, CI, tooling, agent instructions).
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+# Per-operation guidance for apply and archive.
+operations:
+  archive:
+    guidance:
+      - >-
+        Before archiving, copy the proposal's `Changelog:` sentence into
+        CHANGELOG.md under `## [Unreleased]`, in the fitting Keep a Changelog
+        category (Added, Changed, Deprecated, Removed, Fixed, Security), ending
+        with a link to the change's archive folder:
+        ([<id>](openspec/changes/archive/<YYYY-MM-DD>-<id>/)), using the date
+        the archive will carry. A contributor-relevant `Changelog: internal`
+        change may instead get a short line under `### For contributors`.
+        Commit the CHANGELOG.md edit together with the archive, then run
+        `python3 scripts/changelog.py check`.

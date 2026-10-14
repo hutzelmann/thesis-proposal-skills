@@ -138,7 +138,7 @@ If a skill misbehaves — a script fails, a rule is applied that should not be, 
 - installed with the plugin button: **Check for updates** on the app's plugin page;
 - installed from a terminal: `npx skills update`.
 
-The installer records which version you have, but only GitHub knows the newest one, so updating is cheaper than finding out. It resolves more problems than every other cause combined.
+The installer records which version you have, but only GitHub knows the newest one, so updating is cheaper than finding out. It resolves more problems than every other cause combined. What changed between versions, and what a change means for an existing proposal or `guidelines.md`, is in the [changelog](CHANGELOG.md).
 
 If the problem survives that, the skill works through the likely causes in order — your model not being able to do that particular task, a `guidelines.md` rule doing exactly what it says, a missing `pandoc` or `typst` — and most sessions end there, with an answer and no report. A run that cost ten times the usual while producing correct output is the same kind of cause: a host effort or workflow mode (Claude Code's ultracode, for instance) fanned one skill's task out into many agents. The skills whose runs can fan out state the shape they expect to run in; the host's own budget and effort controls are the remedy, not a report.
 

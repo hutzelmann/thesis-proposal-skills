@@ -6,6 +6,10 @@
 # belongs here; tests/unit/test_line_endings.py replays a Windows checkout of them.
 tests/unit/data/l2_prompts/*.txt text eol=lf
 
+# Parallel worktrees each add entries under [Unreleased]; union keeps both sides.
+# A line duplicated by the merge fails scripts/changelog.py check.
+CHANGELOG.md merge=union
+
 # BEGIN generated (scripts/sync_shared.py)
 skills/proposal-check/references/structure.json linguist-generated=true merge=ours
 skills/proposal-customize/references/guidelines.md linguist-generated=true merge=ours

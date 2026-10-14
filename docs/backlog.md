@@ -20,6 +20,16 @@ Follow-ups that were deferred by a change or a session and have no change of the
 - **Harness login, step B.** Observation L1 (the first natural token refresh, task 5.8) and the conditional 5.10 of `openspec/changes/archive/2026-10-06-add-harness-claude-login/` are open; L1 gates removing the `CLAUDE_REAL_CONFIG_DIR` opt-in. Check with `uv run poe host-status` after the next natural refresh; no model call is needed for the check itself.
 - **Worktree status view.** One command that lists every worktree with its branch, its open OpenSpec changes and whether it is merged, so open work is visible without an audit.
 
+## Release workflow
+
+The two-branch model (`main` holds releases, `develop` integrates) was decided on 2026-10-14 and is meant to be established step by step. Its design is `openspec/changes/archive/2026-10-14-add-changelog/design.md` (D7).
+
+- **CI on `develop`.** `.github/workflows/ci.yml` runs on pushes to `main` only, so work on `develop` is first tested when a release fast-forwards `main`. Add `develop` to its `push` branches.
+- **Pre-push prompt.** `.githooks/pre-push` asks "This releases to every user" for every push. That is now true only for `main`; a push of `develop` should say that it reaches no installer.
+- **Bots target `main`.** The weekly model-currency and openspec-currency workflows open their pull requests against `main`. Under the model they belong on `develop`, and the model-currency bump then reaches users with the next release.
+- **Install check trigger.** `.github/workflows/install.yml` checks the tracked tree on pushes to `main`. Decide whether it also runs on `develop` before a release, so a broken install is caught before `main` moves.
+- **Contributor docs.** README "For contributors" and `CONTRIBUTING.md` do not say which branch a pull request targets. They should name `develop`. On GitHub, the default branch stays `main`, because the installers read it.
+
 ## Skills
 
 - **Troubleshoot report names the wrong model for an earlier session.** The "Measured facts" requirement still records the troubleshooting agent's own model, so a report about a failure on another model in an earlier session names the wrong one. Listed as a Non-Goal in `openspec/changes/archive/2026-10-05-clarify-troubleshoot-model-subject/design.md`.

@@ -110,11 +110,19 @@ A skill that cannot locate a script it ships SHALL say so, and SHALL say what co
 - **THEN** the skill reports that the script did not run and names what was therefore not verified, instead of presenting its own inspection as the script's result
 
 ### Requirement: Rolling release policy
-While the package has no outside users, the default branch SHALL serve as the release channel; tagged releases SHALL begin once outside users exist.
+The default branch `main` SHALL stay the release channel and SHALL hold released versions only: installers receive what it holds, and it moves only by fast-forward to a release commit. Completed work SHALL integrate on the development branch `develop`, where releases are cut at maintainer-chosen milestones as a stamped version, an annotated tag and a dated changelog section. Pushing branches and tags and publishing releases SHALL remain the maintainer's own actions.
 
 #### Scenario: Pre-adoption phase
-- **WHEN** changes merge during the no-outside-users phase
-- **THEN** they are immediately live for installers without further release steps
+- **WHEN** changes were pushed to the default branch before the first stamped release
+- **THEN** they were live for installers without further release steps, and the changelog records that period as retroactive releases
+
+#### Scenario: Change completed between releases
+- **WHEN** a change is completed after the newest release
+- **THEN** it lands on the development branch, is listed in the changelog's unreleased section there, and reaches installers only with the next release
+
+#### Scenario: Release cut
+- **WHEN** the maintainer cuts a release
+- **THEN** the stamp commit on the development branch carries the new version in every skill and a dated changelog section, an annotated tag of that version points at it, and the default branch is fast-forwarded to it
 
 ### Requirement: Pre-publish local security gate
 Before any publication of the skill set, a local security gate SHALL pass, in this order: the audit-invariant test suite, then a local run of the same skill scanner that audits the published registry entries, executed against the repository's skills staged in isolation from the developer's real agent configuration. The scanner gate SHALL fail on any finding at or above the calibrated risk threshold and SHALL report every finding with its skill, category, and reason. Publication with a failing gate requires an explicit, recorded decision.
