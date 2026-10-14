@@ -1487,11 +1487,11 @@ A write mode SHALL apply newer-in-line bumps and refreshed prices to the registr
 - **THEN** the checker exits with a distinct "currency unknown" status and writes nothing
 
 ### Requirement: Weekly model-bump pull request
-A CI workflow SHALL run the currency check in write mode weekly and on manual dispatch. When the registry changes, it SHALL keep exactly one open pull request from a fixed branch, creating it or updating it. It SHALL use only the repository's built-in token, with the least permissions this needs.
+A CI workflow SHALL run the currency check in write mode weekly and on manual dispatch. When the registry changes, it SHALL keep exactly one open pull request from a fixed branch against develop, creating or updating it. It SHALL use only the repository's built-in token, with the least permissions this needs.
 
-Pull requests opened with that token trigger no pull-request workflows. The workflow SHALL therefore start the regular CI workflow on the bump branch itself.
+Pull requests opened with that token trigger no pull-request workflows, so the workflow SHALL start the regular CI workflow on the bump branch itself.
 
-It SHALL NOT overwrite the bump branch once the branch carries a commit from anyone else; it SHALL comment on the pull request instead. When main already satisfies every finding, it SHALL close a pull request that is no longer needed.
+It SHALL NOT overwrite the bump branch once it carries a commit by anyone else; it SHALL comment on the pull request instead. When develop already satisfies every finding, it SHALL close a pull request that is no longer needed.
 
 The pull request description SHALL:
 
@@ -1506,20 +1506,20 @@ Report-only findings, new lines included, SHALL appear in the run summary. A new
 The workflow SHALL NOT call any model, read any secret beyond the built-in token, or merge.
 
 #### Scenario: New model published
-- **WHEN** the weekly run finds a newer model in a roster line
-- **THEN** a pull request from the fixed branch carries the registry edit and a description with the regeneration instructions, and the regular CI workflow runs on that branch
+- **WHEN** the weekly run finds a newer model in a roster line of develop's registry
+- **THEN** a pull request from the fixed branch against develop carries the registry edit and a description with the regeneration instructions, and the regular CI workflow runs on that branch
 
 #### Scenario: Pull request already open
 - **WHEN** a bump pull request is open and a later run finds further changes
-- **THEN** the same pull request is updated and no second one is opened
+- **THEN** the same pull request is updated, with develop as its base, and no second one is opened
 
 #### Scenario: Maintainer has pushed to the bump branch
-- **WHEN** the bump branch carries a commit not made by the workflow
+- **WHEN** the bump branch carries a commit not made by the workflow and not yet on develop
 - **THEN** the workflow leaves the branch untouched and comments the new findings on the pull request
 
 #### Scenario: Nothing to bump
 - **WHEN** the check finds no writable change
-- **THEN** no pull request is opened, and an open one that main has made obsolete is closed
+- **THEN** no pull request is opened, and an open one that develop has made obsolete is closed
 
 #### Scenario: Pin about to disappear
 - **WHEN** a pinned model carries an expiration date and no newer model exists in its line
@@ -3333,7 +3333,7 @@ The verdicts that judge a review's own shape SHALL judge the review without its 
 - **THEN** the language verdict fails it as not written in German
 
 ### Requirement: OpenSpec version kept current
-The spec gate SHALL validate with one OpenSpec version, pinned in one place, and SHALL fail on every error or warning that version reports, except an overlong requirement that a length baseline records and that has not grown. CI SHALL NOT rewrite the baseline. A currency check SHALL compare the pin with the newest published version, and a weekly workflow SHALL propose a newer version as a pull request that changes only the pin and that it never merges.
+The spec gate SHALL validate with one OpenSpec version, pinned in one place, and SHALL fail on every error or warning that version reports, except an overlong requirement that a length baseline records and that has not grown. CI SHALL NOT rewrite the baseline. A currency check SHALL compare the pin with the newest published version, and a weekly workflow SHALL propose a newer version as a pull request against develop that changes only the pin and that it never merges.
 
 #### Scenario: New overlong requirement
 - **WHEN** a spec, or an ADDED or MODIFIED requirement in an open change, holds requirement text over OpenSpec's length limit and the baseline lists no entry for it
@@ -3400,16 +3400,16 @@ The spec gate SHALL validate with one OpenSpec version, pinned in one place, and
 - **THEN** the check notes both as absent and warns about neither
 
 #### Scenario: Weekly bump proposed
-- **WHEN** the weekly run finds the pin behind
-- **THEN** one pull request from a fixed branch carries the pin change and nothing else, and the regular CI workflow runs on that branch
+- **WHEN** the weekly run finds the pin on develop behind
+- **THEN** one pull request from a fixed branch against develop carries the pin change and nothing else, and the regular CI workflow runs on that branch
 
 #### Scenario: Maintainer has pushed to the bump branch
-- **WHEN** the bump branch carries a commit not made by the workflow
+- **WHEN** the bump branch carries a commit not made by the workflow and not yet on develop
 - **THEN** the workflow leaves the branch untouched and comments on the pull request
 
 #### Scenario: Pin already current
-- **WHEN** the weekly run finds the pin current
-- **THEN** no pull request is opened, and an open one that main has made obsolete is closed
+- **WHEN** the weekly run finds the pin on develop current
+- **THEN** no pull request is opened, and an open one that develop has made obsolete is closed
 
 #### Scenario: Workflow bounds
 - **WHEN** the weekly workflow runs
