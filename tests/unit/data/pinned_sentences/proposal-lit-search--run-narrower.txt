@@ -1,0 +1,1 @@
+When the tool result shows a truncation or omission marker, or fewer `- id:` entries than that line's N, you have not seen the whole output: run narrower — fewer seeds per call, one direction, a lower limit — and never redirect the output into the workspace to read it there.

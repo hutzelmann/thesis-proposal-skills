@@ -1,0 +1,18 @@
+- id: Ostrander25Triage
+  type: article-journal
+  title: Triage of failing builds by log similarity
+  author:
+    - family: Ostrander
+      given: Lena
+  issued:
+    date-parts: [[2025]]
+  container-title: Journal of Synthetic Software Engineering
+- id: Pellworm24Budget
+  type: paper-conference
+  title: Token budgets for tool-using repair agents
+  author:
+    - family: Pellworm
+      given: Jonas
+  issued:
+    date-parts: [[2024]]
+  container-title: Proceedings of the Workshop on Imaginary Agents

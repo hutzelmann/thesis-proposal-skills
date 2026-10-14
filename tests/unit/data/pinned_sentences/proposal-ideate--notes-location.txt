@@ -1,0 +1,1 @@
+As soon as a topic phrase exists, create the companion `<slug>.notes.md` in the proposal location (Workspace files below)

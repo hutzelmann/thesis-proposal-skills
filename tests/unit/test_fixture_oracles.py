@@ -34,13 +34,39 @@ def fixture_proposals(fixture_dir: Path) -> list[Path]:
     ]
 
 
+METADATA = "# T\n\n---\nreferences:\n---\n"
+
+
 def test_review_beside_its_proposal_is_not_a_proposal(tmp_path: Path):
     """w09 stages an earlier round's `<slug>-review.md`; a proposal whose own
     slug ends in `-review` (f00) must still count."""
-    (tmp_path / "ml-code-review.md").write_text("# T\n", encoding="utf-8")
+    (tmp_path / "ml-code-review.md").write_text(METADATA, encoding="utf-8")
     (tmp_path / "agents.md").write_text("# T\n", encoding="utf-8")
     (tmp_path / "agents-review.md").write_text("Verdict\n", encoding="utf-8")
     assert [p.name for p in fixture_proposals(tmp_path)] == ["agents.md", "ml-code-review.md"]
+
+
+def test_an_orphaned_review_without_a_metadata_block_is_not_a_proposal(tmp_path: Path):
+    """w13 carries a review whose proposal was renamed away: the sibling is
+    gone, so only the check's rule (a proposal ends in a metadata block) can
+    tell it from f00's `ml-code-review.md`."""
+    (tmp_path / "new-title.md").write_text(METADATA, encoding="utf-8")
+    (tmp_path / "old-title-review.md").write_text("Verdict: revise.\n", encoding="utf-8")
+    (tmp_path / "old-title-feedback.md").write_text("Dear student\n", encoding="utf-8")
+    assert [p.name for p in fixture_proposals(tmp_path)] == ["new-title.md"]
+
+
+def test_a_kept_markdown_file_is_not_a_proposal(tmp_path: Path):
+    """w15 keeps a reading list beside its notes and has no proposal at all."""
+    (tmp_path / "flaky-ci.notes.md").write_text("# Notes\n", encoding="utf-8")
+    (tmp_path / "flaky-ci.reading-list.md").write_text(METADATA, encoding="utf-8")
+    assert fixture_proposals(tmp_path) == []
+
+
+def test_a_leftover_handout_is_not_a_proposal_although_it_ends_in_a_block(tmp_path: Path):
+    (tmp_path / "new-title.md").write_text(METADATA, encoding="utf-8")
+    (tmp_path / "old-title-handout.md").write_text(METADATA, encoding="utf-8")
+    assert [p.name for p in fixture_proposals(tmp_path)] == ["new-title.md"]
 
 
 @pytest.mark.parametrize("oracle_path", ORACLES, ids=fixture_id)

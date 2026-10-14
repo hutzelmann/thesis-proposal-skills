@@ -192,12 +192,15 @@ from l1_checks import (
     assistant_text,
     feedback_body_words,
     load_closing_note,
+    renamed_proposal,
     select_draft,
     tool_result_text,
     verdict_check_report,
     verdict_cited_draft,
     verdict_customize_override,
     verdict_draft,
+    verdict_family_only,
+    verdict_family_renamed,
     verdict_handoff,
     verdict_handoff_after_revision,
     verdict_handoff_ready,
@@ -211,6 +214,8 @@ from l1_checks import (
     verdict_install_prompt_found_python,
     verdict_install_prompt_installed,
     verdict_l2_grades,
+    verdict_litsearch_expanded,
+    verdict_no_orphans,
     verdict_offtopic_reference,
     verdict_paper_foundation,
     verdict_repaired_draft,
@@ -444,6 +449,22 @@ SCENARIOS = {
                    "proposal-lit-search are fine, and I cannot answer any "
                    "further question.",
     },
+    # the proposal family (testing-harness spec: Proposal-family coverage), here
+    # and in `write_rename_family` and `ideate_seed_rename` below: L1 only, with
+    # no Inspect twin, so family-only is part of each one's verdict; `family`
+    # names the check and `old` the slug a rename must leave behind. No request
+    # asks to keep anything, so a kept file is licensed only as a rename. Live
+    # scholarly APIs: expect variance in the expansion, not in the family
+    # verdict, which reads the workspace alone. w03 has one resolvable seed DOI.
+    "litsearch_snowball": {
+        "fixture": "w03-snowball-seed",
+        "skill": "proposal-lit-search",
+        "proposal": "serverless-energy-scheduling.md",
+        "family": "expand",
+        "request": "Please snowball from the references in serverless-energy-scheduling.md "
+                   "and merge what fits into it. I cannot answer any questions — decide and "
+                   "tell me what you did.",
+    },
     # the over-scoped export: chained packages, an uncounted catalogue, a phase
     # table and chapter outline as format bait, a wrong regulation claim and a
     # paper cited against its own abstract. The lookups are granted so the claim
@@ -538,6 +559,27 @@ SCENARIOS = {
             "sessions."
         ),
     },
+    # proposal family (see `litsearch_snowball`). w15's notes carry converged
+    # state and the preamble facts; the request repeats them, declines lookups
+    # and the guidelines.md note, and states a title whose slug differs from the
+    # provisional `flaky-ci-triage`
+    "ideate_seed_rename": {
+        "fixture": "w15-provisional-notes",
+        "skill": "proposal-ideate",
+        "family": "seed",
+        "old": "flaky-ci-triage",
+        "request": (
+            "I'd like to continue my thesis idea from my notes in flaky-ci-triage.notes.md. "
+            "To answer your usual questions up front: I'm in the M.Sc. Computer Science "
+            "program, I hope the department's software engineering group will supervise me, "
+            "it's a Master's thesis, the proposal should be in English, I have about six "
+            "months (April 2027 to September 2027), and no, please don't look anything up "
+            "online in this session. My working title is settled: \"Separating Flaky "
+            "Failures from Regressions in Continuous Integration\". This message is our "
+            "whole session — I cannot reply again, so treat this as me saying 'enough' and "
+            "create the seed proposal file now. Don't write anything into a guidelines.md."
+        ),
+    },
     # the fixture carries two uncited entries with opposite right answers, and
     # the request deliberately does not say which is which: the judgment is the
     # thing under test, and naming the off-topic entry would hand it over.
@@ -575,6 +617,19 @@ SCENARIOS = {
             "for my supervisor. I cannot answer any questions — decide and tell me what "
             "you did."
         ),
+    },
+    # proposal family (see `litsearch_snowball`): a requested rename of w14's
+    # whole family
+    "write_rename_family": {
+        "fixture": "w14-family-rename",
+        "skill": "proposal-write",
+        "proposal": "ci-repair-agent-configurations.md",
+        "family": "rename",
+        "old": "ci-repair-agent-configurations",
+        "request": "My supervisor and I settled the title: \"Context and Architecture Effects "
+                   "on CI Repair Agents\". Please put it into "
+                   "ci-repair-agent-configurations.md and rename my files to match it. I "
+                   "cannot answer any questions — decide and tell me what you did.",
     },
     # the install prompt, unanswered and with the scope answer given up front
     # (run_install_probe; nothing is staged)
@@ -1501,22 +1556,96 @@ def import_verdict(ws: Path) -> tuple[bool, str]:
     return verdict_import(read(ws / produced), run_check(ws, produced), produced)
 
 
-def workspace_changes(scenario: dict, ws: Path) -> tuple[list[str], list[str]]:
-    """Which staged files a run changed and which files it added, by path
-    relative to the workspace. Hidden paths — the installed skills under
-    `.claude/`, the saved event stream — and bytecode caches are the
-    harness's and the interpreter's, not the run's."""
+def staged_files(scenario: dict) -> dict[str, bytes]:
+    """What `stage()` copied from the scenario's fixture, by workspace-relative
+    path; nothing for a scenario without one."""
+    if not scenario.get("fixture"):
+        return {}
     fixture = FIXTURES / scenario["fixture"]
     staged = {f.name: f.read_bytes() for f in fixture.iterdir()
               if f.is_file() and f.suffix in (".md", ".txt")}
     staged.update({f.relative_to(fixture).as_posix(): f.read_bytes()
                    for f in (fixture / "img").rglob("*") if f.is_file()})
+    return staged
+
+
+def present_files(ws: Path) -> list[str]:
+    """Every file in the workspace but the harness's and the interpreter's:
+    hidden paths — the installed skills under `.claude/`, the saved event
+    stream — and bytecode caches."""
+    return sorted(rel for rel in (p.relative_to(ws).as_posix() for p in ws.rglob("*")
+                                  if p.is_file())
+                  if not any(part.startswith(".") or part == "__pycache__"
+                             for part in rel.split("/")))
+
+
+def workspace_changes(scenario: dict, ws: Path) -> tuple[list[str], list[str]]:
+    """Which staged files a run changed and which files it added, by path
+    relative to the workspace. A scenario without a fixture staged nothing,
+    so every file it leaves counts as added."""
+    staged = staged_files(scenario)
     changed = sorted(name for name, data in staged.items()
                      if not (ws / name).is_file() or (ws / name).read_bytes() != data)
-    present = (p.relative_to(ws).as_posix() for p in ws.rglob("*") if p.is_file())
-    new = sorted(rel for rel in present if rel not in staged and not any(
-        part.startswith(".") or part == "__pycache__" for part in rel.split("/")))
+    new = [rel for rel in present_files(ws) if rel not in staged]
     return changed, new
+
+
+def family_only(scenario: dict, ws: Path, seed: str = "") -> tuple[bool, str]:
+    """verdict_family_only over the run's workspace; no request asks to keep.
+    Its metadata-block test reads the workspace, and a staged file the run
+    removed from what was staged."""
+    staged = staged_files(scenario)
+    _, added = workspace_changes(scenario, ws)
+
+    def read(rel: str) -> str:
+        path = ws / rel
+        data = path.read_bytes() if path.is_file() else staged[rel]
+        return data.decode("utf-8", errors="replace")
+
+    return verdict_family_only(added, present_files(ws), sorted(staged), seed=seed, read=read)
+
+
+def run_check_json(ws: Path, proposal: str) -> list[dict]:
+    result = subprocess.run(
+        [sys.executable, str(CHECK), str(ws / proposal), "--json"],
+        capture_output=True, encoding="utf-8",
+    )
+    try:
+        return json.loads(result.stdout)["findings"]
+    except (json.JSONDecodeError, KeyError):
+        return [{"rule": "check-failed", "message": result.stderr[-300:]}]
+
+
+def family_verdict(scenario: dict, ws: Path) -> tuple[bool, str]:
+    """The three proposal-family scenarios: the scenario's own verdict, a
+    rename's, and family-only, all of which must pass."""
+    kind = scenario["family"]
+    after = {rel: (ws / rel).read_bytes() for rel in present_files(ws)}
+    results = []
+    if kind == "expand":
+        results.append(verdict_litsearch_expanded(read(ws / scenario["proposal"])))
+    else:
+        staged = staged_files(scenario)
+        results.append(verdict_family_renamed(staged, after, scenario["old"]))
+        proposal, _ = renamed_proposal(staged, after, scenario["old"])
+        if kind == "seed":
+            results.append(verdict_seed(read(ws / proposal) if proposal else None,
+                                        proposal or ""))
+        elif proposal:
+            results.append(verdict_no_orphans(run_check_json(ws, proposal)))
+    results.append(family_only(scenario, ws))
+    failed = [why for ok, why in results if not ok]
+    return (False, "; ".join(failed)) if failed else (True, "; ".join(w for _, w in results))
+
+
+def family_extra(name: str, scenario: dict, ws: Path) -> dict:
+    """The advisory family observation every other run reports (Q4): it never
+    changes the pass flag. A draft scenario's staged proposal is the seed."""
+    if scenario.get("family"):
+        return {}
+    seed = scenario["proposal"] if name in DRAFT_SCENARIOS else ""
+    passed, why = family_only(scenario, ws, seed=seed)
+    return {"family": f"{'PASS' if passed else 'FAIL'}: {why}"}
 
 
 def skills_invoked(events: list[dict], after_turns: int = 0) -> list[str]:
@@ -1578,10 +1707,18 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
                                         tool_result_text(events or []), workspace_markdown(ws))
     if scenario.get("feedback"):
         return supervise_verdict(scenario, ws, events)
+    if scenario.get("family"):
+        return family_verdict(scenario, ws)
     if name == "ideate_scoped":
         return ideate_verdict(ws, chat)
     if scenario.get("produces"):
         return import_verdict(ws)
+    return staged_proposal_verdict(name, scenario, ws, chat)
+
+
+def staged_proposal_verdict(name: str, scenario: dict, ws: Path,
+                            chat: str) -> tuple[bool, str]:
+    """The scenarios judged against the fixture's own proposal file."""
     fixture = FIXTURES / scenario["fixture"]
     original = (fixture / scenario["proposal"]).read_text(encoding="utf-8")
     current = read(ws / scenario["proposal"])
@@ -2061,7 +2198,8 @@ def completed_run(args: argparse.Namespace, judge: Judge | None, scenario: dict,
     chat = host_for(args).read(events, args).final_text
     passed, why = verdict(args.scenario, scenario, ws, chat, request, events)
     out = summary(args, passed, why, events, config, allowed=scenario.get("helpers", 0),
-                  extra=supervise_extra(scenario, ws))
+                  extra={**supervise_extra(scenario, ws),
+                         **family_extra(args.scenario, scenario, ws)})
     status = EXIT_PASS if passed else EXIT_FAIL
     if judge:
         criteria, not_judged = judge_criteria(args.scenario, scenario, ws, request)

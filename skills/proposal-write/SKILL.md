@@ -45,7 +45,7 @@ Proposal TODOs are for submission-blocking gaps only. Working knowledge that doe
 ## From scratch
 
 1. Collect what exists (idea notes from ideate, the companion notes file if present, user's description, any seed references). Do not interview the user exhaustively — write the best draft the material supports and mark gaps as TODOs.
-2. Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — opening with the title as its `# ` line and the subtitle paragraph, then the five canonical sections at `##` in order (subsections at `###`, the references heading last) and the methodology matching the user's method — exactly one from the closed set. Read that set from `references/structure.json` **after** applying any workspace `guidelines.md`: it may add branches, replace them, or disable ones the program does not accept, and a workspace branch carries its own per-subsection guidance which is the contract you fill — never substitute a shipped branch's contract because the names look alike. The order is checked, not just the presence of each section. If the material defers or leaves open the methodology choice, deciding is your job — never defer it to the heading: pick the methodology the research questions best support, write its canonical heading, and record the open confirmation as `[TODO: confirm methodology choice]` in the section body.
+2. When a proposal file for the idea already exists, such as an ideation seed, draft into it; create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) in the proposal location (Workspace files below) only when none exists, and give a seeded idea a new name only through the whole-family rename described there. The draft opens with the title as its `# ` line and the subtitle paragraph, then the five canonical sections at `##` in order (subsections at `###`, the references heading last) and the methodology matching the user's method — exactly one from the closed set. Read that set from `references/structure.json` **after** applying any workspace `guidelines.md`: it may add branches, replace them, or disable ones the program does not accept, and a workspace branch carries its own per-subsection guidance which is the contract you fill — never substitute a shipped branch's contract because the names look alike. The order is checked, not just the presence of each section. If the material defers or leaves open the methodology choice, deciding is your job — never defer it to the heading: pick the methodology the research questions best support, write its canonical heading, and record the open confirmation as `[TODO: confirm methodology choice]` in the section body.
 3. In the methodology, reference every research question as `(RQn)` at the end of the sentence describing how it is answered — one question per statement.
 4. Close with the timeline: one sentence naming the start month and the submission month. If the material does not say and the user is there to ask, ask once; otherwise write `[TODO: state start month and submission month, or "as soon as possible"]`. Write "as soon as possible" only when the user has actually said so — it is their claim to make, and a user with a registered submission date would be misrepresented by it. Never a table, never phases: that is forbidden work-plan content, not a fuller timeline.
 5. If the check reports a reference shortfall, say so; the handoff routes it to a literature search (ideally snowballing) below.
@@ -66,7 +66,7 @@ The title is printed on the student's study certificate, so it outlives the prop
 
 Raise it when it names a tool, product, platform, vendor or company as the instrument; when it frames implementation work ("Development of …", "Konzept für ein …") instead of a contribution; when it names a whole research field; or when it carries marketing tone. Say that it reaches the certificate, and offer one to three alternatives that name the contribution and its object at an abstraction that survives the tool being replaced.
 
-Write the title the student chooses — never a silent replacement. When they take one of the alternatives, the leading `# ` line carries it and the filename stays as it is: the slug is a workspace handle, not the title, and renaming it breaks every path the student already has. Rename only when they ask.
+Write the title the student chooses — never a silent replacement. When they take one of the alternatives, the leading `# ` line carries it and the filename stays as it is: the slug is a workspace handle, not the title, and renaming it breaks every path the student already has. Rename only when they ask, and then move the whole family as Workspace files below describes.
 
 A named technology stays when the student can say why the research depends on it — typically that it is the object of study rather than the instrument: a literature review of one platform, a user study of one specific environment. Write that reason into the contribution or the research questions (see No decorative names); a name kept without one carries the TODO marker there. Once the reason is on the page, the matter is settled for the session — the check script keeps emitting its title warning on every self-check pass, and you do not relay a settled one back to them again. If the title already names a contribution and its object, say nothing and spend no turn on it.
 
@@ -107,6 +107,27 @@ One warning is binding: **a repeated citation.** `citation-repeated` marks a sen
 ## Finishing a pass
 
 State what you changed, what the check still reports, which TODOs remain, and which sections rest on thin material, then close with the handoff lines from Handing over below — `Where it stands:`, `Next:`, at most two `Or:` — after every pass, a requested single edit included.
+
+## Workspace files
+
+Every file of a proposal goes into the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never into a host's scratch or temporary folder. A proposal's slug, its file name without the extension, names its whole family:
+
+| Role | File name |
+|---|---|
+| proposal | `<slug>.md` |
+| notes | `<slug>.notes.md` |
+| harvest record | `<slug>.harvest.md` |
+| review | `<slug>-review.md` |
+| supervisor feedback | `<slug>-feedback.md` |
+| handout | `<slug>-handout.md` |
+| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx` |
+| kept file | `<slug>.<label>.<ext>` |
+| figure | `img/<slug>-<name>.<ext>`, in an `img/` folder beside the proposal |
+| ideation notes | `ideation.notes.md`, before a topic phrase exists |
+
+The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. It changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. A rename moves every family file under the old slug at once, built outputs excepted, and updates every link to a moved file in the proposal and its notes file; it never edits the text of a review or supervisor feedback. Built outputs stay as previous builds: name them and offer a rebuild. Check every target name first. At seeding, when any target name is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. When a file cannot be moved, stop, overwrite nothing, and say what moved and what did not. Say which files you renamed.
+
+Besides proposal families, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; beside a proposal, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks: as `<slug>.<label>.<ext>` beside the proposal, never with the label `notes` or `harvest`, or in the notes file before a slug exists.
 
 ## Handing over
 

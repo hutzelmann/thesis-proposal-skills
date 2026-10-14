@@ -6,7 +6,12 @@ emit CSL-YAML on stdout.
 Usage: snowball.py DOI [DOI ...] [--limit-per-seed N] [--direction both|backward|forward]
 
 Bare-DOI results (e.g. from OpenCitations) are enriched with metadata via
-Crossref before emission. Relevance judgment stays with the agent.
+Crossref before emission. Relevance judgment stays with the agent. A line on
+stderr counts the candidates and the output's size before the output.
+
+The default of 5 per seed keeps one seed's output within what every measured
+host shows (measured 2026-10-14: 17,657 to 23,735 characters for one seed);
+two seeds at 5 already exceed it, so the skill snowballs one seed per call.
 """
 
 from __future__ import annotations
@@ -27,6 +32,23 @@ GRAPH_SOURCES = {
     "crossref": crossref,
     "opencitations": opencitations,
 }
+DEFAULT_PER_SEED = 5
+
+# More output than this from one command is more than some supported host shows:
+# below Claude Code's 30,000 characters and OpenCode's 2,000 lines (skill-lit-search:
+# Search output sized for what a host shows). search.py holds the same bounds.
+MAX_SHOWN_CHARS = 25_000
+MAX_SHOWN_LINES = 1_800
+
+
+def count_line(candidates: int, output: str) -> str:
+    """The stderr line before the output: how much follows, so an agent can
+    tell when its host showed less; flagged above the bounds."""
+    lines, chars = len(output.splitlines()), len(output)
+    line = f"candidates: {candidates} ({lines} lines, {chars} characters on stdout)"
+    if chars > MAX_SHOWN_CHARS or lines > MAX_SHOWN_LINES:
+        line += " — more than some hosts show from one command; run narrower"
+    return line
 
 
 def expand(seeds: list[str], limit: int, direction: str) -> list[dict]:
@@ -87,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     common.utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("seeds", nargs="+", metavar="DOI")
-    parser.add_argument("--limit-per-seed", type=int, default=20)
+    parser.add_argument("--limit-per-seed", type=int, default=DEFAULT_PER_SEED)
     parser.add_argument("--direction", choices=["both", "backward", "forward"], default="both")
     args = parser.parse_args(argv)
 
@@ -100,7 +122,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     for item in merged:
         item["id"] = common.make_key(item)
-    print(common.to_csl_yaml(merged), end="")
+    output = common.to_csl_yaml(merged)
+    print(count_line(len(merged), output), file=sys.stderr)
+    print(output, end="")
     return 0
 
 

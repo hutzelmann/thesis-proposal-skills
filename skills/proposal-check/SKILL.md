@@ -24,7 +24,7 @@ Two steps, one agent: the script runs once — a second time only for the digest
 
 ## Target
 
-Resolve the proposal file: explicit user mention wins; exactly one markdown file ending in a `---` metadata block → auto-pick; several candidates → list them and ask. The search space is the workspace's proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then look only there, never in both. A `<slug>.notes.md` is never a candidate, and neither is anything under `bug-report/`: a reduced reproduction left there by the troubleshoot skill is a structurally valid proposal, so it would otherwise win the pick and quietly redirect the check away from the real draft.
+Resolve the proposal file: explicit user mention wins; exactly one markdown file ending in a `---` metadata block → auto-pick; several candidates → list them and ask. The search space is the proposal location (Workspace files below); look only there. A `<slug>.notes.md` is never a candidate, and neither is anything under `bug-report/`: a reduced reproduction left there by the troubleshoot skill is a structurally valid proposal, so it would otherwise win the pick and quietly redirect the check away from the real draft.
 
 ## Step 1 — deterministic script
 
@@ -39,6 +39,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <proposal.md>
 - Requires Python ≥ 3.11. If none answers, say so, point the user to https://github.com/hutzelmann/thesis-proposal-skills/blob/main/docs/install.md#no-python-yet and perform the script's checks yourself as well as possible, stating that determinism is reduced.
 - The script reads `references/structure.json` (canonical skeleton) and the workspace `guidelines.md` TOML override automatically — first beside the proposal, else in the working directory (the workspace root when proposals live in a configured subdirectory). Run it from the workspace root so that second position resolves.
 - Relay its two buckets verbatim: mechanical errors, mechanical warnings (possible false positives — say so). Never claim semantic rules passed.
+- A `companion-orphaned` warning names family files under a slug that no proposal, notes file or harvest record carries, usually left by a rename that moved only part of the family: relay it; for files that belong to this proposal under an earlier slug, offer the whole-family rename (Workspace files below) as an anchored choice in the handoff, and leave a build artefact or project file the warning names where it is; never rename or move a file during the check.
 
 ## Step 2 — agent pass
 
@@ -54,6 +55,27 @@ After the script, check yourself and report findings in the same chat message:
 ## Reporting
 
 One chat message: script buckets first, agent findings second, then a one-line verdict that scopes its own claim ("mechanically clean, N warnings, M language issues — substance not judged"), then the handoff lines from Handing over below — `Where it stands:`, `Next:`, at most two `Or:`. No file output. **Never edit the proposal during a check run** — not even obvious fixes; report only. Editing happens in a separate step, only after the user explicitly asks, following the write skill's conventions (minimal surgical edits).
+
+## Workspace files
+
+Every file of a proposal goes into the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never into a host's scratch or temporary folder. A proposal's slug, its file name without the extension, names its whole family:
+
+| Role | File name |
+|---|---|
+| proposal | `<slug>.md` |
+| notes | `<slug>.notes.md` |
+| harvest record | `<slug>.harvest.md` |
+| review | `<slug>-review.md` |
+| supervisor feedback | `<slug>-feedback.md` |
+| handout | `<slug>-handout.md` |
+| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx` |
+| kept file | `<slug>.<label>.<ext>` |
+| figure | `img/<slug>-<name>.<ext>`, in an `img/` folder beside the proposal |
+| ideation notes | `ideation.notes.md`, before a topic phrase exists |
+
+The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. It changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. A rename moves every family file under the old slug at once, built outputs excepted, and updates every link to a moved file in the proposal and its notes file; it never edits the text of a review or supervisor feedback. Built outputs stay as previous builds: name them and offer a rebuild. Check every target name first. At seeding, when any target name is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. When a file cannot be moved, stop, overwrite nothing, and say what moved and what did not. Say which files you renamed.
+
+Besides proposal families, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; beside a proposal, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks: as `<slug>.<label>.<ext>` beside the proposal, never with the label `notes` or `harvest`, or in the notes file before a slug exists.
 
 ## Handing over
 

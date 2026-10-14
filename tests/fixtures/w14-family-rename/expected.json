@@ -1,0 +1,17 @@
+{
+  "fixture": "w14-family-rename",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "the proposal, its notes file, its review and the figure share one slug, so the check reports no orphan",
+    "a requested rename moves all four together, updates the figure link in the proposal and in the notes file, and leaves the review's text unchanged"
+  ]
+}

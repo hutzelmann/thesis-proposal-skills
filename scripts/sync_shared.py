@@ -213,6 +213,43 @@ def handoff_span(body: str) -> tuple[int, int]:
     return section_span(body, HANDOFF_HEADING, HANDOFF_PARAGRAPHS)
 
 
+# Every skill states where files go in one section of its own, directly before
+# the handoff, holding shared/blocks/workspace-files.md and nothing else
+# (skill-packaging: Workspace-files block in every skill).
+WORKSPACE_FILES_HEADING = "## Workspace files"
+# The block's paragraph count as section_span() counts them — blank-line-
+# separated blocks, the role table one of them — fixed here for the same reason
+# as HANDOFF_PARAGRAPHS. The span never reaches past them, so a sentence a
+# contributor appends survives the sync and fails test_workspace_files_block.py
+# instead of being silently overwritten.
+WORKSPACE_FILES_PARAGRAPHS = 4
+
+
+def workspace_files_block() -> str:
+    block = (BLOCKS / "workspace-files.md").read_text(encoding="utf-8").strip()
+    if block.count("\n\n") + 1 != WORKSPACE_FILES_PARAGRAPHS:
+        raise AnchorError(f"shared/blocks/workspace-files.md has {block.count(chr(10) * 2) + 1} "
+                          f"paragraphs, WORKSPACE_FILES_PARAGRAPHS says "
+                          f"{WORKSPACE_FILES_PARAGRAPHS}: change both, and every skill's "
+                          "Workspace files section, in one commit")
+    return block
+
+
+def workspace_files_span(body: str) -> tuple[int, int]:
+    """Span of the shared block in the skill's `## Workspace files` section,
+    which must appear once and be followed directly by `## Handing over`."""
+    marker = f"\n{WORKSPACE_FILES_HEADING}\n"
+    if body.count(marker) > 1:
+        raise AnchorError(f"{WORKSPACE_FILES_HEADING!r} appears more than once")
+    if marker in body:
+        after = body[body.index(marker) + len(marker):]
+        following = re.search(r"^## .*$", after, re.MULTILINE)
+        if following is None or following.group(0) != HANDOFF_HEADING:
+            raise AnchorError(f"{WORKSPACE_FILES_HEADING!r} must stand directly before "
+                              f"{HANDOFF_HEADING!r}")
+    return section_span(body, WORKSPACE_FILES_HEADING, WORKSPACE_FILES_PARAGRAPHS)
+
+
 def workflow_line(skill: str) -> str:
     """The shared line with this skill's own name marked."""
     line = (BLOCKS / "workflow.md").read_text(encoding="utf-8").strip()
@@ -232,6 +269,7 @@ def render_skill_md(skill_dir: Path) -> str:
     replacements = {
         spans[WORKFLOW_INDEX]: workflow_line(skill_dir.name),
         spans[VOICE_INDEX]: (BLOCKS / "voice.md").read_text(encoding="utf-8").strip(),
+        workspace_files_span(body): workspace_files_block(),
         handoff_span(body): handoff_block(),
     }
     if skill_dir.name != REPORTER:

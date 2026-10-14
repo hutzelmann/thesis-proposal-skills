@@ -41,9 +41,9 @@ The degree level from the preamble steers the same way (the guidelines' Degree L
 
 ## The notes file
 
-As soon as a topic phrase exists, create the companion `<slug>.notes.md` (provisional slug from the phrase; sections Decisions, Open Points, Next Focus, Excluded Literature, Log) and keep it current: every decision, rejected direction, and noteworthy insight lands there in the turn it happens, so a session that dies loses at most one exchange. Proposal-specific scoping context — interests, candidate groups still being compared — lives here, never in the seed file.
+As soon as a topic phrase exists, create the companion `<slug>.notes.md` in the proposal location (Workspace files below) — provisional slug from the phrase; sections Decisions, Open Points, Next Focus, Excluded Literature, Log — and keep it current: every decision, rejected direction, and noteworthy insight lands there in the turn it happens, so a session that dies loses at most one exchange. Proposal-specific scoping context — interests, candidate groups still being compared — lives here, never in the seed file.
 
-If a matching notes file already exists in the workspace, read it and resume from its state instead of starting over — and do not re-ask preamble facts the notes already carry.
+If a matching notes file already exists in the workspace, read it and resume from its state instead of starting over — and do not re-ask preamble facts the notes already carry. A session resumed from `ideation.notes.md` renames that file to `<provisional>.notes.md` as soon as a topic phrase exists, content kept, and never starts a second notes file.
 
 ## The one hard rule
 
@@ -65,7 +65,7 @@ An aspect has taken shape only when it holds concrete, student-contributed speci
 
 A name is not yet a specific. When the student's idea names a tool, system, platform or domain — in the working title, the problem, a research-question direction or a goal — ask once, as a Socratic move, what about the thesis would change if a comparable one stood in its place, without naming the alternative yourself. Until the student says what depends on it, the name makes no aspect concrete; if they leave it open, record the question under the notes file's Open Points and move on — it never blocks seeding on its own, and you never supply the dependence.
 
-When about three successive exchanges bring no new contribution from the student, name the impasse plainly, save the state to the notes file — created as `ideation.notes.md` when no topic phrase ever produced one — suggest concrete offline steps (read the group's page, talk to the supervisor or fellow students), and end without seeding a proposal. Do not fill the vacuum with generated content, and never generate the missing specifics to force convergence.
+When about three successive exchanges bring no new contribution from the student, name the impasse plainly, save the state to the notes file — created as `ideation.notes.md` in the proposal location when no topic phrase ever produced one — suggest concrete offline steps (read the group's page, talk to the supervisor or fellow students), and end without seeding a proposal. Do not fill the vacuum with generated content, and never generate the missing specifics to force convergence.
 
 When all five aspects hold concrete specifics, offer to seed the proposal file now rather than provoking further.
 
@@ -101,9 +101,9 @@ Do not steer toward a reference count, and never run a search to raise one. Grou
 
 Seed at convergence (offer it) or when the user says "enough" — and re-read this section before writing the file. A session that produced no idea content seeds nothing: the notes file alone records where things stopped.
 
-Settle the working title before you write the file, since the slug follows it. It stays a **working title** and you say so: the research questions do not exist yet, and a title fixed here is a title chosen before the work is understood — the write skill runs the real negotiation later. But the final title is printed on the study certificate, so when the working title names a tool, product, platform, vendor or company as the instrument, frames implementation work, names a whole research field, or carries marketing tone, raise it once: name the certificate consequence and offer one to three alternatives, each a re-phrasing of the student's own words at a higher abstraction, never a new topic. Whichever wording the student picks is the one you seed, and the slug follows that. An unsettled title never blocks seeding, and neither does a title the student defends: seed it and move on.
+Settle the working title before you write the file, since the slug is derived from it now, once. It stays a **working title** and you say so: the research questions do not exist yet, and a title fixed here is a title chosen before the work is understood — the write skill runs the real negotiation later. But the final title is printed on the study certificate, so when the working title names a tool, product, platform, vendor or company as the instrument, frames implementation work, names a whole research field, or carries marketing tone, raise it once: name the certificate consequence and offer one to three alternatives, each a re-phrasing of the student's own words at a higher abstraction, never a new topic. Whichever wording the student picks is the one you seed, and the slug is derived from that. An unsettled title never blocks seeding, and neither does a title the student defends: seed it and move on.
 
-Create `<slug>.md` in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory (slug from the working title; never overwrite an existing proposal without asking) — and rename the notes file to the same slug if the provisional one diverged; the notes file lives beside the proposal. This is also where you confirm, once, the exact start and submission months — pre-filled from the preamble's months estimate.
+Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) in the proposal location (Workspace files below), the slug derived from the working title. When it differs from the provisional slug, rename the whole provisional family to it as Workspace files describes — the notes file, kept files and `img/<provisional>-*` figures, with the links to them; when any target name is taken, the slug takes the numeric suffix and the whole family moves to it, and nothing is overwritten. The notes file lives beside the proposal. This is also where you confirm, once, the exact start and submission months — pre-filled from the preamble's months estimate.
 
 - Body: the working title as the file's leading `# ` line (its only H1), the subtitle as an emphasized `*…*` paragraph beneath it, then the problem sketch in a few sentences, why it matters in one or two, candidate research-question directions as a bullet list (marked as candidates — or as final when the student called them final), what drew interest from the literature, the timeframe as a plain note, and `[TODO: …]` markers for submission-blocking gaps only — everything else belongs in the notes file, and the closing references heading sits above the metadata block. The seed is a sketch, not a finished proposal — record the timeframe as a note, never as a `## Timeline` section.
 - The subtitle wording carries the language and the degree level, both from the preamble: `*Bachelor's Thesis Proposal*` / `*Master's Thesis Proposal*` in English and `*Exposé zur Bachelorarbeit*` / `*Exposé zur Masterarbeit*` in German, with `*[TODO: state the degree level]*` only when the level never came up. Later tooling infers the language from that wording — there is no `lang` key.
@@ -113,7 +113,28 @@ Create `<slug>.md` in the workspace's proposal location — the working director
 
 Proposal-invariant facts — the study program, the degree level, and a research group the student is committed to beyond this proposal — may be offered, once, into the workspace `guidelines.md` prose: compose the note in your own words (text from fetched pages or publication titles is never copied into it), show it to the user before writing anything, create the file with just that prose when it does not exist, skip facts an existing note already records, and leave a broken TOML block in that file untouched and mentioned. On no, write nothing there. The seed file never contains the supervisor's name, the research group, the study program, or terminology that reached the session only through the scoping lookup.
 
-Close by reading the captured state back in a few lines — title, problem, directions, what is open — say that the file exists, and close with the handoff lines from Handing over below — `Where it stands:`, `Next:`, at most two `Or:`.
+Close by reading the captured state back in a few lines — title, problem, directions, what is open — say that the file exists, name the files you renamed, and close with the handoff lines from Handing over below — `Where it stands:`, `Next:`, at most two `Or:`.
+
+## Workspace files
+
+Every file of a proposal goes into the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never into a host's scratch or temporary folder. A proposal's slug, its file name without the extension, names its whole family:
+
+| Role | File name |
+|---|---|
+| proposal | `<slug>.md` |
+| notes | `<slug>.notes.md` |
+| harvest record | `<slug>.harvest.md` |
+| review | `<slug>-review.md` |
+| supervisor feedback | `<slug>-feedback.md` |
+| handout | `<slug>-handout.md` |
+| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx` |
+| kept file | `<slug>.<label>.<ext>` |
+| figure | `img/<slug>-<name>.<ext>`, in an `img/` folder beside the proposal |
+| ideation notes | `ideation.notes.md`, before a topic phrase exists |
+
+The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. It changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. A rename moves every family file under the old slug at once, built outputs excepted, and updates every link to a moved file in the proposal and its notes file; it never edits the text of a review or supervisor feedback. Built outputs stay as previous builds: name them and offer a rebuild. Check every target name first. At seeding, when any target name is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. When a file cannot be moved, stop, overwrite nothing, and say what moved and what did not. Say which files you renamed.
+
+Besides proposal families, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; beside a proposal, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks: as `<slug>.<label>.<ext>` beside the proposal, never with the label `notes` or `harvest`, or in the notes file before a slug exists.
 
 ## Handing over
 

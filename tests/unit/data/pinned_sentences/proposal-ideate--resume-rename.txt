@@ -1,0 +1,1 @@
+A session resumed from `ideation.notes.md` renames that file to `<provisional>.notes.md` as soon as a topic phrase exists, content kept, and never starts a second notes file.

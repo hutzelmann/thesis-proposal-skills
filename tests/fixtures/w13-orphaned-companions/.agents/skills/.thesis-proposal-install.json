@@ -1,0 +1,12 @@
+{
+  "package": "thesis-proposal-skills",
+  "installer": 1,
+  "revision": "0000000000000000000000000000000000000000",
+  "installed_at": "2026-10-01T09:00:00+00:00",
+  "scope": "folder",
+  "source": "synthetic",
+  "directories": [
+    ".agents/skills"
+  ],
+  "skills": []
+}

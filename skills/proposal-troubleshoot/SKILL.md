@@ -18,7 +18,7 @@ Naming the rung is part of the answer. A report that says "it did not work" cost
 
 ## Target
 
-Establish two things before diagnosing: which skill misbehaved, and what the user expected instead. If the problem concerns a proposal file, resolve it the way the other skills do — explicit mention wins; exactly one markdown file ending in a `---` metadata block auto-picks; several candidates means listing them and asking. The search space is the workspace's proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory. Never treat `<slug>.notes.md` or anything inside `bug-report/` as the proposal.
+Establish two things before diagnosing: which skill misbehaved, and what the user expected instead. If the problem concerns a proposal file, resolve it the way the other skills do — explicit mention wins; exactly one markdown file ending in a `---` metadata block auto-picks; several candidates means listing them and asking. The search space is the proposal location (Workspace files below). Never treat `<slug>.notes.md` or anything inside `bug-report/` as the proposal.
 
 A problem need not concern a proposal at all. An ideation session that crashed before seeding anything is still reportable.
 
@@ -58,7 +58,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <proposal.md> > check-output.txt 2>
 
 This skill ships its own copy of the check script, identical to proposal-check's.
 
-The collector records whether `pandoc` and `typst` are present but never their versions: it runs no other program, which is what keeps a shipped script cheap to audit. When a version is plausibly the cause — a PDF that builds but lays out wrongly, for instance — have the user run `typst --version` or `pandoc --version`, capture that to a file too, and pass it in. It then travels as measured evidence rather than as something you asserted.
+The collector records whether `pandoc` and `typst` are present but never their versions: it runs no other program, which is what keeps a shipped script cheap to audit. When a version is plausibly the cause — a PDF that builds but lays out wrongly, for instance — have the user run `typst --version` or `pandoc --version`, capture that to `version-output.txt`, and pass it in with a second `--script-output`. It then travels as measured evidence rather than as something you asserted.
 
 ### Rung 4 — a skill violated its own mandate
 
@@ -107,7 +107,7 @@ State what the chosen level includes and what the next one up would add. The pro
 python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py <proposal.md> --level minimal --script-output check-output.txt
 ```
 
-It refuses to overwrite an existing `bug-report/`. If one is there, ask whether it is still needed before passing `--force`.
+It refuses to overwrite an existing `bug-report/`. If one is there, ask whether it is still needed before passing `--force`. Once the bundle is written it carries the captures, so offer to remove `check-output.txt` and `version-output.txt` from the workspace.
 
 **4. Fill in the `[self-reported]` fields.** The collector leaves them as placeholders because it cannot know them. Edit `bug-report/report.md` and fill in:
 
@@ -134,6 +134,27 @@ The bundle is local and nothing has been sent. Tell the user their options and s
 - keep it, and delete `bug-report/` once it has been sent
 
 The URL carries nothing beyond what the chosen disclosure level already put into `report.md` — building it changes no privacy decision. Do not open it, do not offer to file the issue, and do not file it: the user reviews the form and submits it themselves. This skill transmits nothing, has no credentials, and must not acquire either.
+
+## Workspace files
+
+Every file of a proposal goes into the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never into a host's scratch or temporary folder. A proposal's slug, its file name without the extension, names its whole family:
+
+| Role | File name |
+|---|---|
+| proposal | `<slug>.md` |
+| notes | `<slug>.notes.md` |
+| harvest record | `<slug>.harvest.md` |
+| review | `<slug>-review.md` |
+| supervisor feedback | `<slug>-feedback.md` |
+| handout | `<slug>-handout.md` |
+| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx` |
+| kept file | `<slug>.<label>.<ext>` |
+| figure | `img/<slug>-<name>.<ext>`, in an `img/` folder beside the proposal |
+| ideation notes | `ideation.notes.md`, before a topic phrase exists |
+
+The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. It changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. A rename moves every family file under the old slug at once, built outputs excepted, and updates every link to a moved file in the proposal and its notes file; it never edits the text of a review or supervisor feedback. Built outputs stay as previous builds: name them and offer a rebuild. Check every target name first. At seeding, when any target name is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. When a file cannot be moved, stop, overwrite nothing, and say what moved and what did not. Say which files you renamed.
+
+Besides proposal families, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; beside a proposal, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks: as `<slug>.<label>.<ext>` beside the proposal, never with the label `notes` or `harvest`, or in the notes file before a slug exists.
 
 ## Handing over
 

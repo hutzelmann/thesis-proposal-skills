@@ -1,0 +1,1 @@
+Create `<slug>.md` (lowercase, hyphenated, 2–4 title words; numeric suffix on collision) in the proposal location (Workspace files below), the slug derived from the working title.

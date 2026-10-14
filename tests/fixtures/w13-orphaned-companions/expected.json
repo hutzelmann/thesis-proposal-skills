@@ -1,0 +1,27 @@
+{
+  "fixture": "w13-orphaned-companions",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [
+      "`ci-repair-agents-review.md` carries the slug `ci-repair-agents`",
+      "`ci-repair-agents.candidates.yaml` carries the slug `ci-repair-agents`",
+      "`img/ci-repair-agents-pipeline.png` carries the slug `ci-repair-agents`",
+      "the proposal links `img/ci-repair-agents-pipeline.png`",
+      "but with `ci-repair-agents`, a slug other files here still carry",
+      "a rename that moved only part of the family is the usual cause"
+    ],
+    "rules": {
+      "errors": [],
+      "warnings": [
+        "companion-orphaned"
+      ]
+    }
+  },
+  "semantic": [
+    "the three leftovers and the figure link belong to the earlier slug ci-repair-agents; the proposal itself is f28's text and needs nothing else",
+    "renaming the leftovers to the proposal's slug, the figure link updated with them, is offered as a choice and never done unasked; the check itself renames nothing",
+    "guidelines.md, ideation.notes.md and the installer folder are not part of any proposal's family and are left alone"
+  ]
+}

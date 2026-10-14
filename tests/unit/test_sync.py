@@ -90,6 +90,38 @@ def test_a_sync_announces_exactly_what_it_rewrote(sync_tree, capsys):
     assert sync_shared.main(["--check"]) == 0
 
 
+def test_a_reworded_workspace_files_block_reaches_every_skill_and_nothing_else(sync_tree, capsys):
+    """Scenario 'Block reworded': every skill's section carries the new wording,
+    and no other byte of any SKILL.md changes."""
+    source = sync_tree / "shared" / "blocks" / "workspace-files.md"
+    text = source.read_text(encoding="utf-8")
+    source.write_text(text.replace("Nothing else goes there.", "Nothing else belongs there.", 1),
+                      encoding="utf-8")
+    skills = sync_shared.skill_dirs()
+    before = {d.name: (d / "SKILL.md").read_text(encoding="utf-8") for d in skills}
+    assert sync_shared.main([]) == 0
+    rewritten = sorted(f"skills/{d.name}/SKILL.md" for d in skills)
+    assert sorted(announced(capsys.readouterr().out)) == rewritten
+    for d in skills:
+        after = (d / "SKILL.md").read_text(encoding="utf-8")
+        assert "Nothing else belongs there." in after
+        assert after.replace("Nothing else belongs there.", "Nothing else goes there.") == (
+            before[d.name])
+
+
+def test_a_misplaced_workspace_files_section_is_refused_and_nothing_written(sync_tree):
+    victim = sync_tree / "skills" / "proposal-review" / "SKILL.md"
+    text = victim.read_text(encoding="utf-8")
+    heading = f"\n{sync_shared.WORKSPACE_FILES_HEADING}\n"
+    moved = text.replace(heading, "\n## Elsewhere\n\nA section between.\n" + heading, 1)
+    moved = moved.replace(f"\n{sync_shared.HANDOFF_HEADING}\n",
+                          f"\n## Another\n\nIn the way.\n\n{sync_shared.HANDOFF_HEADING}\n", 1)
+    victim.write_text(moved, encoding="utf-8")
+    with pytest.raises(sync_shared.AnchorError, match="directly before"):
+        sync_shared.main([])
+    assert victim.read_text(encoding="utf-8") == moved
+
+
 def test_attributes_committed_and_in_sync():
     assert (REPO / ".gitattributes").read_text(encoding="utf-8") == (
         sync_shared.render_gitattributes(

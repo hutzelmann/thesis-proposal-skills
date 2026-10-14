@@ -11,6 +11,7 @@ import json
 import re
 import sys
 import tomllib
+from collections.abc import Callable, Iterable
 from itertools import pairwise
 from pathlib import Path
 
@@ -1003,6 +1004,229 @@ def verdict_litsearch_expanded(text: str | None, before: int = 3) -> tuple[bool,
     if len(ids) != len(set(ids)):
         return False, "duplicate reference ids"
     return True, f"{len(ids)} references, ids unique"
+
+
+# ---------- proposal family ----------------------------------------------------
+#
+# What a run leaves in the workspace (testing-harness: Proposal-family coverage),
+# judged through check.py's own listing classifier, family_members(): the
+# `companion-orphaned` warning a writer sees and the verdict over a dev run never
+# classify a file differently, the metadata-block test for a `-review` or
+# `-feedback` file included. Paths are workspace-relative, as the dev runner's
+# workspace_changes() gives them.
+
+FIGURES = CHECK_SCRIPT.FIGURES
+SHELTERS = CHECK_SCRIPT.SHELTERS
+PROPOSAL_ROLE, KEPT_ROLE = CHECK_SCRIPT.PROPOSAL, CHECK_SCRIPT.KEPT
+NOT_SHELTERED = "which no proposal, notes file or harvest record carries"
+Reader = Callable[[str], str] | None
+
+
+def _entry(path: str) -> str:
+    """The listing entry a path belongs to: a file inside a folder other than
+    `img/` counts as that folder, which is a kept `<slug>.<label>/`, an allowed
+    folder such as `bug-report/`, or nothing."""
+    if "/" in path and not path.startswith(FIGURES):
+        return path.split("/", 1)[0] + "/"
+    return path
+
+
+def _block_test(read: Reader) -> Callable[[str], bool]:
+    """The check's metadata-block question over `read`. A path it cannot read,
+    and every path without a reader, stays a proposal, as in the check."""
+    def ends_in_block(path: str) -> bool:
+        if read is None:
+            return True
+        try:
+            return CHECK_SCRIPT.split_proposal(read(path))[1].found
+        except (OSError, KeyError, UnicodeError):
+            return True
+    return ends_in_block
+
+
+def _bytes_reader(files: dict[str, bytes] | Iterable[str]) -> Reader:
+    if isinstance(files, dict):
+        return lambda path: files[path].decode("utf-8", errors="replace")
+    return None
+
+
+def family_members_at(paths: Iterable[str],
+                      read: Reader = None) -> dict[str, tuple[str, str] | None]:
+    """(slug, role) of each workspace path, or None, by check.py's
+    family_members() over the listing the paths make."""
+    entries = {path: _entry(path) for path in paths}
+    members = CHECK_SCRIPT.family_members(sorted(set(entries.values())), _block_test(read))
+    return {path: members.get(entry) for path, entry in entries.items()}
+
+
+def _without_slug(path: str, slug: str) -> str:
+    """The suffix a rename keeps: `.notes.md`, `-review.md`, `img/-sketch.png`."""
+    if path.startswith(FIGURES):
+        return FIGURES + path[len(FIGURES) + len(slug):]
+    return path[len(slug):]
+
+
+def _with_slug(suffix: str, slug: str) -> str:
+    if suffix.startswith(FIGURES):
+        return FIGURES + slug + suffix[len(FIGURES):]
+    return slug + suffix
+
+
+def _rename_counterparts(staged: list[str], present: list[str],
+                         read: Reader) -> set[tuple[str, str, str]]:
+    """(role, suffix, old slug) of every staged family member the run removed."""
+    members = family_members_at(staged, read)
+    gone = sorted(set(staged) - set(present))
+    return {(role, _without_slug(path, slug), slug)
+            for path in gone if (member := members[path])
+            for slug, role in [member]}
+
+
+def _added_offence(path: str, member: tuple[str, str] | None, sheltered: set[str],
+                   renames: set[tuple[str, str, str]], keep_licensed: bool) -> str | None:
+    """Why one added path should not be there, or None when it may."""
+    if CHECK_SCRIPT.workspace_allowed(path):
+        return None
+    if member is None:
+        return f"`{path}` is neither a family file nor an allowed workspace file"
+    slug, role = member
+    suffix = _without_slug(path, slug)
+    if any(r == role and s == suffix and old != slug for r, s, old in renames):
+        return None
+    if role == KEPT_ROLE:
+        return None if keep_licensed else f"`{path}` is a kept file the request did not ask for"
+    if slug not in sheltered:
+        return f"`{path}` carries `{slug}`, {NOT_SHELTERED}"
+    return None
+
+
+def verdict_family_only(added: list[str], present: list[str], staged: list[str] | tuple = (),
+                        keep_licensed: bool = False, seed: str = "",
+                        read: Reader = None) -> tuple[bool, str]:
+    """Every file the run added is a family file of a sheltered slug, the
+    renamed counterpart of a staged member it removed, `ideation.notes.md` or an
+    allowed workspace file; a kept file only when the request asked to keep
+    something. With `seed`, a proposal added beside that still-present seed fails.
+    `read` gives a path's text for the check's metadata-block test, a removed
+    staged file's included; without it every `-review` or `-feedback` file
+    whose base slug has no proposal stays a proposal."""
+    members = family_members_at({*present, *added}, read)
+    sheltered = {m[0] for m in members.values() if m and m[1] in SHELTERS}
+    renames = _rename_counterparts(list(staged), list(present), read)
+    offences = [why for path in sorted(added)
+                if (why := _added_offence(path, members[path], sheltered, renames,
+                                          keep_licensed))]
+    fresh = [p for p in sorted(added)
+             if "/" not in p and members[p] and members[p][1] == PROPOSAL_ROLE]
+    if seed and seed in present and fresh:
+        named = ", ".join(f"`{p}`" for p in fresh)
+        offences.append(f"a second proposal {named} beside the seed `{seed}`, which is still there")
+    if offences:
+        return False, "; ".join(offences)
+    if not added:
+        return True, "no file added"
+    return True, f"{len(added)} file(s) added, each a family file or an allowed one"
+
+
+def _carries(path: str, slug: str) -> bool:
+    return path.startswith((f"{slug}.", f"{slug}-", f"{FIGURES}{slug}-"))
+
+
+def _built(path: str, slug: str) -> bool:
+    return (path.startswith(f"{slug}.")
+            and path[len(slug) + 1:] in CHECK_SCRIPT.BUILT_EXTENSIONS)
+
+
+def _binary(data: bytes) -> bool:
+    if b"\x00" in data:
+        return True
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
+def renamed_proposal(staged: dict[str, bytes] | list[str], after: dict[str, bytes] | list[str],
+                     old: str) -> tuple[str | None, str]:
+    """The one proposal the run added under a slug other than `old`, or None
+    with the reason. Only a path that was not staged counts, so an unrelated
+    staged proposal is never taken for the rename."""
+    members = family_members_at(after, _bytes_reader(after))
+    found = sorted(path for path, member in members.items()
+                   if path not in staged and "/" not in path
+                   and member == (path.removesuffix(".md"), PROPOSAL_ROLE)
+                   and path != f"{old}.md")
+    if not found:
+        return None, f"no proposal under a new slug (the old one is `{old}`)"
+    if len(found) > 1:
+        return None, "more than one new proposal: " + ", ".join(f"`{p}`" for p in found)
+    return found[0], f"renamed to `{found[0]}`"
+
+
+def _stale_link(body: bytes, old: str, new: str) -> bool:
+    """A link into `img/<old>-`, unless the new slug extends the old one and
+    the link is the new slug's."""
+    text = body.decode("utf-8", errors="replace")
+    current = f"{FIGURES}{new}-" if new.startswith(old + "-") else None
+    return any(not (current and text.startswith(current, match.start()))
+               for match in re.finditer(re.escape(f"{FIGURES}{old}-"), text))
+
+
+def _rename_problems(staged: dict[str, bytes], after: dict[str, bytes], old: str,
+                     new: str) -> list[str]:
+    extends = new.startswith(old + "-")
+    problems = [f"`{path}` still carries the old slug"
+                for path in sorted(after)
+                if _carries(path, old) and not _built(path, old)
+                and not (extends and _carries(path, new))]
+    staged_members = family_members_at(staged, _bytes_reader(staged))
+    for path in sorted(staged):
+        member = staged_members[path]
+        if not member or member[0] != old or _built(path, old):
+            continue
+        target = _with_slug(_without_slug(path, old), new)
+        if target not in after:
+            problems.append(f"`{path}` has no counterpart `{target}`")
+        elif _binary(staged[path]) and after[target] != staged[path]:
+            problems.append(f"`{target}` is not byte-identical to `{path}`")
+    problems += [f"`{name}` still links `{FIGURES}{old}-`"
+                 for name in (f"{new}.md", f"{new}.notes.md")
+                 if name in after and _stale_link(after[name], old, new)]
+    return problems
+
+
+def verdict_family_renamed(staged: dict[str, bytes], after: dict[str, bytes],
+                           old: str) -> tuple[bool, str]:
+    """A rename moved every family member under `old` to the one new proposal's
+    slug: no file under the old slug remains but a previous build, each staged
+    member exists under the new slug with its suffix, binary members are
+    byte-identical, and neither the proposal nor its notes file links
+    `img/<old>-`. Leftovers are found by prefix, so an `<old>-review.md` the
+    classifier would take for a proposal is still one."""
+    proposal, why = renamed_proposal(staged, after, old)
+    if proposal is None:
+        return False, why
+    new = proposal.removesuffix(".md")
+    problems = _rename_problems(staged, after, old, new)
+    if problems:
+        return False, f"{why}; " + "; ".join(problems)
+    builds = [p for p in sorted(after) if _built(p, old)]
+    left = f"; previous build(s) left in place: {', '.join(builds)}" if builds else ""
+    return True, f"family renamed from `{old}` to `{new}`{left}"
+
+
+def verdict_no_orphans(findings: list[dict]) -> tuple[bool, str]:
+    """No `companion-orphaned` finding in check.py's `--json` findings, from a
+    check that ran: the runner reports one that crashed or printed no JSON as a
+    `check-failed` finding, and its silence is then no evidence."""
+    failed = [f.get("message", "") for f in findings if f.get("rule") == "check-failed"]
+    if failed:
+        return False, "the check did not run: " + "; ".join(m.strip() for m in failed)
+    orphans = [f.get("message", "") for f in findings if f.get("rule") == "companion-orphaned"]
+    if orphans:
+        return False, "companion-orphaned: " + "; ".join(orphans)
+    return True, "no companion-orphaned finding"
 
 
 def verdict_notes_progress(snapshots: list[dict], notes_by_round: int = 8,

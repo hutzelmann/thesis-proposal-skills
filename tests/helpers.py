@@ -40,7 +40,6 @@ REGISTRY_PATH = REPO / "harness" / "models.toml"
 NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
 # .notes.md: the companion working file (w10 is the first fixture to carry one)
 NON_PROPOSAL_SUFFIXES = ("-handout.md", ".harvest.md", ".notes.md")
-REVIEW_SUFFIX = "-review.md"
 # the draft the dev-runner tests place in a workspace as a run's produced draft
 CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
 # the Copilot host's synthetic fixtures (README there) and the synthetic token
@@ -56,12 +55,22 @@ def is_fixture_proposal(path: Path) -> bool:
 
     An earlier round's review (w09) is `<slug>-review.md` beside `<slug>.md`;
     the suffix alone would also match a proposal slugged `…-review`
-    (f00's `ml-code-review.md`), so the sibling decides."""
+    (f00's `ml-code-review.md`), and a review whose proposal was renamed away
+    (w13) has no sibling. So the check's own listing classifier decides
+    (`family_members`): a `-review` or `-feedback` file whose base slug has no
+    proposal is one only when it ends in a metadata block, and a kept
+    `<slug>.<label>.md` (w15) is never one."""
     name = path.name
     if name in NON_PROPOSAL_MARKDOWN or name.endswith(NON_PROPOSAL_SUFFIXES):
         return False
-    stem = name.removesuffix(REVIEW_SUFFIX)
-    return stem == name or not path.with_name(f"{stem}.md").is_file()
+    listing = [p.name + "/" if p.is_dir() else p.name for p in path.parent.iterdir()]
+
+    def ends_in_block(other: str) -> bool:
+        text = (path.parent / other).read_text(encoding="utf-8")
+        return check_script.split_proposal(text)[1].found
+
+    member = check_script.family_members(listing, ends_in_block).get(name)
+    return member == (name.removesuffix(".md"), check_script.PROPOSAL)
 
 
 @dataclass(frozen=True)
