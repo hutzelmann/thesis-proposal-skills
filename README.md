@@ -208,6 +208,7 @@ This repo is **only** for developing and testing the skills. User proposals neve
 - `shared/` holds the single-source guidance; `scripts/sync_shared.py` materializes it, together with the cross-skill script copies, into the skills. Activate the pre-commit hook once per clone with `uv run poe setup` (or `git config core.hooksPath .githooks`). It checks that the copies you stage match the sources you stage and refuses a stale commit, naming the command that fixes it; it never stages or rewrites anything for you. CI's `--check` catches bypassed hooks.
 - Tests: `uv run pytest` runs L0 without model calls; `harness/` holds the L1/L2 model evals (see `harness/README.md`).
 - Fixtures in `tests/fixtures/` are synthetic: no real proposals, no personal data.
+- Pull requests target `develop`, where finished work collects until a release. `main` holds released versions only and stays the default branch, because the installers and the plugin read it, so switch the base GitHub proposes.
 
 ### The Agent Skills standard
 

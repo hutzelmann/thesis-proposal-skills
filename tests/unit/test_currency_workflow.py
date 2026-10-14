@@ -7,8 +7,11 @@ they may do is pinned here with one property list: exactly three write
 permissions, no secret beyond that token, no model call, no baseline rewrite,
 no merge, a fixed bump branch, the checker in write mode with a report check
 that fails closed, the branch-handling guards, only the watched file staged,
-and CI dispatched on the bump branch. Narrow text extraction only — no YAML
-parser (the skills' scripts may not use one, and this test needs none).
+and CI dispatched on the bump branch. The check runs on `develop` and the pull
+request targets it, since `main` only ever fast-forwards to a release; an update
+moves an open pull request's base there too (finish-two-branch-flow). Narrow
+text extraction only — no YAML parser (the
+skills' scripts may not use one, and this test needs none).
 """
 
 from __future__ import annotations
@@ -23,12 +26,15 @@ WORKFLOWS = REPO / ".github" / "workflows"
 PERMISSIONS = {"contents": "write", "pull-requests": "write", "actions": "write"}
 FORBIDDEN = ("--yes", "poe matrix", "inspect eval", "poe smoke", "OPENROUTER",
              "--update-baseline", "gh pr merge")
+# the integration branch: the check runs on it and the bump pull request targets it
+BASE = "develop"
 # the lines that keep a maintainer's commit on the bump branch from being
 # overwritten (model-currency review follow-up 2026-10-05)
 GUARDS = (
     # the lease is the commit that was inspected, not a later ls-remote read
     'expected=$(git rev-parse -q --verify "refs/remotes/origin/$BRANCH" || true)',
-    'git log "origin/main..$expected"',
+    # commits already on the base are nobody else's: the range starts there
+    f'git log "origin/{BASE}..$expected"',
     '--force-with-lease="refs/heads/$BRANCH:$expected"',
     # the others-check runs whatever the PR state; only a merged tip is rebuilt
     "--state merged",
@@ -118,9 +124,28 @@ def _bump_problems(weekly: Weekly, text: str, lines: list[str]) -> list[str]:
     return problems
 
 
+def _base_problems(lines: list[str]) -> list[str]:
+    problems = []
+    if not any(line.strip() == f"ref: {BASE}" for line in lines):
+        problems.append(f"the check does not run on {BASE}")
+    joined = "\n".join(lines)
+    bases = re.findall(r"gh pr create --base (\S+)", joined)
+    if bases != [BASE]:
+        problems.append(f"opens its pull request against {bases}, expected one against {BASE}")
+    # an open bump pull request may predate the two-branch model and target main;
+    # rebuilt from develop and left there, it would carry unreleased work to main
+    retargets = [base or "(kept)"
+                 for base in re.findall(r'gh pr edit "\$pr"(?: --base (\S+))?', joined)]
+    if retargets != [BASE]:
+        problems.append(f"updates its open pull request with base {retargets}, "
+                        f"expected one update that moves it to {BASE}")
+    return problems
+
+
 def workflow_problems(weekly: Weekly, text: str) -> list[str]:
     lines = _uncommented(text)
     problems = _token_problems(text, lines) + _bump_problems(weekly, text, lines)
+    problems += _base_problems(lines)
     problems += [f"forbidden: {word!r}" for word in FORBIDDEN if word in "\n".join(lines)]
     problems += [f"guard missing: {guard!r}" for guard in GUARDS if guard not in text]
     if '[ -n "$pr" ] && [ -n "$expected" ]' in text:
@@ -174,6 +199,30 @@ def test_the_pin_catches_the_first_versions_branch_handling(weekly, old, new, pr
     text = weekly.text()
     assert text.count(old) == 1, f"workflow drifted: {old!r}"
     assert any(problem in p for p in workflow_problems(weekly, text.replace(old, new)))
+
+
+@weeklies
+@pytest.mark.parametrize(("old", "new", "problem"), [
+    # before the two-branch model: the check ran on main and the PR targeted it
+    (f"gh pr create --base {BASE}", "gh pr create --base main", "pull request against"),
+    (f"ref: {BASE}", "ref: main", f"does not run on {BASE}"),
+    # with main as the range start, unreleased commits on develop count as others'
+    (f'git log "origin/{BASE}..$expected"', 'git log "origin/main..$expected"', "guard missing"),
+    # an update that keeps the base: a pull request the old workflow opened stays on main
+    (f'gh pr edit "$pr" --base {BASE}', 'gh pr edit "$pr"', "open pull request with base"),
+    (f'gh pr edit "$pr" --base {BASE}', 'gh pr edit "$pr" --base main',
+     "open pull request with base"),
+])
+def test_the_pin_catches_a_bump_aimed_at_main(weekly, old, new, problem):
+    text = weekly.text()
+    assert text.count(old) == 1, f"workflow drifted: {old!r}"
+    assert any(problem in p for p in workflow_problems(weekly, text.replace(old, new)))
+
+
+@weeklies
+def test_the_pin_catches_a_second_pull_request(weekly):
+    text = weekly.text() + "      - run: gh pr create --base develop --head other\n"
+    assert any("pull request against" in p for p in workflow_problems(weekly, text))
 
 
 def test_ci_accepts_the_dispatch():

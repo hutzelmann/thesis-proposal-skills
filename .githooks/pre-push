@@ -1,12 +1,19 @@
 #!/bin/sh
-# A push to main releases to every installer and plugin user, so a push needs
-# a person at a terminal. An agent's shell has no controlling terminal and is
-# refused; the maintainer's terminal asks once.
+# A push to main releases to every installer and plugin user, and every push is
+# the maintainer's, so a push needs a person at a terminal. An agent's shell has
+# no controlling terminal and is refused; the maintainer's terminal asks once and
+# says what the push reaches: develop, other branches and tags reach no installer.
 # One-time activation per clone: git config core.hooksPath .githooks (poe setup).
 remote="$1"
 refs=""
+reach="This reaches no installer."
 while read -r local_ref _ remote_ref _; do
-  [ -n "$local_ref" ] && refs="$refs ${remote_ref#refs/heads/}"
+  [ -n "$local_ref" ] || continue
+  refs="$refs ${remote_ref#refs/heads/}"
+  # the remote ref decides, so `git push origin develop:main` counts as a release
+  if [ "$remote_ref" = refs/heads/main ]; then
+    reach="This releases to every user."
+  fi
 done
 [ -n "$refs" ] || exit 0
 # a subshell: a failed redirection on a special built-in would end the hook itself
@@ -15,7 +22,7 @@ if ! (: </dev/tty) 2>/dev/null; then
     "the maintainer pushes from their own terminal." >&2
   exit 1
 fi
-printf 'Push%s to %s? This releases to every user. [y/N] ' "$refs" "$remote" >/dev/tty
+printf 'Push%s to %s? %s [y/N] ' "$refs" "$remote" "$reach" >/dev/tty
 read -r answer </dev/tty
 case "$answer" in
   y | Y | yes) exit 0 ;;

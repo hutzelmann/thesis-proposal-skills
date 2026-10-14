@@ -26,3 +26,10 @@ synthetic (`Erika Musterfrau`, matriculation `00000000`).
 
 Real proposals, credentials, and any other private material never enter this
 repository.
+
+## Branches
+
+Pull requests target `develop`, where finished work collects until the next
+release. `main` holds released versions only and stays the repository's
+default branch, because the installers and the plugin read it. GitHub
+therefore proposes `main` as a pull request's base; switch it to `develop`.

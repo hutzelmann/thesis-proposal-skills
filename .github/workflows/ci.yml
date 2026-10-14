@@ -1,8 +1,10 @@
 name: CI
 
 on:
+  # main holds releases and develop integrates finished work, so a change is
+  # tested on develop before a release fast-forwards main to it.
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   # A pull request opened with GITHUB_TOKEN triggers no pull_request run, and
   # workflow_dispatch is the one event that token may trigger: the weekly

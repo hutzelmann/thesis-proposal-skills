@@ -9,8 +9,10 @@ name: Install check
 # installer as the moving part.
 
 on:
+  # main is what installers fetch; develop runs it too, so a broken install is
+  # caught before a release moves main.
   push:
-    branches: [main]
+    branches: [main, develop]
   schedule:
     - cron: "17 6 * * 1" # Mondays 06:17 UTC
 
