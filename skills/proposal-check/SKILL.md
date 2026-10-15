@@ -2,6 +2,8 @@
 name: proposal-check
 description: Low-level check of a thesis proposal — required sections, citation consistency, forbidden content, format guardrails, typos — closing with where it stands and the next step. Use when the user asks to check their proposal, suspects a section or citation is missing or malformed, wants a quick gate before publishing, or asks where their proposal stands or what to do next. Not content feedback — for whether the argument holds, use proposal-review. Advisory only.
 license: MIT
+metadata:
+  version: 0.9.0
 ---
 
 # Proposal Check

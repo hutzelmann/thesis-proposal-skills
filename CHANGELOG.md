@@ -12,6 +12,8 @@ Installs and updates deliver `main`, which holds the latest release. Work in pro
 
 _On `develop`, not yet released._
 
+## [0.9.0] - 2026-10-15
+
 The suite gets this changelog and version numbers, and from now on installs receive released versions only. Every proposal moves into a folder of its own, which breaks workspaces in the old flat layout; its files stay together under one name, a review records which research questions it judged, and a named tool or domain has to matter to the research. The scripts also run on Windows whatever characters they print, and the install guide says how to confirm that a setup works.
 
 ### Added
@@ -343,7 +345,8 @@ The project started on 2026-03-03 as a LaTeX template for Bachelor's and Master'
 - Author-in-text citations (`\citeauthor`) name only the first author, followed by "et al." when a source has more than one (00c0840).
 - The `embedsources` class option embeds `proposal.tex`, `literature.bib`, `AGENTS.md` and `compactarticle.cls` into the PDF, and the sample `proposal.tex` turns it on (2dee235).
 
-[Unreleased]: https://github.com/hutzelmann/thesis-proposal-skills/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/hutzelmann/thesis-proposal-skills/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/hutzelmann/thesis-proposal-skills/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/hutzelmann/thesis-proposal-skills/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/hutzelmann/thesis-proposal-skills/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/hutzelmann/thesis-proposal-skills/compare/v0.5.0...v0.6.0

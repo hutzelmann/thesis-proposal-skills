@@ -2,6 +2,8 @@
 name: proposal-write
 description: Write a thesis proposal from scratch or refine one, grounded in the proposal guidelines and the literature. Use when the user wants a draft, wants sections improved, wants bullet points turned into prose, asks to apply review findings or blockers, wants open TODOs moved to the notes file, or asks for a writing, editing or polishing pass — any request to change the proposal's text, including to get it ready for a supervisor. Not a readiness verdict — for whether it is ready, use proposal-review.
 license: MIT
+metadata:
+  version: 0.9.0
 ---
 
 # Proposal Write

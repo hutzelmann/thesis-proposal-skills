@@ -2,6 +2,8 @@
 name: proposal-import
 description: Import an existing proposal (usually PDF) into the standard single-file format — extract text and references, strip personal data, mark gaps. Use when the user has a draft from Word, LaTeX, Overleaf or another tool, pastes the text of an older proposal, or wants to carry existing work over and continue it here.
 license: MIT
+metadata:
+  version: 0.9.0
 ---
 
 # Proposal Import
