@@ -130,7 +130,7 @@ When the source material leaves the methodology choice open, the skill SHALL dec
 - **THEN** the leading `# ` line carries the TODO marker and no section heading gains one in its place
 
 ### Requirement: Notes file consumed and maintained while writing
-When a companion `<slug>.notes.md` exists for the target proposal, the write skill SHALL read it before drafting and honor its content: recorded decisions steer the draft (they are not re-litigated), and the Next Focus section informs which gaps to work on first. Decisions the writing session itself produces SHALL be recorded in the notes Decisions section. When the session resolves a proposal `[TODO: …]` marker, the skill SHALL move it to the notes Log as a done entry rather than deleting it. When no notes file exists, the skill SHALL proceed as before and MAY create one only when it has decisions, clarify-early items from an applied review, or markers the user approved moving to record — never an empty skeleton.
+When the target proposal's folder holds a notes file, the write skill SHALL read it before drafting and honor its content: recorded decisions steer the draft (they are not re-litigated), and the Next Focus section informs which gaps to work on first. Decisions the writing session itself produces SHALL be recorded in the notes Decisions section. When the session resolves a proposal `[TODO: …]` marker, the skill SHALL move it to the notes Log as a done entry rather than deleting it. When no notes file exists, the skill SHALL proceed as before and MAY create one only when it has decisions, clarify-early items from an applied review, or markers the user approved moving to record — never an empty skeleton.
 
 #### Scenario: Prior decision honored
 - **WHEN** the notes Decisions section records that a user study was rejected in favor of a prototype implementation
@@ -146,7 +146,7 @@ When a companion `<slug>.notes.md` exists for the target proposal, the write ski
 
 #### Scenario: Notes file created for deferred items
 - **WHEN** the target proposal has no notes file and an applied review carries clarify-early items
-- **THEN** the skill creates the notes file with its five canonical sections and records the items under Open Points
+- **THEN** the skill creates `notes.md` in the proposal's folder with its five canonical sections and records the items under Open Points
 
 #### Scenario: Notes file created for approved marker moves
 - **WHEN** the target proposal has no notes file and the user approves moving three execution-detail markers out of it

@@ -62,7 +62,7 @@ The skill SHALL name to the student only works that appeared in an actual fetch 
 ### Requirement: Seeds the proposal file
 The skill SHALL seed the proposal file (per proposal-file-format) when the idea has converged — the coverage slots are filled — or when the user says "enough", whichever comes first; on convergence the skill SHALL offer seeding proactively rather than waiting for the user to end the session. The seed opens with the working title as the leading `# ` line and the subtitle paragraph beneath it, and carries: problem sketch, why it matters, candidate research-question directions as notes, open questions as `[TODO: …]` markers reserved for submission-blocking gaps, and a metadata block with any starter references found during grounding or fetched at seeding. A session that produced no idea content seeds no proposal file — its state lives in the notes file alone.
 
-At the closing step the skill SHALL confirm the exact start and submission months, pre-filled from the preamble's months estimate, and record them as a note in the seeded body — never as a timeline section. The language and the degree level come from the preamble answers: the subtitle paragraph is `*Bachelor's Thesis Proposal*` / `*Master's Thesis Proposal*` for English and `*Exposé zur Bachelorarbeit*` / `*Exposé zur Masterarbeit*` for German, with a `*[TODO: …]*` subtitle only when the level was never given — the subtitle wording is what later tooling infers the language from, so it is written even in a seed. The skill SHALL read the captured state back in chat in a few lines before closing, say that the file exists, and close with the stage handoff (skill-packaging): the recommended next step is a full draft from the seed when grounding identified the closest prior work the contribution can be stated against, and a literature search on the idea's core terms first when it did not — the other step is the alternative. A session that ends at an impasse hands over to the offline steps it suggested, never to a draft. If the provisional notes-file slug diverged from the working title, the notes file is renamed to match the seed's slug at this step.
+At the closing step the skill SHALL confirm the exact start and submission months, pre-filled from the preamble's months estimate, and record them as a note in the seeded body — never as a timeline section. The language and the degree level come from the preamble answers: the subtitle paragraph is `*Bachelor's Thesis Proposal*` / `*Master's Thesis Proposal*` for English and `*Exposé zur Bachelorarbeit*` / `*Exposé zur Masterarbeit*` for German, with a `*[TODO: …]*` subtitle only when the level was never given — the subtitle wording is what later tooling infers the language from, so it is written even in a seed. The skill SHALL read the captured state back in chat in a few lines before closing, say that the file exists, and close with the stage handoff (skill-packaging): the recommended next step is a full draft from the seed when grounding identified the closest prior work the contribution can be stated against, and a literature search on the idea's core terms first when it did not — the other step is the alternative. A session that ends at an impasse hands over to the offline steps it suggested, never to a draft. If the provisional slug diverged from the working title, the idea's folder is renamed to the seed's slug at this step.
 
 When the session started from another finished thesis, that thesis SHALL be recorded: as a starter entry in the seed's `references` when it is publicly accessible, and in the notes file alone when it is not. The skill SHALL NOT invent publication metadata for an unpublished thesis in order to cite it.
 
@@ -74,7 +74,7 @@ When the session started from a published paper, the paper SHALL always be recor
 
 #### Scenario: Session ends after ideation
 - **WHEN** the ideation session concludes with idea content developed
-- **THEN** a slug-named proposal file exists opening with the working title as its leading `# ` line, consumable by the write skill, and the notes file shares its slug
+- **THEN** a slug-named proposal file exists in the folder of the same name, opening with the working title as its leading `# ` line, consumable by the write skill, and the notes file sits beside it
 
 #### Scenario: Seeded with the closest prior work identified
 - **WHEN** the session seeds the proposal and grounding identified the work the contribution is stated against
@@ -98,7 +98,7 @@ When the session started from a published paper, the paper SHALL always be recor
 
 #### Scenario: Nothing to seed
 - **WHEN** the session ends with no topic developed
-- **THEN** no proposal file is created and the notes file records where things stopped
+- **THEN** no proposal file is created and the notes file in the idea's folder records where things stopped
 
 #### Scenario: Published source thesis recorded as a reference
 - **WHEN** the session started from a thesis that is publicly retrievable
@@ -184,15 +184,19 @@ Scoping facts persist by invariance. Proposal-invariant facts — study program,
 - **THEN** the skill shows the composed note first, appends it only after the user has seen it, and skips any fact a prior note already records
 
 ### Requirement: Notes file as session memory
-The skill SHALL create the companion notes file (per proposal-file-format) as soon as a topic phrase exists — under a provisional slug derived from it — and SHALL update it whenever a decision, a rejected direction, or a noteworthy insight lands, so that a session that ends unexpectedly loses at most the current exchange. When a matching notes file already exists in the workspace, the skill SHALL read it and resume from its state instead of starting over — including re-using its recorded scoping context instead of re-asking the preamble. Proposal-specific scoping context lives here, never in the seed file.
+The skill SHALL create the notes file (per proposal-file-format) when a new session starts, in a folder `idea/` (suffixed when taken), and SHALL update it whenever a decision, a rejected direction, or a noteworthy insight lands, so that a session that ends unexpectedly loses at most the current exchange. When a matching notes file without a proposal already exists, the skill SHALL read it and resume from its state instead of starting over — including re-using its recorded scoping context instead of re-asking the preamble. Proposal-specific scoping context lives here, never in the seed file.
 
 #### Scenario: Session dies mid-dialogue
 - **WHEN** an ideation session ends without warning after several substantive exchanges
-- **THEN** the notes file already contains the decisions and open points up to the last exchange
+- **THEN** the notes file in the idea's folder already contains the decisions and open points up to the last exchange
 
 #### Scenario: Resuming a prior session
-- **WHEN** the user returns and a notes file from an earlier ideation session exists
-- **THEN** the skill picks up from the recorded state and does not repeat the administrative preamble for facts the notes already carry
+- **WHEN** the user returns and a folder holding a notes file from an earlier ideation session exists
+- **THEN** the skill picks up from the recorded state, creates no new folder, and does not repeat the administrative preamble for facts the notes already carry
+
+#### Scenario: Idea folder already taken
+- **WHEN** a new session starts and `idea/` already holds another idea's notes file that the user does not want to resume
+- **THEN** the skill creates `idea-2/` and leaves `idea/` untouched
 
 ### Requirement: Coverage-guided convergence and early stop
 The skill SHALL track, internally, which of the idea's load-bearing aspects have taken shape — the problem, why it matters, candidate research-question directions, a plausible method, and feasibility within the stated time budget — and SHALL choose its next Socratic move to close the most consequential open aspect. This model SHALL never surface as a checklist, a form, or a question script. Roughly mid-session, and whenever the dialogue pivots, the skill SHALL give a one-breath stocktake in chat: what stands, what is open.
@@ -391,13 +395,13 @@ When the student's idea names a tool, system, platform or application domain in 
 - **THEN** the notes file records the open question, the name does not count toward an aspect having taken shape, and the skill generates no dependence of its own
 
 ### Requirement: Provisional handle resolved at seeding
-The notes file created as soon as a topic phrase exists SHALL be named by a provisional slug derived from that phrase. A session resumed from `ideation.notes.md` SHALL rename that file to the provisional slug's notes file as soon as a topic phrase exists, and SHALL NOT create a second notes file.
+The idea's folder SHALL be named `idea` until a topic phrase exists; the skill SHALL then rename it to a provisional slug derived from that phrase, with the numeric suffix when taken, and SHALL NOT create a second folder or notes file. A session resumed from an `idea` folder SHALL rename it the same way. A failed provisional rename SHALL NOT end the session; the skill retries it at seeding.
 
-At seeding, the slug SHALL be derived from the working title the user settled, in the shape proposal-file-format's "Content-derived slug filenames" requires: lowercase, hyphenated, 2–4 words of the title. The skill SHALL state that shape where it creates the seed. When it differs from the provisional slug, the skill SHALL rename the whole family under the provisional slug to it, as proposal-file-format's "A rename moves the whole family" requires. The family includes the notes file, kept files and figures. When any target name under the derived slug is taken, the slug SHALL take the numeric suffix, and the whole family SHALL move to the suffixed slug. The skill SHALL say in chat which files it renamed. After seeding, no file under the provisional slug SHALL remain. A title that changes after seeding SHALL NOT change the slug.
+At seeding, the slug SHALL be derived from the working title the user settled, in the shape proposal-file-format's "Content-derived slug filenames" requires: lowercase, hyphenated, 2–4 words of the title. The skill SHALL state that shape where it creates the seed. When it differs from the provisional slug, the skill SHALL rename the folder to it as proposal-file-format's "A rename moves the whole family" requires, taking the numeric suffix when the name is taken, and SHALL then write the seed into it. The skill SHALL say in chat what it renamed. After seeding, no folder under the provisional slug SHALL remain. A title that changes after seeding SHALL NOT change the slug.
 
 #### Scenario: Diverged slug at seeding
-- **WHEN** the notes file is `<provisional>.notes.md`, a sketch `img/<provisional>-sketch.png` and a kept reading list `<provisional>.reading-list.md` exist, and the settled working title yields a different slug
-- **THEN** after seeding the seed, the notes file, the sketch and the reading list carry the new slug, nothing remains under the provisional slug, and the chat names the renamed files
+- **WHEN** the folder `<provisional>/` holds the notes file, a sketch `img/sketch.png` and a kept reading list `reading-list.md`, and the settled working title yields a different slug
+- **THEN** after seeding the folder is `<new>/`, holding the seed `<new>.md` beside the unchanged notes file, sketch and reading list, no `<provisional>/` remains, and the chat names the rename
 
 #### Scenario: Long working title at seeding
 - **WHEN** the settled working title has more than four words
@@ -405,8 +409,16 @@ At seeding, the slug SHALL be derived from the working title the user settled, i
 
 #### Scenario: Slug unchanged at seeding
 - **WHEN** the settled working title yields the provisional slug
-- **THEN** no file is renamed and the seed is written beside the notes file
+- **THEN** no folder is renamed and the seed is written beside the notes file
+
+#### Scenario: Topic phrase in a fresh session
+- **WHEN** a session started in `idea/` and a topic phrase emerges
+- **THEN** the folder becomes `<provisional>/` with its notes file's content kept, and no second folder or notes file exists
+
+#### Scenario: Idea folder that cannot be renamed
+- **WHEN** a topic phrase emerges and `idea/` cannot be moved to `<provisional>/`, for example because another program holds a file in it open
+- **THEN** the skill keeps working in `idea/`, says so in chat in one line, overwrites nothing, and tries the rename again at seeding
 
 #### Scenario: Session resumed from slug-less notes
-- **WHEN** a session resumes from `ideation.notes.md` and a topic phrase emerges
-- **THEN** the notes file becomes `<provisional>.notes.md`, with its content kept, and no second notes file exists
+- **WHEN** a session resumes from `idea/notes.md`, whose folder carries no slug, and a topic phrase emerges
+- **THEN** the folder becomes `<provisional>/` with its notes file's content kept, and no second notes file exists

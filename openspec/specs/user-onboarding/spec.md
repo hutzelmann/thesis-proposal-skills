@@ -45,7 +45,7 @@ The README demo SHALL be curated from a real agent session run on a synthetic fi
 - **THEN** every shown paper reference and proposal excerpt traces back to real session output on the synthetic topic, with only ordering and length condensed
 
 ### Requirement: Users never work in this repository
-All user activity happens in their own workspace; this repository is exclusively for developing and testing the skills, and its documentation SHALL say so. The install guide SHALL state that the proposals folder is a folder of the student's own, empty when they start, and never a clone or copy of this repository, and that the repository's contributor instruction file is meant for people developing the skills and is never copied into a proposals folder. Wherever the guide names the workspace root, it SHALL call it the proposals folder, and it SHALL state that proposals sit flat in it by default, naming when the proposal-location setting is the better choice without describing any layout the skills do not offer.
+All user activity happens in their own workspace; this repository is exclusively for developing and testing the skills, and its documentation SHALL say so. The install guide SHALL state that the proposals folder is a folder of the student's own, empty when they start, and never a clone or copy of this repository, and that the repository's contributor instruction file is meant for people developing the skills and is never copied into a proposals folder. Wherever the guide names the workspace root, it SHALL call it the proposals folder, and it SHALL state that each proposal gets a folder in it, naming when the proposal-location setting is the better choice without describing any layout the skills do not offer.
 
 #### Scenario: User seeks their files
 - **WHEN** a user wonders where their proposals live
@@ -57,7 +57,7 @@ All user activity happens in their own workspace; this repository is exclusively
 
 #### Scenario: Student wonders whether to use a subfolder
 - **WHEN** a student reads what the proposals folder will contain
-- **THEN** the guide says the files sit flat by default and when setting a proposals subfolder is worth it, and that the workspace-level files stay at the top either way
+- **THEN** the guide says each proposal gets a folder of its own named after it, when collecting those folders in a subfolder is worth it, and that the workspace-level files stay at the top either way
 
 ### Requirement: README names the path for a problem
 

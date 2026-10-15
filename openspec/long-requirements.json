@@ -54,20 +54,20 @@
       "The methodology set is closed per workspace": 698,
       "Thesis title quality": 960,
       "Title alarm is raised and justified, never silently blocked": 964,
-      "Workspace layout and the proposal location": 1288,
+      "Workspace layout and the proposal location": 1251,
       "Workspace override file": 1135
     },
     "proposal-file-format": {
-      "A rename moves the whole family": 1370,
+      "A rename moves the whole family": 1324,
       "Blocking-TODO split between proposal and notes": 553,
       "Citation syntax and key constraints": 654,
-      "Companion notes file": 717,
+      "Companion notes file": 690,
       "Language inference": 702,
-      "Proposal family under one handle": 1447,
+      "Proposal family under one handle": 1432,
       "Single-file proposal with trailing metadata block": 1403,
       "Skill prose must not drift from the format contract": 539,
       "Visible TODO markers": 515,
-      "Working material stays out of the workspace": 1883
+      "Working material stays out of the workspace": 1871
     },
     "skill-check": {
       "Agent pass for non-mechanical issues": 820,
@@ -79,10 +79,9 @@
       "Findings carry stable identifiers": 643,
       "Hindsight leakage reported as a warning": 2919,
       "Machine-readable output mode": 556,
-      "Orphaned companions reported as a warning": 2854,
-      "Override file resolution chain": 523,
+      "Orphaned companions reported as a warning": 2460,
       "Proposal status on request": 1473,
-      "Proposal-location value validated, misplacement reported": 781,
+      "Proposal-location value validated, misplacement reported": 757,
       "Read-only run enforced without file mutation": 905,
       "Reference-density advisory warning": 1204,
       "Repeated citations reported as a warning": 1200,
@@ -97,7 +96,7 @@
     "skill-customize": {
       "Dialog-driven override management": 512,
       "Methodology branches are a customization": 584,
-      "Proposal-location customization": 838
+      "Proposal-location customization": 827
     },
     "skill-ideate": {
       "Coverage-guided convergence and early stop": 1621,
@@ -106,10 +105,10 @@
       "Level-steered ideation": 634,
       "Literature-grounded ideation": 1421,
       "Named choices questioned Socratically": 899,
-      "Notes file as session memory": 613,
-      "Provisional handle resolved at seeding": 1135,
+      "Notes file as session memory": 597,
+      "Provisional handle resolved at seeding": 1073,
       "Research-group scoping": 3822,
-      "Seeds the proposal file": 3281,
+      "Seeds the proposal file": 3267,
       "Socratic interaction style": 1360,
       "Working title raised, never finalized": 555
     },
@@ -118,8 +117,8 @@
       "Import names the continuation path": 706,
       "Import to standard format": 1342,
       "Imported references are validated and complemented": 616,
-      "Notes file seeded at import": 690,
-      "Output lands in the workspace": 724,
+      "Notes file seeded at import": 688,
+      "Output lands in the workspace": 723,
       "Personal data stripped on import": 759,
       "Single-context execution": 660
     },
@@ -127,7 +126,7 @@
       "Academic sources with judged relevance": 988,
       "Browser fallback for a blocked source": 1485,
       "Credential resolution without directory traversal": 694,
-      "Excluded literature recorded in the notes file": 508,
+      "Excluded literature recorded in the notes file": 501,
       "Keyless baseline, keys as guided upgrades": 1217,
       "Level-aware literature stance": 541,
       "Multi-source federation with graceful degradation": 990,
@@ -152,7 +151,7 @@
       "Uniform failure-path report offer": 1227,
       "Uniform skill opening structure": 1673,
       "User-side script constraints": 1605,
-      "Workspace-files block in every skill": 2156
+      "Workspace-files block in every skill": 2154
     },
     "skill-publish": {
       "Author-in-text citation rendering": 549,
@@ -178,11 +177,11 @@
       "Content-level review scope": 1386,
       "Degree-level review lenses": 1134,
       "Named choices held to the swap test": 2020,
-      "Persisted, actionable output": 1476,
+      "Persisted, actionable output": 1473,
       "Research questions recorded in the review": 1202,
       "Review hands over a bounded revision path": 1412,
-      "Review rounds converge": 1095,
-      "Single-context execution": 2075,
+      "Review rounds converge": 1088,
+      "Single-context execution": 2068,
       "Three-tier substance verdict": 1683,
       "Title assessed as its own dimension": 1063
     },
@@ -195,16 +194,16 @@
       "Handoff stays in chat": 580,
       "Level-calibrated feedback bar": 624,
       "Literature grounded by consent": 4281,
-      "Raw submission intake and normalization": 666,
+      "Raw submission intake and normalization": 661,
       "Resubmission intake": 1697,
-      "Single-context execution": 4171,
-      "Student-facing feedback with disclosure and steering": 2932,
+      "Single-context execution": 4154,
+      "Student-facing feedback with disclosure and steering": 2925,
       "Verdict expressed as proposal state": 1885,
       "Workload volume check": 2953
     },
     "skill-troubleshoot": {
-      "Companion artifacts inventoried at hash level": 906,
-      "Graded redaction with the most protective default": 1067,
+      "Companion artifacts inventoried at hash level": 903,
+      "Graded redaction with the most protective default": 1064,
       "Install identified from workspace evidence": 769,
       "Measured facts distinguished from self-reported ones": 889,
       "Non-defect causes named as such": 847,
@@ -218,7 +217,7 @@
       "Citation scope in writing passes": 1416,
       "Density pass binding per writing pass": 576,
       "Level-aware contribution close and research questions": 880,
-      "Notes file consumed and maintained while writing": 723,
+      "Notes file consumed and maintained while writing": 710,
       "One writer per file": 585,
       "Refinement preserves author content": 706,
       "Self-verification before reporting": 2026,
@@ -260,7 +259,7 @@
       "Paper-foundation reading bound covered": 2068,
       "Pinned model registry": 2390,
       "Prompt caching on Anthropic matrix rows": 1608,
-      "Proposal-family coverage": 3449,
+      "Proposal-family coverage": 3448,
       "Read-only mandate measured under a compound request": 524,
       "Readiness coverage": 2303,
       "Review-currency coverage": 2879,
@@ -281,7 +280,7 @@
       "Setup tiers and readiness checks in the install guide": 2101,
       "Supervisors can discover methodology configurability": 708,
       "User-local PDF tools when no package manager works": 1040,
-      "Users never work in this repository": 719
+      "Users never work in this repository": 717
     }
   }
 }

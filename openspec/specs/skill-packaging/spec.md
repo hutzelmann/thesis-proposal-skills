@@ -489,7 +489,7 @@ Every user-side script with a command-line entry point, whether shipped inside a
 The workspace rules SHALL be stated once, as a shared block, and materialized into every shipped `SKILL.md` by the automation that materializes the other shared blocks. The block SHALL cover:
 
 - the proposal location: the working directory, unless the workspace `guidelines.md` configures a subdirectory; a proposal's files never go into a host's scratch or temporary folder;
-- the proposal family, listed once as a table from each role (proposal, notes, harvest record, review, supervisor feedback, handout, built output, kept file, figure, ideation notes) to its file name, and its slug, including that a rename moves the whole family (proposal-file-format);
+- the proposal family in its folder, listed once as a table from each role (proposal, notes, harvest record, review, supervisor feedback, handout, built output, kept file, figure) to its file name, and its slug, including that a rename moves the whole family (proposal-file-format);
 - the workspace-level, build, troubleshooting-capture and installer-managed files that may also be present;
 - the rule that working material stays out of the workspace, including what to do when no temporary location is writable.
 
@@ -518,6 +518,10 @@ The materialization SHALL locate the block's paragraphs without consuming a sent
 #### Scenario: Family table drifts from the check
 - **WHEN** the block's family table gains a role the mechanical check does not classify, or the check gains a role the table lacks
 - **THEN** the offline suite fails naming the role
+
+#### Scenario: Role name drifts from the check
+- **WHEN** the block's table names the review `review.md` and the mechanical check classifies a review under any other name
+- **THEN** the offline suite fails naming the role and both names
 
 #### Scenario: Allowed names drift from the check
 - **WHEN** the block gains an allowed workspace file that the mechanical check would still report, or the reverse
