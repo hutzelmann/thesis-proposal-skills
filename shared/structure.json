@@ -131,7 +131,7 @@
     "detail_modes": ["simple", "detailed"],
     "detail": "simple"
   },
-  "_paths_comment": "Workspace layout. proposals is the directory holding each proposal and its whole family (notes, harvest, img/, review, feedback, built outputs), relative to the workspace root — the directory of the governing guidelines.md. The default '.' is the flat layout. guidelines.md, api-keys.env, and bug-report/ stay at the root regardless.",
+  "_paths_comment": "Workspace layout. proposals is the directory holding the proposal folders — one folder per proposal, named by its slug and holding its whole family (notes, harvest, img/, review, feedback, built outputs) — relative to the workspace root, the working directory scripts run from. The default '.' is the workspace root itself. guidelines.md, api-keys.env, and bug-report/ stay at the root regardless.",
   "paths": {
     "proposals": "."
   },

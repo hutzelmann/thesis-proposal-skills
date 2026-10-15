@@ -11,12 +11,14 @@ import sys
 from pathlib import Path
 
 import pytest
-from helpers import is_fixture_proposal
+from fixture_paths import FIXTURES, fixture_proposals
 
 REPO = Path(__file__).resolve().parents[2]
 CHECK = REPO / "skills" / "proposal-check" / "scripts" / "check.py"
-FIXTURES = REPO / "tests" / "fixtures"
 
+# the corpus walker's own fixture set: test_fixture_paths.py holds
+# corpus_proposals() to one proposal per oracle, and fixture_proposals() is how
+# it finds each — in a folder, or under the `proposals/` location w07 configures
 ORACLES = sorted(FIXTURES.glob("*/expected.json"))
 
 
@@ -24,49 +26,49 @@ def fixture_id(path: Path) -> str:
     return path.parent.name
 
 
-def fixture_proposals(fixture_dir: Path) -> list[Path]:
-    """The fixture's proposal markdown, top-level or one directory down —
-    w07 keeps its proposal in a configured `proposals/` subdirectory. The
-    one-proposal-per-fixture invariant holds across both levels."""
-    return [
-        p for p in sorted(fixture_dir.glob("*.md")) + sorted(fixture_dir.glob("*/*.md"))
-        if is_fixture_proposal(p)
-    ]
-
-
 METADATA = "# T\n\n---\nreferences:\n---\n"
 
 
-def test_review_beside_its_proposal_is_not_a_proposal(tmp_path: Path):
-    """w09 stages an earlier round's `<slug>-review.md`; a proposal whose own
-    slug ends in `-review` (f00) must still count."""
-    (tmp_path / "ml-code-review.md").write_text(METADATA, encoding="utf-8")
-    (tmp_path / "agents.md").write_text("# T\n", encoding="utf-8")
-    (tmp_path / "agents-review.md").write_text("Verdict\n", encoding="utf-8")
-    assert [p.name for p in fixture_proposals(tmp_path)] == ["agents.md", "ml-code-review.md"]
+def put(root: Path, rel: str, text: str = METADATA) -> None:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
-def test_an_orphaned_review_without_a_metadata_block_is_not_a_proposal(tmp_path: Path):
-    """w13 carries a review whose proposal was renamed away: the sibling is
-    gone, so only the check's rule (a proposal ends in a metadata block) can
-    tell it from f00's `ml-code-review.md`."""
-    (tmp_path / "new-title.md").write_text(METADATA, encoding="utf-8")
-    (tmp_path / "old-title-review.md").write_text("Verdict: revise.\n", encoding="utf-8")
-    (tmp_path / "old-title-feedback.md").write_text("Dear student\n", encoding="utf-8")
-    assert [p.name for p in fixture_proposals(tmp_path)] == ["new-title.md"]
+def found(root: Path) -> list[str]:
+    return [p.relative_to(root).as_posix() for p in fixture_proposals(root)]
+
+
+def test_a_review_beside_its_proposal_is_not_a_proposal(tmp_path: Path):
+    """w09 stages an earlier round's `review.md` in the folder; a proposal
+    whose own slug ends in `-review` (f00) is still its folder's own."""
+    put(tmp_path, "ml-code-review/ml-code-review.md")
+    put(tmp_path, "agents/agents.md")
+    put(tmp_path, "agents/review.md", "Verdict\n")
+    assert found(tmp_path) == ["agents/agents.md", "ml-code-review/ml-code-review.md"]
+
+
+def test_a_folder_a_rename_left_behind_holds_no_proposal(tmp_path: Path):
+    """w13 carries a review and a figure in the folder of an earlier slug,
+    and a flat proposal at its root: neither is the fixture's proposal."""
+    put(tmp_path, "new-title/new-title.md")
+    put(tmp_path, "old-title/review.md", "Verdict: revise.\n")
+    put(tmp_path, "old-title/feedback.md", "Dear student\n")
+    put(tmp_path, "stray.md")
+    assert found(tmp_path) == ["new-title/new-title.md"]
 
 
 def test_a_kept_markdown_file_is_not_a_proposal(tmp_path: Path):
     """w15 keeps a reading list beside its notes and has no proposal at all."""
-    (tmp_path / "flaky-ci.notes.md").write_text("# Notes\n", encoding="utf-8")
-    (tmp_path / "flaky-ci.reading-list.md").write_text(METADATA, encoding="utf-8")
+    put(tmp_path, "flaky-ci/notes.md", "# Notes\n")
+    put(tmp_path, "flaky-ci/reading-list.md")
     assert fixture_proposals(tmp_path) == []
 
 
-def test_a_leftover_handout_is_not_a_proposal_although_it_ends_in_a_block(tmp_path: Path):
-    (tmp_path / "new-title.md").write_text(METADATA, encoding="utf-8")
-    (tmp_path / "old-title-handout.md").write_text(METADATA, encoding="utf-8")
-    assert [p.name for p in fixture_proposals(tmp_path)] == ["new-title.md"]
+def test_a_previous_handout_is_not_a_proposal_although_it_ends_in_a_block(tmp_path: Path):
+    put(tmp_path, "new-title/new-title.md")
+    put(tmp_path, "new-title/old-title.handout.md")
+    assert found(tmp_path) == ["new-title/new-title.md"]
 
 
 @pytest.mark.parametrize("oracle_path", ORACLES, ids=fixture_id)

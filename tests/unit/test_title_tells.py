@@ -10,22 +10,16 @@ import unicodedata
 from pathlib import Path
 
 import pytest
-from helpers import FIXTURES, REPO, run_check
+from helpers import REPO, fixture_proposal, run_check, write_proposal
 
-CLEAN = FIXTURES / "f00-clean-en" / "ml-code-review.md"
+CLEAN = fixture_proposal("f00-clean-en")
 TITLE_CFG = json.loads((REPO / "shared" / "structure.json").read_text(encoding="utf-8"))["title"]
 
 
-def with_title(tmp_path: Path, title: str, name: str = "titled.md") -> Path:
+def with_title(tmp_path: Path, title: str, name: str = "titled") -> Path:
     source = CLEAN.read_text(encoding="utf-8")
-    victim = tmp_path / name
-    victim.write_text(
-        source.replace(
-            "# Machine Learning for Automated Code Review", f"# {title}", 1
-        ),
-        encoding="utf-8",
-    )
-    return victim
+    return write_proposal(tmp_path, name, source.replace(
+        "# Machine Learning for Automated Code Review", f"# {title}", 1))
 
 
 @pytest.mark.parametrize(
@@ -75,15 +69,11 @@ def test_decomposed_umlaut_matches_too(tmp_path):
 def test_todo_title_is_not_judged(tmp_path):
     """An unsettled title is the sanctioned incomplete state: the todo-marker
     finding covers it, and word-count tells on the placeholder would be noise."""
-    victim = tmp_path / "todo.md"
-    victim.write_text(
-        CLEAN.read_text(encoding="utf-8").replace(
-            "# Machine Learning for Automated Code Review",
-            "# [TODO: working title naming the contribution]",
-            1,
-        ),
-        encoding="utf-8",
-    )
+    victim = write_proposal(tmp_path, "todo", CLEAN.read_text(encoding="utf-8").replace(
+        "# Machine Learning for Automated Code Review",
+        "# [TODO: working title naming the contribution]",
+        1,
+    ))
     assert "title runs" not in run_check(victim).stdout
 
 
@@ -91,17 +81,12 @@ def test_german_minimum_is_lower_than_the_english_one(tmp_path):
     """German compounds into one noun what English spreads over three. The
     language comes from the German fixture's subtitle, not from a lang key."""
     assert TITLE_CFG["min_words"]["de"] < TITLE_CFG["min_words"]["en"]
-    victim = tmp_path / "de.md"
-    victim.write_text(
-        (FIXTURES / "f12-clean-de" / "typsystem-einheitenfehler.md")
-        .read_text(encoding="utf-8")
-        .replace(
-            "# Ein Typsystem zur statischen Erkennung von Einheitenfehlern in Simulationssoftware",
-            "# Anomalieerkennung in Produktionsnetzwerken",
-            1,
-        ),
-        encoding="utf-8",
-    )
+    victim = write_proposal(tmp_path, "de", fixture_proposal("f12-clean-de").read_text(
+        encoding="utf-8").replace(
+        "# Ein Typsystem zur statischen Erkennung von Einheitenfehlern in Simulationssoftware",
+        "# Anomalieerkennung in Produktionsnetzwerken",
+        1,
+    ))
     assert "title runs" not in run_check(victim).stdout
 
 
@@ -156,8 +141,8 @@ def test_every_title_warning_names_the_certificate(tmp_path, title):
 def test_word_count_bounds_are_inclusive(tmp_path):
     at_min = " ".join(["Drift"] * TITLE_CFG["min_words"]["en"])
     at_max = " ".join(["Drift"] * TITLE_CFG["max_words"])
-    assert "title runs" not in run_check(with_title(tmp_path, at_min, "min.md")).stdout
-    assert "title runs" not in run_check(with_title(tmp_path, at_max, "max.md")).stdout
+    assert "title runs" not in run_check(with_title(tmp_path, at_min, "min")).stdout
+    assert "title runs" not in run_check(with_title(tmp_path, at_max, "max")).stdout
 
 
 def test_clean_title_stays_silent(tmp_path):

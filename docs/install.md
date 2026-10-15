@@ -255,13 +255,17 @@ Without `-g` it installs into the current folder only. Keep to one route: the in
 
 ## What you get in the folder
 
-- `your-topic-name.md` is the proposal: text on top, literature at the bottom. This is the only file you edit (or let the agent edit).
-- `your-topic-name.notes.md` keeps the working knowledge the hand-in cannot carry: decisions, open points, rejected literature.
-- `your-topic-name-review.md` appears when you ask for a review.
-- `guidelines.md` appears if you customize the rules for your supervisor.
-- `img/` appears only if your proposal uses figures.
+Each proposal gets a folder of its own, named after it, such as `your-topic-name/`. In it:
 
-Everything sits flat in your proposals folder by default, which suits one or two proposals. If the folder also holds other files of yours, or you keep several proposals there, a subfolder keeps them apart: tell your agent *"Keep my proposals in a subfolder"*, and it sets `[paths] proposals` in your `guidelines.md`. The proposal and everything named after it then live in that subfolder, while `guidelines.md` and `api-keys.env` stay at the top.
+- `your-topic-name.md` is the proposal: text on top, literature at the bottom. This is the only file you edit (or let the agent edit).
+- `notes.md` keeps the working knowledge the hand-in cannot carry: decisions, open points, rejected literature.
+- `review.md` appears when you ask for a review.
+- `img/` appears only if your proposal uses figures.
+- `your-topic-name.pdf` appears when you build a PDF.
+
+While an idea is still taking shape and has no name yet, its notes live in `idea/`, which gets the proposal's name once there is one.
+
+At the top of your proposals folder sit the files that concern every proposal: `guidelines.md` if you customize the rules for your supervisor, and `api-keys.env` if you add a key. With a few proposals, their folders sit fine beside them. If your proposals folder also holds other files of yours, or you keep many proposals there, a subfolder collects them: tell your agent *"Keep my proposals in a subfolder"*, and it sets `[paths] proposals` in your `guidelines.md`. Each proposal's folder then lives in that subfolder, while `guidelines.md` and `api-keys.env` stay at the top either way.
 
 Useful prompts:
 - *"Find literature for my proposal"*

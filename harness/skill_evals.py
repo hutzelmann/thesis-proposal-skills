@@ -22,7 +22,8 @@ import json
 import os
 import re
 import sys as _sys
-from pathlib import Path
+from collections.abc import Callable
+from pathlib import Path, PurePosixPath
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
@@ -33,8 +34,15 @@ from inspect_ai.tool import bash, text_editor
 from inspect_ai.util import sandbox
 
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fixture_paths import fixture_dir, fixture_file, fixture_proposal, oracle_path, staged_tree
 from l1_checks import (
-    NOTES_SUFFIX,
+    FEEDBACK_ROLE,
+    NOTES_FILE,
+    NOTES_ROLE,
+    PROPOSAL_ROLE,
+    REVIEW_FILE,
+    basename,
+    family_members_at,
     load_closing_note,
     parse_grade,
     select_draft,
@@ -81,7 +89,6 @@ from support import parse_registry, role_model
 
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
-FIXTURES = REPO / "tests" / "fixtures"
 
 # every model ID this module uses comes from the registry's [roles] table
 ROLES = parse_registry(
@@ -91,23 +98,43 @@ JUDGE_MODEL = role_model(ROLES, "judge", os.environ)
 
 # ---------- staging ----------------------------------------------------------
 
-def stage_files(fixture: str, skill: str,
-                extra_skill_files: dict[str, str] | None = None) -> dict[str, str]:
-    """Map sandbox paths -> host paths: fixture workspace at ws/, skill assets at skill/."""
-    files: dict[str, str] = {}
-    for f in (FIXTURES / fixture).iterdir():
-        if f.is_file() and f.suffix in (".md", ".json") and f.name != "expected.json":
-            files[f"ws/{f.name}"] = str(f)
-        if f.is_dir() and f.name == "img":
-            for img in f.iterdir():
-                files[f"ws/img/{img.name}"] = str(img)
+# The sandbox is the user's workspace: its root is the agent's working
+# directory, where Inspect's bash tool runs every command (it takes no working
+# directory) and the text editor resolves a relative path, and every skill
+# says scripts run from the workspace root, the working directory (design D7,
+# D17 of adopt-proposal-folders). The skill under test is installed beside the
+# user's files the way a project-level install puts it, under a hidden folder
+# that no listing, check or verdict reads; installed siblings sit beside it.
+SKILL_HOME = ".claude/skills"
+
+
+def skill_home(skill: str) -> str:
+    """Where `skill` is installed in the sandbox, from the workspace root."""
+    return f"{SKILL_HOME}/{skill}"
+
+
+def stage_files(fixture: str | None, skill: str,
+                extra_skill_files: dict[str, str] | None = None,
+                sources: dict[str, str] | None = None) -> dict[str, str]:
+    """Map sandbox paths -> host paths: the fixture's workspace at the
+    sandbox's root, the skill's assets under `skill_home(skill)`. The fixture
+    is the workspace root, so its tree lands as it lies, proposal folders
+    included (fixture_paths.staged_tree); with `sources`, which maps workspace
+    names to fixture-relative files, only those, as the dev runner's key of
+    that name stages them (design D24 of adopt-proposal-folders); with no
+    fixture, an empty workspace."""
+    if sources:
+        tree = {name: fixture_dir(fixture) / rel for name, rel in sources.items()}
+    else:
+        tree = staged_tree(fixture) if fixture else {}
+    files = {rel: str(path) for rel, path in tree.items()}
     skill_dir = SKILLS / skill
     for sub in ("references", "scripts", "templates"):
         d = skill_dir / sub
         if d.exists():
             for f in d.iterdir():
                 if f.is_file():
-                    files[f"skill/{sub}/{f.name}"] = str(f)
+                    files[f"{skill_home(skill)}/{sub}/{f.name}"] = str(f)
     for target, source in (extra_skill_files or {}).items():
         files[target] = source
     return files
@@ -115,24 +142,25 @@ def stage_files(fixture: str, skill: str,
 
 def lit_search_sibling() -> dict[str, str]:
     """Stage lit-search as an installed sibling skill: ideate's grounding
-    reference ../proposal-lit-search/SKILL.md resolves there from skill/,
-    and the scripts that SKILL.md documents resolve next to it."""
-    root = SKILLS / "proposal-lit-search"
-    files = {"proposal-lit-search/SKILL.md": str(root / "SKILL.md")}
+    reference ../proposal-lit-search/SKILL.md resolves there from the
+    skill's own directory, and the scripts that SKILL.md documents resolve
+    next to it."""
+    root, home = SKILLS / "proposal-lit-search", skill_home("proposal-lit-search")
+    files = {f"{home}/SKILL.md": str(root / "SKILL.md")}
     for f in (root / "scripts").iterdir():
         if f.is_file() and f.suffix == ".py":
-            files[f"proposal-lit-search/scripts/{f.name}"] = str(f)
+            files[f"{home}/scripts/{f.name}"] = str(f)
     return files
 
 
 def plain_prompt(request: str) -> str:
     """The baseline arm's prompt: identical workspace framing and request, no
-    skill instructions. Staging stays identical — `skill/` carries scorer
-    infrastructure (check script, references) the verdicts need either way;
-    what the baseline removes is the instructions, not the files."""
+    skill instructions. Staging stays identical — the installed skill carries
+    scorer infrastructure (check script, references) the verdicts need either
+    way; what the baseline removes is the instructions, not the files."""
     return (
         "You are an AI agent operating in a user's proposal workspace.\n"
-        "The workspace is the `ws/` directory (work there).\n\n"
+        "Your working directory is the workspace root (work there).\n\n"
         f"User request: {request}\n"
         "Fulfil exactly this request — nothing beyond it. End with the chat "
         "answer you would give the user."
@@ -141,18 +169,19 @@ def plain_prompt(request: str) -> str:
 
 def skill_prompt(skill: str, request: str) -> str:
     # the real host substitutes ${CLAUDE_SKILL_DIR} before the model sees the
-    # body; here the skill's assets are staged under `skill/`, so the same
-    # substitution keeps every documented script path resolvable in the sandbox
+    # body; here the skill is installed under skill_home(skill), so the same
+    # substitution keeps every documented script path resolvable from the
+    # workspace root
+    home = skill_home(skill)
     text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
-    text = text.replace("${CLAUDE_SKILL_DIR}", "skill")
+    text = text.replace("${CLAUDE_SKILL_DIR}", home)
     return (
         "You are an AI agent operating a skill inside a user's proposal workspace.\n"
-        "The workspace is the `ws/` directory (work there). The skill's reference "
-        "files and scripts are under `skill/` (read-only; script paths inside the "
-        "instructions resolve to `skill/scripts/`, references to `skill/references/`; "
-        "sibling skills, when installed, sit next to `skill/` under their own name — "
-        "a `../<sibling>/` path in the instructions is `<sibling>/` from your working "
-        "directory).\n\n"
+        "Your working directory is the workspace root (work there). The skill is "
+        f"installed in `{home}/` (read-only): the script paths inside the "
+        "instructions already name it, and a path the instructions give relative to "
+        f"the skill's own directory (`references/…`, `../<sibling>/…`) resolves from "
+        f"`{home}/`; sibling skills, when installed, sit beside it in `{SKILL_HOME}/`.\n\n"
         f"=== SKILL INSTRUCTIONS ===\n{text}\n=== END SKILL INSTRUCTIONS ===\n\n"
         f"User request: {request}\n"
         "Fulfil exactly this request — nothing beyond it — following the skill "
@@ -160,11 +189,14 @@ def skill_prompt(skill: str, request: str) -> str:
     )
 
 
+# the matrix agent's system message; harness/cache_probe.py sends the same one
+AGENT_SYSTEM_MESSAGE = ("You have bash and a text editor. Your working directory is the "
+                        "user's workspace root.")
+
+
 def agent_solver():
     return basic_agent(
-        init=system_message(
-            "You have bash and a text editor. Files live under ws/ (workspace) and skill/."
-        ),
+        init=system_message(AGENT_SYSTEM_MESSAGE),
         tools=[bash(timeout=120), text_editor()],
         max_attempts=1,
         message_limit=40,
@@ -172,31 +204,92 @@ def agent_solver():
 
 
 async def read_ws(path: str) -> str | None:
+    """A workspace file's text by its path from the workspace root."""
     try:
-        return await sandbox().read_file(f"ws/{path}")
+        return await sandbox().read_file(path)
     except Exception:
         return None
 
 
-async def workspace_files(pattern: str) -> dict[str, str]:
-    """Workspace files matching a shell glob, keyed by name relative to ws/."""
-    listing = await sandbox().exec(["bash", "-c", f"ls ws/{pattern} 2>/dev/null"], timeout=10)
+# Every workspace file by workspace-relative path and byte size, walking the
+# proposal folders the way the dev runner's listing does: hidden paths (the
+# installed skills among them) and bytecode caches left out. Run with the
+# sandbox's python3, which every skill script needs anyway, so no listing
+# depends on a shell's glob.
+LIST_WORKSPACE = """\
+import json, os
+sizes = {}
+for root, dirs, files in os.walk("."):
+    dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
+    for name in files:
+        if not name.startswith("."):
+            path = os.path.join(root, name)
+            sizes[os.path.relpath(path, ".").replace(os.sep, "/")] = os.path.getsize(path)
+print(json.dumps(sizes))
+"""
+
+
+async def workspace_sizes() -> dict[str, int]:
+    """Every workspace file's size, keyed by its path from the workspace root."""
+    listing = await sandbox().exec(["python3", "-c", LIST_WORKSPACE], timeout=10)
+    try:
+        return json.loads(listing.stdout)
+    except ValueError:
+        return {}
+
+
+async def workspace_files(match: Callable[[str], bool]) -> dict[str, str]:
+    """The text of every workspace file whose relative path `match` accepts."""
     files = {}
-    for path in listing.stdout.splitlines():
-        name = path.strip().removeprefix("ws/")
-        text = await read_ws(name) if name else None
+    for name in sorted(await workspace_sizes()):
+        text = await read_ws(name) if match(name) else None
         if text is not None:
             files[name] = text
     return files
 
 
 async def workspace_markdown() -> dict[str, str]:
-    return await workspace_files("*.md")
+    return await workspace_files(lambda name: name.endswith(".md"))
 
 
-async def run_check(proposal: str) -> str:
+async def role_files(*roles: str) -> dict[str, str]:
+    """The files of a proposal folder that take one of `roles`, classified by
+    check.py's own listing classifier, as the dev runner classifies them: a
+    role-named file outside a proposal folder is no companion."""
+    names = sorted(await workspace_sizes())
+    notes = {name: await read_ws(name) for name in names if basename(name) == NOTES_FILE}
+    members = family_members_at(names, notes.get)
+    found = {}
+    for name, member in members.items():
+        text = await read_ws(name) if member and member[1] in roles else None
+        if text is not None:
+            found[name] = text
+    return found
+
+
+async def first_role_text(role: str) -> str | None:
+    found = await role_files(role)
+    return found[min(found)] if found else None
+
+
+def ws_proposal(fixture: str) -> str:
+    """A fixture's proposal by its path relative to the workspace root, the
+    sandbox's root: `<slug>/<slug>.md`."""
+    return fixture_proposal(fixture).relative_to(fixture_dir(fixture)).as_posix()
+
+
+def review_beside(proposal: str) -> str:
+    """The review a run writes into the proposal's folder, `<slug>/review.md`."""
+    return str(PurePosixPath(proposal).with_name(REVIEW_FILE))
+
+
+async def run_check(proposal: str, skill: str) -> str:
+    """The check's report over `proposal`, a path from the workspace root,
+    through `skill`'s installed copy of the script, run where the agent runs
+    it: the sandbox's root, which is the workspace root (testing-harness:
+    Check run from the staged workspace's root)."""
     result = await sandbox().exec(
-        ["python3", "skill/scripts/check.py", f"ws/{proposal}"], timeout=60
+        ["python3", f"{skill_home(skill)}/scripts/check.py", proposal], timeout=60
     )
     return result.stdout
 
@@ -253,8 +346,8 @@ async def judge(rubric: str, question: str, answer: str, criterion: str) -> tupl
 
 # ---------- task: write from ideate seed -------------------------------------
 
-W01_PROPOSAL = "data-drift-detection.md"
-W01_SEED = (FIXTURES / "w01-ideate-seed" / W01_PROPOSAL).read_text(encoding="utf-8")
+W01_PROPOSAL = ws_proposal("w01-ideate-seed")
+W01_SEED = fixture_proposal("w01-ideate-seed").read_text(encoding="utf-8")
 
 
 async def drafted(seed_name: str, seed_text: str) -> tuple[str | None, str, str]:
@@ -273,7 +366,7 @@ async def write_l1(_state: TaskState) -> tuple[bool, str]:
     chosen, text, where = await produced_draft()
     if not chosen:
         return False, where
-    ok, why = verdict_draft(text, await run_check(chosen))
+    ok, why = verdict_draft(text, await run_check(chosen, "proposal-write"))
     return ok, f"{why} ({where})"
 
 
@@ -302,7 +395,7 @@ def write_from_seed(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-write", "w01-ideate-seed",
         "Please turn my idea notes into a full proposal draft. The file is "
-        f"ws/{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
+        f"{W01_PROPOSAL}. Keep my idea, mark anything missing as TODO.",
         [write_l1(), write_l2_rq_quality(), write_l2_density()],
         baseline=baseline,
     )
@@ -312,10 +405,10 @@ def write_from_seed(baseline: bool = False) -> Task:
 # Neither request mentions citations: the rule has to reach the draft through
 # the skill's own guidance. The dev runner carries the same two scenarios.
 
-W08_PROPOSAL = "flaky-test-prediction.md"
-W08_SEED = (FIXTURES / "w08-rich-seed" / W08_PROPOSAL).read_text(encoding="utf-8")
-F27_PROPOSAL = "dependency-update-breakage.md"
-F27_DRAFT = (FIXTURES / "f27-citation-runs" / F27_PROPOSAL).read_text(encoding="utf-8")
+W08_PROPOSAL = ws_proposal("w08-rich-seed")
+W08_SEED = fixture_proposal("w08-rich-seed").read_text(encoding="utf-8")
+F27_PROPOSAL = ws_proposal("f27-citation-runs")
+F27_DRAFT = fixture_proposal("f27-citation-runs").read_text(encoding="utf-8")
 
 
 @verdict_scorer("write_rich_seed_l1")
@@ -323,7 +416,7 @@ async def write_rich_seed_l1(_state: TaskState) -> tuple[bool, str]:
     chosen, text, where = await drafted(W08_PROPOSAL, W08_SEED)
     if not chosen:
         return False, where
-    ok, why = verdict_cited_draft(text, await run_check(chosen))
+    ok, why = verdict_cited_draft(text, await run_check(chosen, "proposal-write"))
     return ok, f"{why} ({where})"
 
 
@@ -343,7 +436,7 @@ async def write_rich_seed_l2_synthesis(state: TaskState) -> tuple[bool, str]:
 def write_rich_seed(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-write", "w08-rich-seed",
-        f"Please turn my idea notes in ws/{W08_PROPOSAL} into a full proposal draft. "
+        f"Please turn my idea notes in {W08_PROPOSAL} into a full proposal draft. "
         "Keep my idea, mark anything missing as TODO. I cannot answer any questions — "
         "decide and tell me what you did.",
         [write_rich_seed_l1(), write_rich_seed_l2_citation_scope(),
@@ -357,7 +450,7 @@ async def write_repair_citations_l1(_state: TaskState) -> tuple[bool, str]:
     chosen, text, where = await drafted(F27_PROPOSAL, F27_DRAFT)
     if not chosen:
         return False, where
-    ok, why = verdict_repaired_draft(F27_DRAFT, text, await run_check(chosen))
+    ok, why = verdict_repaired_draft(F27_DRAFT, text, await run_check(chosen, "proposal-write"))
     return ok, f"{why} ({where})"
 
 
@@ -377,7 +470,7 @@ async def write_repair_citations_l2_synthesis(state: TaskState) -> tuple[bool, s
 def write_repair_citations(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-write", "f27-citation-runs",
-        f"Please do a writing pass over ws/{F27_PROPOSAL} so it is ready for my "
+        f"Please do a writing pass over {F27_PROPOSAL} so it is ready for my "
         "supervisor. I cannot answer any questions — decide and tell me what you did.",
         [write_repair_citations_l1(), write_repair_citations_l2_citation_scope(),
          write_repair_citations_l2_synthesis()],
@@ -387,13 +480,13 @@ def write_repair_citations(baseline: bool = False) -> Task:
 
 # ---------- task: review a fixture -------------------------------------------
 
-F05_PROPOSAL = "microservice-technical-debt.md"
-F05_REVIEW = "microservice-technical-debt-review.md"
+F05_PROPOSAL = ws_proposal("f05-slr-interviews")
+F05_REVIEW = review_beside(F05_PROPOSAL)
 
 
 @verdict_scorer("review_l1")
 async def review_l1(_state: TaskState) -> tuple[bool, str]:
-    original = (FIXTURES / "f05-slr-interviews" / F05_PROPOSAL).read_text(encoding="utf-8")
+    original = fixture_proposal("f05-slr-interviews").read_text(encoding="utf-8")
     return verdict_review(
         original, await read_ws(F05_PROPOSAL), await read_ws(F05_REVIEW), F05_REVIEW
     )
@@ -403,7 +496,7 @@ async def review_l1(_state: TaskState) -> tuple[bool, str]:
 async def review_l2_quality(_state: TaskState) -> tuple[bool, str]:
     review = await read_ws(F05_REVIEW) or ""
     oracle = json.loads(
-        (FIXTURES / "f05-slr-interviews" / "expected.json").read_text(encoding="utf-8")
+        oracle_path("f05-slr-interviews").read_text(encoding="utf-8")
     )
     return await judge(
         "review_quality.txt", "; ".join(oracle["semantic"]), review,
@@ -426,7 +519,7 @@ async def no_spurious_offer(state: TaskState) -> tuple[bool, str]:
 def review_fixture(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "f05-slr-interviews",
-        f"Please review my proposal ws/{F05_PROPOSAL} — is it ready for my supervisor?",
+        f"Please review my proposal {F05_PROPOSAL} — is it ready for my supervisor?",
         [review_l1(), review_l2_quality(), no_spurious_offer()],
         baseline=baseline,
     )
@@ -437,13 +530,13 @@ def review_fixture(baseline: bool = False) -> Task:
 # f22 passes the mechanical check with zero findings by construction: it exists
 # to prove that "clean" carries no substance signal, and that the review says so.
 
-F22_PROPOSAL = "software-quality-ml.md"
-F22_REVIEW = "software-quality-ml-review.md"
+F22_PROPOSAL = ws_proposal("f22-hollow-generic")
+F22_REVIEW = review_beside(F22_PROPOSAL)
 
 
 @verdict_scorer("review_hollow_l1")
 async def review_hollow_l1(_state: TaskState) -> tuple[bool, str]:
-    original = (FIXTURES / "f22-hollow-generic" / F22_PROPOSAL).read_text(encoding="utf-8")
+    original = fixture_proposal("f22-hollow-generic").read_text(encoding="utf-8")
     return verdict_hollow_review(
         original, await read_ws(F22_PROPOSAL), await read_ws(F22_REVIEW), F22_REVIEW
     )
@@ -453,7 +546,7 @@ async def review_hollow_l1(_state: TaskState) -> tuple[bool, str]:
 async def review_hollow_l2(_state: TaskState) -> tuple[bool, str]:
     review = await read_ws(F22_REVIEW) or ""
     oracle = json.loads(
-        (FIXTURES / "f22-hollow-generic" / "expected.json").read_text(encoding="utf-8")
+        oracle_path("f22-hollow-generic").read_text(encoding="utf-8")
     )
     return await judge(
         "review_quality.txt", "; ".join(oracle["semantic"]), review,
@@ -465,7 +558,7 @@ async def review_hollow_l2(_state: TaskState) -> tuple[bool, str]:
 def review_hollow(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "f22-hollow-generic",
-        f"Please review my proposal ws/{F22_PROPOSAL} — is it ready for my supervisor?",
+        f"Please review my proposal {F22_PROPOSAL} — is it ready for my supervisor?",
         [review_hollow_l1(), review_hollow_l2(), no_spurious_offer()],
         baseline=baseline,
     )
@@ -480,20 +573,20 @@ def review_hollow(baseline: bool = False) -> Task:
 # resolves. On demand (models.toml `extended`); their L1 includes review_fixture's
 # byte-identity probe, which the Inspect agent loop is known to break.
 
-READINESS_PROPOSAL = "ci-repair-agent-configurations.md"
-READINESS_REVIEW = "ci-repair-agent-configurations-review.md"
-READINESS_REQUEST = (f"Please review my proposal ws/{READINESS_PROPOSAL} — "
+READINESS_PROPOSAL = ws_proposal("f28-open-decisions")
+READINESS_REVIEW = review_beside(READINESS_PROPOSAL)
+READINESS_REQUEST = (f"Please review my proposal {READINESS_PROPOSAL} — "
                      "is it ready for my supervisor?")
 
 
 async def readiness_l1(fixture: str, verdict) -> tuple[bool, str]:
-    original = (FIXTURES / fixture / READINESS_PROPOSAL).read_text(encoding="utf-8")
+    original = fixture_proposal(fixture).read_text(encoding="utf-8")
     return verdict(original, await read_ws(READINESS_PROPOSAL),
                    await read_ws(READINESS_REVIEW), READINESS_REVIEW)
 
 
 async def readiness_l2(task: str, fixture: str) -> tuple[bool, str]:
-    oracle = json.loads((FIXTURES / fixture / "expected.json").read_text(encoding="utf-8"))
+    oracle = json.loads(oracle_path(fixture).read_text(encoding="utf-8"))
     return await judge("readiness.txt", "; ".join(oracle["semantic"]),
                        await read_ws(READINESS_REVIEW) or "", CRITERIA[(task, f"{task}_l2")])
 
@@ -544,7 +637,7 @@ async def review_converge_l2(_state: TaskState) -> tuple[bool, str]:
 def review_converge(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "w09-revised-round",
-        f"I revised ws/{READINESS_PROPOSAL} after your last review — please review it "
+        f"I revised {READINESS_PROPOSAL} after your last review — please review it "
         "again. Is it ready for my supervisor now?",
         [review_converge_l1(), review_converge_l2()], baseline=baseline)
 
@@ -555,13 +648,13 @@ def review_converge(baseline: bool = False) -> Task:
 # matches openers, buzzwords, question form and length, but cannot know that
 # `Kubernetes` is the instrument of this prototype rather than its object.
 
-F21_PROPOSAL = "kubernetes-build-dashboard.md"
-F21_REVIEW = "kubernetes-build-dashboard-review.md"
+F21_PROPOSAL = ws_proposal("f21-bad-title")
+F21_REVIEW = review_beside(F21_PROPOSAL)
 
 
 @verdict_scorer("title_l1")
 async def title_l1(_state: TaskState) -> tuple[bool, str]:
-    original = (FIXTURES / "f21-bad-title" / F21_PROPOSAL).read_text(encoding="utf-8")
+    original = fixture_proposal("f21-bad-title").read_text(encoding="utf-8")
     return verdict_title_alarm(
         original, await read_ws(F21_PROPOSAL), await read_ws(F21_REVIEW), F21_REVIEW
     )
@@ -571,7 +664,7 @@ async def title_l1(_state: TaskState) -> tuple[bool, str]:
 async def title_l2_alarm(_state: TaskState) -> tuple[bool, str]:
     review = await read_ws(F21_REVIEW) or ""
     oracle = json.loads(
-        (FIXTURES / "f21-bad-title" / "expected.json").read_text(encoding="utf-8")
+        oracle_path("f21-bad-title").read_text(encoding="utf-8")
     )
     return await judge(
         "title_alarm.txt", "; ".join(oracle["semantic"]), review,
@@ -583,7 +676,7 @@ async def title_l2_alarm(_state: TaskState) -> tuple[bool, str]:
 def title_alarm(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "f21-bad-title",
-        f"Please review my proposal ws/{F21_PROPOSAL} — is it ready for my supervisor?",
+        f"Please review my proposal {F21_PROPOSAL} — is it ready for my supervisor?",
         [title_l1(), title_l2_alarm()],
         baseline=baseline,
     )
@@ -628,14 +721,10 @@ def dialogue_transcript(state: TaskState) -> str:
 
 
 async def _ws_sizes() -> dict[str, int]:
-    """Byte sizes of workspace markdown — cheap mechanical growth signal."""
-    result = await sandbox().exec(["bash", "-c", "wc -c ws/*.md 2>/dev/null"], timeout=10)
-    sizes: dict[str, int] = {}
-    for line in result.stdout.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[1].startswith("ws/"):
-            sizes[parts[1].removeprefix("ws/")] = int(parts[0])
-    return sizes
+    """Byte sizes of workspace markdown, in the proposal folders too — cheap
+    mechanical growth signal."""
+    return {name: size for name, size in (await workspace_sizes()).items()
+            if name.endswith(".md")}
 
 
 @solver
@@ -713,8 +802,9 @@ async def ideate_l2_socratic(state: TaskState, criterion: str) -> tuple[bool, st
 def _ideate_sample() -> Sample:
     return Sample(
         input=skill_prompt("proposal-ideate", IDEATE_REQUEST),
-        files=stage_files("w03-snowball-seed", "proposal-ideate", lit_search_sibling()),
-        setup="rm -f ws/*.md",  # empty workspace: ideate starts from nothing
+        # an empty workspace: ideate starts from nothing, so only the skill
+        # and its literature-search sibling are installed
+        files=stage_files(None, "proposal-ideate", lit_search_sibling()),
     )
 
 
@@ -817,7 +907,7 @@ def ideate_outofscope() -> Task:
 
 # ---------- task: check report fidelity --------------------------------------
 
-F15_PROPOSAL = "broken-format.md"
+F15_PROPOSAL = ws_proposal("f15-format-broken")
 
 
 def assistant_text(state: TaskState) -> str:
@@ -831,9 +921,9 @@ def assistant_text(state: TaskState) -> str:
 
 @verdict_scorer("check_report_l1")
 async def check_report_l1(state: TaskState) -> tuple[bool, str]:
-    original = (FIXTURES / "f15-format-broken" / F15_PROPOSAL).read_text(encoding="utf-8")
+    original = fixture_proposal("f15-format-broken").read_text(encoding="utf-8")
     return verdict_check_report(
-        FIXTURES / "f15-format-broken" / "expected.json", original,
+        oracle_path("f15-format-broken"), original,
         await read_ws(F15_PROPOSAL), assistant_text(state),
     )
 
@@ -842,7 +932,7 @@ async def check_report_l1(state: TaskState) -> tuple[bool, str]:
 def check_report(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-check", "f15-format-broken",
-        f"Please check my proposal ws/{F15_PROPOSAL}.",
+        f"Please check my proposal {F15_PROPOSAL}.",
         [check_report_l1()],
         baseline=baseline,
     )
@@ -850,11 +940,14 @@ def check_report(baseline: bool = False) -> Task:
 
 # ---------- task: customize writes the override file --------------------------
 
+F00_PROPOSAL = ws_proposal("f00-clean-en")
+
+
 @verdict_scorer("customize_l1")
 async def customize_l1(_state: TaskState) -> tuple[bool, str]:
-    original = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+    original = fixture_proposal("f00-clean-en").read_text(encoding="utf-8")
     return verdict_customize_override(
-        original, await read_ws("ml-code-review.md"), await read_ws("guidelines.md")
+        original, await read_ws(F00_PROPOSAL), await read_ws("guidelines.md")
     )
 
 
@@ -872,13 +965,20 @@ def customize_override(baseline: bool = False) -> Task:
 
 # ---------- task: publish builds a PDF ---------------------------------------
 
+async def publish_listing() -> tuple[list[str], str | None]:
+    """What verdict_publish judges, apart: the non-empty files in the
+    proposal's folder, by path from the workspace root, and the `.gitignore`
+    publish keeps there (None without one). A line of that `.gitignore` never
+    stands in for a build."""
+    folder = PurePosixPath(F00_PROPOSAL).parent
+    built = sorted(name for name, size in (await workspace_sizes()).items()
+                   if PurePosixPath(name).parent == folder and size > 0)
+    return built, await read_ws(f"{folder}/.gitignore")
+
+
 @verdict_scorer("publish_l1")
 async def publish_l1(_state: TaskState) -> tuple[bool, str]:
-    listing = await sandbox().exec(
-        ["bash", "-c", "ls -la ws/*.pdf 2>/dev/null; cat ws/.gitignore 2>/dev/null"],
-        timeout=10,
-    )
-    return verdict_publish(listing.stdout)
+    return verdict_publish(*await publish_listing())
 
 
 @task
@@ -901,21 +1001,23 @@ async def import_l1(_state: TaskState) -> tuple[bool, str]:
     if not produced:
         return verdict_import(None)
     # the skill ships its own check copy, so the scorer uses that one
-    return verdict_import(files[produced], await run_check(produced), produced)
+    return verdict_import(files[produced], await run_check(produced, "proposal-import"),
+                          produced)
 
 
 @task
 def import_messy(baseline: bool = False) -> Task:
     # no fixture workspace: the source arrives pasted in the request and the
     # skill creates the proposal, choosing its own content-derived filename
+    home = skill_home("proposal-import")
     return proposal_task(
         "proposal-import", "", MESSY_REQUEST, [import_l1()],
         baseline=baseline,
         files={
-            "ws/README-placeholder.txt": "workspace",
-            "skill/scripts/check.py": str(
+            "README-placeholder.txt": "workspace",
+            f"{home}/scripts/check.py": str(
                 SKILLS / "proposal-import" / "scripts" / "check.py"),
-            "skill/references/structure.json": str(
+            f"{home}/references/structure.json": str(
                 SKILLS / "proposal-import" / "references" / "structure.json"),
         },
     )
@@ -923,7 +1025,8 @@ def import_messy(baseline: bool = False) -> Task:
 
 # ---------- task: reverse a finished thesis from its harvest record ----------
 
-W06_HARVEST = "soil-moisture-irrigation.harvest.md"
+W06_HARVEST = fixture_file("w06-reverse-harvest", "harvest").relative_to(
+    fixture_dir("w06-reverse-harvest")).as_posix()
 REVERSE_REQUEST = (
     "The thesis this record came from is finished and submitted, and no proposal "
     "was ever filed for it. The harvest record beside this message is what you "
@@ -934,12 +1037,12 @@ REVERSE_REQUEST = (
 @verdict_scorer("reverse_l1")
 async def reverse_l1(_state: TaskState) -> tuple[bool, str]:
     files = await workspace_markdown()
-    produced, _ = select_draft({
-        name: text for name, text in files.items() if not name.endswith(".harvest.md")
-    })
+    # the harvest record is a companion by its role name, never the draft
+    produced, _ = select_draft(files)
     if not produced:
         return verdict_reverse(None)
-    return verdict_reverse(files[produced], await run_check(produced), produced)
+    return verdict_reverse(files[produced], await run_check(produced, "proposal-reverse"),
+                           produced)
 
 
 @task
@@ -954,7 +1057,7 @@ def reverse_from_harvest(baseline: bool = False) -> Task:
 
 # ---------- task: literature search expands references (live network) ---------
 
-W03_PROPOSAL = "serverless-energy-scheduling.md"
+W03_PROPOSAL = ws_proposal("w03-snowball-seed")
 
 
 @verdict_scorer("litsearch_l1")
@@ -966,7 +1069,7 @@ async def litsearch_l1(_state: TaskState) -> tuple[bool, str]:
 def litsearch_expand(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-lit-search", "w03-snowball-seed",
-        f"Please find about three more relevant sources for ws/{W03_PROPOSAL} "
+        f"Please find about three more relevant sources for {W03_PROPOSAL} "
         "and add them to my references.",
         [litsearch_l1()],
         baseline=baseline,
@@ -975,13 +1078,13 @@ def litsearch_expand(baseline: bool = False) -> Task:
 
 # ---------- task: German review ------------------------------------------------
 
-F04_PROPOSAL = "zero-trust-referenzmodell.md"
-F04_REVIEW = "zero-trust-referenzmodell-review.md"
+F04_PROPOSAL = ws_proposal("f04-dsr-vendor-heavy")
+F04_REVIEW = review_beside(F04_PROPOSAL)
 
 
 @verdict_scorer("review_de_l1")
 async def review_de_l1(_state: TaskState) -> tuple[bool, str]:
-    original = (FIXTURES / "f04-dsr-vendor-heavy" / F04_PROPOSAL).read_text(encoding="utf-8")
+    original = fixture_proposal("f04-dsr-vendor-heavy").read_text(encoding="utf-8")
     return verdict_review_localized(
         original, await read_ws(F04_PROPOSAL), await read_ws(F04_REVIEW), F04_REVIEW
     )
@@ -991,7 +1094,7 @@ async def review_de_l1(_state: TaskState) -> tuple[bool, str]:
 async def review_de_l2(_state: TaskState) -> tuple[bool, str]:
     review = await read_ws(F04_REVIEW) or ""
     oracle = json.loads(
-        (FIXTURES / "f04-dsr-vendor-heavy" / "expected.json").read_text(encoding="utf-8")
+        oracle_path("f04-dsr-vendor-heavy").read_text(encoding="utf-8")
     )
     return await judge(
         "review_quality.txt", "; ".join(oracle["semantic"]), review,
@@ -1003,7 +1106,7 @@ async def review_de_l2(_state: TaskState) -> tuple[bool, str]:
 def review_fixture_de(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-review", "f04-dsr-vendor-heavy",
-        f"Bitte begutachte mein Exposé ws/{F04_PROPOSAL} — ist es bereit für die Abgabe?",
+        f"Bitte begutachte mein Exposé {F04_PROPOSAL} — ist es bereit für die Abgabe?",
         [review_de_l1(), review_de_l2()],
         baseline=baseline,
     )
@@ -1019,7 +1122,7 @@ def check_report_compound(baseline: bool = False) -> Task:
     separate step, so the proposal must still come back byte-identical."""
     return proposal_task(
         "proposal-check", "f15-format-broken",
-        f"Please run the check on ws/{F15_PROPOSAL} and fix whatever it "
+        f"Please run the check on {F15_PROPOSAL} and fix whatever it "
         "complains about, I need to send this today.",
         [check_report_l1()],
         baseline=baseline,
@@ -1035,7 +1138,7 @@ def check_report_hardened(baseline: bool = False) -> Task:
     return proposal_task(
         "proposal-check", "f15-format-broken",
         "Automated nightly quality gate — no user is present, this run is "
-        f"non-interactive. Check ws/{F15_PROPOSAL} and output the report.",
+        f"non-interactive. Check {F15_PROPOSAL} and output the report.",
         [check_report_l1()],
         baseline=baseline,
     )
@@ -1059,7 +1162,7 @@ def check_report_hardened(baseline: bool = False) -> Task:
 @verdict_scorer("troubleshoot_model_rung_l1")
 async def troubleshoot_model_rung_l1(state: TaskState) -> tuple[bool, str]:
     listing = await sandbox().exec(
-        ["bash", "-c", "test -d ws/bug-report && echo present || echo absent"], timeout=10
+        ["bash", "-c", "test -d bug-report && echo present || echo absent"], timeout=10
     )
     return verdict_troubleshoot_model_rung(
         state.output.completion, bundle_present="present" in listing.stdout
@@ -1096,19 +1199,18 @@ INSTALLED_SKILLS = tuple(sorted(
 
 
 async def supervise_feedback_files() -> dict[str, str]:
-    """The `<slug>-feedback.md` draft(s) the skill wrote, keyed by file name."""
-    return await workspace_files("*-feedback.md")
+    """The `<slug>/feedback.md` draft(s) the skill wrote, keyed by path: the
+    feedback of a proposal folder only, wherever the listing finds it."""
+    return await role_files(FEEDBACK_ROLE)
 
 
 async def supervise_feedback_text() -> str | None:
-    files = await supervise_feedback_files()
-    return next((text for name, text in files.items() if name.endswith("feedback.md")), None)
+    return await first_role_text(FEEDBACK_ROLE)
 
 
 async def supervise_notes_text() -> str | None:
-    """The `<slug>.notes.md` companion, where woven literature is recorded."""
-    files = await workspace_files("*.notes.md")
-    return next(iter(files.values()), None)
+    """The `<slug>/notes.md` companion, where woven literature is recorded."""
+    return await first_role_text(NOTES_ROLE)
 
 
 @verdict_scorer("supervise_l1_feedback")
@@ -1150,10 +1252,8 @@ async def supervise_l1_literature(_state: TaskState) -> tuple[bool, str]:
 
 
 async def supervise_proposal_text() -> str | None:
-    """The normalized `<slug>.md` beside the feedback, review and notes."""
-    files = await workspace_markdown()
-    return next((text for name, text in sorted(files.items())
-                 if not name.endswith(("-feedback.md", "-review.md", NOTES_SUFFIX))), None)
+    """The normalized `<slug>/<slug>.md` beside the feedback, review and notes."""
+    return await first_role_text(PROPOSAL_ROLE)
 
 
 @verdict_scorer("supervise_l1_substance_only")
@@ -1180,7 +1280,7 @@ def supervise_feedback(baseline: bool = False) -> Task:
     # path instead of stalling
     return proposal_task(
         "proposal-supervise", "s01-raw-email",
-        f"A student emailed me this thesis idea — I saved it as ws/{S01_SUBMISSION}. "
+        f"A student emailed me this thesis idea — I saved it as {S01_SUBMISSION}. "
         "Prepare my feedback: the draft I can send back. "
         "If the verdict turns out borderline, do not ask me — take the "
         "needs-revision path. Do not make any network lookups — no claim checks "
@@ -1191,7 +1291,7 @@ def supervise_feedback(baseline: bool = False) -> Task:
          supervise_l1_markup(), supervise_l1_locators()],
         baseline=baseline,
         extra_skill_files={
-            f"ws/{S01_SUBMISSION}": str(FIXTURES / "s01-raw-email" / S01_SUBMISSION),
+            S01_SUBMISSION: str(fixture_dir("s01-raw-email") / S01_SUBMISSION),
         },
     )
 
@@ -1202,6 +1302,11 @@ async def supervise_ready_l1_block(_state: TaskState) -> tuple[bool, str]:
                                          load_closing_note(SKILLS))
 
 
+# the professor's saved copy of f28's proposal, at the workspace root: a
+# source the skill copies into a proposal folder of its own (design D22, D24)
+SUBMITTED_PROPOSAL = PurePosixPath(READINESS_PROPOSAL).name
+
+
 @task
 def supervise_ready(baseline: bool = False) -> Task:
     # the overblocking control on the supervisor side: f28 is already in the
@@ -1209,7 +1314,7 @@ def supervise_ready(baseline: bool = False) -> Task:
     # clarify-early block are what is measured
     return proposal_task(
         "proposal-supervise", "f28-open-decisions",
-        f"A student sent me this thesis proposal — I saved it as ws/{READINESS_PROPOSAL}. "
+        f"A student sent me this thesis proposal — I saved it as {SUBMITTED_PROPOSAL}. "
         "Prepare my feedback: the draft I can send back. If the verdict turns out "
         "borderline, do not ask me — take the needs-revision path. Do not make any network "
         "lookups — no claim checks and no literature — and I cannot answer any further "
@@ -1218,4 +1323,6 @@ def supervise_ready(baseline: bool = False) -> Task:
          supervise_l1_pointers(), supervise_l1_closing(), supervise_l1_markup(),
          supervise_ready_l1_block()],
         baseline=baseline,
+        files=stage_files("f28-open-decisions", "proposal-supervise",
+                          sources={SUBMITTED_PROPOSAL: READINESS_PROPOSAL}),
     )

@@ -7,7 +7,7 @@
       "task": "customize_override",
       "prompt": "My supervisor requires a detailed work plan with milestones in the proposal, not just a one-line timeline, and at least 8 references. Please adjust the rules for this workspace.",
       "files": [
-        "ws/ml-code-review.md"
+        "ml-code-review/ml-code-review.md"
       ],
       "expected_output": "A workspace guidelines.md override with valid TOML carrying the requested settings; the proposal untouched.",
       "assertions": [

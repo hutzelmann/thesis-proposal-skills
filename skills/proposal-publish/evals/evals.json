@@ -7,11 +7,11 @@
       "task": "publish_build",
       "prompt": "Please build a PDF of my proposal.",
       "files": [
-        "ws/ml-code-review.md"
+        "ml-code-review/ml-code-review.md"
       ],
       "expected_output": "A built PDF in the workspace and a maintained .gitignore covering it.",
       "assertions": [
-        "publish_build: a PDF was produced and the workspace .gitignore covers it."
+        "publish_build: a PDF was built in the proposal's folder and the .gitignore publish keeps there covers it."
       ]
     }
   ]

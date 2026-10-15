@@ -6,11 +6,11 @@
 {"type":"tool.execution_start","data":{"toolCallId":"t2","toolName":"bash","arguments":{"command":"python3 .agents/skills/proposal-check/scripts/check.py broken-format.md"}}}
 {"type":"tool.execution_complete","data":{"toolCallId":"t2","success":true,"sandboxed":true,"result":{"content":"<shellId: 1 completed with exit code 0>","detailedContent":"<shellId: 1 completed with exit code 0>"},"shellExecution":{"exitCode":0},"toolTelemetry":{"properties":{"sandboxApplied":"true"}}}}
 {"type":"assistant.turn_end","data":{"turnId":"1"}}
-{"type":"tool.execution_start","data":{"toolCallId":"t3","toolName":"task","arguments":{"name":"verifier","description":"Verify the feedback","agent_type":"general-purpose","prompt":"Follow references/verifier-brief.md. Feedback: submission-feedback.md"}}}
+{"type":"tool.execution_start","data":{"toolCallId":"t3","toolName":"task","arguments":{"name":"verifier","description":"Verify the feedback","agent_type":"general-purpose","prompt":"Follow references/verifier-brief.md. Feedback: submission/feedback.md"}}}
 {"type":"subagent.started","data":{"toolCallId":"t3","agentName":"verifier","agentDisplayName":"verifier","agentType":"general-purpose","model":"copilot-fixture-b"}}
 {"type":"assistant.message","data":{"messageId":"s1","parentToolCallId":"t3","model":"copilot-fixture-b","content":"Verified: every claim holds."}}
 {"type":"tool.execution_complete","data":{"toolCallId":"t3","success":true}}
-{"type":"assistant.message","data":{"messageId":"m3","model":"copilot-fixture-a","content":"The feedback draft is in submission-feedback.md; a fresh verifier checked it."}}
+{"type":"assistant.message","data":{"messageId":"m3","model":"copilot-fixture-a","content":"The feedback draft is in submission/feedback.md; a fresh verifier checked it."}}
 {"type":"result","timestamp":"2026-10-06T00:00:09Z","sessionId":"11111111-1111-4111-8111-111111111111","exitCode":0,"usage":{"premiumRequests":1,"totalApiDurationMs":4200,"sessionDurationMs":9000,"codeChanges":{"linesAdded":0,"linesRemoved":0,"filesModified":[]}}}
 {"type":"copilot.session_start","copilotVersion":"1.0.91"}
 {"type":"copilot.skill_invoked","name":"proposal-supervise","path":"__WS__/.agents/skills/proposal-supervise/SKILL.md","source":"project","trigger":"agent-invoked"}

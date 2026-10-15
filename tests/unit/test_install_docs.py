@@ -244,6 +244,34 @@ def test_the_pdf_fallback_is_version_free_and_digest_checked():
     assert winget_problems(pdf) == []
 
 
+CONTENTS_SECTION = "What you get in the folder"
+
+
+@pytest.mark.parametrize("statement", [
+    "a folder of its own",   # each proposal gets a folder in the proposals folder
+    "`notes.md`",            # companions carry their role's name
+    "`review.md`",
+    "`idea/`",               # ideation starts in a folder
+    "subfolder",             # when the proposal-location setting is worth it
+    "stay at the top",       # the workspace-level files either way
+])
+def test_the_guide_says_each_proposal_gets_a_folder(statement):
+    """user-onboarding: Users never work in this repository — the guide states
+    that each proposal gets a folder of its own, when collecting the folders in
+    a subfolder is worth it, and that the workspace-level files stay at the top
+    either way (adopt-proposal-folders)."""
+    assert statement in guide_section(CONTENTS_SECTION), (
+        f"'{CONTENTS_SECTION}' no longer states: {statement}")
+
+
+@pytest.mark.parametrize("doc", ["docs/install.md", "README.md"])
+def test_no_layout_the_skills_do_not_offer(doc):
+    """The flat layout is gone; neither document describes it."""
+    text = (REPO / doc).read_text(encoding="utf-8")
+    found = re.findall(r"[^.\n]*\bflat\b[^.\n]*", text, flags=re.IGNORECASE)
+    assert not found, f"{doc} still describes a flat layout: {found}"
+
+
 @pytest.mark.parametrize("doc", ["docs/install.md", "README.md"])
 def test_the_workspace_root_is_called_the_proposals_folder(doc):
     text = (REPO / doc).read_text(encoding="utf-8")

@@ -49,6 +49,26 @@ def test_projection_speaks_the_standard_shape(projections):
             assert entry["assertions"], f"{skill}/{entry['task']}: no assertions"
 
 
+def test_the_ideate_dialogues_project_no_workspace_file(projections):
+    """The dialogues start from an empty workspace, so their input files are
+    none: the projection must not list a proposal the run never sees, as it
+    did once the dialogue's emptying setup changed under the folder layout."""
+    entries = projections["proposal-ideate"]["evals"]
+    dialogues = [e for e in entries if e["prompt"] == entries[0]["prompt"]]
+    assert len(dialogues) == 5
+    assert {e["task"]: e["files"] for e in dialogues} == {e["task"]: [] for e in dialogues}
+
+
+def test_the_projection_lists_workspace_files_not_the_installed_skill(projections):
+    """A task's files are the workspace it starts from, by their path from the
+    workspace root; the skill's own scripts and references are not inputs."""
+    for skill, doc in projections.items():
+        for entry in doc["evals"]:
+            for name in entry["files"]:
+                assert not name.startswith(("ws/", "skill/", ".claude/skills/")), (
+                    f"{skill}/{entry['task']}: {name}")
+
+
 def test_check_mode_reports_clean(capsys):
     assert eval_export.main(["--check"]) == 0
     assert "drift" not in capsys.readouterr().out

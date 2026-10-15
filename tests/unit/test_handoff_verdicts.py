@@ -153,7 +153,7 @@ def test_quoted_phrase_recognized_in_three_quote_styles():
 
 # ---------- scenario verdicts ----------------------------------------------------
 
-P, R = "draft.md", "draft-review.md"
+P, R = "draft/draft.md", "draft/review.md"
 
 
 def test_review_feedback():
@@ -163,7 +163,7 @@ def test_review_feedback():
     assert "applied unasked" in why
     ok, why = verdict_handoff_review_feedback([], [], REVISION, P, R)
     assert not ok
-    assert "no draft-review.md" in why
+    assert "no draft/review.md" in why
 
 
 def test_superseded():
@@ -255,7 +255,11 @@ def test_a_status_answer_that_edits_fails_even_if_the_revision_is_right():
 
 def test_after_revision():
     assert verdict_handoff_after_revision([P], [], AFTER, CLEAN, P, R, W, [])[0]
-    assert verdict_handoff_after_revision([P], ["draft.notes.md"], AFTER, CLEAN, P, R, W, [])[0]
+    assert verdict_handoff_after_revision([P], ["draft/notes.md"], AFTER, CLEAN, P, R, W, [])[0]
+    # a review written under any folder is a review that ran unasked
+    ok, why = verdict_handoff_after_revision([P], ["other/review.md"], AFTER, CLEAN, P, R, W, [])
+    assert not ok
+    assert "other/review.md" in why
     ok, why = verdict_handoff_after_revision([], [], AFTER, CLEAN, P, R, W, [])
     assert not ok
     assert "unchanged" in why

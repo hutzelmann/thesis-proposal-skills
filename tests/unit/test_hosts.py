@@ -34,7 +34,14 @@ from claude_runner import (
     stage,
     summary,
 )
-from helpers import CLEAN_DRAFT, COPILOT_TOKEN, REPO, copilot_stream, saved_stream
+from helpers import (
+    CLEAN_DRAFT,
+    COPILOT_TOKEN,
+    REPO,
+    copilot_stream,
+    saved_stream,
+    write_proposal,
+)
 from host_login import CLAUDE, CODEX, CREDENTIALS, STATE_VAR, LoginProblem, refusal
 
 STREAMS = Path(__file__).resolve().parent / "data" / "codex_streams"
@@ -98,7 +105,7 @@ def fake_codex_run(monkeypatch, name="success", produce=None, raises=None) -> li
 
 
 def write_draft(ws: Path) -> None:
-    (ws / "drift-detection-proposal.md").write_text(CLEAN_DRAFT, encoding="utf-8")
+    write_proposal(ws, "drift-detection-proposal", CLEAN_DRAFT)
 
 
 # ---------- the default host -----------------------------------------------------------
@@ -517,7 +524,8 @@ def fake_copilot_run(monkeypatch, name="success", produce=None, raises=None) -> 
     ([*COPILOT_RUN, "--max-budget-usd", "1"], "credit cap"),
     (["install_prompt", "--host", "copilot", "--model", "copilot-fixture-a",
       "--max-ai-credits", "30"], "install-prompt"),
-    (["check_report", "--preflight-only"], "--preflight-only applies"),
+    # on Claude it checks a scenario's hidden or required tools (adopt-proposal-folders)
+    (["check_report", "--preflight-only"], "check_report has none"),
     (["check_report", "--host", "codex", "--model", "gpt-fixture-a", "--preflight-only"],
      "--preflight-only applies"),
     (["check_report", "--max-ai-credits", "30"], "--max-ai-credits applies"),

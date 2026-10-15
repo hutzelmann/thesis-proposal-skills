@@ -37,9 +37,9 @@ Read the PDF directly. If you cannot ingest PDFs in this environment, say so pla
 
 ## The harvest record
 
-The `<slug>.md` and everything beside it are created in the proposal location (Workspace files below). Nothing is written beside the source thesis, and nothing into this skill's install directory.
+The proposal's folder `<slug>/` and everything in it are created in the proposal location (Workspace files below). Nothing is written beside the source thesis, and nothing into this skill's install directory.
 
-Before you write a line of proposal prose, write `<slug>.harvest.md` beside it and tell the user it is there to check. It holds what you took out of the thesis:
+Before you write a line of proposal prose, create that folder, write `harvest.md` into it, and tell the user it is there to check. It holds what you took out of the thesis:
 
 - title, degree level, language
 - its aim and objectives, where the introduction states them separately
@@ -97,7 +97,7 @@ Your output is bounded by your source, and you report the bound rather than comp
 
 ## Seed the notes file
 
-Create `<slug>.notes.md` beside the proposal — sections Decisions, Open Points, Next Focus, Excluded Literature, Log — and put into it what the thesis produced but the proposal cannot carry: the deliverables list, the sections with no counterpart, the references dropped as results-only with the reason, and a Next Focus ranking the `[TODO: …]` markers. The markers stay in the proposal; the notes file prioritises them. Everything the next section strips is stripped here too. The file is workspace-internal: never built, never submitted, not a proposal.
+Create `notes.md` beside the proposal in its folder — sections Decisions, Open Points, Next Focus, Excluded Literature, Log — and put into it what the thesis produced but the proposal cannot carry: the deliverables list, the sections with no counterpart, the references dropped as results-only with the reason, and a Next Focus ranking the `[TODO: …]` markers. The markers stay in the proposal; the notes file prioritises them. Everything the next section strips is stripped here too. The file is workspace-internal: never built, never submitted, not a proposal.
 
 ## Strip on reverse
 
@@ -108,11 +108,11 @@ A thesis carries a cover page. The author's name, matriculation number, postal a
 Run the reference validation, then the check, over the file you just wrote:
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/validate_refs.py <slug>.md
-python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <slug>.md
+python3 ${CLAUDE_SKILL_DIR}/scripts/validate_refs.py <location>/<slug>/<slug>.md
+python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <location>/<slug>/<slug>.md
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the scripts really live in `scripts/` next to this SKILL.md. If you cannot find them, say they did not run and name what is therefore unverified — never present your own reading of the file as a script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the scripts really live in `scripts/` next to this SKILL.md. Either way, run both from the workspace root, the working directory, where `<location>` is the proposal location (`.` unless `[paths] proposals` sets another): the check measures the proposal's placement and its orphan findings from there. If you cannot find them, say they did not run and name what is therefore unverified — never present your own reading of the file as a script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
 Apply the CSL-YAML the validator prints for entries it identified, keep every UNVERIFIABLE entry with a `[TODO: verify reference …]` beside its first citation, and fix everything the check reports except two findings that are not yours to fix: a reference shortfall the thesis genuinely cannot cover, and open `[TODO: …]` markers.
 
@@ -126,24 +126,23 @@ Then close with the handoff lines from Handing over below — `Where it stands:`
 
 ## Workspace files
 
-Every file of a proposal goes into the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never into a host's scratch or temporary folder. A proposal's slug, its file name without the extension, names its whole family:
+Every proposal lives in a folder of its own in the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never in a host's scratch or temporary folder. The working directory is the workspace root: run every script from there, never from inside a proposal folder; never `cd` into a proposal folder, and name its files by their path from the root. A proposal's slug, its file name without the extension, names its folder. Inside the folder, the files that leave it carry the slug, and every other file is matched by its exact name:
 
-| Role | File name |
+| Role | File name in `<slug>/` |
 |---|---|
-| proposal | `<slug>.md` |
-| notes | `<slug>.notes.md` |
-| harvest record | `<slug>.harvest.md` |
-| review | `<slug>-review.md` |
-| supervisor feedback | `<slug>-feedback.md` |
-| handout | `<slug>-handout.md` |
-| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx` |
-| kept file | `<slug>.<label>.<ext>` |
-| figure | `img/<slug>-<name>.<ext>`, in an `img/` folder beside the proposal |
-| ideation notes | `ideation.notes.md`, before a topic phrase exists |
+| proposal | `<slug>.md`, leaves the folder |
+| notes | `notes.md` |
+| harvest record | `harvest.md` |
+| review | `review.md` |
+| supervisor feedback | `feedback.md` |
+| handout | `<slug>.handout.md`, leaves the folder |
+| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx`, each leaves the folder |
+| kept file | `<label>.<ext>` |
+| figure | `img/<name>.<ext>` |
 
-The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. It changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. A rename moves every family file under the old slug at once, built outputs excepted, and updates every link to a moved file in the proposal and its notes file; it never edits the text of a review or supervisor feedback. Built outputs stay as previous builds: name them and offer a rebuild. Check every target name first. At seeding, when any target name is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. When a file cannot be moved, stop, overwrite nothing, and say what moved and what did not. Say which files you renamed.
+The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. A proposal's folder is never named `bug-report` or `img`, nor with a leading dot: a new proposal's slug takes the numeric suffix when a folder of that name exists or the name is reserved, and a new proposal never goes into another proposal's folder. Before a topic phrase exists, ideation works in `idea/` (`idea-2/` and on when taken), renamed to a provisional slug once a topic phrase exists, with the numeric suffix when taken, and to the final slug at seeding; a provisional rename that fails is retried at seeding. The slug changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. Check the target folder first. At seeding, when it is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. A rename moves the folder `<old>/` to `<new>/` (on PowerShell with `Rename-Item`, which refuses an existing target); verify that `<new>/` holds the files and that no `<new>/<old>/` exists, and stop if it does; then, when the folder holds `<old>.md`, rename it to `<new>.md`. Role-named files, figures and kept files keep their names, so no link changes. When a move fails, stop, overwrite nothing, and say what moved and what did not; when the error names a file another program holds open, name it and offer to retry. Built outputs and the hand-in export under the old slug stay in the folder as previous outputs: name them and offer a rebuild. Say what you renamed.
 
-Besides proposal families, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; beside a proposal, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks: as `<slug>.<label>.<ext>` beside the proposal, never with the label `notes` or `harvest`, or in the notes file before a slug exists.
+Besides proposal folders, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; in a proposal's folder, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks, in the proposal's or the idea's folder: a kept file is `<label>.<ext>` under a free label, never `notes`, `review`, `feedback`, `harvest`, `handout`, `img` or the slug itself.
 
 ## Handing over
 

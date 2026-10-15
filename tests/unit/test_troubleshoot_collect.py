@@ -11,7 +11,7 @@ import json
 import os
 import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import collect
 import pytest
@@ -28,7 +28,7 @@ from collect import (
     sibling_artifacts,
     strip_personal_data,
 )
-from helpers import fake_home
+from helpers import CLEAN_DRAFT, fake_home, run_check, write_proposal
 
 import install
 
@@ -78,15 +78,26 @@ NOTES = """# Notes
 """
 
 
+SLUG = "quantum-basket-weaving"
+# every word of the slug: none may leave the workspace below the full level
+SLUG_WORDS = re.compile(r"quantum|basket|weaving", re.IGNORECASE)
+
+
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
-    (tmp_path / "quantum-basket-weaving.md").write_text(PROPOSAL, encoding="utf-8")
-    (tmp_path / "quantum-basket-weaving.notes.md").write_text(NOTES, encoding="utf-8")
+    """A workspace root holding one proposal in its folder, with its notes
+    file beside it, and the root as working directory."""
+    proposal = write_proposal(tmp_path, SLUG, PROPOSAL)
+    (proposal.parent / "notes.md").write_text(NOTES, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
-def run(argv, cwd_proposal="quantum-basket-weaving.md", **extra):
+def proposal_in(workspace: Path) -> Path:
+    return workspace / SLUG / f"{SLUG}.md"
+
+
+def run(argv, cwd_proposal=f"{SLUG}/{SLUG}.md", **extra):
     args = [cwd_proposal, *argv]
     return main(args, **extra)
 
@@ -130,7 +141,7 @@ def test_lf_content_reports_no_redundant_normalized_blob(tmp_path):
 # --------------------------------------------------------------------------
 
 def test_minimal_carries_no_proposal_prose(workspace):
-    out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", "minimal"))
+    out = "\n".join(describe_proposal(proposal_in(workspace), "minimal"))
     assert "Secret Sauce" not in out
     assert "vendor agreement" not in out
     assert "Fibre Tension" not in out  # the title heading is proposal text
@@ -141,14 +152,14 @@ def test_minimal_carries_no_proposal_prose(workspace):
 
 
 def test_minimal_reports_how_many_headings_are_canonical(workspace):
-    out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", "minimal"))
+    out = "\n".join(describe_proposal(proposal_in(workspace), "minimal"))
     assert "3 of 4 section headings match a canonical title" in out
     assert "the title heading is not counted" in out
     assert "heading text withheld" in out
 
 
 def test_structure_adds_headings_todos_and_dois_but_masks_the_title(workspace):
-    out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", "structure"))
+    out = "\n".join(describe_proposal(proposal_in(workspace), "structure"))
     assert "My Secret Sauce Section" in out
     assert "[TODO: settle the vendor agreement]" in out
     assert "10.1000/synthetic.0001" in out
@@ -159,7 +170,7 @@ def test_structure_adds_headings_todos_and_dois_but_masks_the_title(workspace):
 
 
 def test_full_adds_the_body_with_personal_data_removed(workspace):
-    out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", "full"))
+    out = "\n".join(describe_proposal(proposal_in(workspace), "full"))
     assert "Orbital looms are underexplored" in out
     assert "Fibre Tension in Low-Gravity Basket Weaving" in out
     assert "Erika" not in out
@@ -169,7 +180,7 @@ def test_full_adds_the_body_with_personal_data_removed(workspace):
 def test_the_proposal_filename_never_appears_verbatim(workspace):
     """The slug is derived from the topic, so it discloses at every level."""
     for level in ("minimal", "structure", "full"):
-        out = "\n".join(describe_proposal(workspace / "quantum-basket-weaving.md", level))
+        out = "\n".join(describe_proposal(proposal_in(workspace), level))
         assert "quantum-basket-weaving" not in out, f"leaked at level {level}"
 
 
@@ -206,48 +217,209 @@ def test_redaction_survives_a_missing_skeleton():
     assert "`Timeline`" not in out
 
 
+FOLDER_CHECK_OUTPUT = (
+    f"# Check: {SLUG}/{SLUG}.md\n"
+    f"- WARNING: {SLUG}/review.md was written for an earlier round\n"
+    f"- ERROR: move the proposal to {SLUG}/{SLUG}.md\n"
+)
+
+
+def test_minimal_stores_folder_paths_with_the_handle_replaced(workspace):
+    """The folder is named by the slug, so its name in a path discloses the
+    topic just as the file name does; role names carry nothing about the user
+    and stay (skill-troubleshoot: Proposal handle redacted in every path)."""
+    (workspace / "check-output.txt").write_text(FOLDER_CHECK_OUTPUT, encoding="utf-8")
+    assert run(["--script-output", "check-output.txt"]) == 0
+    bundle = workspace / "bug-report"
+    stored = (bundle / "artifacts" / "check-output.txt").read_text(encoding="utf-8")
+    assert "<proposal>/<proposal>.md" in stored
+    assert "<proposal>/review.md" in stored
+    assert SLUG_WORDS.search(stored) is None, "a word of the slug left the workspace"
+    report = (bundle / "report.md").read_text(encoding="utf-8")
+    assert "<proposal>/review.md" in report
+    assert SLUG_WORDS.search(report) is None, "a word of the slug reached the report"
+
+
+def test_a_folder_named_unlike_its_proposal_is_redacted_too(tmp_path, monkeypatch):
+    """A rename that moved the folder but not the file leaves `<new>/<old>.md`;
+    both names are slugs, and neither may leave the workspace."""
+    folder = tmp_path / "orbital-loom-tension"
+    folder.mkdir()
+    (folder / f"{SLUG}.md").write_text(PROPOSAL, encoding="utf-8")
+    (tmp_path / "check-output.txt").write_text(
+        f"# Check: orbital-loom-tension/{SLUG}.md\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert main([f"orbital-loom-tension/{SLUG}.md", "--script-output", "check-output.txt"]) == 0
+    stored = (tmp_path / "bug-report" / "artifacts" / "check-output.txt").read_text(
+        encoding="utf-8")
+    assert "<proposal>/<proposal>.md" in stored
+    assert re.search(r"orbital|loom|tension", stored) is None
+
+
+def test_a_proposal_name_that_is_not_utf8_is_redacted_as_the_check_prints_it(
+        tmp_path, monkeypatch):
+    """The check prints a proposal name that is not valid UTF-8 with its
+    undecodable bytes replaced (adopt-proposal-folders, task 6.6), so the
+    readable part of the slug reaches the stored output in that form: the
+    redaction must know it as well as the raw name, or `minimal` discloses the
+    topic (skill-troubleshoot: Proposal handle redacted in every path)."""
+    raw = b"sensorcaf\xe9"
+    try:
+        folder = tmp_path / os.fsdecode(raw)
+        folder.mkdir()
+        proposal = folder / os.fsdecode(raw + b".md")
+        proposal.write_text(PROPOSAL, encoding="utf-8")
+    except (OSError, UnicodeError):
+        pytest.skip("this filesystem refuses a name that is not valid UTF-8")
+    # a Log line naming the folder as its bytes stand: read with its
+    # undecodable byte replaced, it is redacted in that form too
+    (folder / "notes.md").write_bytes(b"## Log\n\n- 2026-10-15 drafted " + raw + b"/\n")
+    report = run_check(proposal, root=tmp_path).stdout
+    assert "sensorcaf\N{REPLACEMENT CHARACTER}" in report, "the check no longer prints it so"
+    (tmp_path / "check-output.txt").write_text(report, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert main([os.path.relpath(proposal, tmp_path), "--script-output", "check-output.txt"]) == 0
+    bundle = tmp_path / "bug-report"
+    leaks = [path.relative_to(bundle).as_posix() for path in sorted(bundle.rglob("*"))
+             if path.is_file() and b"sensorcaf" in path.read_bytes()]
+    assert not leaks, f"the readable part of the slug left the workspace in {leaks}"
+    stored = (bundle / "artifacts" / "check-output.txt").read_text(encoding="utf-8")
+    assert stored.startswith("# Check: <proposal>.md")
+
+
 # --------------------------------------------------------------------------
 # notes-file log extraction
 # --------------------------------------------------------------------------
 
 def test_notes_log_extracts_only_the_log_section(workspace):
-    name, text = notes_log(workspace / "quantum-basket-weaving.md")
+    """The Log excerpt comes from the notes file in the proposal's folder."""
+    name, text = notes_log(proposal_in(workspace))
     assert name == "notes-log.md"
     assert "2026-08-03 four references added" in text
     assert "Chose prototype over SLR" not in text
     assert "wrong field" not in text, "the Log section ends at the next same-level heading"
 
 
+LOG_NAMING_THE_PROPOSAL = f"""# Notes
+
+## Decisions
+
+- Chose prototype over SLR.
+
+## Log
+
+- 2026-10-14 renamed {SLUG}/ from the provisional handle; drafted {SLUG}/{SLUG}.md
+- 2026-10-15 review written to {SLUG}/review.md
+"""
+
+
+@pytest.mark.parametrize("level", ["minimal", "structure"])
+def test_the_stored_log_carries_no_word_of_the_slug_below_full(workspace, level):
+    """A Log line names the proposal as the skills write it, by its folder
+    and file; below `full` the stored excerpt replaces the handle as the
+    stored script output does (skill-troubleshoot: Graded redaction with the
+    most protective default)."""
+    folder = proposal_in(workspace).parent
+    (folder / "notes.md").write_text(LOG_NAMING_THE_PROPOSAL, encoding="utf-8")
+    assert run(["--level", level]) == 0
+    bundle = workspace / "bug-report"
+    stored = (bundle / "artifacts" / "notes-log.md").read_text(encoding="utf-8")
+    assert "drafted <proposal>/<proposal>.md" in stored
+    assert "<proposal>/review.md" in stored
+    leaks = [path.relative_to(bundle).as_posix() for path in sorted(bundle.rglob("*"))
+             if path.is_file() and SLUG_WORDS.search(path.read_text(encoding="utf-8"))]
+    assert not leaks, f"a word of the slug left the workspace in {leaks}"
+
+
+def test_full_stores_the_log_as_written(workspace):
+    """The most disclosing level carries the proposal text, its name included,
+    so its Log excerpt is stored as the notes file holds it."""
+    folder = proposal_in(workspace).parent
+    (folder / "notes.md").write_text(LOG_NAMING_THE_PROPOSAL, encoding="utf-8")
+    assert run(["--level", "full"]) == 0
+    stored = (workspace / "bug-report" / "artifacts" / "notes-log.md").read_text(
+        encoding="utf-8")
+    assert f"drafted {SLUG}/{SLUG}.md" in stored
+    assert "Chose prototype over SLR" not in stored, "only the Log section is stored"
+
+
+NOTES_WITHOUT_LOG = """# Notes
+
+## Topic
+
+Fibre tension in orbital looms, measured on a prototype.
+
+## Decisions
+
+- Chose prototype over SLR.
+"""
+
+
+@pytest.mark.parametrize("level", ["minimal", "structure", "full"])
+def test_a_notes_file_without_a_log_section_stores_nothing(workspace, level):
+    """What a notes file holds besides its Log is the idea itself, which no
+    level promises: without a Log section nothing of the file is stored, and
+    the report says so, so the absence reads as a fact rather than a gap."""
+    folder = proposal_in(workspace).parent
+    (folder / "notes.md").write_text(NOTES_WITHOUT_LOG, encoding="utf-8")
+    assert notes_log(proposal_in(workspace)) is None
+    assert run(["--level", level]) == 0
+    bundle = workspace / "bug-report"
+    assert not (bundle / "artifacts" / "notes-log.md").exists()
+    report = (bundle / "report.md").read_text(encoding="utf-8")
+    assert ("[measured] notes file present as notes.md without a Log section; "
+            "nothing of it stored") in report
+    for path in bundle.rglob("*"):
+        if path.is_file():
+            text = path.read_text(encoding="utf-8")
+            assert "orbital looms" not in text, path
+            assert "Chose prototype over SLR" not in text, path
+
+
 def test_sibling_artifacts_inventoried_at_hash_level(workspace):
     """Supervise session: review file and feedback file appear with sizes and
-    hashes under placeholder names, and none of their text (skill-troubleshoot
+    hashes under their role names, and none of their text (skill-troubleshoot
     spec: companion artifacts inventoried at hash level)."""
     feedback = "Verdict: idea stage. 1. Sharpen the question — proposal-ideate."
-    (workspace / "quantum-basket-weaving-review.md").write_text(
+    folder = proposal_in(workspace).parent
+    (folder / "review.md").write_text(
         "no viable thesis core\n1. secret finding text", encoding="utf-8")
-    (workspace / "quantum-basket-weaving-feedback.md").write_text(feedback, encoding="utf-8")
+    (folder / "feedback.md").write_text(feedback, encoding="utf-8")
 
-    lines = sibling_artifacts(workspace / "quantum-basket-weaving.md")
+    lines = sibling_artifacts(proposal_in(workspace))
     joined = "\n".join(lines)
-    assert "<proposal>-review.md" in joined
-    assert "<proposal>-feedback.md" in joined
-    assert "quantum-basket-weaving" not in joined
+    assert "review file present as review.md (" in joined
+    assert "supervise feedback present as feedback.md (" in joined
+    assert SLUG_WORDS.search(joined) is None
     assert "secret finding text" not in joined
     assert "Sharpen the question" not in joined
     assert joined.count("sha256:") == 2
 
 
+def test_kept_and_old_style_names_are_no_role_files(workspace):
+    """Role files are matched by their exact name: a kept file whose label
+    merely contains a role is a kept file, and the flat layout's names are not
+    read at all (design D3, D1)."""
+    folder = proposal_in(workspace).parent
+    (folder / "notes.md").unlink()
+    for name in ("peer-review.md", "reading-notes.md", "supervisor-feedback.md",
+                 f"{SLUG}.notes.md", f"{SLUG}-review.md", f"{SLUG}-feedback.md"):
+        (folder / name).write_text("## Log\n\n- kept by hand\n", encoding="utf-8")
+    assert sibling_artifacts(proposal_in(workspace)) == []
+    assert notes_log(proposal_in(workspace)) is None
+
+
 def test_sibling_artifacts_absent_in_student_workspace(workspace):
-    assert sibling_artifacts(workspace / "quantum-basket-weaving.md") == []
+    assert sibling_artifacts(proposal_in(workspace)) == []
     assert sibling_artifacts(None) == []
 
 
 def test_full_level_report_still_excludes_companion_text(workspace):
-    (workspace / "quantum-basket-weaving-feedback.md").write_text(
+    (proposal_in(workspace).parent / "feedback.md").write_text(
         "Verdict: idea stage. Unique-feedback-phrase.", encoding="utf-8")
     assert run(["--level", "full"]) == 0
     report = (workspace / "bug-report" / "report.md").read_text(encoding="utf-8")
-    assert "<proposal>-feedback.md" in report
+    assert "present as feedback.md (" in report
     assert "Unique-feedback-phrase" not in report
 
 
@@ -257,8 +429,9 @@ BUILD_SCRIPT = "# faculty-template-path-nobody-else-should-see\nprint('built')\n
 def test_workspace_build_definition_recorded(workspace):
     """Without this line a workspace-built document is indistinguishable from
     one the shipped pipeline produced, and the report reads as "works for me"."""
-    (workspace / "proposal-build.py").write_text(BUILD_SCRIPT, encoding="utf-8")
-    joined = "\n".join(sibling_artifacts(workspace / "quantum-basket-weaving.md"))
+    (proposal_in(workspace).parent / "proposal-build.py").write_text(
+        BUILD_SCRIPT, encoding="utf-8")
+    joined = "\n".join(sibling_artifacts(proposal_in(workspace)))
     assert "proposal-build.py" in joined
     assert "sha256:" in joined
     assert "not built by the shipped pipeline" in joined
@@ -266,16 +439,24 @@ def test_workspace_build_definition_recorded(workspace):
 
 
 def test_workspace_build_recipe_recorded_only_with_the_target(workspace):
-    makefile = workspace / "Makefile"
+    makefile = proposal_in(workspace).parent / "Makefile"
     makefile.write_text("all:\n\techo hi\n", encoding="utf-8")
-    assert sibling_artifacts(workspace / "quantum-basket-weaving.md") == []
+    assert sibling_artifacts(proposal_in(workspace)) == []
     makefile.write_text("proposal-build:\n\tpandoc $(PROPOSAL_PATH)\n", encoding="utf-8")
-    joined = "\n".join(sibling_artifacts(workspace / "quantum-basket-weaving.md"))
+    joined = "\n".join(sibling_artifacts(proposal_in(workspace)))
     assert "Makefile (target `proposal-build`)" in joined
 
 
-def test_full_level_report_excludes_build_definition_content(workspace):
+def test_build_definition_at_the_workspace_root_is_not_publish_s(workspace):
+    """publish looks only in the proposal's folder, so a definition at the root
+    builds nothing and is not reported as the one that built the document."""
     (workspace / "proposal-build.py").write_text(BUILD_SCRIPT, encoding="utf-8")
+    assert sibling_artifacts(proposal_in(workspace)) == []
+
+
+def test_full_level_report_excludes_build_definition_content(workspace):
+    (proposal_in(workspace).parent / "proposal-build.py").write_text(
+        BUILD_SCRIPT, encoding="utf-8")
     assert run(["--level", "full"]) == 0
     report = (workspace / "bug-report" / "report.md").read_text(encoding="utf-8")
     assert "proposal-build.py" in report
@@ -293,10 +474,19 @@ def test_build_definition_names_match_publishs_own():
     assert collect.BUILD_TARGET_RE.pattern == publish.RECIPE_TARGET_RE.pattern
 
 
+def test_companion_names_match_the_checks_role_table():
+    """The collector restates check.py's role names, as it restates publish's
+    build constants: the files it inventories are the ones the check calls
+    the notes file, the review and the supervisor feedback."""
+    import check
+
+    assert check.ROLE_NAMES[check.NOTES] == collect.NOTES_FILE
+    assert [name for _label, name in collect.COMPANION_FILES] == [
+        check.ROLE_NAMES[check.REVIEW], check.ROLE_NAMES[check.FEEDBACK]]
+
+
 def test_notes_log_absent_is_not_an_error(tmp_path):
-    lonely = tmp_path / "solo.md"
-    lonely.write_text(PROPOSAL, encoding="utf-8")
-    assert notes_log(lonely) is None
+    assert notes_log(write_proposal(tmp_path, "solo", PROPOSAL)) is None
 
 
 # --------------------------------------------------------------------------
@@ -511,18 +701,29 @@ def test_dry_run_writes_nothing(workspace, capsys):
 
 def test_write_produces_the_bundle_and_nothing_outside_it(workspace):
     before = {p.name for p in workspace.iterdir()}
+    folder_before = {p.name for p in proposal_in(workspace).parent.iterdir()}
     assert run([]) == 0
     bundle = workspace / "bug-report"
     assert (bundle / "report.md").is_file()
     assert (bundle / "hashes.txt").is_file()
     after = {p.name for p in workspace.iterdir()}
     assert after - before == {"bug-report"}, "the collector wrote outside its bundle"
+    assert {p.name for p in proposal_in(workspace).parent.iterdir()} == folder_before
+
+
+def test_bundle_lands_in_the_working_directory_not_the_proposal_folder(workspace):
+    """The report directory stays at the workspace root, where a user looks for
+    it and where `bug-report` is a reserved folder name (skill-troubleshoot:
+    Report directory placement)."""
+    assert run([]) == 0
+    assert (workspace / "bug-report" / "report.md").is_file()
+    assert not (proposal_in(workspace).parent / "bug-report").exists()
 
 
 def test_the_proposal_is_never_modified(workspace):
     """A read-only skill may end in this offer; the file it examined must be
     untouched afterwards, digest and all."""
-    proposal = workspace / "quantum-basket-weaving.md"
+    proposal = proposal_in(workspace)
     before = proposal.read_bytes()
     assert run([]) == 0
     assert proposal.read_bytes() == before
@@ -612,6 +813,57 @@ def test_hash_lines_carry_no_absolute_paths(workspace):
     lines = (workspace / "bug-report" / "hashes.txt").read_text(encoding="utf-8")
     assert str(Path.home()) not in lines
     assert not any(ln.startswith("/") for ln in lines.splitlines())
+
+
+# --------------------------------------------------------------------------
+# the reproduction seed: a workspace of its own
+# --------------------------------------------------------------------------
+
+def reproduction_seed() -> tuple[PurePosixPath, PurePosixPath]:
+    """The reduced file and the directory its command runs from, as the
+    skill's "The reproduction seed" section names them."""
+    text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    match = re.search(r"^## The reproduction seed\n(.*?)(?=^## )", text,
+                      re.MULTILINE | re.DOTALL)
+    assert match, "SKILL.md lost its reproduction-seed section"
+    seeds = set(re.findall(r"`(bug-report/repro/[^`]*\.md)`", match.group(1)))
+    assert len(seeds) == 1, f"the section names {sorted(seeds)} as the reduced file"
+    root = re.search(r"run from `(bug-report/[^`]*?)/?`", match.group(1))
+    assert root, "the section does not say which directory the command runs from"
+    return PurePosixPath(seeds.pop()), PurePosixPath(root.group(1))
+
+
+def test_the_reproduction_is_a_workspace_the_check_accepts(tmp_path):
+    """The reduced file obeys the corpus's fixture rules (skill-troubleshoot:
+    Reproduction seed only where reduction is possible), which put a proposal
+    in a folder named by its slug; run as its command says, the check judges
+    the defect, never the reproduction's own placement."""
+    seed, root = reproduction_seed()
+    relative = seed.relative_to(root)
+    workspace = tmp_path / root
+    proposal = workspace / relative
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text(CLEAN_DRAFT, encoding="utf-8")
+    (workspace / "command.txt").write_text(f"python3 check.py {relative}\n", encoding="utf-8")
+    (tmp_path / "bug-report" / "report.md").write_text("# Bug report\n", encoding="utf-8")
+    result = run_check(Path(relative), "--json", root=workspace)
+    findings = json.loads(result.stdout)["findings"]
+    placement = [f["rule"] for f in findings if f["rule"] in {
+        "proposal-misplaced", "proposal-folder-mismatch", "companion-orphaned",
+        "build-definition-unused"}]
+    assert not placement, f"the reproduction itself draws {placement}"
+    assert result.returncode == 0
+
+
+def test_the_report_points_at_the_reproduction_the_skill_writes(workspace):
+    """The report's reproduction line and the skill's prose name one layout,
+    relative to the bundle the maintainer receives."""
+    seed, root = reproduction_seed()
+    assert run([]) == 0
+    report = (workspace / "bug-report" / "report.md").read_text(encoding="utf-8")
+    bundle_root = PurePosixPath("bug-report")
+    assert f"`{seed.relative_to(bundle_root).as_posix()}`" in report
+    assert f"run from `{root.relative_to(bundle_root).as_posix()}/`" in report
 
 
 # --------------------------------------------------------------------------
@@ -750,9 +1002,9 @@ def test_cli_lock_still_reported():
 
 
 def test_report_carries_the_route_section(home):
-    (Path.cwd() / "p.md").write_text(PROPOSAL, encoding="utf-8")
+    write_proposal(Path.cwd(), "p", PROPOSAL)
     plant_record(home / ".agents/skills")
-    assert main(["p.md"]) == 0
+    assert main(["p/p.md"]) == 0
     report = (Path.cwd() / "bug-report" / "report.md").read_text(encoding="utf-8")
     assert "[measured] install route: installer" in report
     assert str(home) not in report

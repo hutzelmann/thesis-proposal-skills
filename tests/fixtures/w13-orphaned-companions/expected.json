@@ -5,23 +5,26 @@
     "exit_code": 0,
     "errors_contain": [],
     "warnings_contain": [
-      "`ci-repair-agents-review.md` carries the slug `ci-repair-agents`",
-      "`ci-repair-agents.candidates.yaml` carries the slug `ci-repair-agents`",
-      "`img/ci-repair-agents-pipeline.png` carries the slug `ci-repair-agents`",
-      "the proposal links `img/ci-repair-agents-pipeline.png`",
-      "but with `ci-repair-agents`, a slug other files here still carry",
-      "a rename that moved only part of the family is the usual cause"
+      "`ci-repair-agents/review.md` lies in `ci-repair-agents/`, which holds no proposal, notes file or harvest record",
+      "`build-log-triage.md` lies at the workspace root, outside any proposal folder",
+      "a proposal lives in a folder of its own, `build-log-triage/build-log-triage.md`",
+      "`ci-repair-agent-configurations.candidates.yaml` lies at the workspace root, and it belongs in the proposal folder `ci-repair-agent-configurations/`",
+      "a file you placed there on purpose can be left as it is",
+      "`proposal-build.sh` at the workspace root is a build definition the publish step never uses",
+      "it looks for one only in the proposal's folder"
     ],
     "rules": {
       "errors": [],
       "warnings": [
+        "build-definition-unused",
         "companion-orphaned"
       ]
     }
   },
   "semantic": [
-    "the three leftovers and the figure link belong to the earlier slug ci-repair-agents; the proposal itself is f28's text and needs nothing else",
-    "renaming the leftovers to the proposal's slug, the figure link updated with them, is offered as a choice and never done unasked; the check itself renames nothing",
-    "guidelines.md, ideation.notes.md and the installer folder are not part of any proposal's family and are left alone"
+    "the folder ci-repair-agents/ is what a rename left behind: its review is reported, its figure is not, and neither is moved; the proposal itself is f28's text and needs nothing else",
+    "the flat build-log-triage.md and the candidate list named by the proposal's slug sit at the workspace root, outside any proposal folder; moving each into its folder is offered as a choice and never done unasked, and the check itself moves nothing",
+    "proposal-build.sh at the workspace root is never used by publish, which looks only in the proposal's folder; copying it there is the user's choice",
+    "guidelines.md, skills-lock.json, the installer folder and the unseeded idea/ folder are not part of any proposal's family and are left alone"
   ]
 }

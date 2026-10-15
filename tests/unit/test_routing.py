@@ -36,6 +36,7 @@ from routing import (
     ISOLATION_CONDITIONS,
     KINDS,
     NO_ROUTE,
+    STAGING_CONDITIONS,
     Case,
     Result,
     case_billing,
@@ -50,6 +51,7 @@ from routing import (
     previous_isolation,
     previous_score,
     previous_served,
+    previous_staging,
     render_report,
     report_due,
     route_from_events,
@@ -891,6 +893,22 @@ def test_a_report_without_an_isolation_line_records_none(tmp_path):
     assert previous_isolation(tmp_path / "absent.md") is None
 
 
+def test_report_records_its_staging_conditions(tmp_path):
+    """What the selector sees in the workspace is a measurement condition too:
+    a proposal staged in its folder (adopt-proposal-folders) is not the flat
+    file every earlier report measured, so the report records it, and a report
+    without the line records none."""
+    results = [result("a", "proposal-check", route="proposal-check")]
+    text = render_report(results, classify(results), "sonnet")
+    assert f"- staging: {STAGING_CONDITIONS}\n" in text
+    report = tmp_path / "skill-routing.md"
+    report.write_text(text, encoding="utf-8")
+    assert previous_staging(report) == STAGING_CONDITIONS
+    report.write_text("measurements: 120 (119 correct), 3 epochs per case\n", encoding="utf-8")
+    assert previous_staging(report) is None
+    assert previous_staging(tmp_path / "absent.md") is None
+
+
 def test_partial_failure_renders_as_a_rate():
     results = [
         result("c", "proposal-ideate", route=None),
@@ -981,6 +999,8 @@ def test_render_rebuilds_the_served_lines_from_the_raw_log(fields, tmp_path, mon
         assert f"- served: `{SERVED}` (1)\n- host CLI: 2.1.296 (1)\n" in text
     else:
         assert "- served: not recorded\n- host CLI: not recorded\n" in text
+    # a log written before the staging was recorded claims none
+    assert "- staging:" not in text
     assert "report rebuilt from" in capsys.readouterr().out
 
 
@@ -1069,6 +1089,7 @@ def test_the_raw_results_record_the_isolation_conditions(offline_rig, tmp_path):
     offline_rig(ROUTED)
     routing.main(["--case", "review-canonical", "--epochs", "1", "--no-report"])
     assert raw_payload(tmp_path)["isolation"] == ISOLATION_CONDITIONS
+    assert raw_payload(tmp_path)["staging"] == STAGING_CONDITIONS
 
 
 def test_the_raw_results_record_the_login_and_its_directory(offline_rig, tmp_path):
@@ -1180,7 +1201,8 @@ def test_a_billing_signal_voids_the_sweep_and_starts_no_further_case(offline_rig
     assert classify([Result(**raw) for raw in results]).totals == (0, 0)
 
 
-SAME_ISOLATION = f"- isolation: {ISOLATION_CONDITIONS}\n"
+SAME_STAGING = f"- staging: {STAGING_CONDITIONS}\n"
+SAME_ISOLATION = f"- isolation: {ISOLATION_CONDITIONS}\n" + SAME_STAGING
 SAME_SERVED = f"- served: `{SERVED}` (120)\n"
 
 
@@ -1204,6 +1226,16 @@ def assert_not_comparable(text: str) -> None:
 ], ids=["no-isolation-line", "other-isolation"])
 def test_other_isolation_conditions_are_not_comparable_without_the_flag(
         offline_rig, outgoing):
+    assert_not_comparable(compared(offline_rig, outgoing))
+
+
+@pytest.mark.parametrize("staging", ["", "- staging: proposals staged as flat files\n"],
+                         ids=["no-staging-line", "other-staging"])
+def test_other_staging_conditions_are_not_comparable_without_the_flag(offline_rig, staging):
+    """The first routing run after the folder layout replaces a report whose
+    proposals were staged flat: no operator has to remember the flag."""
+    outgoing = (EARLIER_REPORT + f"- isolation: {ISOLATION_CONDITIONS}\n" + staging
+                + SAME_SERVED)
     assert_not_comparable(compared(offline_rig, outgoing))
 
 
@@ -1321,20 +1353,58 @@ def test_every_case_in_the_shipped_dataset_can_be_staged():
         files_named(case.utterance)
 
 
-def test_staging_installs_every_skill_and_only_the_named_file(tmp_path):
-    case = Case(id="x", utterance="Please check microservice-technical-debt.md.",
+def staged_names(ws: Path) -> list[str]:
+    """The workspace's files by relative path, the installed skills left out."""
+    return sorted(p.relative_to(ws).as_posix() for p in ws.rglob("*")
+                  if p.is_file() and ".claude" not in p.relative_to(ws).parts)
+
+
+MTD = "microservice-technical-debt"
+
+
+def test_staging_installs_every_skill_and_only_the_named_proposals_folder(tmp_path):
+    """The proposal is staged where a workspace keeps it, in a folder of its
+    own (adopt-proposal-folders, task 5.5), whichever way the sentence names it."""
+    case = Case(id="x", utterance=f"Please check {MTD}.md.",
                 expected="proposal-check", kind="canonical", lang="en")
     stage_workspace(tmp_path, case)
-    assert sorted(p.name for p in tmp_path.glob("*.md")) == ["microservice-technical-debt.md"]
+    assert staged_names(tmp_path) == [f"{MTD}/{MTD}.md"]
     installed = sorted(p.name for p in (tmp_path / ".claude" / "skills").iterdir())
     assert installed == installed_skills()
+
+
+def test_a_sentence_may_name_the_proposal_by_its_folder_path(tmp_path):
+    assert files_named(f"Please check {MTD}/{MTD}.md.") == [f"{MTD}/{MTD}.md"]
+    case = Case(id="x", utterance=f"Please check {MTD}/{MTD}.md.",
+                expected="proposal-check", kind="canonical", lang="en")
+    stage_workspace(tmp_path, case)
+    assert staged_names(tmp_path) == [f"{MTD}/{MTD}.md"]
+
+
+def test_a_source_document_is_staged_at_the_workspace_root(tmp_path):
+    case = Case(id="x", utterance="I saved it as submission-email.txt.",
+                expected="proposal-supervise", kind="canonical", lang="en")
+    stage_workspace(tmp_path, case)
+    assert staged_names(tmp_path) == ["submission-email.txt"]
+
+
+def test_every_stageable_name_resolves_to_a_fixture_file_of_that_name():
+    """A sentence names the file as the student sees it, by its name or its
+    path in the workspace; the fixture-path helper finds it wherever the
+    fixture's layout keeps it."""
+    names = routing.stageable_names()
+    assert set(names) >= {f"{MTD}.md", f"{MTD}/{MTD}.md", "submission-email.txt"}
+    for name, (fixture, rel) in names.items():
+        assert fixture in routing.WORKSPACE_FIXTURES
+        assert (routing.fixture_dir(fixture) / rel).is_file()
+        assert name in (rel, Path(rel).name)
 
 
 def test_staging_falls_back_to_one_proposal_when_nothing_is_named(tmp_path):
     case = Case(id="x", utterance="I need a PDF to email tomorrow.",
                 expected="proposal-publish", kind="oblique", lang="en")
     stage_workspace(tmp_path, case)
-    assert [p.name for p in tmp_path.glob("*.md")] == [DEFAULT_PROPOSAL]
+    assert staged_names(tmp_path) == [f"{DEFAULT_PROPOSAL.removesuffix('.md')}/{DEFAULT_PROPOSAL}"]
 
 
 # ---------- dataset ----------------------------------------------------------

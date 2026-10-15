@@ -1,1 +1,1 @@
-created as `ideation.notes.md` in the proposal location when no topic phrase ever produced one
+still `notes.md` in the idea's folder (`idea/`, `idea-2/`, …) when no topic phrase ever renamed it

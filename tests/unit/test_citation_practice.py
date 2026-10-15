@@ -5,6 +5,8 @@ from pathlib import Path
 import check
 import claude_runner
 import l1_checks
+from fixture_paths import fixture_proposal
+from helpers import write_proposal
 from l1_checks import (
     repeated_citation_runs,
     verdict_citation_repair,
@@ -155,9 +157,8 @@ def test_repair_fails_when_the_repetition_stays():
     assert "repeat the previous sentence's citation" in why
 
 
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
-F27 = (FIXTURES / "f27-citation-runs" / "dependency-update-breakage.md").read_text(encoding="utf-8")
-W08 = (FIXTURES / "w08-rich-seed" / "flaky-test-prediction.md").read_text(encoding="utf-8")
+F27 = fixture_proposal("f27-citation-runs").read_text(encoding="utf-8")
+W08 = fixture_proposal("w08-rich-seed").read_text(encoding="utf-8")
 
 
 def test_f27_carries_all_three_shapes():
@@ -228,8 +229,8 @@ def run_verdict(name, tmp_path, edit=None, new_file=None):
     claude_runner.stage(scenario, tmp_path)
     if edit is not None:
         (tmp_path / scenario["proposal"]).write_text(edit, encoding="utf-8")
-    if new_file is not None:
-        (tmp_path / "drafted.md").write_text(new_file, encoding="utf-8")
+    if new_file is not None:  # a fresh proposal, in a folder of its own
+        write_proposal(tmp_path, "drafted", new_file)
     return claude_runner.verdict(name, scenario, tmp_path, chat="")
 
 
@@ -255,7 +256,7 @@ def test_repair_scenario_fails_deletion(tmp_path):
 def test_rich_seed_scenario_judges_the_produced_draft(tmp_path):
     passed, why = run_verdict("write_rich_seed", tmp_path, new_file=repaired_f27())
     assert passed, why
-    assert "created drafted.md" in why
+    assert "created drafted/drafted.md" in why
 
 
 def test_rich_seed_scenario_fails_repetition_in_the_draft(tmp_path):

@@ -33,7 +33,7 @@ import pytest
 import search
 import snowball
 import validate_refs
-from helpers import CLEAN_DRAFT, FAKE_HOME_UNSET, REPO, fake_home, fake_home_env
+from helpers import CLEAN_DRAFT, FAKE_HOME_UNSET, REPO, fake_home, fake_home_env, write_proposal
 
 import install
 
@@ -112,9 +112,9 @@ class Case:
 
 
 def case_check(tmp_path: Path, monkeypatch) -> Case:
-    (tmp_path / f"{STEM}.md").write_text(CLEAN_DRAFT, encoding="utf-8")
+    write_proposal(tmp_path, STEM, CLEAN_DRAFT)
     monkeypatch.chdir(tmp_path)
-    return Case(check.main, [f"{STEM}.md"], 0, "out", (STEM,))
+    return Case(check.main, [f"{STEM}/{STEM}.md"], 0, "out", (STEM,))
 
 
 def case_search(_tmp_path: Path, monkeypatch) -> Case:
@@ -141,7 +141,7 @@ def case_validate_refs(tmp_path: Path, monkeypatch) -> Case:
 def case_publish(tmp_path: Path, _monkeypatch) -> Case:
     proposal = tmp_path / f"{STEM}.md"
     proposal.write_text(CLEAN_DRAFT, encoding="utf-8")
-    return Case(publish.main, [str(proposal), "--handout"], 0, "out", (f"{STEM}-handout.md",))
+    return Case(publish.main, [str(proposal), "--handout"], 0, "out", (f"{STEM}.handout.md",))
 
 
 def case_collect(tmp_path: Path, monkeypatch) -> Case:
@@ -194,8 +194,9 @@ class Run:
 
 
 def check_family(work: Path) -> Run:
-    (work / f"{STEM}.md").write_text(CLEAN_DRAFT, encoding="utf-8")
-    return Run(SCRIPTS / "proposal-check/scripts/check.py", [f"{STEM}.md"], 0, "out", STEM)
+    write_proposal(work, STEM, CLEAN_DRAFT)
+    return Run(SCRIPTS / "proposal-check/scripts/check.py", [f"{STEM}/{STEM}.md"], 0, "out",
+               STEM)
 
 
 def common_family(work: Path) -> Run:
@@ -213,7 +214,7 @@ def common_family(work: Path) -> Run:
 def publish_family(work: Path) -> Run:
     (work / f"{STEM}.md").write_text(CLEAN_DRAFT, encoding="utf-8")
     return Run(SCRIPTS / "proposal-publish/scripts/publish.py", [f"{STEM}.md", "--handout"], 0,
-               "out", f"{STEM}-handout.md")
+               "out", f"{STEM}.handout.md")
 
 
 def collect_family(work: Path) -> Run:

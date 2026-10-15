@@ -12,10 +12,10 @@ from pathlib import Path
 
 import check
 import pytest
-from helpers import FIXTURES, REPO, review_with_record, run_check
+from helpers import REPO, fixture_proposal, review_with_record, run_check, write_proposal
 
 STRUCTURE = json.loads((REPO / "shared" / "structure.json").read_text(encoding="utf-8"))
-CLEAN = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+CLEAN = fixture_proposal("f00-clean-en").read_text(encoding="utf-8")
 QUESTIONS = [
     "How accurately can neural networks classify code changes into review-relevant categories?",
     "Which code features are most predictive of issues that human reviewers identify?",
@@ -141,10 +141,10 @@ record = partial(review_with_record, REVIEW_BODY)
 
 def stage(tmp_path: Path, review: str | bytes | None, proposal: str = CLEAN,
           stem: str = "ml-code-review") -> Path:
-    """A proposal, with `review` as its review file when one is given."""
-    path = tmp_path / f"{stem}.md"
-    path.write_text(proposal, encoding="utf-8")
-    target = tmp_path / f"{stem}-review.md"
+    """A proposal in its folder, with `review` as its review file when one is
+    given."""
+    path = write_proposal(tmp_path, stem, proposal)
+    target = check.review_path(path)
     if isinstance(review, bytes):
         target.write_bytes(review)
     elif review is not None:
@@ -158,26 +158,25 @@ def currency(tmp_path: Path, review: str | bytes | None,
     return [f for f in findings if f.rule == RULE]
 
 
-def test_the_review_path_is_derived_from_the_proposal():
-    assert check.review_path(Path("drafts/topic.md")) == Path("drafts/topic-review.md")
+def test_the_review_path_is_the_role_file_in_the_proposals_folder():
+    assert check.review_path(Path("topic/topic.md")) == Path("topic/review.md")
 
 
 def test_the_review_path_follows_the_family_role_table(monkeypatch):
     """The name comes from the `review` entry of the family's role table
     (proposal-file-format: Proposal family under one handle), never from a
     second spelling, so a change to that table moves the review with it."""
-    monkeypatch.setattr(check, "COMPANION_SUFFIXES",
-                        {"-assessment": check.REVIEW, "-feedback": check.FEEDBACK})
-    assert check.review_path(Path("drafts/topic.md")) == Path("drafts/topic-assessment.md")
+    monkeypatch.setattr(check, "ROLE_NAMES", {**check.ROLE_NAMES, check.REVIEW: "assessment.md"})
+    assert check.review_path(Path("topic/topic.md")) == Path("topic/assessment.md")
 
 
 def test_a_proposal_named_outside_the_slug_shape_still_has_its_review_read(tmp_path):
-    """The review path follows the file name whatever its shape: a stem with a
-    space or capitals has a review too, so deriving the path from a family
+    """The review path follows the folder whatever the file's name: a stem with
+    a space or capitals has a review too, so deriving the path from a family
     vocabulary must not narrow it to slug-shaped names."""
     proposal = stage(tmp_path, record([*QUESTIONS, DROPPED]), stem="My Proposal")
     [found] = [f for f in check.check_findings(proposal, STRUCTURE, {}) if f.rule == RULE]
-    assert "`My Proposal-review.md`" in found.message
+    assert "`review.md`" in found.message
     assert "(RQ4 removed)" in found.message
 
 
@@ -196,13 +195,13 @@ def test_a_removed_question_is_named_by_position(tmp_path):
     assert findings[-1].rule == RULE, "the warning comes after every rule finding"
     [found] = [f for f in findings if f.rule == RULE]
     assert found.level == "warning"
-    assert "`ml-code-review-review.md`" in found.message
+    assert "`review.md`" in found.message
     assert "(RQ4 removed)" in found.message
     assert "the review may describe an earlier version of the proposal" in found.message
     assert found.message.endswith(
         "; a fresh review replaces it, so leave the review file as it is"), found.message
     assert DROPPED not in found.message
-    assert (tmp_path / "ml-code-review-review.md").read_text(encoding="utf-8") == review
+    assert check.review_path(proposal).read_text(encoding="utf-8") == review
 
 
 def test_a_reworded_question_is_named_without_quoting_either_version(tmp_path):
@@ -328,8 +327,10 @@ def test_silent_reviews(tmp_path, review):
 
 
 def test_a_directory_at_the_review_path_is_silent(tmp_path):
-    (tmp_path / "ml-code-review-review.md").mkdir()
-    assert currency(tmp_path, None) == []
+    proposal = stage(tmp_path, None)
+    check.review_path(proposal).mkdir()
+    findings = check.check_findings(proposal, STRUCTURE, {})
+    assert RULE not in {f.rule for f in findings}
 
 
 def test_a_proposal_without_ordered_questions_is_silent(tmp_path):
@@ -344,22 +345,20 @@ def test_a_proposal_without_ordered_questions_is_silent(tmp_path):
 # ---------- exit code and digest ----------------------------------------------
 
 
-def json_report(proposal: Path, capsys) -> dict:
-    check.main([str(proposal), "--json"])
-    return json.loads(capsys.readouterr().out)
+def json_report(proposal: Path) -> dict:
+    return json.loads(run_check(proposal, "--json").stdout)
 
 
 def pair(tmp_path: Path, proposal: str = CLEAN) -> tuple[Path, Path]:
-    """The same proposal twice: alone, and beside a review of a broader version."""
-    (tmp_path / "bare").mkdir()
-    (tmp_path / "stale").mkdir()
+    """The same proposal in two workspaces: alone, and beside a review of a
+    broader version."""
     return (stage(tmp_path / "bare", None, proposal),
             stage(tmp_path / "stale", record([*QUESTIONS, DROPPED]), proposal))
 
 
-def test_the_warning_changes_neither_exit_code_nor_digest(tmp_path, capsys):
+def test_the_warning_changes_neither_exit_code_nor_digest(tmp_path):
     bare, stale = pair(tmp_path)
-    plain, warned = json_report(bare, capsys), json_report(stale, capsys)
+    plain, warned = json_report(bare), json_report(stale)
     assert RULE in {f["rule"] for f in warned["findings"]}
     assert (warned["exit_code"], warned["digest"]) == (plain["exit_code"], plain["digest"])
     human_plain, human_warned = run_check(bare), run_check(stale)
@@ -369,9 +368,9 @@ def test_the_warning_changes_neither_exit_code_nor_digest(tmp_path, capsys):
     assert digest in human_warned.stdout
 
 
-def test_an_error_exit_stays_an_error_exit(tmp_path, capsys):
+def test_an_error_exit_stays_an_error_exit(tmp_path):
     bare, stale = pair(tmp_path, CLEAN.replace("## Timeline", "## Zeitplan"))
-    plain, warned = json_report(bare, capsys), json_report(stale, capsys)
+    plain, warned = json_report(bare), json_report(stale)
     assert plain["exit_code"] == warned["exit_code"] == 1
     assert run_check(stale).returncode == 1
 

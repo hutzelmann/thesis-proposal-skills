@@ -11,7 +11,8 @@ failing run would write them.
 from __future__ import annotations
 
 import pytest
-from helpers import FIXTURES, f04_numbered_questions, fixture_proposal, review_with_record
+from fixture_paths import fixture_file
+from helpers import f04_numbered_questions, fixture_proposal, review_with_record
 from l1_checks import (
     MEETING_PROMISE,
     clarify_early_items,
@@ -32,9 +33,8 @@ from l1_checks import (
 SKILLS = ("proposal-review", "proposal-write")
 
 PROPOSAL = fixture_proposal("f28-open-decisions").read_text(encoding="utf-8")
-EARLIER = (FIXTURES / "w09-revised-round"
-           / "ci-repair-agent-configurations-review.md").read_text(encoding="utf-8")
-NAME = "ci-repair-agent-configurations-review.md"
+EARLIER = fixture_file("w09-revised-round", "review").read_text(encoding="utf-8")
+NAME = "ci-repair-agent-configurations/review.md"
 
 READY = """\
 **Verdict: ready** — the proposal supports a decision to supervise; the items under
@@ -229,7 +229,7 @@ def test_converged_review_failures(review, fragment):
 # prose before four numbered ones, so it is the shape a loose record gets wrong.
 
 F04 = fixture_proposal("f04-dsr-vendor-heavy").read_text(encoding="utf-8")
-F04_NAME = "zero-trust-referenzmodell-review.md"
+F04_NAME = "zero-trust-referenzmodell/review.md"
 F28_QUESTIONS = [line[3:] for line in PROPOSAL.splitlines() if line[:3] in {"1. ", "2. ", "3. "}]
 F04_QUESTIONS = f04_numbered_questions()
 OVERARCHING = F04.split("Die übergeordnete Forschungsfrage lautet: ", 1)[1].split("\n", 1)[0]

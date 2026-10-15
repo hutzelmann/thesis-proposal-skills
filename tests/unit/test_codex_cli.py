@@ -659,7 +659,8 @@ FULL_INSTALL = {name for name, scenario in claude_runner.SCENARIOS.items()
                 if scenario.get("siblings") == claude_runner.all_but(scenario.get("skill", ""))}
 NETWORK_SCENARIOS = {"import_messy", "supervise_feedback", "supervise_literature",
                      "supervise_scope", "ideate_scoped", "ideate_scoped_adjacent",
-                     "ideate_scoped_partial", "litsearch_snowball"} | FULL_INSTALL
+                     "ideate_scoped_partial", "litsearch_snowball", "import_figures",
+                     "litsearch_keep"} | FULL_INSTALL
 
 
 def test_the_command_template():

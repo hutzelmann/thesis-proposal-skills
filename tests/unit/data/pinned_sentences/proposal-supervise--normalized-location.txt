@@ -1,0 +1,1 @@
+as `<slug>/<slug>.md` in a new proposal folder, or for a revision in its earlier one

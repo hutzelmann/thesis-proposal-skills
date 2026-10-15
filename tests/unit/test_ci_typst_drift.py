@@ -50,6 +50,19 @@ def test_script_keeps_citation_processing():
     assert "--citeproc" in SCRIPT
 
 
+def test_script_passes_every_option_the_shipped_command_does():
+    """A flag added to the base list — `--resource-path` was one — must reach the
+    CI build too, or the tier it guards is no longer the one users run."""
+    options = {token.split("=")[0] for token in COMMAND if token.startswith("-")}
+    missing = sorted(option for option in options if option not in SCRIPT)
+    assert missing == [], f"scripts/ci_typst_build.sh does not pass {missing}"
+
+
+def test_script_resolves_figures_against_the_proposal_folder():
+    """The staged proposal's own folder, as publish.py passes it."""
+    assert '--resource-path "$(dirname "$staged")"' in SCRIPT
+
+
 def test_script_keeps_the_heading_shift():
     """Without the shift the leading H1 title and H2 sections render one level
     off — a silent layout break, not a build failure."""
@@ -57,7 +70,32 @@ def test_script_keeps_the_heading_shift():
     assert "--shift-heading-level-by=-1" in SCRIPT
 
 
-def test_script_covers_the_same_fixture_corpus():
-    # both sides must exclude the non-proposal markdown files
-    assert "README.md" in SCRIPT
-    assert "guidelines.md" in SCRIPT
+def test_script_reads_the_folder_layout_alone():
+    """No flat fallback: a markdown file at a fixture's root is never built,
+    as harness/fixture_paths.py never yields one (w13 keeps a flat proposal
+    there for the check to report)."""
+    assert '"$fixture"/*.md' not in SCRIPT
+    assert '"$fixture"/proposals/*.md' not in SCRIPT
+    assert "ends_in_block" not in SCRIPT
+
+
+def test_script_walks_the_folder_layout():
+    """`<fixture>/<slug>/<slug>.md`, or under the `proposals/` location a
+    fixture configures, and a nested file only in the folder named by its stem
+    (harness/fixture_paths.py walks the same way; test_fixture_paths.py holds
+    the two lists equal)."""
+    assert '"$fixture"/*/*.md "$fixture"/proposals/*/*.md' in SCRIPT
+    assert '[ "$(basename "$(dirname "$proposal")").md" = "$(basename "$proposal")" ]' in SCRIPT
+
+
+def test_script_fails_when_it_builds_fewer_than_the_oracles():
+    """A walk that stops matching after a layout change must fail the job, not
+    pass it with nothing built."""
+    assert re.search(r'for oracle in "\$FIXTURES"/\*/expected\.json', SCRIPT)
+    guard = re.search(r'if \[ "\$built" -eq 0 \] \|\| \[ "\$built" -lt "\$oracles" \]; then'
+                      r'(.*?)\nfi', SCRIPT, re.DOTALL)
+    assert guard, "no count guard against the oracles"
+    message, *_ = guard.group(1).strip().splitlines()
+    assert "$built" in message
+    assert "$oracles" in message
+    assert "exit 1" in guard.group(1)

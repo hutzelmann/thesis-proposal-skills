@@ -20,13 +20,13 @@ Publishing is optional — a proposal markdown file is an acceptable hand-in on 
 Run the build script (stdlib-only, ≥3.11):
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/publish.py <proposal.md>            # PDF via best available engine
-python3 ${CLAUDE_SKILL_DIR}/scripts/publish.py <proposal.md> --handout  # stripped markdown export instead
+python3 ${CLAUDE_SKILL_DIR}/scripts/publish.py <location>/<slug>/<slug>.md            # PDF via best available engine
+python3 ${CLAUDE_SKILL_DIR}/scripts/publish.py <location>/<slug>/<slug>.md --handout  # stripped markdown export instead
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory: the fallback changes where the script is found, never where you work or write. The proposal lives in the workspace's proposal location — the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — and its outputs and any workspace build definition sit beside it. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
+`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the workspace root, the working directory: the fallback changes where the script is found, never where you work or write. `<location>` is the workspace's proposal location — `.`, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — and the proposal's outputs and any workspace build definition sit beside it in its folder. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
-The script resolves the best pipeline automatically: **typst** (preferred) → **LaTeX engine** → **docx** (last resort, no PDF), using the skill's `templates/` (compact layout, `RQ n:` styling, citeproc). Outputs land next to the proposal; the script also ensures the workspace `.gitignore` covers build artifacts (shared rule: whichever skill first creates an ignorable artifact adds the entry).
+The script resolves the best pipeline automatically: **typst** (preferred) → **LaTeX engine** → **docx** (last resort, no PDF), using the skill's `templates/` (compact layout, `RQ n:` styling, citeproc). Outputs land next to the proposal in its folder; the script also ensures the `.gitignore` in that folder covers build artifacts (shared rule: whichever skill first creates an ignorable artifact adds the entry). Figures linked as `img/<name>.<ext>` are found in the proposal's folder whatever directory the build runs from. On a build that succeeds, pandoc's warnings come through — a figure it could not find, for instance: relay them.
 
 The proposal source carries its title as the leading `# ` line and its subtitle as the emphasized paragraph beneath it. The build maps that frame onto the rendered title block itself — pandoc's `--shift-heading-level-by=-1` plus `subtitle-filter.lua` — and infers the language from the canonical subtitle and section wordings, so `##` sections render as numbered top-level sections and the closing references heading renders unnumbered with the bibliography beneath it.
 
@@ -36,20 +36,20 @@ Citations render in two forms, both usable in one document: `[@key]` becomes `[1
 
 ## Workspace build script
 
-A workspace can replace this pipeline with a build of its own — a faculty title page, a mandated cover sheet, a house style. The script looks for one **beside the proposal**, never in a directory above it, in either form:
+A workspace can replace this pipeline with a build of its own — a faculty title page, a mandated cover sheet, a house style. The script looks for one **in the proposal's folder**, never in a directory above it — one at the workspace root is never used, so a faculty build goes into each proposal's folder — in either form:
 
 - a file named `proposal-build` with any suffix, or none;
 - a `Makefile` or `justfile` declaring a `proposal-build` target. A recipe file without that target is ignored, so an unrelated build system in the workspace changes nothing.
 
-When one is found, publish **builds nothing** and exits 3, naming what it found. Run that definition and relay its output. It receives exactly one thing: the proposal's absolute path, in `PROPOSAL_PATH`, and — for a build file — as its first argument. The proposal's directory is the output directory.
+When one is found, publish **builds nothing** and exits 3, naming what it found. Run that definition and relay its output. It receives exactly one thing: the proposal's absolute path, in `PROPOSAL_PATH`, and — for a build file — as its first argument. The proposal's folder is the output directory.
 
 **Exit 3 is a handover, not a failure.** Nothing went wrong: do not offer a bug report for it.
 
-**Never fall back to the built-in pipeline when a workspace build fails.** Report the failure and stop. Producing the default layout for a workspace that asked for a different one is the worst outcome available — it succeeds visibly and is wrong invisibly. `--builtin` exists so the user can ask for the built-in document deliberately, for instance to tell a template problem from a content problem; it is never your recovery move. Two definitions beside one proposal are refused rather than chosen between — relay the refusal.
+**Never fall back to the built-in pipeline when a workspace build fails.** Report the failure and stop. Producing the default layout for a workspace that asked for a different one is the worst outcome available — it succeeds visibly and is wrong invisibly. `--builtin` exists so the user can ask for the built-in document deliberately, for instance to tell a template problem from a content problem; it is never your recovery move. Two definitions in one proposal's folder are refused rather than chosen between — relay the refusal.
 
 Whenever you report a built document, say which pipeline produced it. `--handout` is never delegated: it is a transform of the proposal source, not a rendered document.
 
-A minimal build script, as `proposal-build.sh` beside the proposal (the shift flag matters: the source carries its title as a leading `# ` line and its sections at `##`, so a build without it renders an empty title above off-by-one heading levels):
+A minimal build script, as `proposal-build.sh` in the proposal's folder (the shift flag matters: the source carries its title as a leading `# ` line and its sections at `##`, so a build without it renders an empty title above off-by-one heading levels):
 
 ```sh
 #!/bin/sh
@@ -77,31 +77,30 @@ Relay the script's messages rather than re-diagnosing.
 
 ## Hand-in guidance
 
-- `--handout` strips abstracts from the references block (supervisor-facing file should not be half bibliography database) — citations and entries stay intact. The handout is a deliverable meant to be kept and sent, so it is deliberately **not** gitignored.
+- `--handout` writes `<slug>.handout.md` beside the proposal and strips abstracts from the references block (supervisor-facing file should not be half bibliography database) — citations and entries stay intact. The handout is a deliverable meant to be kept and sent, so it is deliberately **not** gitignored.
 - Because it is not gitignored, the handout is the one output a user may have edited by hand. The script refuses to replace an edited one and says so; relay that refusal instead of resolving it — renaming the file or discarding the edits is the user's decision, not yours. `--force` is for when they have decided.
 - docx output uses pandoc's default styling (acceptable last resort; the compact look exists for the typst and LaTeX tiers).
 - If check hasn't run recently, offer it first — but publishing proceeds on user confirmation regardless (check is advisory).
 
 ## Workspace files
 
-Every file of a proposal goes into the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never into a host's scratch or temporary folder. A proposal's slug, its file name without the extension, names its whole family:
+Every proposal lives in a folder of its own in the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never in a host's scratch or temporary folder. The working directory is the workspace root: run every script from there, never from inside a proposal folder; never `cd` into a proposal folder, and name its files by their path from the root. A proposal's slug, its file name without the extension, names its folder. Inside the folder, the files that leave it carry the slug, and every other file is matched by its exact name:
 
-| Role | File name |
+| Role | File name in `<slug>/` |
 |---|---|
-| proposal | `<slug>.md` |
-| notes | `<slug>.notes.md` |
-| harvest record | `<slug>.harvest.md` |
-| review | `<slug>-review.md` |
-| supervisor feedback | `<slug>-feedback.md` |
-| handout | `<slug>-handout.md` |
-| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx` |
-| kept file | `<slug>.<label>.<ext>` |
-| figure | `img/<slug>-<name>.<ext>`, in an `img/` folder beside the proposal |
-| ideation notes | `ideation.notes.md`, before a topic phrase exists |
+| proposal | `<slug>.md`, leaves the folder |
+| notes | `notes.md` |
+| harvest record | `harvest.md` |
+| review | `review.md` |
+| supervisor feedback | `feedback.md` |
+| handout | `<slug>.handout.md`, leaves the folder |
+| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx`, each leaves the folder |
+| kept file | `<label>.<ext>` |
+| figure | `img/<name>.<ext>` |
 
-The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. It changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. A rename moves every family file under the old slug at once, built outputs excepted, and updates every link to a moved file in the proposal and its notes file; it never edits the text of a review or supervisor feedback. Built outputs stay as previous builds: name them and offer a rebuild. Check every target name first. At seeding, when any target name is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. When a file cannot be moved, stop, overwrite nothing, and say what moved and what did not. Say which files you renamed.
+The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. A proposal's folder is never named `bug-report` or `img`, nor with a leading dot: a new proposal's slug takes the numeric suffix when a folder of that name exists or the name is reserved, and a new proposal never goes into another proposal's folder. Before a topic phrase exists, ideation works in `idea/` (`idea-2/` and on when taken), renamed to a provisional slug once a topic phrase exists, with the numeric suffix when taken, and to the final slug at seeding; a provisional rename that fails is retried at seeding. The slug changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. Check the target folder first. At seeding, when it is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. A rename moves the folder `<old>/` to `<new>/` (on PowerShell with `Rename-Item`, which refuses an existing target); verify that `<new>/` holds the files and that no `<new>/<old>/` exists, and stop if it does; then, when the folder holds `<old>.md`, rename it to `<new>.md`. Role-named files, figures and kept files keep their names, so no link changes. When a move fails, stop, overwrite nothing, and say what moved and what did not; when the error names a file another program holds open, name it and offer to retry. Built outputs and the hand-in export under the old slug stay in the folder as previous outputs: name them and offer a rebuild. Say what you renamed.
 
-Besides proposal families, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; beside a proposal, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks: as `<slug>.<label>.<ext>` beside the proposal, never with the label `notes` or `harvest`, or in the notes file before a slug exists.
+Besides proposal folders, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; in a proposal's folder, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks, in the proposal's or the idea's folder: a kept file is `<label>.<ext>` under a free label, never `notes`, `review`, `feedback`, `harvest`, `handout`, `img` or the slug itself.
 
 ## Handing over
 
@@ -111,7 +110,7 @@ End with these lines and nothing after them, each label starting its own line, i
 
 Name the step as an action: these lines never carry a skill's name, `proposal-…` or "the … skill". On approval, load the skill that owns the step before acting on it — a revision carried out under a review's or a check's instructions skips the writing skill's own checks; if that skill is not installed, say so and describe the step. Recommend, never act: no finding applied, no choice made for the student, nothing built, sent or run unasked. When the next step is a choice only the student can make, the `Next:` line quotes the passage it concerns, says what the choice changes, offers at most three options taken from their own material, and ends with "or something else" — never a bare question, and a recommendation never replaces the options. For example: `Next: RQ2 asks whether the oracles "improve test quality", which no result could prove wrong; your methodology already measures mutation score and faults found — which result would you stand behind? Reply "mutation score", "faults found", "both", or something else.` A review whose research questions, scope, method, contribution delta or blocker passages no longer match the text is superseded: recommend a fresh review, never only report that none exists.
 
-After a build or a hand-in export, name the pipeline that produced it, then route by where the proposal stands. No open markers and a review of the current text with no blocker: it is handed in, and the step is the student's own — send it; supervisor feedback, once it arrives, becomes the next revision. Whichever route ends in sending, say to rename the document to carry the student's name first (supervisors receive many). Open markers in the document: resolving them, with sending it as a draft for discussion as the alternative. No current review: a review before sending, with sending it as it is as the alternative. A failed or refused build ends with its report, never with a handoff to another pipeline.
+After a build or a hand-in export, name the pipeline that produced it, then route by where the proposal stands. No open markers and a review of the current text with no blocker: it is handed in, and the step is the student's own — send it; supervisor feedback, once it arrives, becomes the next revision. Whichever route ends in sending, say to rename the document to carry the student's name first (supervisors receive many); a hand-in export keeps its `.handout.md` ending, as the script's hint says, since under a plain `.md` name it would read as a second proposal. Open markers in the document: resolving them, with sending it as a draft for discussion as the alternative. No current review: a review before sending, with sending it as it is as the alternative. A failed or refused build ends with its report, never with a handoff to another pipeline.
 
 ## When this run fails
 

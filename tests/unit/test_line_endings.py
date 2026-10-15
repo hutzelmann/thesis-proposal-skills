@@ -4,7 +4,8 @@ git for Windows ships `core.autocrlf=true`, so a text file a test reads with
 `read_bytes()` arrives there with CRLF, while the prompt it is compared with is
 built through `read_text()`, which folds CRLF back to LF. The first Windows CI
 run in six weeks (run 38385444225) failed all 16 golden-prompt tests that way.
-The hand-written `eol=lf` line in `.gitattributes` pins those files; this test
+The hand-written `eol=lf` lines in `.gitattributes` pin those files, and the
+shell script a test runs under sh on that lane too; this test
 replays a Windows checkout of them on any platform, with the repository's own
 attributes, so a byte-compared file without that pin fails on Linux as well.
 """
@@ -18,9 +19,11 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 
-# Every checked-out text file a test compares as bytes, with the test that does.
+# Every checked-out text file a test compares as bytes, with the test that does,
+# and every shell script a test runs: a CRLF copy fails at `set -eu` already.
 BYTE_COMPARED = {
     "tests/unit/data/l2_prompts/*.txt": "test_l2_rubrics.py, test_eval_wiring.py",
+    "scripts/ci_typst_build.sh": "test_fixture_paths.py (runs it under sh)",
 }
 CONTROL = "control.txt"  # no attribute: proves the replay converts at all
 

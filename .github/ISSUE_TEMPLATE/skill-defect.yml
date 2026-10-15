@@ -102,8 +102,8 @@ body:
     attributes:
       label: Reproduction
       description: >
-        If the report produced a `repro/` folder, paste `input.md` and `command.txt` here or
-        attach them. Synthetic content only — a reproduction that carries real proposal text
+        If the report produced a `repro/` folder, paste `input/input.md` and `command.txt` here
+        or attach them. Synthetic content only — a reproduction that carries real proposal text
         cannot be used as a test case.
       render: markdown
     validations:

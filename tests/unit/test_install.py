@@ -19,7 +19,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from helpers import FIXTURES, REPO, fake_home
+from helpers import REPO, fake_home, fixture_proposal
 
 import install
 
@@ -543,7 +543,7 @@ def test_the_shipped_skills_install_and_run_from_their_installed_location(
         assert files_under(root / name) == want, name
     done = subprocess.run(
         [sys.executable, str(root / "proposal-check/scripts/check.py"),
-         str(FIXTURES / "f15-format-broken" / "broken-format.md")],
+         str(fixture_proposal("f15-format-broken"))],
         capture_output=True, encoding="utf-8", check=False,
     )
     assert done.returncode != 0

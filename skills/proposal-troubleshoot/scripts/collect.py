@@ -39,6 +39,12 @@ SKILL_PREFIX = "proposal-"
 SKIP_DIR_NAMES = {"__pycache__", ".git"}
 SKIP_SUFFIXES = (".pyc", ".pyo")
 
+# the companions in a proposal's folder, by their exact role names: the names
+# carry nothing about the user, so they are recorded as they are, and a kept
+# file such as `peer-review.md` is never taken for one
+NOTES_FILE = "notes.md"
+COMPANION_FILES = (("review file", "review.md"), ("supervise feedback", "feedback.md"))
+
 HERE = Path(__file__).resolve().parent
 SKELETON = HERE.parent / "references" / "structure.json"
 SUPPORT = HERE.parent / "references" / "model-support.json"
@@ -444,11 +450,30 @@ def _frame_wordings(data: dict) -> set[str]:
     return out
 
 
+def handle_names(proposal: Path | None, workspace: Path) -> set[str]:
+    """The names redaction replaces with the placeholder: the proposal's stem,
+    which is its slug, and so covers its file name and the name of the folder
+    named after it; and that folder's own name where it differs, as after a
+    rename that moved the folder but not the file (`<new>/<old>.md`). A
+    proposal lying in the working directory itself has no folder of its own.
+    A name that is not valid UTF-8 also goes in the form the check prints it,
+    its undecodable bytes replaced, or its readable part would pass.
+    """
+    if proposal is None:
+        return set()
+    names = {proposal.stem}
+    folder = proposal.resolve().parent
+    if folder != workspace.resolve():
+        names.add(folder.name)
+    return names | {os.fsencode(name).decode("utf-8", "replace") for name in names}
+
+
 def redact_text(text: str, allowed: set[str], proposal_names: set[str]) -> str:
     """Strip user wording from text that was not written for disclosure. Every
     backticked span goes unless it is a canonical title, because backticks are
-    how the shipped scripts quote content back. The proposal's own file name goes
-    too: the slug is derived from the topic.
+    how the shipped scripts quote content back. The proposal's handle goes too,
+    wherever it stands, a folder's name in a path included: the slug is derived
+    from the topic.
     """
     def replace_span(match: re.Match[str]) -> str:
         inner = match.group(1)
@@ -456,10 +481,16 @@ def redact_text(text: str, allowed: set[str], proposal_names: set[str]) -> str:
 
     out = BACKTICK_RE.sub(replace_span, text)
     out = TODO_RE.sub("[TODO: " + REDACTED + "]", out)
+    return redact_handle(out, proposal_names)
+
+
+def redact_handle(text: str, proposal_names: set[str]) -> str:
+    """The proposal's handle replaced by the placeholder wherever it stands,
+    the longest name first so a name never survives inside a longer one."""
     for name in sorted(proposal_names, key=len, reverse=True):
         if name:
-            out = out.replace(name, PROPOSAL_PLACEHOLDER)
-    return out
+            text = text.replace(name, PROPOSAL_PLACEHOLDER)
+    return text
 
 
 def strip_personal_data(text: str) -> str:
@@ -578,12 +609,15 @@ def environment_lines() -> list[str]:
 # --------------------------------------------------------------------------
 
 def notes_log(proposal: Path | None) -> tuple[str, str] | None:
-    """The companion notes file's Log section — the trace the skills already
-    keep, which is why this script does not need to invent a new one.
+    """The Log section of the notes file in the proposal's folder — the trace
+    the skills already keep, which is why this script does not need to invent a
+    new one. Nothing else of the notes file is ever taken: the rest of it is
+    the idea itself, which no level promises, so a notes file without a Log
+    section gives None, as no notes file does (notes_lines says which).
     """
     if proposal is None:
         return None
-    notes = proposal.with_name(proposal.stem + ".notes.md")
+    notes = proposal.parent / NOTES_FILE
     if not notes.is_file():
         return None
     text = notes.read_text(encoding="utf-8", errors="replace")
@@ -591,13 +625,23 @@ def notes_log(proposal: Path | None) -> tuple[str, str] | None:
     headings = [(i, m) for i, m in enumerate(HEADING_RE.match(ln) for ln in lines) if m]
     start = next((i for i, m in headings if m.group(2).strip().lower() == "log"), None)
     if start is None:
-        return ("notes-log.md", text)
+        return None
     start_level = len(HEADING_RE.match(lines[start]).group(1))
     end = next(
         (i for i, m in headings if i > start and len(m.group(1)) <= start_level),
         len(lines),
     )
     return ("notes-log.md", "\n".join(lines[start:end]).rstrip() + "\n")
+
+
+def notes_lines(proposal: Path) -> list[str]:
+    """A notes file that has no Log section contributes nothing, and the
+    report says so, so a maintainer reads the missing excerpt as a fact rather
+    than a gap in the bundle."""
+    if (proposal.parent / NOTES_FILE).is_file() and notes_log(proposal) is None:
+        return [f"[measured] notes file present as {NOTES_FILE} without a Log section; "
+                "nothing of it stored"]
+    return []
 
 
 def workspace_build_lines(proposal: Path) -> list[str]:
@@ -633,30 +677,24 @@ def workspace_build_lines(proposal: Path) -> list[str]:
 
 
 def sibling_artifacts(proposal: Path | None) -> list[str]:
-    """Hash-level inventory of the companion artifacts beside the proposal —
-    the review file, the supervise feedback file, and any workspace build
-    definition. Slug-bearing names are recorded under the placeholder; content
-    never enters the report at any level, because the feedback derives from a
-    student's unpublished submission, the build definition is the user's own
-    code, and the graded levels govern the proposal only.
+    """Hash-level inventory of the companion artifacts in the proposal's
+    folder — the review file, the supervise feedback file, and any workspace
+    build definition — under their role names, which carry nothing about the
+    user. Content never enters the report at any level, because the feedback
+    derives from a student's unpublished submission, the build definition is
+    the user's own code, and the graded levels govern the proposal only.
     """
     if proposal is None:
         return []
     out: list[str] = list(workspace_build_lines(proposal))
-    review = proposal.with_name(proposal.stem + "-review.md")
-    if review.is_file():
-        h = file_hashes(review)
-        out.append(
-            f"[measured] review file present as {PROPOSAL_PLACEHOLDER}-review.md "
-            f"({h['bytes']} bytes, sha256:{h['sha256']}); content withheld at every level"
-        )
-    feedback = proposal.with_name(proposal.stem + "-feedback.md")
-    if feedback.is_file():
-        h = file_hashes(feedback)
-        out.append(
-            f"[measured] supervise feedback present as {PROPOSAL_PLACEHOLDER}-feedback.md "
-            f"({h['bytes']} bytes, sha256:{h['sha256']}); content withheld at every level"
-        )
+    for label, name in COMPANION_FILES:
+        companion = proposal.parent / name
+        if companion.is_file():
+            h = file_hashes(companion)
+            out.append(
+                f"[measured] {label} present as {name} ({h['bytes']} bytes, "
+                f"sha256:{h['sha256']}); content withheld at every level"
+            )
     return out
 
 
@@ -667,11 +705,8 @@ def sibling_artifacts(proposal: Path | None) -> list[str]:
 def build_report(level: str, proposal: Path | None,
                  script_outputs: list[tuple[str, str]], hash_count: int,
                  install: list[str]) -> str:
-    allowed = canonical_titles()
-    names = set()
-    if proposal is not None:
-        names = {proposal.name, proposal.stem}
-
+    """The report. `script_outputs` arrive redacted for the level, the same
+    text the bundle stores (plan_bundle), so the two cannot disagree."""
     sections: list[str] = [
         "# Bug report — thesis-proposal skills",
         "",
@@ -719,21 +754,22 @@ def build_report(level: str, proposal: Path | None,
     else:
         sections.extend(describe_proposal(proposal, level))
         sections.extend(sibling_artifacts(proposal))
+        sections.extend(notes_lines(proposal))
 
     sections += ["", "## Captured script output", ""]
     if not script_outputs:
         sections.append("[measured] none supplied")
     for name, body in script_outputs:
-        shown = body if level == "full" else redact_text(body, allowed, names)
         note = "" if level == "full" else " (backticked spans redacted unless canonical)"
-        sections += [f"### {name}{note}", "", "```", shown.rstrip(), "```", ""]
+        sections += [f"### {name}{note}", "", "```", body.rstrip(), "```", ""]
 
     sections += [
         "",
         "## Reproduction",
         "",
         "[self-reported] reproducible from a file and a command: <yes | no | reduction failed>",
-        "[self-reported] if yes, see `repro/input.md` and `repro/command.txt`",
+        "[self-reported] if yes, see `repro/input/input.md` and `repro/command.txt`, "
+        "run from `repro/`",
         "",
         "---",
         "",
@@ -857,20 +893,25 @@ def plan_bundle(level: str, proposal: Path | None, script_outputs: list[tuple[st
                 workspace: Path) -> Plan:
     lock = find_lock(workspace)
     lines, hash_count = hash_lines(workspace)
-    report = build_report(level, proposal, script_outputs, hash_count,
-                          install_lines(workspace, lock))
     # the copies in artifacts/ must obey the level exactly as the report does;
     # writing them verbatim would hand out at minimal what minimal withholds
     allowed = canonical_titles()
-    proposal_names = {proposal.name, proposal.stem} if proposal else set()
+    names = handle_names(proposal, workspace)
     stored_outputs = [
-        (name, body if level == "full" else redact_text(body, allowed, proposal_names))
+        (name, body if level == "full" else redact_text(body, allowed, names))
         for name, body in script_outputs
     ]
+    report = build_report(level, proposal, stored_outputs, hash_count,
+                          install_lines(workspace, lock))
+    # a Log line names the proposal as the skills write it, by its folder and
+    # file, so the excerpt loses the handle below full as the outputs do
+    notes = notes_log(proposal)
+    if notes is not None and level != "full":
+        notes = (notes[0], redact_handle(notes[1], names))
     guidelines = workspace / "guidelines.md"
     return Plan(
         level=level, report=report, hash_lines_=lines, hash_count=hash_count, lock=lock,
-        notes=notes_log(proposal), guidelines=guidelines if guidelines.is_file() else None,
+        notes=notes, guidelines=guidelines if guidelines.is_file() else None,
         stored_outputs=stored_outputs,
     )
 

@@ -13,8 +13,10 @@ for a program that requires a named title page.
 import re
 from pathlib import Path
 
+from fixture_paths import corpus_proposals, fixture_proposal
+
 REPO = Path(__file__).resolve().parents[2]
-TRIPWIRE = REPO / "tests" / "fixtures" / "f15-format-broken" / "broken-format.md"
+TRIPWIRE = fixture_proposal("f15-format-broken")
 TOP_LEVEL_AUTHOR = re.compile(r"^author:", re.MULTILINE)
 
 
@@ -25,7 +27,7 @@ def declares_author(path: Path) -> bool:
 def test_no_fixture_declares_an_author_except_the_tripwire():
     offenders = [
         md.relative_to(REPO).as_posix()
-        for md in sorted((REPO / "tests" / "fixtures").glob("*/*.md"))
+        for md in corpus_proposals()
         if md != TRIPWIRE and declares_author(md)
     ]
     assert not offenders, f"fixtures declaring a proposal author: {offenders}"

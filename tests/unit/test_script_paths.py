@@ -76,6 +76,55 @@ def test_interpreter_clause_once_in_the_fallback_paragraph(skill_md):
         "the clause belongs in the paragraph that holds the unexpanded-variable fallback")
 
 
+# the six skills that ship the check (design D13 of adopt-proposal-folders)
+CHECK_BEARING = sorted(
+    md for md in SKILL_MDS if (md.parent / "scripts" / "check.py").is_file()
+)
+# the scripts whose argument is the proposal file
+PROPOSAL_SCRIPTS = ("check", "validate_refs", "publish", "collect")
+FOLDER_PATH = "<location>/<slug>/<slug>.md"
+
+
+def test_six_skills_ship_the_check():
+    assert [md.parent.name for md in CHECK_BEARING] == [
+        "proposal-check", "proposal-import", "proposal-reverse", "proposal-supervise",
+        "proposal-troubleshoot", "proposal-write"]
+
+
+@pytest.mark.parametrize("skill_md", CHECK_BEARING, ids=lambda p: p.parent.name)
+def test_the_fallback_names_the_workspace_root_stake(skill_md):
+    """The check measures placement and orphan findings from the working
+    directory, so a skill shipping it names that stake beside its fallback:
+    the command runs from the workspace root (skill-packaging: User-side script
+    constraints; design D13, D17 of adopt-proposal-folders)."""
+    fallback = fallback_paragraph(skill_md)
+    assert "workspace root" in fallback, "the fallback does not say where the command runs"
+    assert "placement" in fallback, "the fallback does not say why the root matters"
+
+
+def fallback_paragraph(skill_md) -> str:
+    text = skill_md.read_text(encoding="utf-8")
+    return next(p for p in text.split("\n\n") if "leaves it unexpanded" in p)
+
+
+def proposal_arguments(skill_md) -> list[str]:
+    pattern = rf"scripts/(?:{'|'.join(PROPOSAL_SCRIPTS)})\.py (\S+)"
+    return re.findall(pattern, skill_md.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
+def test_proposal_arguments_name_the_folder(skill_md):
+    """Every documented command that takes the proposal names it as it lies in
+    its folder, as a path from the workspace root, and the fallback paragraph
+    says what `<location>` stands for (design D13 of adopt-proposal-folders)."""
+    arguments = proposal_arguments(skill_md)
+    wrong = [arg for arg in arguments if arg != FOLDER_PATH]
+    assert not wrong, f"proposal argument not {FOLDER_PATH}: {wrong}"
+    if arguments:
+        assert "`<location>`" in fallback_paragraph(skill_md), (
+            "the fallback does not say what `<location>` stands for")
+
+
 @pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
 def test_no_scattered_interpreter_hints(skill_md):
     """Per-command Windows hints and a version-pinned Python install command gave

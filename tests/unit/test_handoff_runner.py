@@ -5,7 +5,6 @@ answers each turn with a scripted stream and writes what the model would have.
 
 import argparse
 import json
-import shutil
 from pathlib import Path
 
 import claude_runner
@@ -28,7 +27,7 @@ from claude_runner import (
     turn_texts,
     workspace_changes,
 )
-from helpers import FIXTURES, REPO
+from helpers import REPO
 
 HANDOFF_SCENARIOS = sorted(name for name, s in SCENARIOS.items() if s.get("handoff"))
 ARGS = argparse.Namespace(scenario="check_report", model="haiku", no_skill=False,
@@ -192,24 +191,19 @@ def test_every_summary_reports_the_handoff_without_judging_it():
 # ---------- workspace changes and the scenarios ----------------------------------
 
 
-def staged(tmp_path: Path, fixture: str) -> Path:
-    for f in (FIXTURES / fixture).iterdir():
-        if f.is_file() and f.suffix in (".md", ".txt"):
-            shutil.copy(f, tmp_path / f.name)
-    return tmp_path
-
-
 def test_workspace_changes_ignore_the_harness_and_interpreter_files(tmp_path):
-    ws = staged(tmp_path, "w10-narrowed-scope")
+    scenario = SCENARIOS["handoff_superseded"]
+    claude_runner.stage(scenario, tmp_path, install_skill=False)
+    ws = tmp_path
     (ws / ".claude" / "skills" / "x" / "__pycache__").mkdir(parents=True)
     (ws / ".claude" / "skills" / "x" / "__pycache__" / "c.pyc").write_bytes(b"")
     (ws / ".devrun-events.jsonl").write_text("{}\n", encoding="utf-8")
-    scenario = SCENARIOS["handoff_superseded"]
     assert workspace_changes(scenario, ws) == ([], [])
-    (ws / "ci-repair-agent-configurations-review.md").write_text("new", encoding="utf-8")
-    (ws / "ci-repair-agent-configurations.pdf").write_bytes(b"%PDF")
-    assert workspace_changes(scenario, ws) == (["ci-repair-agent-configurations-review.md"],
-                                               ["ci-repair-agent-configurations.pdf"])
+    folder = "ci-repair-agent-configurations"
+    (ws / folder / "review.md").write_text("new", encoding="utf-8")
+    (ws / folder / f"{folder}.pdf").write_bytes(b"%PDF")
+    assert workspace_changes(scenario, ws) == ([f"{folder}/review.md"],
+                                               [f"{folder}/{folder}.pdf"])
 
 
 def test_every_handoff_scenario_installs_the_full_set():
@@ -226,7 +220,7 @@ def test_the_incidents_follow_up_is_scripted():
 
 
 def write_review(ws: Path) -> None:
-    (ws / "microservice-technical-debt-review.md").write_text(
+    (ws / "microservice-technical-debt" / "review.md").write_text(
         "**Verdict: needs revision**\n", encoding="utf-8")
 
 
@@ -243,7 +237,7 @@ def test_review_then_what_now_passes_end_to_end(monkeypatch, tmp_path):
 
 def test_a_revision_started_unasked_fails_the_scenario(monkeypatch):
     def edit(ws: Path) -> None:
-        path = ws / "microservice-technical-debt.md"
+        path = ws / SCENARIOS["handoff_review_feedback"]["proposal"]
         path.write_text(path.read_text(encoding="utf-8") + "\nEdited.\n", encoding="utf-8")
 
     fake_turns(monkeypatch, [("Review written.", write_review), (WHAT_NOW_CHAT, edit)])
@@ -270,7 +264,7 @@ REVISED_CHAT = (
 
 
 def revise(ws: Path) -> None:
-    path = ws / "ci-repair-agent-configurations.md"
+    path = ws / SCENARIOS["handoff_direct_revision"]["proposal"]
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace("still to be negotiated with the company",
                                  "confirmed in writing by the company"), encoding="utf-8")

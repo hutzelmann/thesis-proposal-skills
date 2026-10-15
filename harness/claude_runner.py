@@ -74,6 +74,8 @@ Usage:
   uv run python harness/claude_runner.py install_prompt --model sonnet
   uv run python harness/claude_runner.py install_prompt_answered --model sonnet
   uv run python harness/claude_runner.py install_prompt_versioned_python --model sonnet
+  uv run python harness/claude_runner.py ideate_from_scratch --isolated --model sonnet
+  uv run python harness/claude_runner.py publish_figures_latex --preflight-only --isolated
   uv run python harness/claude_runner.py review_fixture --isolated --max-budget-usd 2
   uv run python harness/claude_runner.py write_from_seed --isolated --judge --keep
   uv run python harness/claude_runner.py write_from_seed --rejudge /tmp/devrun-write_from_seed-x
@@ -138,9 +140,11 @@ refused it, a Copilot billing stop included —, a claude.ai account surface or,
 on Codex or Copilot, a foreign skill, an MCP call, a broken confinement or a
 leaked token reached it, or a Codex or Copilot precondition did not hold: the
 run lock, the CLI version, the feature allowlist, the sandbox tools, the
-model listing, the served model or effort, the Copilot approval stop), 4
-other runner failure (a Copilot session without a shutdown record is one,
-with a billing stop).
+model listing, the served model or effort, the Copilot approval stop), or a
+scenario's hidden or required tools did not hold (a hidden tool a login shell
+still finds, a required one missing, a build on another tier), 4 other runner
+failure (a Copilot session without a shutdown record is one, with a billing
+stop; so is a scenario that hides tools off Linux).
 
 Note: runs claude with --dangerously-skip-permissions inside the temp
 workspace so file edits and script calls work headlessly; Codex runs in its
@@ -155,6 +159,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -162,12 +167,12 @@ import tempfile
 import threading
 import traceback
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from contextlib import ExitStack, suppress
 from dataclasses import asdict, dataclass
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import anyio
 import claude_cli
@@ -183,13 +188,21 @@ from account_surfaces import (
     surface_reason,
 )
 from claude_cli import Criterion, Grade, JudgeRun, parse_events
+from fixture_paths import fixture_dir, fixture_proposal, oracle_path, staged_tree
 from host_login import LOGIN_FAILURE, LoginSource, login_remedy, refusal
 from hosts import Host, JudgeBackend, RunView
 from l1_checks import (
+    FEEDBACK_ROLE,
     HELPER_TOOLS,
-    NOTES_SUFFIX,
+    LATEX_ENGINES,
+    NOTES_ROLE,
+    PROPOSAL_ROLE,
+    REVIEW_FILE,
+    REVIEW_ROLE,
     SWAP_PAIR_TOOL,
     assistant_text,
+    built_tiers,
+    family_members_at,
     feedback_body_words,
     load_closing_note,
     renamed_proposal,
@@ -201,6 +214,7 @@ from l1_checks import (
     verdict_draft,
     verdict_family_only,
     verdict_family_renamed,
+    verdict_figures_embedded,
     verdict_handoff,
     verdict_handoff_after_revision,
     verdict_handoff_ready,
@@ -208,11 +222,14 @@ from l1_checks import (
     verdict_handoff_superseded,
     verdict_handoff_untouched,
     verdict_hollow_review,
+    verdict_ideate_from_scratch,
     verdict_ideate_scoped,
     verdict_import,
+    verdict_import_figures,
     verdict_install_prompt_asks_scope,
     verdict_install_prompt_found_python,
     verdict_install_prompt_installed,
+    verdict_kept_on_request,
     verdict_l2_grades,
     verdict_litsearch_expanded,
     verdict_no_orphans,
@@ -229,6 +246,7 @@ from l1_checks import (
     verdict_scoping_containment,
     verdict_seed,
     verdict_single_context,
+    verdict_sources_untouched,
     verdict_supervise_feedback_contract,
     verdict_supervise_ready_block,
     verdict_supervise_review_sections,
@@ -254,7 +272,6 @@ from sources import MESSY_REQUEST
 HARNESS = Path(__file__).resolve().parent
 REPO = HARNESS.parent
 SKILLS = REPO / "skills"
-FIXTURES = REPO / "tests" / "fixtures"
 CHECK = SKILLS / "proposal-check" / "scripts" / "check.py"
 REGISTRY = HARNESS / "models.toml"
 
@@ -277,8 +294,16 @@ def all_but(skill: str) -> tuple[str, ...]:
 WHAT_NOW = "What do we do now with that feedback?"
 # One request per side across the readiness controls and the swap-test pair, so
 # a verdict difference between them can only come from the fixture's text.
-READINESS_REVIEW_REQUEST = ("Please review my proposal ci-repair-agent-configurations.md — "
+# Every proposal fixture is a workspace root holding the proposal's folder
+# (adopt-proposal-folders, design D10), so a scenario's `proposal` and its
+# request name `<slug>/<slug>.md`, relative to the root the run starts in.
+F28 = "ci-repair-agent-configurations/ci-repair-agent-configurations.md"
+READINESS_REVIEW_REQUEST = (f"Please review my proposal {F28} — "
                             "is it ready for my supervisor?")
+# A professor saves a student's file wherever they like, here at the workspace
+# root: staged through `sources` as a source document, never as a proposal in
+# its folder (design D22, D24)
+SUBMITTED_AT_ROOT = {"ci-repair-agent-configurations.md": F28}
 READINESS_SUPERVISE_REQUEST = (
     "A student sent me this thesis proposal — I saved it as "
     "ci-repair-agent-configurations.md. Prepare my feedback: the draft "
@@ -286,19 +311,27 @@ READINESS_SUPERVISE_REQUEST = (
     "me — take the needs-revision path. Do not make any network "
     "lookups — no claim checks and no literature — and I cannot answer "
     "any further question.")
+# the figure fixture's proposal, which the publish scenarios build
+F16 = "sensor-anomaly-triage/sensor-anomaly-triage.md"
+# the tools a run may extract a PDF's figures with (skill-import: Figures
+# marked, not embedded); one of them must be on the run's PATH
+EXTRACTION_TOOLS = ("pdfimages", "mutool")
+# where tools are hidden, the request rules out installing them instead
+INSTALL_NOTHING = "Install nothing: use only what is on this machine."
 
 SCENARIOS = {
     "check_report": {
         "fixture": "f15-format-broken",
         "skill": "proposal-check",
-        "proposal": "broken-format.md",
-        "request": "Please check my proposal broken-format.md.",
+        "proposal": "broken-format/broken-format.md",
+        "request": "Please check my proposal broken-format/broken-format.md.",
     },
     "review_fixture": {
         "fixture": "f05-slr-interviews",
         "skill": "proposal-review",
-        "proposal": "microservice-technical-debt.md",
-        "request": "Please review my proposal microservice-technical-debt.md — "
+        "proposal": "microservice-technical-debt/microservice-technical-debt.md",
+        "request": "Please review my proposal "
+                   "microservice-technical-debt/microservice-technical-debt.md — "
                    "is it ready for my supervisor?",
     },
     # check-clean but hollow: the run passes only on the no-viable-core verdict,
@@ -306,8 +339,8 @@ SCENARIOS = {
     "review_hollow": {
         "fixture": "f22-hollow-generic",
         "skill": "proposal-review",
-        "proposal": "software-quality-ml.md",
-        "request": "Please review my proposal software-quality-ml.md — "
+        "proposal": "software-quality-ml/software-quality-ml.md",
+        "request": "Please review my proposal software-quality-ml/software-quality-ml.md — "
                    "is it ready for my supervisor?",
     },
     # readiness, both directions (testing-harness spec: readiness coverage). f28
@@ -318,13 +351,13 @@ SCENARIOS = {
     "review_ready": {
         "fixture": "f28-open-decisions",
         "skill": "proposal-review",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "request": READINESS_REVIEW_REQUEST,
     },
     "review_dependency": {
         "fixture": "f29-doubtful-dependency",
         "skill": "proposal-review",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "request": READINESS_REVIEW_REQUEST,
     },
     # the swap test's check of named choices, both directions (testing-harness
@@ -336,20 +369,20 @@ SCENARIOS = {
     "review_swap_decorative": {
         "fixture": "f31-decorative-tool",
         "skill": "proposal-review",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "request": READINESS_REVIEW_REQUEST,
     },
     "review_swap_anchored": {
         "fixture": "f32-tool-as-object",
         "skill": "proposal-review",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "request": READINESS_REVIEW_REQUEST,
     },
     "review_converge": {
         "fixture": "w09-revised-round",
         "skill": "proposal-review",
-        "proposal": "ci-repair-agent-configurations.md",
-        "request": "I revised ci-repair-agent-configurations.md after your last review — "
+        "proposal": F28,
+        "request": f"I revised {F28} after your last review — "
                    "please review it again. Is it ready for my supervisor now?",
     },
     # the review's closing record of the research questions it judged
@@ -358,16 +391,18 @@ SCENARIOS = {
     "review_record": {
         "fixture": "f28-open-decisions",
         "skill": "proposal-review",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "request": READINESS_REVIEW_REQUEST,
     },
     # supervisor side of the overblocking control: a standard-format proposal
-    # used as-is, so normalization is a no-op and the feedback's tier, points
-    # and clarify-early block are what is measured
+    # saved at the workspace root, copied into `<slug>/<slug>.md` (`proposal`)
+    # with the original left as it is, so the feedback's tier, points and
+    # clarify-early block are what is measured
     "supervise_ready": {
         "fixture": "f28-open-decisions",
         "skill": "proposal-supervise",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
+        "sources": SUBMITTED_AT_ROOT,
         "feedback": True,
         "ready": True,
         "helpers": 1,
@@ -375,11 +410,13 @@ SCENARIOS = {
     },
     # supervisor side of the swap-test pair: the decorative name reaches the
     # student as a question without the test's name; the anchored one raises
-    # nothing, so the feedback opens ready with no numbered point
+    # nothing, so the feedback opens ready with no numbered point. Saved at the
+    # root, as `supervise_ready`, whose request they share
     "supervise_swap_decorative": {
         "fixture": "f31-decorative-tool",
         "skill": "proposal-supervise",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
+        "sources": SUBMITTED_AT_ROOT,
         "feedback": True,
         "swap": "decorative",
         "helpers": 1,
@@ -388,7 +425,8 @@ SCENARIOS = {
     "supervise_swap_anchored": {
         "fixture": "f32-tool-as-object",
         "skill": "proposal-supervise",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
+        "sources": SUBMITTED_AT_ROOT,
         "feedback": True,
         "swap": "anchored",
         "helpers": 1,
@@ -397,9 +435,9 @@ SCENARIOS = {
     "write_from_seed": {
         "fixture": "w01-ideate-seed",
         "skill": "proposal-write",
-        "proposal": "data-drift-detection.md",
-        "request": "Please turn my idea notes in data-drift-detection.md into a full "
-                   "proposal draft. Keep my idea, mark anything missing as TODO. "
+        "proposal": "data-drift-detection/data-drift-detection.md",
+        "request": "Please turn my idea notes in data-drift-detection/data-drift-detection.md "
+                   "into a full proposal draft. Keep my idea, mark anything missing as TODO. "
                    "I cannot answer any questions — decide and tell me what you did.",
     },
     # no fixture: the source arrives pasted in the request and the skill
@@ -410,11 +448,12 @@ SCENARIOS = {
         "produces": True,
     },
     # the core set's third task: the Inspect request verbatim; the verdict reads
-    # the untouched proposal and the guidelines.md the skill writes beside it
+    # the untouched proposal and the guidelines.md the skill writes at the
+    # workspace root
     "customize_override": {
         "fixture": "f00-clean-en",
         "skill": "proposal-customize",
-        "proposal": "ml-code-review.md",
+        "proposal": "ml-code-review/ml-code-review.md",
         "request": "My supervisor requires a detailed work plan with milestones in the "
                    "proposal, not just a one-line timeline, and at least 8 references. "
                    "Please adjust the rules for this workspace.",
@@ -469,11 +508,12 @@ SCENARIOS = {
     "litsearch_snowball": {
         "fixture": "w03-snowball-seed",
         "skill": "proposal-lit-search",
-        "proposal": "serverless-energy-scheduling.md",
+        "proposal": "serverless-energy-scheduling/serverless-energy-scheduling.md",
         "family": "expand",
-        "request": "Please snowball from the references in serverless-energy-scheduling.md "
-                   "and merge what fits into it. I cannot answer any questions — decide and "
-                   "tell me what you did.",
+        "request": "Please snowball from the references in "
+                   "serverless-energy-scheduling/serverless-energy-scheduling.md and merge "
+                   "what fits into it. I cannot answer any questions — decide and tell me "
+                   "what you did.",
     },
     # the over-scoped export: chained packages, an uncounted catalogue, a phase
     # table and chapter outline as format bait, a wrong regulation claim and a
@@ -572,14 +612,14 @@ SCENARIOS = {
     # proposal family (see `litsearch_snowball`). w15's notes carry converged
     # state and the preamble facts; the request repeats them, declines lookups
     # and the guidelines.md note, and states a title whose slug differs from the
-    # provisional `flaky-ci-triage`
+    # provisional folder `flaky-ci-triage/`
     "ideate_seed_rename": {
         "fixture": "w15-provisional-notes",
         "skill": "proposal-ideate",
         "family": "seed",
         "old": "flaky-ci-triage",
         "request": (
-            "I'd like to continue my thesis idea from my notes in flaky-ci-triage.notes.md. "
+            "I'd like to continue my thesis idea from my notes in flaky-ci-triage/notes.md. "
             "To answer your usual questions up front: I'm in the M.Sc. Computer Science "
             "program, I hope the department's software engineering group will supervise me, "
             "it's a Master's thesis, the proposal should be in English, I have about six "
@@ -596,9 +636,10 @@ SCENARIOS = {
     "write_offtopic_reference": {
         "skill": "proposal-write",
         "fixture": "f26-offtopic-reference",
-        "proposal": "onboarding-documentation-formats.md",
+        "proposal": "onboarding-documentation-formats/onboarding-documentation-formats.md",
         "request": (
-            "Please do a writing pass over onboarding-documentation-formats.md and "
+            "Please do a writing pass over "
+            "onboarding-documentation-formats/onboarding-documentation-formats.md and "
             "resolve whatever the check reports. I cannot answer any questions — "
             "decide and tell me what you did."
         ),
@@ -609,37 +650,121 @@ SCENARIOS = {
     "write_rich_seed": {
         "skill": "proposal-write",
         "fixture": "w08-rich-seed",
-        "proposal": "flaky-test-prediction.md",
+        "proposal": "flaky-test-prediction/flaky-test-prediction.md",
         "citations": "draft",
         "request": (
-            "Please turn my idea notes in flaky-test-prediction.md into a full proposal "
-            "draft. Keep my idea, mark anything missing as TODO. I cannot answer any "
-            "questions — decide and tell me what you did."
+            "Please turn my idea notes in flaky-test-prediction/flaky-test-prediction.md "
+            "into a full proposal draft. Keep my idea, mark anything missing as TODO. I "
+            "cannot answer any questions — decide and tell me what you did."
         ),
     },
     "write_repair_citations": {
         "skill": "proposal-write",
         "fixture": "f27-citation-runs",
-        "proposal": "dependency-update-breakage.md",
+        "proposal": "dependency-update-breakage/dependency-update-breakage.md",
         "citations": "repair",
+        # the routing case `write-polish-collision` repeats this request word for
+        # word, and the routing rig stages the folder it names
         "request": (
-            "Please do a writing pass over dependency-update-breakage.md so it is ready "
+            "Please do a writing pass over "
+            "dependency-update-breakage/dependency-update-breakage.md so it is ready "
             "for my supervisor. I cannot answer any questions — decide and tell me what "
             "you did."
         ),
     },
     # proposal family (see `litsearch_snowball`): a requested rename of w14's
-    # whole family
+    # proposal folder
     "write_rename_family": {
         "fixture": "w14-family-rename",
         "skill": "proposal-write",
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "family": "rename",
         "old": "ci-repair-agent-configurations",
         "request": "My supervisor and I settled the title: \"Context and Architecture Effects "
-                   "on CI Repair Agents\". Please put it into "
-                   "ci-repair-agent-configurations.md and rename my files to match it. I "
-                   "cannot answer any questions — decide and tell me what you did.",
+                   f"on CI Repair Agents\". Please put it into {F28} and rename my files to "
+                   "match it. I cannot answer any questions — decide and tell me what you did.",
+    },
+    # The folder layout's own flows (testing-harness spec: Folder-layout dev
+    # scenarios; adopt-proposal-folders, design D12). Ideation from scratch:
+    # nothing staged, three turns on one session — the preamble without a
+    # topic, a topic phrase, then a working title whose slug differs from the
+    # provisional one — judged on the recorded moves and the end state
+    "ideate_from_scratch": {
+        "skill": "proposal-ideate",
+        "family": "scratch",
+        "request": (
+            "I need to find a thesis topic. To answer your usual questions up front: I'm in "
+            "the M.Sc. Computer Science program, I don't have a supervisor or research group "
+            "yet, it's a Master's thesis, the proposal should be in English, I have about six "
+            "months (April 2027 to September 2027), and no, please don't look anything up "
+            "online in this session. I have no topic yet. Don't write anything into a "
+            "guidelines.md."
+        ),
+        "followups": (
+            "My rough topic: how teams decide which flaky tests to quarantine in continuous "
+            "integration, and what quarantining costs them later.",
+            "My working title is settled: \"Quarantine Decisions for Flaky Tests in Continuous "
+            "Integration\". That's enough for today — I cannot reply again, so please create "
+            "the seed proposal file now.",
+        ),
+    },
+    # f16's source PDF alone at the workspace root, under a name with no slug
+    # (design D24); untested where no extraction tool is on the run's PATH
+    "import_figures": {
+        "fixture": "f16-figures-import",
+        "skill": "proposal-import",
+        "sources": {"submission.pdf": "submission.pdf"},
+        "extract": True,
+        "requires": (EXTRACTION_TOOLS,),
+        "request": "My thesis proposal is saved as submission.pdf — please import it into the "
+                   "standard proposal format. It has two figures: extract them into the "
+                   "proposal's folder and link them, rather than leaving placeholders. I cannot "
+                   "answer any questions — decide and tell me what you did.",
+    },
+    # publish with figures, one scenario per tier (design D12, Q7): typst with
+    # nothing hidden; LaTeX with typst hidden; the word processor with typst and
+    # every LaTeX engine hidden, each request saying to install nothing. A run
+    # whose login shell still finds a hidden tool is untested before it starts
+    "publish_figures_typst": {
+        "fixture": "f16-figures-import",
+        "skill": "proposal-publish",
+        "proposal": F16,
+        "tier": "typst",
+        "requires": (("pandoc",), ("typst",)),
+        "request": f"Please build a PDF of my proposal {F16}.",
+    },
+    "publish_figures_latex": {
+        "fixture": "f16-figures-import",
+        "skill": "proposal-publish",
+        "proposal": F16,
+        "tier": "latex",
+        "hide": ("typst",),
+        "requires": (("pandoc",), LATEX_ENGINES),
+        "request": f"Please build a PDF of my proposal {F16}. {INSTALL_NOTHING}",
+    },
+    "publish_figures_docx": {
+        "fixture": "f16-figures-import",
+        "skill": "proposal-publish",
+        "proposal": F16,
+        "tier": "docx",
+        "hide": ("typst", *LATEX_ENGINES),
+        "requires": (("pandoc",),),
+        "request": f"Please build my proposal {F16} into a document I can send to my "
+                   f"supervisor. {INSTALL_NOTHING}",
+    },
+    # a kept file on request: the snowball of `litsearch_snowball`, asked to
+    # keep its candidate list; judged by verdict_kept_on_request, family-only
+    # with keeping licensed
+    "litsearch_keep": {
+        "fixture": "w03-snowball-seed",
+        "skill": "proposal-lit-search",
+        "proposal": "serverless-energy-scheduling/serverless-energy-scheduling.md",
+        "family": "keep",
+        "request": "Please snowball from the references in "
+                   "serverless-energy-scheduling/serverless-energy-scheduling.md and merge "
+                   "what fits into it. Please also keep the candidate list you worked from as "
+                   "a file in my proposal's folder, so I can look through it later. I cannot "
+                   "answer any questions — decide and tell me what you did.",
     },
     # the install prompt, unanswered and with the scope answer given up front
     # (run_install_probe; nothing is staged)
@@ -677,9 +802,10 @@ SCENARIOS = {
         "fixture": "f05-slr-interviews",
         "skill": "proposal-review",
         "siblings": all_but("proposal-review"),
-        "proposal": "microservice-technical-debt.md",
+        "proposal": "microservice-technical-debt/microservice-technical-debt.md",
         "handoff": "review_feedback",
-        "request": "Please review my proposal microservice-technical-debt.md — is it ready "
+        "request": "Please review my proposal "
+                   "microservice-technical-debt/microservice-technical-debt.md — is it ready "
                    "for my supervisor?",
         "followups": (WHAT_NOW,),
         "semantic": [
@@ -700,7 +826,7 @@ SCENARIOS = {
         "fixture": "w10-narrowed-scope",
         "skill": "proposal-check",
         "siblings": all_but("proposal-check"),
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "handoff": "superseded",
         "request": "I narrowed the scope of my proposal after the review. Where does it stand "
                    "now, and what should I do next?",
@@ -713,10 +839,9 @@ SCENARIOS = {
         "fixture": "w11-blocker-revision",
         "skill": "proposal-write",
         "siblings": all_but("proposal-write"),
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "handoff": "after_revision",
-        "request": "Where does my proposal ci-repair-agent-configurations.md stand, and what "
-                   "should I do next?",
+        "request": f"Where does my proposal {F28} stand, and what should I do next?",
         "followups": (
             "Yes, go ahead with the revision. My decision: RQ3 is answered from my own "
             "audit of a random sample of accepted patches against the published "
@@ -731,11 +856,11 @@ SCENARIOS = {
         "fixture": "w11-blocker-revision",
         "skill": "proposal-write",
         "siblings": all_but("proposal-write"),
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "handoff": "direct_revision",
-        "request": "Please apply the blocker from the review to "
-                   "ci-repair-agent-configurations.md. My decision: RQ3 is answered from my "
-                   "own audit of a random sample of accepted patches against the published "
+        "request": f"Please apply the blocker from the review to {F28}. My decision: RQ3 is "
+                   "answered from my own audit of a random sample of accepted patches against "
+                   "the published "
                    "patch-quality rubric of Chen26Repair, which is already in my references, "
                    "with the sample size fixed after a pilot of twenty patches; ratings by the "
                    "partner's engineers become optional.",
@@ -752,7 +877,7 @@ SCENARIOS = {
         "fixture": "w12-ready-current",
         "skill": "proposal-check",
         "siblings": all_but("proposal-check"),
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "handoff": "ready",
         "request": "My review says the proposal is ready. What should I do next?",
     },
@@ -760,18 +885,20 @@ SCENARIOS = {
         "fixture": "f30-open-markers",
         "skill": "proposal-check",
         "siblings": all_but("proposal-check"),
-        "proposal": "ci-repair-agent-configurations.md",
+        "proposal": F28,
         "handoff": "todos",
-        "request": "Where does my proposal ci-repair-agent-configurations.md stand, and what "
-                   "should I do next?",
+        "request": f"Where does my proposal {F28} stand, and what should I do next?",
     },
 }
 
 # Scenarios whose verdict is scoping containment rather than the default.
 CONTAINMENT_SCENARIOS = ("ideate_scoped_adjacent", "ideate_scoped_partial")
+# Scenarios with hidden or required tools, checked before any model call
+PRECONDITIONED = tuple(name for name, scenario in SCENARIOS.items()
+                       if scenario.get("hide") or scenario.get("requires"))
 # Scenarios judged on the produced draft; `citations` adds the citation verdicts.
 DRAFT_SCENARIOS = ("write_from_seed", "write_rich_seed", "write_repair_citations")
-# Scenarios judged from `<slug>-review.md`: same inputs, different bar.
+# Scenarios judged from `<slug>/review.md`: same inputs, different bar.
 REVIEW_VERDICTS = {
     "review_fixture": verdict_review,
     "review_hollow": verdict_hollow_review,
@@ -913,6 +1040,129 @@ def probe_verdict(scenario: dict, home: Path, ws: Path, chat: str) -> tuple[bool
     return verdict
 
 
+# ---------- preconditions: hidden and required tools (adopt-proposal-folders, D12) ---
+#
+# A scenario's `hide` names tools the run's PATH leaves out (Linux only), and
+# its `requires` names groups of tools of which one must be on that PATH. Both
+# are checked after staging and before any model call; a run that could not
+# measure what it is meant to is untested. The host starts its shell from the
+# user's profile, and a login shell reads the system profile, which may put
+# `/usr/bin` back, so a login shell under the run's environment is asked
+# whether it still finds a hidden tool.
+
+# what the check's shell prints for a hidden tool it found; nothing else it
+# prints is read, so profile output cannot be taken for a finding
+HIDDEN_MARK = "devrun-hidden:"
+LOGIN_SHELL_TIMEOUT = 30
+
+
+def hidden_tool_path(root: Path, search_path: str, hidden: Iterable[str]) -> str:
+    """A PATH of one folder: links to every executable on `search_path` (the
+    first of each name wins, as a shell would pick it) except the `hidden`
+    names. Built like `versioned_python_path`, which stays the install probe's
+    own."""
+    hidden = set(hidden)
+    root.mkdir(parents=True, exist_ok=True)
+    for folder in search_path.split(os.pathsep):
+        directory = Path(folder) if folder else None
+        if directory is None or not directory.is_dir():
+            continue
+        for entry in sorted(directory.iterdir()):
+            link = root / entry.name
+            if entry.name in hidden or link.is_symlink() or link.exists():
+                continue
+            if entry.is_file() and os.access(entry, os.X_OK):
+                link.symlink_to(entry.resolve())
+    return str(root)
+
+
+def login_shell_finds(env: Mapping[str, str], tools: Iterable[str],
+                      timeout: float = LOGIN_SHELL_TIMEOUT) -> list[str]:
+    """The `tools` a shell under `env` still finds: the user's shell (`SHELL`)
+    as a login shell, interactive so it also reads the rc files a host's shell
+    snapshot reads. One that does not finish, or cannot start, leaves the run
+    untested."""
+    tools = list(tools)
+    shell = env.get("SHELL") or "/bin/sh"
+    script = "\n".join(f"command -v {shlex.quote(tool)} >/dev/null 2>&1 && "
+                       f"echo {shlex.quote(HIDDEN_MARK + tool)}" for tool in tools)
+    try:
+        done = subprocess.run([shell, "-l", "-i", "-c", script], env=dict(env),
+                              capture_output=True, encoding="utf-8", errors="replace",
+                              stdin=subprocess.DEVNULL, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RunnerFailure(f"untested: the hidden-tool check's login shell ({shell}) did not "
+                            f"finish within {timeout:g} s", untested=True) from None
+    except OSError as exc:
+        raise RunnerFailure(f"untested: the hidden-tool check could not start a login shell "
+                            f"({shell}): {exc}", untested=True) from None
+    found = {line.strip().removeprefix(HIDDEN_MARK) for line in done.stdout.splitlines()
+             if line.strip().startswith(HIDDEN_MARK)}
+    return [tool for tool in tools if tool in found]
+
+
+def precondition_problems(scenario: dict, env: Mapping[str, str]) -> list[str]:
+    """Why a run under `env` cannot measure what the scenario is meant to: a
+    required tool missing from its PATH, or a hidden tool a login shell under
+    it still finds. Nothing when every precondition holds."""
+    path = env.get("PATH") or os.defpath
+    problems = [f"no {' or '.join(group)} on the run's search path"
+                for group in scenario.get("requires", ())
+                if not any(shutil.which(tool, path=path) for tool in group)]
+    hidden = scenario.get("hide", ())
+    found = login_shell_finds(env, hidden) if hidden else []
+    if found:
+        problems.append(f"a login shell under the run's environment still finds "
+                        f"{', '.join(found)}, which the scenario hides")
+    return problems
+
+
+def search_path_for(name: str, scenario: dict, stack: ExitStack) -> str | None:
+    """The run's PATH: None (the inherited one) unless the scenario hides
+    tools, in a temporary folder outside the workspace that `stack` removes.
+    Hiding runs on Linux only; anywhere else it is a runner failure."""
+    hidden = scenario.get("hide")
+    if not hidden:
+        return None
+    if not sys.platform.startswith("linux"):
+        raise RunnerFailure(f"{name} hides {', '.join(hidden)} from the run's search path, "
+                            "which the dev runner does on Linux only")
+    root = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="devrun-path-")))
+    return hidden_tool_path(root / "bin", os.environ.get("PATH", ""), hidden)
+
+
+def check_env(host: str, config: Path | None, path: str | None) -> dict[str, str]:
+    """The environment the preconditions are checked under: the Claude run's
+    own (`model_env`), or the inherited one for another host, with the run's
+    PATH."""
+    env = model_env(os.environ, config) if host == "claude" else dict(os.environ)
+    if path is not None:
+        env["PATH"] = path
+    return env
+
+
+def checked_search_path(args: argparse.Namespace, scenario: dict, stack: ExitStack,
+                        config: Path | None) -> str | None:
+    """The run's PATH once every precondition holds; a run that cannot
+    measure what it is meant to raises untested before any model call."""
+    path = search_path_for(args.scenario, scenario, stack)
+    problems = precondition_problems(scenario, check_env(host_for(args).name, config, path))
+    if problems:
+        raise RunnerFailure("untested: " + "; ".join(problems), untested=True)
+    return path
+
+
+def with_search_path(args: argparse.Namespace, path: str | None) -> argparse.Namespace:
+    """The run's arguments carrying its PATH, which the Claude host passes to
+    every turn; the caller's own are left as they were."""
+    return argparse.Namespace(**{**vars(args), "search_path": path}) if path else args
+
+
+def search_path_kwargs(args: argparse.Namespace) -> dict:
+    path = getattr(args, "search_path", None)
+    return {"path": path} if path else {}
+
+
 def run_install_probe(args: argparse.Namespace, scenario: dict) -> int:
     """Two temp homes' worth of isolation, always: the host's config is the
     routing rig's isolated one (logged in without the real home: the harness
@@ -975,20 +1225,28 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
+def staging_plan(scenario: dict) -> dict[str, Path]:
+    """What `stage()` copies, by workspace-relative path: the scenario's
+    `sources` alone where it maps workspace names to fixture-relative files
+    (design D24), else the fixture's tree, which is the workspace root, its
+    oracle and import source left behind; nothing without a fixture."""
+    if not scenario.get("fixture"):
+        return {}
+    if scenario.get("sources"):
+        fixture = fixture_dir(scenario["fixture"])
+        return {name: fixture / rel for name, rel in scenario["sources"].items()}
+    return staged_tree(scenario["fixture"])
+
+
 def stage(scenario: dict, ws: Path, install_skill: bool = True,
           skill_dir: tuple[str, str] | None = None) -> None:
     """Copy the scenario's fixture into the workspace and install the skill
     under test and its siblings into the host's skill directory —
     `.claude/skills` for Claude, `.agents/skills` for Codex — without `evals/`."""
     skills = ws.joinpath(*(skill_dir or HOSTS["claude"].skill_dir))
-    if scenario.get("fixture"):
-        fixture = FIXTURES / scenario["fixture"]
-        for f in fixture.iterdir():
-            # .txt: raw-submission fixtures (s prefix) ship the source as text
-            if f.is_file() and f.suffix in (".md", ".txt"):
-                shutil.copy(f, ws / f.name)
-            if f.is_dir() and f.name == "img":
-                shutil.copytree(f, ws / "img")
+    for rel, source in staging_plan(scenario).items():
+        (ws / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, ws / rel)
     if not install_skill:  # baseline arm: same workspace, no skill discovered
         return
     # evals/ stays out: a model that can read its own eval assertions is not
@@ -1246,7 +1504,8 @@ def follow_up(args: argparse.Namespace, scenario: dict, ws: Path, events: list[d
                                 "follow-up turn needs", events=events)
         try:
             turn = run_claude(ws, text, args.model, args.timeout,
-                              budget=args.max_budget_usd, config=config, resume=session)
+                              budget=args.max_budget_usd, config=config, resume=session,
+                              **search_path_kwargs(args))
         except RunnerFailure as failure:
             failure.events = events + failure.events
             raise
@@ -1407,8 +1666,11 @@ def aggregate_status(statuses: list[int]) -> int:
 
 
 def run_check(ws: Path, proposal: str) -> str:
+    """The check's report over `proposal`, a path relative to the workspace,
+    run from the workspace root as a user's agent runs it (testing-harness:
+    Check run from the staged workspace's root)."""
     result = subprocess.run(
-        [sys.executable, str(CHECK), str(ws / proposal)], capture_output=True, encoding="utf-8"
+        [sys.executable, str(CHECK), proposal], capture_output=True, encoding="utf-8", cwd=ws
     )
     return result.stdout
 
@@ -1418,7 +1680,16 @@ def read(path: Path) -> str | None:
 
 
 def workspace_markdown(ws: Path) -> dict[str, str]:
-    return {f.name: f.read_text(encoding="utf-8") for f in sorted(ws.glob("*.md"))}
+    """Every markdown file the run can leave, by workspace-relative path: the
+    listing walks the proposal folders (testing-harness: Check run from the
+    staged workspace's root) and leaves out what `present_files` does."""
+    return {rel: (ws / rel).read_text(encoding="utf-8") for rel in present_files(ws)
+            if rel.endswith(".md")}
+
+
+def review_of(proposal: str) -> str:
+    """The review beside a proposal, `<slug>/review.md`, as a workspace path."""
+    return str(PurePosixPath(proposal).with_name(REVIEW_FILE))
 
 
 S01_FORBIDDEN = ("Musterfrau", "00000000", "erika.musterfrau@example.org", "Musterstraße")
@@ -1430,30 +1701,37 @@ INSTALLED_SKILLS = tuple(sorted(
 ))
 
 
+def text_reader(ws: Path):
+    """A workspace path's text, as the verdicts ask for it; None when the file
+    is not there."""
+    return lambda rel: read(ws / rel)
+
+
+def role_files(ws: Path, *roles: str) -> dict[str, str]:
+    """The files of a proposal folder that take one of `roles`, by
+    workspace-relative path, at any depth the listing walks: classified by
+    check.py's own listing classifier, so a role-named file outside a proposal
+    folder is no companion (testing-harness: Supervise feedback coverage)."""
+    members = family_members_at(present_files(ws), text_reader(ws))
+    return {rel: (ws / rel).read_text(encoding="utf-8")
+            for rel, member in members.items() if member and member[1] in roles}
+
+
+def first_role_text(ws: Path, role: str) -> str | None:
+    found = role_files(ws, role)
+    return found[min(found)] if found else None
+
+
 def feedback_files(ws: Path) -> dict[str, str]:
-    """The feedback draft(s) plus the notes file the literature verdict reads."""
-    return {
-        f.name: f.read_text(encoding="utf-8")
-        for pattern in ("*-feedback.md", "*.notes.md")
-        for f in sorted(ws.glob(pattern)) if f.is_file()
-    }
-
-
-# what a supervise run writes beside the normalized proposal
-_SUPERVISE_SIDECARS = ("-feedback.md", "-review.md", NOTES_SUFFIX)
+    """The feedback draft(s) plus the notes file the literature verdict reads,
+    by workspace-relative path: the role-named files of a proposal folder."""
+    return role_files(ws, FEEDBACK_ROLE, NOTES_ROLE)
 
 
 def normalized_proposal(ws: Path) -> str | None:
-    """The normalized `<slug>.md` a supervise run wrote — the locator verdict
-    compares the feedback's standards against it — or None."""
-    found = [f for f in sorted(ws.glob("*.md"))
-             if f.is_file() and not f.name.endswith(_SUPERVISE_SIDECARS)]
-    return found[0].read_text(encoding="utf-8") if found else None
-
-
-def first_text(ws: Path, pattern: str) -> str | None:
-    found = sorted(f for f in ws.glob(pattern) if f.is_file())
-    return found[0].read_text(encoding="utf-8") if found else None
+    """The normalized `<slug>/<slug>.md` a supervise run wrote — the locator
+    verdict compares the feedback's standards against it — or None."""
+    return first_role_text(ws, PROPOSAL_ROLE)
 
 
 def supervise_verdict(scenario: dict, ws: Path,
@@ -1466,23 +1744,23 @@ def supervise_verdict(scenario: dict, ws: Path,
         feedback_files(ws), scenario.get("forbidden", S01_FORBIDDEN), INSTALLED_SKILLS,
         load_closing_note(SKILLS), S01_LANGUAGE, proposal=normalized_proposal(ws))
     results = [(passed, why)]
-    review = first_text(ws, "*-review.md")
+    review, feedback = first_role_text(ws, REVIEW_ROLE), first_role_text(ws, FEEDBACK_ROLE)
+    if scenario.get("sources"):  # the saved submission is a source, never moved (D22)
+        results.append(verdict_sources_untouched(workspace_changes(scenario, ws)[0],
+                                                 scenario["sources"]))
     if scenario.get("helpers"):
         results += [verdict_supervise_verifier(tool_calls(events or [])),
                     verdict_supervise_verification_declared(review)]
     if scenario.get("scope"):
-        results += [verdict_supervise_scope_options(first_text(ws, "*-feedback.md"),
-                                                    load_closing_note(SKILLS)),
+        results += [verdict_supervise_scope_options(feedback, load_closing_note(SKILLS)),
                     verdict_supervise_review_sections(review)]
     if scenario.get("ready"):
-        results.append(verdict_supervise_ready_block(first_text(ws, "*-feedback.md"),
-                                                     load_closing_note(SKILLS)))
+        results.append(verdict_supervise_ready_block(feedback, load_closing_note(SKILLS)))
     if scenario.get("swap") == "decorative":
-        results.append(verdict_supervise_swap_question(first_text(ws, "*-feedback.md"),
-                                                       SWAP_PAIR_TOOL, load_closing_note(SKILLS)))
+        results.append(verdict_supervise_swap_question(feedback, SWAP_PAIR_TOOL,
+                                                       load_closing_note(SKILLS)))
     elif scenario.get("swap") == "anchored":
-        results.append(verdict_supervise_swap_quiet(first_text(ws, "*-feedback.md"),
-                                                    SWAP_PAIR_TOOL))
+        results.append(verdict_supervise_swap_quiet(feedback, SWAP_PAIR_TOOL))
     failed = [reason for ok, reason in results if not ok]
     if failed:
         return False, "; ".join(failed)
@@ -1493,7 +1771,7 @@ def supervise_extra(scenario: dict, ws: Path) -> dict:
     """What a supervise run reports beside its verdict without being judged on it."""
     if not scenario.get("feedback"):
         return {}
-    feedback = first_text(ws, "*-feedback.md")
+    feedback = first_role_text(ws, FEEDBACK_ROLE)
     return {"feedback_words": feedback_body_words(feedback, load_closing_note(SKILLS))
             if feedback else None}
 
@@ -1567,17 +1845,26 @@ def import_verdict(ws: Path) -> tuple[bool, str]:
     return verdict_import(read(ws / produced), run_check(ws, produced), produced)
 
 
+def figures_verdict(scenario: dict, ws: Path, events: list[dict]) -> tuple[bool, str]:
+    """A publish-with-figures scenario: the figures embedded on the scenario's
+    tier, with that tier's evidence. A build line naming another tier means a
+    hidden tool was reached another way, so the run measured nothing: untested,
+    never the skill's failure (design D12)."""
+    tier, seen = scenario["tier"], tool_result_text(events)
+    others = [other for other in built_tiers(seen) if other != tier]
+    if others and tier not in built_tiers(seen):
+        raise RunnerFailure(f"untested: the build ran on the {', '.join(others)} tier, not the "
+                            f"{tier} tier the scenario measures: a tool it hides was reached "
+                            "another way", untested=True, events=events)
+    after = {rel: (ws / rel).read_bytes() for rel in present_files(ws)}
+    return verdict_figures_embedded(tier, scenario["proposal"], staged_files(scenario), after,
+                                    seen)
+
+
 def staged_files(scenario: dict) -> dict[str, bytes]:
     """What `stage()` copied from the scenario's fixture, by workspace-relative
     path; nothing for a scenario without one."""
-    if not scenario.get("fixture"):
-        return {}
-    fixture = FIXTURES / scenario["fixture"]
-    staged = {f.name: f.read_bytes() for f in fixture.iterdir()
-              if f.is_file() and f.suffix in (".md", ".txt")}
-    staged.update({f.relative_to(fixture).as_posix(): f.read_bytes()
-                   for f in (fixture / "img").rglob("*") if f.is_file()})
-    return staged
+    return {rel: source.read_bytes() for rel, source in staging_plan(scenario).items()}
 
 
 def present_files(ws: Path) -> list[str]:
@@ -1617,9 +1904,10 @@ def family_only(scenario: dict, ws: Path, seed: str = "") -> tuple[bool, str]:
 
 
 def run_check_json(ws: Path, proposal: str) -> list[dict]:
+    """The check's findings over `proposal`, run as `run_check` runs it."""
     result = subprocess.run(
-        [sys.executable, str(CHECK), str(ws / proposal), "--json"],
-        capture_output=True, encoding="utf-8",
+        [sys.executable, str(CHECK), proposal, "--json"],
+        capture_output=True, encoding="utf-8", cwd=ws,
     )
     try:
         return json.loads(result.stdout)["findings"]
@@ -1627,10 +1915,38 @@ def run_check_json(ws: Path, proposal: str) -> list[dict]:
         return [{"rule": "check-failed", "message": result.stderr[-300:]}]
 
 
-def family_verdict(scenario: dict, ws: Path) -> tuple[bool, str]:
-    """The three proposal-family scenarios: the scenario's own verdict, a
-    rename's, and family-only, all of which must pass."""
+def calls_by_turn(events: list[dict]) -> list[tuple[int, str, dict]]:
+    """Every tool call of the run as (turn, tool, input), in order: the turn
+    is counted from zero and ends with its `result` event, so a call can be
+    placed in the turn that made it."""
+    calls, turn = [], 0
+    for event in events:
+        if event.get("type") == "result":
+            turn += 1
+        else:
+            calls += [(turn, name, args) for name, args in tool_calls([event])]
+    return calls
+
+
+def kept_verdict(scenario: dict, ws: Path) -> tuple[bool, str]:
+    """litsearch_keep: the candidate list kept in the proposal's folder, and
+    family-only with keeping licensed."""
+    staged = staged_files(scenario)
+    _, added = workspace_changes(scenario, ws)
+    return verdict_kept_on_request(added, present_files(ws), sorted(staged),
+                                   scenario["proposal"].partition("/")[0], read=text_reader(ws))
+
+
+def family_verdict(scenario: dict, ws: Path, events: list[dict] | None = None) -> tuple[bool, str]:
+    """The proposal-family scenarios: the scenario's own verdict, a rename's,
+    and family-only, all of which must pass; ideation from scratch and the
+    kept candidate list, whose verdicts carry family-only themselves."""
     kind = scenario["family"]
+    if kind == "scratch":
+        return verdict_ideate_from_scratch(calls_by_turn(events or []), present_files(ws),
+                                           text_reader(ws))
+    if kind == "keep":
+        return kept_verdict(scenario, ws)
     after = {rel: (ws / rel).read_bytes() for rel in present_files(ws)}
     results = []
     if kind == "expand":
@@ -1691,7 +2007,7 @@ def handoff_verdict(scenario: dict, ws: Path, chat: str,
     """The scenario's handoff verdict over the final turn and the workspace."""
     changed, new = workspace_changes(scenario, ws)
     proposal = scenario["proposal"]
-    review = proposal.replace(".md", "-review.md")
+    review = review_of(proposal)
     kind = scenario["handoff"]
     if kind == "review_feedback":
         return verdict_handoff_review_feedback(changed, new, chat, proposal, review)
@@ -1719,7 +2035,11 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
     if scenario.get("feedback"):
         return supervise_verdict(scenario, ws, events)
     if scenario.get("family"):
-        return family_verdict(scenario, ws)
+        return family_verdict(scenario, ws, events)
+    if scenario.get("tier"):
+        return figures_verdict(scenario, ws, events or [])
+    if scenario.get("extract"):
+        return verdict_import_figures(present_files(ws), text_reader(ws))
     if name == "ideate_scoped":
         return ideate_verdict(ws, chat)
     if scenario.get("produces"):
@@ -1730,21 +2050,19 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
 def staged_proposal_verdict(name: str, scenario: dict, ws: Path,
                             chat: str) -> tuple[bool, str]:
     """The scenarios judged against the fixture's own proposal file."""
-    fixture = FIXTURES / scenario["fixture"]
-    original = (fixture / scenario["proposal"]).read_text(encoding="utf-8")
+    original = fixture_proposal(scenario["fixture"]).read_text(encoding="utf-8")
     current = read(ws / scenario["proposal"])
     if name == "check_report":
-        return verdict_check_report(fixture / "expected.json", original, current, chat)
+        return verdict_check_report(oracle_path(scenario["fixture"]), original, current, chat)
     if name == "customize_override":
         return verdict_customize_override(original, current, read(ws / "guidelines.md"))
     if name == "write_offtopic_reference":
         # the reason may land in the notes file or in chat; the verdict accepts
         # either, so both are handed over as one blob
-        notes = "".join(text for fname, text in workspace_markdown(ws).items()
-                        if fname.endswith(NOTES_SUFFIX))
+        notes = "".join(text for _, text in sorted(role_files(ws, NOTES_ROLE).items()))
         return verdict_offtopic_reference(current, notes + chat)
     if name in REVIEW_VERDICTS:
-        review_name = scenario["proposal"].replace(".md", "-review.md")
+        review_name = review_of(scenario["proposal"])
         return REVIEW_VERDICTS[name](original, current, read(ws / review_name), review_name)
     if name in DRAFT_SCENARIOS:
         return draft_verdict(scenario, ws, original)
@@ -1795,8 +2113,8 @@ def l2_artifact(name: str, scenario: dict, ws: Path) -> str | None:
     if scenario.get("handoff"):
         return transcript(scenario, load_events(ws)) or None
     if name in REVIEW_VERDICTS:
-        return read(ws / scenario["proposal"].replace(".md", "-review.md")) or None
-    original = (FIXTURES / scenario["fixture"] / scenario["proposal"]).read_text(encoding="utf-8")
+        return read(ws / review_of(scenario["proposal"])) or None
+    original = fixture_proposal(scenario["fixture"]).read_text(encoding="utf-8")
     chosen, _ = select_draft(workspace_markdown(ws), scenario["proposal"], original)
     return (read(ws / chosen) or None) if chosen else None
 
@@ -1807,7 +2125,7 @@ def fixture_oracle(scenario: dict) -> dict:
     what a reply to "what now?" should say)."""
     if scenario.get("semantic"):
         return {"semantic": list(scenario["semantic"])}
-    path = FIXTURES / scenario["fixture"] / "expected.json"
+    path = oracle_path(scenario["fixture"])
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
@@ -1893,7 +2211,7 @@ def served_request(scenario: dict, stack: ExitStack) -> str:
     request = scenario["request"]
     if not scenario.get("serve"):
         return request
-    handler = partial(QuietHandler, directory=str(FIXTURES / scenario["serve"]))
+    handler = partial(QuietHandler, directory=str(fixture_dir(scenario["serve"])))
     server = HTTPServer(("127.0.0.1", 0), handler)
     stack.callback(server.server_close)  # after the shutdown below (last in, first out)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -2043,7 +2361,8 @@ HOSTS: dict[str, Host] = {
     "claude": Host(
         name="claude", skill_dir=(".claude", "skills"),
         run=lambda ws, request, args, config: run_claude(
-            ws, request, args.model, args.timeout, budget=args.max_budget_usd, config=config),
+            ws, request, args.model, args.timeout, budget=args.max_budget_usd, config=config,
+            **search_path_kwargs(args)),
         read=lambda events, args: claude_read(events, args),
         isolation=lambda stack, args: (enter_isolation(stack, "devrun-config-")
                                        if args.isolated else None),
@@ -2098,6 +2417,14 @@ def _host_rules(args: argparse.Namespace, host: str, scenario: dict,
     return (
         (other and bool(scenario.get("install")),
          f"{args.scenario} is an install-prompt scenario, which runs on the Claude host only"),
+        (other and bool(scenario.get("hide")),
+         f"{args.scenario} hides tools from the run's search path, which the dev runner does "
+         "on the Claude host only"),
+        # the tier evidence is read from Claude's stream-json tool results
+        # (tool_result_text); another host's tool output would read as no build
+        (other and bool(scenario.get("tier")),
+         f"{args.scenario} is judged on the build line in the run's tool results, which the "
+         "dev runner reads on the Claude host only"),
         (other and not args.rejudge and not model,
          f"--host {host} requires --model: {title} has no default model here"),
         (other and "/" in model, f"--model {model!r} is provider-qualified; --host {host} takes "
@@ -2148,7 +2475,9 @@ def _copilot_rules(args: argparse.Namespace, host: str,
         (live and cap is not None and cap < copilot_cli.MIN_AI_CREDITS,
          f"--max-ai-credits {cap} is below the minimum {copilot_cli.MIN_AI_CREDITS}"),
         (not copilot and cap is not None, "--max-ai-credits applies to --host copilot only"),
-        (not copilot and args.preflight_only, "--preflight-only applies to --host copilot only"),
+        (host not in ("copilot", "claude") and args.preflight_only,
+         "--preflight-only applies to --host copilot, and on --host claude to a scenario with "
+         "hidden or required tools"),
         # it runs the checks before a run and nothing else: an option it would
         # ignore is refused, never dropped (--rejudge would make a judge call)
         *((args.preflight_only and bool(getattr(args, option)),
@@ -2170,6 +2499,10 @@ def usage_problem(args: argparse.Namespace) -> str | None:
         (host == "claude" and args.effort is not None,
          "--effort applies to --host codex or --host copilot only"),
         *_canary_rules(args, host),
+        (host == "claude" and args.preflight_only
+         and not (scenario.get("hide") or scenario.get("requires")),
+         f"--preflight-only on --host claude checks a scenario's hidden or required tools, and "
+         f"{args.scenario} has none ({', '.join(PRECONDITIONED)} do)"),
         *_host_rules(args, host, scenario, model),
         *_copilot_rules(args, host, model),
         # last, so every other usage error reads the same on every platform; a
@@ -2250,9 +2583,10 @@ def dev_run(args: argparse.Namespace, judge: Judge | None) -> int:
         try:
             config = host.isolation(stack, args)
             stage(scenario, ws, install_skill=not args.no_skill, skill_dir=host.skill_dir)
+            run_args = with_search_path(args, checked_search_path(args, scenario, stack, config))
             request = served_request(scenario, stack)
-            events = host.run(ws, request, args, config)
-            events = follow_up(args, scenario, ws, events, config)
+            events = host.run(ws, request, run_args, config)
+            events = follow_up(run_args, scenario, ws, events, config)
             save_events(events, ws)
             chat = host.read(events, args).final_text
             out, status = completed_run(args, judge, scenario, ws, request, events, config)
@@ -2316,6 +2650,41 @@ def copilot_preflight_only(args: argparse.Namespace) -> int:
         return EXIT_PASS if ready else EXIT_UNTESTED
     finally:
         shutil.rmtree(ws, ignore_errors=True)
+
+
+def claude_preflight_only(args: argparse.Namespace) -> int:
+    """`--preflight-only` on Claude, for a scenario with hidden or required
+    tools: build the run's PATH and check every precondition under the
+    environment the run would get (the isolated allowlist with `--isolated`,
+    else the ambient one), print each finding, and start no host. Exit 0 when
+    every precondition holds, 3 when one does not, 4 where hiding cannot run."""
+    scenario = SCENARIOS[args.scenario]
+    # never created: the isolated allowlist names a configuration directory,
+    # which no shell the check starts reads
+    config = Path(tempfile.gettempdir()) / "devrun-preflight-config" if args.isolated else None
+    with ExitStack() as stack:
+        try:
+            path = search_path_for(args.scenario, scenario, stack)
+            problems = precondition_problems(scenario, check_env("claude", config, path))
+        except RunnerFailure as failure:
+            print(failure.message, file=sys.stderr)
+            return failure.status
+    hidden = ", ".join(scenario.get("hide", ())) or "nothing"
+    required = "; ".join(" or ".join(group) for group in scenario.get("requires", ())) or "nothing"
+    print(f"hidden from the run's PATH: {hidden}")
+    print(f"required on it: {required}")
+    for problem in problems:
+        print(f"REFUSED — {problem}")
+    print(f"preflight: {'not ready' if problems else 'ready'}")
+    return EXIT_UNTESTED if problems else EXIT_PASS
+
+
+def preflight_only(args: argparse.Namespace) -> int:
+    """`--preflight-only` on the run's host: Claude's preconditions or
+    Copilot's checks before a run; no model call either way."""
+    if host_for(args).name == "claude":
+        return claude_preflight_only(args)
+    return copilot_preflight_only(args)
 
 
 def canary_summary(args: argparse.Namespace, events: list[dict],
@@ -2552,9 +2921,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="copilot only, required: the client's soft AI-credit cap for the "
                              f"run, at least {copilot_cli.MIN_AI_CREDITS}")
     parser.add_argument("--preflight-only", action="store_true",
-                        help="copilot only: run and print every check before the run, the "
-                             "rosters and the confinement probe included, and start no "
-                             "prompt-mode child (no model call)")
+                        help="copilot: run and print every check before the run, the rosters "
+                             "and the confinement probe included, and start no prompt-mode "
+                             "child; claude, for a scenario with hidden or required tools: "
+                             "check them, the login-shell check included, and start no host "
+                             "(no model call either way)")
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep", action="store_true", help="keep the temp workspace")
     parser.add_argument("--no-skill", action="store_true",
@@ -2609,7 +2980,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.rejudge:
             return rejudge(args, judge)
         if args.preflight_only:
-            return copilot_preflight_only(args)
+            return preflight_only(args)
         if args.scenario == CANARY:
             return copilot_canary(args)
         scenario = SCENARIOS[args.scenario]

@@ -1,1 +1,1 @@
-As soon as a topic phrase exists, create the companion `<slug>.notes.md` in the proposal location (Workspace files below)
+As soon as a session starts that resumes no earlier one, create `idea/notes.md` in the proposal location (Workspace files below) — `idea-2/` and on when `idea/` is taken

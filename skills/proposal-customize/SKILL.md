@@ -27,7 +27,7 @@ min_per_1000_words = 4         # density advisory scales with length; 0 disables
 page_limit = 3
 
 [paths]
-proposals = "proposals/"       # where proposals and their companion files live
+proposals = "proposals/"       # the directory holding the proposal folders
 
 [research_questions]
 min_count = 1
@@ -65,7 +65,7 @@ What stays fixed is the closure, not the contents: a proposal still declares exa
 
 **Every key is the key path it has in `references/structure.json`.** That is the whole naming rule — there are no short forms, and a key that does not resolve to an overridable leaf is reported by the check as an error rather than quietly ignored. If you meet a workspace file written before this shape (`min_references = 8`, `timeline_detail = "detailed"`, and the other flat keys), migrate it in place and tell the user which keys you moved; leaving it costs them their overrides.
 
-**`[paths] proposals` moves the proposals, not the config.** It names the directory — relative to the workspace root, where this `guidelines.md` itself stays — holding each proposal and its family (Workspace files below). `api-keys.env` and `bug-report/` stay at the root too. Validate before writing: the value must be a relative directory inside the workspace — refuse an absolute path, a `~`-anchored one, or anything containing `..`, naming the constraint. When the workspace already holds proposals at the old location, say that they and their companion files must move to the configured directory and that the check reports each straggler as misplaced until they do; skills look only in the configured location, never in both.
+**`[paths] proposals` moves the proposals, not the config.** It names the directory — relative to the workspace root, where this `guidelines.md` itself stays — holding the proposal folders, each proposal with its family (Workspace files below). `api-keys.env` and `bug-report/` stay at the root too. Validate before writing: the value must be a relative directory inside the workspace — refuse an absolute path, a `~`-anchored one, or anything containing `..`, naming the constraint. When the workspace already holds proposal folders at the old location, say that each must move, whole, to the configured directory and that the check reports a proposal outside it as misplaced until it does; skills look only in the configured location, never in both.
 
 Merge semantics (fixed, explain them when relevant): a user key wins over the default per key; list values **replace** the default list entirely (they do not append); removing an entry from `[forbidden] heading_patterns` allows that section again. The proposal's leading `# ` title line is exempt from both section lists — it is the thesis title, not a section, so neither `[sections] required` nor `[forbidden] heading_patterns` ever matches it. `[timeline] detail = "detailed"` is the one switch that governs the timeline section: it lifts the one-sentence size limit and stops work-plan headings (work plan, milestones, Gantt, work packages) being forbidden. Leave the forbidden list alone for that — the switch does the whole job.
 
@@ -84,24 +84,23 @@ Merge semantics (fixed, explain them when relevant): a user key wins over the de
 
 ## Workspace files
 
-Every file of a proposal goes into the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never into a host's scratch or temporary folder. A proposal's slug, its file name without the extension, names its whole family:
+Every proposal lives in a folder of its own in the proposal location: the working directory, unless the workspace `guidelines.md` sets `[paths] proposals` to a subdirectory — then only there, never both, and never in a host's scratch or temporary folder. The working directory is the workspace root: run every script from there, never from inside a proposal folder; never `cd` into a proposal folder, and name its files by their path from the root. A proposal's slug, its file name without the extension, names its folder. Inside the folder, the files that leave it carry the slug, and every other file is matched by its exact name:
 
-| Role | File name |
+| Role | File name in `<slug>/` |
 |---|---|
-| proposal | `<slug>.md` |
-| notes | `<slug>.notes.md` |
-| harvest record | `<slug>.harvest.md` |
-| review | `<slug>-review.md` |
-| supervisor feedback | `<slug>-feedback.md` |
-| handout | `<slug>-handout.md` |
-| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx` |
-| kept file | `<slug>.<label>.<ext>` |
-| figure | `img/<slug>-<name>.<ext>`, in an `img/` folder beside the proposal |
-| ideation notes | `ideation.notes.md`, before a topic phrase exists |
+| proposal | `<slug>.md`, leaves the folder |
+| notes | `notes.md` |
+| harvest record | `harvest.md` |
+| review | `review.md` |
+| supervisor feedback | `feedback.md` |
+| handout | `<slug>.handout.md`, leaves the folder |
+| built output | `<slug>.pdf`, `<slug>.typ`, `<slug>.tex` or `<slug>.docx`, each leaves the folder |
+| kept file | `<label>.<ext>` |
+| figure | `img/<name>.<ext>` |
 
-The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. It changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. A rename moves every family file under the old slug at once, built outputs excepted, and updates every link to a moved file in the proposal and its notes file; it never edits the text of a review or supervisor feedback. Built outputs stay as previous builds: name them and offer a rebuild. Check every target name first. At seeding, when any target name is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. When a file cannot be moved, stop, overwrite nothing, and say what moved and what did not. Say which files you renamed.
+The slug is derived from the working title when the proposal file is first written, and it stays when the title changes later; a draft from an existing seed goes into that file. A proposal's folder is never named `bug-report` or `img`, nor with a leading dot: a new proposal's slug takes the numeric suffix when a folder of that name exists or the name is reserved, and a new proposal never goes into another proposal's folder. Before a topic phrase exists, ideation works in `idea/` (`idea-2/` and on when taken), renamed to a provisional slug once a topic phrase exists, with the numeric suffix when taken, and to the final slug at seeding; a provisional rename that fails is retried at seeding. The slug changes only by a rename: at seeding, when the settled working title yields a different slug than the provisional one, or when the user asks. Check the target folder first. At seeding, when it is taken, the slug takes the numeric suffix and the whole family moves to it; on request, move nothing, name the collision and propose the suffixed slug. A rename moves the folder `<old>/` to `<new>/` (on PowerShell with `Rename-Item`, which refuses an existing target); verify that `<new>/` holds the files and that no `<new>/<old>/` exists, and stop if it does; then, when the folder holds `<old>.md`, rename it to `<new>.md`. Role-named files, figures and kept files keep their names, so no link changes. When a move fails, stop, overwrite nothing, and say what moved and what did not; when the error names a file another program holds open, name it and offer to retry. Built outputs and the hand-in export under the old slug stay in the folder as previous outputs: name them and offer a rebuild. Say what you renamed.
 
-Besides proposal families, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; beside a proposal, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks: as `<slug>.<label>.<ext>` beside the proposal, never with the label `notes` or `harvest`, or in the notes file before a slug exists.
+Besides proposal folders, the workspace holds only: `guidelines.md`, `api-keys.env`, `bug-report/` and `.gitignore` at the root; in a proposal's folder, a workspace build definition (a file named `proposal-build`, with or without an extension, or a `Makefile`, `GNUmakefile` or `justfile` with a `proposal-build` target), the files that build reads and writes, and the `.gitignore` the built-in build adds; the troubleshooting captures `check-output.txt` and `version-output.txt` while a report is assembled; and the installers' `.agents/skills/`, `.claude/skills/`, `.kiro/skills/`, `.opencode/skill/` and `.opencode/skills/`, the record `.thesis-proposal-install.json` and `skills-lock.json`, which you never write or tidy. Nothing else goes there. Script output, candidate lists, raw responses, probes and logs stay in the chat. Read output too large for one piece in slices — a page range, the next lines — or produce it narrower. A temporary folder outside the workspace is a fallback only where one is writable, and a refused one is never a reason to write into the workspace. Keep a file only when the user asks, in the proposal's or the idea's folder: a kept file is `<label>.<ext>` under a free label, never `notes`, `review`, `feedback`, `harvest`, `handout`, `img` or the slug itself.
 
 ## Handing over
 

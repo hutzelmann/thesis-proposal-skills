@@ -5,6 +5,9 @@
 # test. Every checked-out text file a test reads with read_bytes() and compares
 # belongs here; tests/unit/test_line_endings.py replays a Windows checkout of them.
 tests/unit/data/l2_prompts/*.txt text eol=lf
+# Run under sh by test_fixture_paths.py, also on the Windows lane, where Git's
+# sh.exe is on PATH: a CRLF checkout fails at `set -eu`.
+scripts/ci_typst_build.sh text eol=lf
 
 # Parallel worktrees each add entries under [Unreleased]; union keeps both sides.
 # A line duplicated by the merge fails scripts/changelog.py check.

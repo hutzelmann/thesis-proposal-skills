@@ -1980,14 +1980,14 @@ def test_the_live_watch_stops_a_file_tool_pointed_outside_the_workspace(tmp_path
     (ws / "sub").mkdir(parents=True)
     secret = tmp_path / "secret"
     secret.write_text("synthetic", encoding="utf-8")
-    (ws / "proposal-review.md").symlink_to(secret)
+    (ws / "outside-link.md").symlink_to(secret)
     patch = "*** Begin Patch\n*** Add File: notes.md\n*** Update File: /etc/hosts\n*** End Patch"
     cases = [
         (_file_start("f1", "view", path="sub"), None),
         (_file_start("f2", "view", path=str(ws / "sub")), None),
         (_file_start("f3", "glob", pattern="**/*.md"), None),  # no path: the workspace
         (_file_start("f4", "view", path=str(secret)), copilot_cli.OUTSIDE_FILE),
-        (_file_start("f5", "view", path="proposal-review.md"), copilot_cli.OUTSIDE_FILE),
+        (_file_start("f5", "view", path="outside-link.md"), copilot_cli.OUTSIDE_FILE),
         (_file_start("f6", "grep", path="../"), copilot_cli.OUTSIDE_FILE),
         (_file_start("f7", "create", path="~/.bashrc"), copilot_cli.OUTSIDE_FILE),
         (_file_start("f8", "apply_patch", input=patch), copilot_cli.OUTSIDE_FILE),
@@ -2000,7 +2000,7 @@ def test_the_live_watch_stops_a_file_tool_pointed_outside_the_workspace(tmp_path
     mcp["data"]["mcpServerName"] = "github-mcp-server"
     assert copilot_cli.breach_of(mcp, set(), ws) is None
     watch = copilot_cli.ConfinementWatch(ws)
-    assert watch.event_line(json.dumps(_file_start("f5", "view", path="proposal-review.md")))
+    assert watch.event_line(json.dumps(_file_start("f5", "view", path="outside-link.md")))
     assert watch.breach == copilot_cli.OUTSIDE_FILE
     assert secret.read_text(encoding="utf-8") == "synthetic"
 

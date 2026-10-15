@@ -25,9 +25,14 @@ REPO = Path(__file__).resolve().parents[2]
 SKILL_DIRS = sync_shared.skill_dirs()
 HEADING = sync_shared.WORKSPACE_FILES_HEADING
 BLOCK = sync_shared.workspace_files_block()
-SLUGLESS_ROLE = "ideation notes"
-# instances for the placeholders the table uses
-PLACEHOLDERS = {"<slug>": "ci-agents", "<label>": "candidates", "<ext>": "yaml", "<name>": "sketch"}
+# instances for the placeholders the block uses
+PLACEHOLDERS = {"<slug>": "ci-agents", "<label>": "candidates", "<ext>": "yaml", "<name>": "sketch",
+                "<old>": "old-slug", "<new>": "new-slug", "<provisional>": "flaky-ci"}
+SLUG = PLACEHOLDERS["<slug>"]
+# what a handle-carrying row says about its files (design D3)
+LEAVES = "leaves the folder"
+# folders the block names that are a proposal's or an idea's, not allowed files
+FAMILY_FOLDERS = {"idea", "idea-2"}
 
 ids = lambda dirs: [d.name for d in dirs]  # noqa: E731
 
@@ -54,10 +59,14 @@ def file_tokens(text: str) -> list[str]:
     return [t for t in tokens(text) if re.fullmatch(r"[\w.<>/-]+", t) and ("." in t or "/" in t)]
 
 
-def table_rows(block: str) -> dict[str, list[str]]:
+def table_cells(block: str) -> dict[str, str]:
+    """Role -> the text of its file-name cell, one entry per table row."""
     rows = [line for line in block.splitlines() if line.startswith("| ")]
-    cells = [[c.strip() for c in row.strip("|").split("|")] for row in rows[1:]]
-    return {role: tokens(names) for role, names in cells}
+    return dict([c.strip() for c in row.strip("|").split("|")] for row in rows[1:])
+
+
+def table_rows(block: str) -> dict[str, list[str]]:
+    return {role: tokens(names) for role, names in table_cells(block).items()}
 
 
 def instance(shape: str) -> str:
@@ -171,23 +180,41 @@ def test_the_sync_keeps_an_appended_sentence_and_this_suite_names_the_skill(tmp_
 def test_the_family_table_lists_every_role_once_both_ways():
     roles = list(table_rows(BLOCK))
     assert len(roles) == len(set(roles)), f"a role is listed twice: {roles}"
-    expected = set(check.FAMILY_ROLES) | {SLUGLESS_ROLE}
+    expected = set(check.FAMILY_ROLES)
     missing, extra = expected - set(roles), set(roles) - expected
     assert not missing, f"the block's table lacks the check's role(s): {sorted(missing)}"
     assert not extra, f"the block's table has role(s) the check does not know: {sorted(extra)}"
 
 
 def test_every_row_names_files_of_its_own_role():
-    handles = frozenset({PLACEHOLDERS["<slug>"]})
     for role, names in table_rows(BLOCK).items():
-        if role == SLUGLESS_ROLE:
-            assert check.IDEATION_NOTES in names, role
-            continue
-        shapes = [n for n in names if "<slug>" in n]
-        assert shapes, f"row `{role}` names no `<slug>` file"
-        for shape in shapes:
-            got = check.family_member(instance(shape), handles)
-            assert got == (PLACEHOLDERS["<slug>"], role), f"`{shape}` is {got}, row says {role}"
+        assert names, f"row `{role}` names no file"
+        for shape in names:
+            got = check.family_member(instance(shape), SLUG)
+            assert got == role, f"`{shape}` is {got}, row says {role}"
+
+
+def test_the_role_names_agree_with_the_check_both_ways():
+    """skill-packaging: Role name drifts from the check. A role-named file in
+    the table is the check's `ROLE_NAMES` entry for that role, and the reverse."""
+    in_table = {role: name for role, names in table_rows(BLOCK).items()
+                for name in names if "<" not in name}
+    assert in_table == check.ROLE_NAMES, (
+        f"the block names {in_table}; the check classifies {check.ROLE_NAMES}")
+
+
+def test_the_handle_carrying_names_agree_with_the_check_both_ways():
+    in_table = {name.removeprefix("<slug>"): role for role, names in table_rows(BLOCK).items()
+                for name in names if name.startswith("<slug>")}
+    assert in_table == check.HANDLE_SUFFIXES, (
+        f"the block carries the handle on {in_table}; the check on {check.HANDLE_SUFFIXES}")
+
+
+def test_exactly_the_handle_carrying_rows_leave_the_folder():
+    for role, cell in table_cells(BLOCK).items():
+        carries = "<slug>" in cell
+        assert carries == (LEAVES in cell), (
+            f"row `{role}`: a file that carries the handle {LEAVES}, and only such a file")
 
 
 def test_every_allowed_name_of_the_check_appears_in_the_block():
@@ -200,13 +227,82 @@ def test_every_allowed_name_of_the_check_appears_in_the_block():
         assert recipe in lowered, f"check.py takes `{recipe}` for a build definition"
 
 
+def test_the_ideation_notes_file_is_gone():
+    """Ideation starts in `idea/notes.md`; the slug-less file at the root is
+    neither named nor allowed any more."""
+    assert "ideation.notes.md" not in BLOCK
+    assert not check.workspace_allowed("ideation.notes.md")
+
+
+# the family's file names before the folder layout (adopt-proposal-folders,
+# task 4.1): no skill may still tell an agent to write or read one
+RETIRED_NAMES = re.compile(
+    r"\.notes\.md|-review\.md|-feedback\.md|\.harvest\.md|-handout\.md|ideation\.notes"
+    r"|img/<slug>-|img/<provisional>-")
+
+
+def prose_sources() -> list[Path]:
+    """Every hand-written text an agent reads as instructions: the SKILL.md
+    files, the shared sources, and the skills' own reference prose (the
+    generated copies are the shared sources again)."""
+    generated = set(sync_shared.generated_paths())
+    references = [p for p in sorted(REPO.glob("skills/*/references/*.md"))
+                  if p.relative_to(REPO).as_posix() not in generated]
+    return ([d / "SKILL.md" for d in SKILL_DIRS] + sorted(REPO.glob("shared/**/*.md"))
+            + references)
+
+
+@pytest.mark.parametrize("path", prose_sources(), ids=lambda p: p.relative_to(REPO).as_posix())
+def test_no_prose_names_a_retired_family_name(path):
+    text = path.read_text(encoding="utf-8")
+    found = sorted({m.group(0) for m in RETIRED_NAMES.finditer(text)})
+    assert not found, f"{path.relative_to(REPO).as_posix()} still names {found}"
+
+
+def in_folder(name: str) -> tuple[str, str] | None:
+    """(folder, the rest) of a name inside a proposal's or an idea's folder,
+    placeholders instantiated, or None for a name of the workspace root."""
+    folder, sep, rest = name.partition("/")
+    if sep and (folder.startswith("<") or folder in FAMILY_FOLDERS):
+        return instance(folder), instance(rest)
+    return None
+
+
 def test_every_file_the_block_names_is_classified_or_allowed():
     for name in file_tokens(BLOCK):
-        if "<" in name:
-            assert check.family_member(instance(name), frozenset({"ci-agents"})), name
-        elif name != f"{check.FIGURE_FOLDER}/":
+        if name == check.FIGURES:
+            continue  # the figures folder, named beside its figures
+        placed = in_folder(name)
+        if placed is not None:
+            folder, rest = placed
+            assert not rest or check.family_member(rest, folder), name
+        elif "<" in name or name in check.ROLE_NAMES.values():
+            assert check.family_member(instance(name), SLUG), name
+        else:
             assert check.workspace_allowed(name), (
                 f"the block names `{name}`; the check would report it")
+
+
+@pytest.mark.parametrize("statement", [
+    "a folder of its own",            # one folder per proposal
+    "`idea/`",                        # ideation starts in a folder
+    "`bug-report`",                   # a reserved folder name
+    "never from inside a proposal folder",  # scripts run from the workspace root
+    "never `cd` into a proposal folder",    # nor any other command (design D23)
+    "exact name",                     # role files are matched by their exact name
+    "Rename-Item",                    # the safe folder move on PowerShell (design D23)
+    "`<new>/<old>/`",                 # the move verified, nesting caught
+    "previous outputs",               # builds under the old slug stay
+])
+def test_the_block_states_the_folder_rules(statement):
+    assert statement in BLOCK, f"the block no longer states: {statement}"
+
+
+def test_the_block_names_every_reserved_label():
+    sentence = next((s for s in BLOCK.split(". ") if "label" in s and "`handout`" in s), "")
+    for label in sorted(check.RESERVED_LABELS):
+        assert f"`{label}`" in sentence, f"the reserved label `{label}` is not named"
+    assert "slug" in sentence
 
 
 def installer_folders() -> set[str]:
@@ -252,6 +348,41 @@ def test_a_taken_name_at_seeding_moves_the_whole_family():
     assert SEEDING_COLLISION in BLOCK
     ideate = (REPO / "skills" / "proposal-ideate" / "SKILL.md").read_text(encoding="utf-8")
     assert SEEDING_COLLISION in ideate.replace(BLOCK, "")
+
+
+def test_a_new_proposal_never_lands_in_a_taken_or_reserved_folder():
+    """proposal-file-format, Content-derived slug filenames: a folder of that
+    name that exists, or a reserved name, suffixes a new proposal's slug. The
+    block states it once for every skill that creates a folder (import,
+    reverse and supervise say nothing of their own), and the reserved names
+    are a proposal folder's, never every folder's: `img/`, the root's
+    `bug-report/` and `.agents/skills/` are folders the block itself names."""
+    assert "A folder is never named" not in BLOCK
+    assert "A proposal's folder is never named `bug-report` or `img`" in BLOCK
+    assert ("a new proposal's slug takes the numeric suffix when a folder of that name "
+            "exists or the name is reserved") in BLOCK
+    assert "a new proposal never goes into another proposal's folder" in BLOCK
+
+
+def test_a_provisional_rename_onto_a_taken_name_is_suffixed():
+    """skill-ideate, Provisional handle resolved at seeding: the rename to the
+    provisional slug takes the numeric suffix when taken, never a question to
+    the student mid-dialogue and never a failure that leaves the idea in
+    `idea/`."""
+    assert ("a provisional slug once a topic phrase exists, with the numeric suffix "
+            "when taken") in BLOCK
+
+
+def test_the_rename_verifies_the_move_before_it_renames_the_file():
+    """proposal-file-format, A rename moves the whole family: the folder moves
+    first, the move is verified (a nested `<new>/<old>/` stops everything),
+    and only then is `<old>.md` renamed, when the folder holds one: an idea's
+    folder never does."""
+    verify = BLOCK.index("no `<new>/<old>/` exists")
+    assert BLOCK.index("Rename-Item") < verify
+    assert verify < BLOCK.index("rename it to `<new>.md`")
+    assert "and stop if it does" in BLOCK
+    assert "when the folder holds `<old>.md`, rename it to `<new>.md`" in BLOCK
 
 
 def test_the_installer_records_are_named_and_allowed():

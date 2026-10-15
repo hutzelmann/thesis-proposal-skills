@@ -63,7 +63,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import codex_cli
 import copilot_cli
@@ -79,6 +79,7 @@ from account_surfaces import (
     stream_surfaces,
     surface_reason,
 )
+from fixture_paths import fixture_dir, fixture_proposals, staged_tree
 from host_login import (
     CREDENTIALS,
     LOGIN_COMMAND,
@@ -95,7 +96,6 @@ from host_login import (
 HARNESS = Path(__file__).resolve().parent
 REPO = HARNESS.parent
 SKILLS = REPO / "skills"
-FIXTURES = REPO / "tests" / "fixtures"
 CASES_FILE = HARNESS / "routing_cases.toml"
 LOG_DIR = REPO / "logs" / "routing"
 REPORT_FILE = REPO / "docs" / "skill-routing.md"
@@ -122,6 +122,12 @@ ROUTING_OVERRIDE = "ROUTING_CONFIG_DIR"
 # presented as measured under different conditions, automatically.
 ISOLATION_CONDITIONS = ("claude.ai account surfaces closed "
                         "(skill and plugin sync off, connectors off)")
+# What the selector could see in the case's workspace: since
+# adopt-proposal-folders a named proposal is staged with its folder, never as
+# the flat file earlier reports measured. Change it only when the staging
+# changes; a report that records other staging, or none, is then presented as
+# measured under different conditions, as for the isolation above.
+STAGING_CONDITIONS = "each proposal staged in its own folder (`<slug>/<slug>.md`)"
 
 # Uniform, because the assumption behind measuring only the contested cases
 # repeatedly did not survive contact: on 2026-08-10 `litsearch-oblique` — an
@@ -149,17 +155,19 @@ OUTWARD_TOOLS = (
 DISALLOWED_TOOLS = ("Bash", "Write", "Edit", "NotebookEdit", "Task", "WebFetch", "WebSearch",
                     *OUTWARD_TOOLS)
 
-# The files a case's utterance may name. Only the ones a given sentence actually
-# names are staged for it: staging the union made "my idea" ambiguous in every
-# workspace, and on 2026-08-10 the agent answered `litsearch-collision` by asking
-# which of three drafts was meant — correct behaviour, scored as a routing
-# failure.
+# The fixtures whose files a case's utterance may name. Only the ones a given
+# sentence actually names are staged for it: staging the union made "my idea"
+# ambiguous in every workspace, and on 2026-08-10 the agent answered
+# `litsearch-collision` by asking which of three drafts was meant — correct
+# behaviour, scored as a routing failure. A proposal is named by its file name
+# or by its path in the workspace (`<slug>/<slug>.md`) and staged in its folder,
+# a source document by its name at the workspace root (`stageable_names`).
 WORKSPACE_FIXTURES = (
-    ("f05-slr-interviews", "microservice-technical-debt.md"),
-    ("f12-clean-de", "typsystem-einheitenfehler.md"),
-    ("w01-ideate-seed", "data-drift-detection.md"),
-    ("s01-raw-email", "submission-email.txt"),
-    ("f27-citation-runs", "dependency-update-breakage.md"),
+    "f05-slr-interviews",
+    "f12-clean-de",
+    "w01-ideate-seed",
+    "s01-raw-email",
+    "f27-citation-runs",
 )
 
 # What a case gets when its utterance names nothing. Not an empty directory: a
@@ -641,6 +649,7 @@ def skills_revision() -> str:
 
 SCORE_LINE = re.compile(r"measurements: (\d+) \((\d+) correct\)")
 ISOLATION_LINE = re.compile(r"^- isolation: (.+)$", re.MULTILINE)
+STAGING_LINE = re.compile(r"^- staging: (.+)$", re.MULTILINE)
 SERVED_LINE = re.compile(r"^- served: (.+)$", re.MULTILINE)
 NOT_RECORDED = "not recorded"
 
@@ -688,13 +697,23 @@ def previous_score(path: Path = REPORT_FILE) -> str | None:
     return f"{match.group(2)}/{match.group(1)}" if match else None
 
 
+def _recorded_line(pattern: re.Pattern[str], path: Path) -> str | None:
+    if not path.exists():
+        return None
+    match = pattern.search(path.read_text(encoding="utf-8"))
+    return match.group(1).strip() if match else None
+
+
 def previous_isolation(path: Path = REPORT_FILE) -> str | None:
     """The isolation conditions the outgoing report records; None when it
     records none, as every report measured before they were recorded."""
-    if not path.exists():
-        return None
-    match = ISOLATION_LINE.search(path.read_text(encoding="utf-8"))
-    return match.group(1).strip() if match else None
+    return _recorded_line(ISOLATION_LINE, path)
+
+
+def previous_staging(path: Path = REPORT_FILE) -> str | None:
+    """The staging conditions the outgoing report records; None when it
+    records none, as every report measured with flat-staged proposals."""
+    return _recorded_line(STAGING_LINE, path)
 
 
 def previous_served(path: Path) -> frozenset[str] | None:
@@ -712,7 +731,8 @@ def render_report(results: list[Result], matrix: Matrix, model: str,
                   revision: str | None = None, supersedes: str | None = None,
                   epochs: int = DEFAULT_EPOCHS, conditions_changed: bool = False,
                   isolation: str | None = ISOLATION_CONDITIONS,
-                  served_recorded: bool = True) -> str:
+                  served_recorded: bool = True,
+                  staging: str | None = STAGING_CONDITIONS) -> str:
     """The tracked report. `model` is the alias the run requested; the served
     model IDs and CLI versions are counted over the error-free measurements
     the figures below describe, and read "not recorded" for a raw log written
@@ -735,6 +755,7 @@ def render_report(results: list[Result], matrix: Matrix, model: str,
         f"- host CLI: {tally([r.cli_version for r in counted], served_recorded, quote='')}",
         f"- skills revision: `{revision or skills_revision()}`",
         *([f"- isolation: {isolation}"] if isolation else []),
+        *([f"- staging: {staging}"] if staging else []),
         f"- measurements: {total} ({passed} correct), {epochs} epochs per case",
         *([earlier] if earlier else []),
         "",
@@ -872,7 +893,7 @@ def files_named(utterance: str) -> list[str]:
     say the same thing twice and the two would drift, with the drift invisible
     until a case quietly stopped routing.
     """
-    stageable = {name for _, name in WORKSPACE_FIXTURES}
+    stageable = stageable_names()
     named = []
     for word in utterance.replace("(", " ").replace(")", " ").split():
         token = word.strip(".,;:!?\"'")
@@ -894,12 +915,37 @@ def install_skills(skill_home: Path) -> None:
                         ignore=shutil.ignore_patterns("evals"))
 
 
+def stageable_names() -> dict[str, tuple[str, str]]:
+    """Every name an utterance may use for a file, mapped to its fixture and
+    its path in that fixture's workspace: a proposal by its file name and by
+    `<slug>/<slug>.md`, a source document at the fixture's root by its name.
+    Resolved through the fixture-path helper, never spelled."""
+    names: dict[str, tuple[str, str]] = {}
+    for fixture in WORKSPACE_FIXTURES:
+        root = fixture_dir(fixture)
+        files = [proposal.relative_to(root).as_posix()
+                 for proposal in fixture_proposals(root)]
+        files += [rel for rel in staged_tree(fixture)
+                  if "/" not in rel and rel.endswith((".md", ".txt"))]
+        for rel in files:
+            names[rel] = names[PurePosixPath(rel).name] = (fixture, rel)
+    return names
+
+
 def stage_workspace(ws: Path, case: Case | None = None) -> None:
+    """Install the set and stage what the utterance names: a proposal with its
+    whole folder, as the fixture keeps it, a source document at the root."""
     install_skills(ws / ".claude" / "skills")
+    names = stageable_names()
     wanted = files_named(case.utterance) if case else []
-    for filename in wanted or [DEFAULT_PROPOSAL]:
-        fixture = next(f for f, name in WORKSPACE_FIXTURES if name == filename)
-        shutil.copy2(FIXTURES / fixture / filename, ws / filename)
+    for name in wanted or [DEFAULT_PROPOSAL]:
+        fixture, rel = names[name]
+        folder = PurePosixPath(rel).parent
+        for staged, source in staged_tree(fixture).items():
+            if (staged == rel if folder == PurePosixPath(".")
+                    else PurePosixPath(staged).is_relative_to(folder)):
+                (ws / staged).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, ws / staged)
 
 
 def _read_events(lines: Iterable[str], events: list[dict],
@@ -1141,13 +1187,14 @@ def sweep(work: list[Case], args: argparse.Namespace) -> tuple[list[Result], dic
 
 def recorded_conditions_changed(results: list[Result], path: Path) -> bool:
     """Whether the outgoing report recorded other measurement conditions than
-    this run's, or none: its isolation, or the set of served model IDs (the
-    alias alone says nothing about the model behind it). Both are recorded in
-    the report itself, so their change needs no one to remember
-    --conditions-changed. The CLI version is recorded but not compared: the
-    host updates every few days, and a CLI change that matters to the rig
-    stays the operator's declaration."""
+    this run's, or none: its isolation, its staging, or the set of served
+    model IDs (the alias alone says nothing about the model behind it). All
+    are recorded in the report itself, so their change needs no one to
+    remember --conditions-changed. The CLI version is recorded but not
+    compared: the host updates every few days, and a CLI change that matters
+    to the rig stays the operator's declaration."""
     return (previous_isolation(path) != ISOLATION_CONDITIONS
+            or previous_staging(path) != STAGING_CONDITIONS
             or previous_served(path) != served_set(results))
 
 
@@ -1178,7 +1225,7 @@ def rebuild_report(log: Path) -> None:
     REPORT_FILE.write_text(
         render_report(results, classify(results), payload["model"],
                       payload.get("skills_revision"), isolation=payload.get("isolation"),
-                      served_recorded=recorded),
+                      served_recorded=recorded, staging=payload.get("staging")),
         encoding="utf-8")
     print(f"routing: report rebuilt from {log} into {REPORT_FILE.relative_to(REPO).as_posix()}")
 
@@ -1242,6 +1289,7 @@ def main(argv: list[str] | None = None) -> int:
         "model": args.model,
         "skills_revision": skills_revision(),
         "isolation": ISOLATION_CONDITIONS,
+        "staging": STAGING_CONDITIONS,
         **login,
         "results": [vars(r) for r in results],
     }

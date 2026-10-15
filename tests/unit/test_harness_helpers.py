@@ -1,22 +1,32 @@
 """L0: pure scoring helpers from harness/l1_checks.py (no model calls)."""
 
+import io
+import zipfile
 from pathlib import Path
 
+import publish
 import pytest
-from helpers import f04_numbered_questions, review_with_record
+from fixture_paths import fixture_proposal, oracle_path
+from helpers import NOTES_TEXT, f04_numbered_questions, review_with_record
 from l1_checks import (
+    LATEX_ENGINES,
+    built_tiers,
     disallowed_errors,
     disallowed_rules,
+    docx_media,
     is_enumerated_review,
     parse_grade,
+    pdf_images,
     select_draft,
     verdict_check_report,
     verdict_customize_override,
     verdict_draft,
     verdict_early_stop,
+    verdict_figures_embedded,
     verdict_hollow_review,
     verdict_ideate_scoped,
     verdict_import,
+    verdict_import_figures,
     verdict_litsearch_expanded,
     verdict_no_spurious_offer,
     verdict_notes_progress,
@@ -323,22 +333,37 @@ def test_select_draft_reports_a_missing_seed():
 
 def test_select_draft_never_selects_overrides_or_skill_artifacts():
     files = {
-        "seed.md": SEED,
+        "seed/seed.md": SEED,
         "guidelines.md": "override",
-        "seed-review.md": "1. finding",
-        "seed-handout.md": "handout",
+        "seed/review.md": "1. finding",
+        "seed/feedback.md": "Dear student",
+        "seed/harvest.md": "# Harvest",
+        "seed/seed.handout.md": "handout",
     }
-    chosen, why = select_draft(files, "seed.md", SEED)
+    chosen, why = select_draft(files, "seed/seed.md", SEED)
     assert chosen is None
     assert "left untouched" in why
 
 
 def test_select_draft_never_selects_a_notes_file_even_when_it_sorts_first():
-    """`aa-topic.notes.md` sorts before `zz-topic.md`; the notes companion must
-    still never be graded as the produced proposal."""
-    files = {"aa-topic.notes.md": "## Decisions\n", "zz-topic.md": GOOD_IMPORT}
+    """testing-harness: Notes file never selected as the draft. The notes
+    companion sorts first here and must still never be graded as the produced
+    proposal."""
+    files = {"energy-attack/notes.md": "## Decisions\n",
+             "energy-attack/zz-energy-attack.md": GOOD_IMPORT}
     chosen, _ = select_draft(files)
-    assert chosen == "zz-topic.md"
+    assert chosen == "energy-attack/zz-energy-attack.md"
+
+
+def test_select_draft_matches_companions_by_their_exact_name():
+    """A proposal slugged `…-review` and kept labels that end like a role are
+    no companions (design D3 of adopt-proposal-folders)."""
+    chosen, why = select_draft({"ml-code-review/ml-code-review.md": GOOD_IMPORT,
+                                "ml-code-review/review.md": "1. finding"})
+    assert chosen == "ml-code-review/ml-code-review.md", why
+    for kept in ("peer-review.md", "reading-notes.md", "supervisor-feedback.md"):
+        chosen, _ = select_draft({f"agents/{kept}": GOOD_IMPORT})
+        assert chosen == f"agents/{kept}", kept
 
 
 def test_no_spurious_offer_passes_an_ordinary_findings_report():
@@ -404,31 +429,44 @@ def test_troubleshoot_model_rung_fails_when_the_model_is_never_named():
 
 def test_select_draft_never_selects_a_bug_report_reproduction():
     """A reduced reproduction is a structurally valid proposal with a metadata
-    block, and `bug-report/repro/input.md` sorts before a real `zz-topic.md`. If
-    it won the pick, the next check would silently grade the reproduction."""
+    block, in a folder named like its file, and `bug-report/repro/input/input.md`
+    sorts before a real `zz-topic/zz-topic.md`. If it won the pick, the next
+    check would silently grade the reproduction."""
     files = {
-        "bug-report/repro/input.md": GOOD_IMPORT,
-        "zz-topic.md": GOOD_IMPORT,
+        "bug-report/repro/input/input.md": GOOD_IMPORT,
+        "zz-topic/zz-topic.md": GOOD_IMPORT,
     }
     chosen, _ = select_draft(files)
-    assert chosen == "zz-topic.md"
+    assert chosen == "zz-topic/zz-topic.md"
+
+
+def test_select_draft_takes_a_proposal_whose_slug_ends_in_bug_report():
+    """Only the workspace root's `bug-report/` holds a reproduction: a
+    proposal folder whose slug ends in `bug-report` puts `bug-report/` in its
+    path and is a candidate all the same, while the bundle stays excluded."""
+    files = {
+        "bug-report/repro/input/input.md": GOOD_IMPORT,
+        "duplicate-bug-report/duplicate-bug-report.md": GOOD_IMPORT,
+    }
+    chosen, _ = select_draft(files)
+    assert chosen == "duplicate-bug-report/duplicate-bug-report.md"
 
 
 def test_select_draft_reports_nothing_when_only_a_bug_report_exists():
     """Excluding the bundle must not turn it into a fallback candidate either."""
-    chosen, _ = select_draft({"bug-report/repro/input.md": GOOD_IMPORT})
+    chosen, _ = select_draft({"bug-report/repro/input/input.md": GOOD_IMPORT})
     assert chosen is None
 
 
 def test_select_draft_notes_file_alone_is_no_draft():
-    chosen, why = select_draft({"topic.notes.md": "## Decisions\n"})
+    chosen, why = select_draft({"topic/notes.md": "## Decisions\n"})
     assert chosen is None
     assert "no draft produced" in why
 
 
 def test_select_draft_excludes_notes_files_beside_a_seed():
-    files = {"seed.md": SEED, "seed.notes.md": "## Log\n"}
-    chosen, _ = select_draft(files, "seed.md", SEED)
+    files = {"seed/seed.md": SEED, "seed/notes.md": "## Log\n"}
+    chosen, _ = select_draft(files, "seed/seed.md", SEED)
     assert chosen is None
 
 
@@ -445,16 +483,54 @@ def test_select_draft_locates_an_import_without_a_seed():
     assert select_draft({}) == (None, "no draft produced")
 
 
+# a kept list as lit-search or ideation keeps it: a title, a plain paragraph,
+# no proposal frame
+KEPT_LIST = "# Reading list\n\nPapers to read next.\n\n- A paper\n"
+
+
+def test_select_draft_never_takes_a_kept_file_beside_the_proposal():
+    """In a folder, `reading-list.md` sorts before `t-slug.md`; in the flat
+    layout the proposal sorted first, so the label never won the pick."""
+    chosen, why = select_draft({"t-slug/t-slug.md": GOOD_IMPORT,
+                                "t-slug/reading-list.md": KEPT_LIST})
+    assert chosen == "t-slug/t-slug.md", why
+    assert "reading-list" not in why
+
+
+def test_select_draft_takes_no_kept_file_of_an_idea_for_a_seed():
+    """Kept files before seeding go into the idea's folder (design D4)."""
+    chosen, why = select_draft({"idea/notes.md": NOTES_TEXT, "idea/reading-list.md": KEPT_LIST,
+                                "idea/candidates.md": ""})
+    assert chosen is None, why
+
+
+def test_select_draft_still_finds_a_seed_written_under_another_name():
+    """Content, not the name, tells a misplaced seed from a kept file: a seed
+    written into `idea/` without the folder rename carries the proposal's
+    frame, so the negative verdicts still see it."""
+    files = {"idea/notes.md": NOTES_TEXT, "idea/my-topic.md": GOOD_IMPORT}
+    assert select_draft(files)[0] == "idea/my-topic.md"
+    passed, why = verdict_early_stop(files)
+    assert not passed
+    assert "idea/my-topic.md" in why
+
+
+def test_select_draft_finds_the_folder_proposal_when_its_notes_sort_first():
+    """testing-harness: Notes file never selected as the draft, in folder
+    form: `notes.md` sorts before `zz-attack.md`."""
+    files = {"zz-attack/notes.md": NOTES_TEXT, "zz-attack/zz-attack.md": "# Draft\n"}
+    assert select_draft(files)[0] == "zz-attack/zz-attack.md"
+
+
 def test_select_draft_seedless_accepts_a_review_shaped_slug():
-    """A content-derived slug may legitimately end in `-review.md` (a proposal
-    about code review); the artifact exclusion only applies beside a seed."""
-    chosen, _ = select_draft({"ml-code-review.md": GOOD_IMPORT})
-    assert chosen == "ml-code-review.md"
+    """A content-derived slug may legitimately end in `-review` (a proposal
+    about code review)."""
+    chosen, _ = select_draft({"ml-code-review/ml-code-review.md": GOOD_IMPORT})
+    assert chosen == "ml-code-review/ml-code-review.md"
 
 
-ORACLE_F15 = REPO / "tests" / "fixtures" / "f15-format-broken" / "expected.json"
-BROKEN_F15 = (REPO / "tests" / "fixtures" / "f15-format-broken" / "broken-format.md").read_text(
-    encoding="utf-8")
+ORACLE_F15 = oracle_path("f15-format-broken")
+BROKEN_F15 = fixture_proposal("f15-format-broken").read_text(encoding="utf-8")
 
 
 def test_check_report_counts_a_capitalised_relay():
@@ -593,14 +669,14 @@ def test_verdict_ideate_scoped_notes_file_may_carry_scoping_but_not_the_canary()
     """The companion notes file is the sanctioned home for proposal-specific
     scoping context, so group/university/program are not leaks there; the
     injection canary always is."""
-    files = {"x.md": SCOPED_SEED,
-             "x.notes.md": "## Decisions\nTarget group: Systems Software Group, Musterstadt."}
-    passed, why = verdict_ideate_scoped(files, "x.md", SCOPED_CHAT)
+    files = {"x/x.md": SCOPED_SEED,
+             "x/notes.md": "## Decisions\nTarget group: Systems Software Group, Musterstadt."}
+    passed, why = verdict_ideate_scoped(files, "x/x.md", SCOPED_CHAT)
     assert passed, why
-    files["x.notes.md"] += "\nCANARY-B715"
-    passed, why = verdict_ideate_scoped(files, "x.md", SCOPED_CHAT)
+    files["x/notes.md"] += "\nCANARY-B715"
+    passed, why = verdict_ideate_scoped(files, "x/x.md", SCOPED_CHAT)
     assert not passed
-    assert "x.notes.md" in why
+    assert "x/notes.md" in why
 
 
 PROVENANCE_TRANSCRIPT = """\
@@ -761,11 +837,11 @@ def test_verdict_scoping_containment_allows_a_term_the_student_voiced():
 
 
 def test_verdict_scoping_containment_scans_every_produced_file():
-    files = {"flaky-tests.md": CONTAINED_SEED,
-             "flaky-tests.notes.md": "## Log\nCompared against Joule Scheduling."}
+    files = {"flaky-tests/flaky-tests.md": CONTAINED_SEED,
+             "flaky-tests/notes.md": "## Log\nCompared against Joule Scheduling."}
     passed, why = verdict_scoping_containment(PROVENANCE_TRANSCRIPT, files, CLEAN_QUERIES)
     assert not passed
-    assert "flaky-tests.notes.md" in why
+    assert "flaky-tests/notes.md" in why
 
 
 def test_verdict_scoping_containment_needs_a_transcript():
@@ -776,8 +852,7 @@ def test_verdict_scoping_containment_needs_a_transcript():
     assert "no dialogue turns" in why
 
 
-F26 = (REPO / "tests" / "fixtures" / "f26-offtopic-reference"
-       / "onboarding-documentation-formats.md").read_text(encoding="utf-8")
+F26 = fixture_proposal("f26-offtopic-reference").read_text(encoding="utf-8")
 F26_REASON = ("Excluded Literature: Halvorsen24Kernel — no research question or "
               "method step in this proposal depends on it.")
 
@@ -832,16 +907,23 @@ def test_verdict_offtopic_reference_needs_a_file():
 
 
 def test_verdict_early_stop_passes_notes_without_proposal():
-    files = {"vague-topic.notes.md": "## Open Points\nStudent had no material today."}
+    files = {"idea/notes.md": "## Open Points\nStudent had no material today."}
     passed, why = verdict_early_stop(files)
     assert passed, why
 
 
 def test_verdict_early_stop_fails_a_generated_proposal():
-    files = {"vague-topic.notes.md": "## Log\nstalled", "vague-topic.md": GOOD_IMPORT}
+    files = {"vague-topic/notes.md": "## Log\nstalled",
+             "vague-topic/vague-topic.md": GOOD_IMPORT}
     passed, why = verdict_early_stop(files)
     assert not passed
-    assert "vague-topic.md" in why
+    assert "vague-topic/vague-topic.md" in why
+
+
+def test_verdict_early_stop_passes_a_kept_file_in_the_idea_folder():
+    files = {"idea/notes.md": NOTES_TEXT, "idea/reading-list.md": KEPT_LIST}
+    passed, why = verdict_early_stop(files)
+    assert passed, why
 
 
 def test_verdict_early_stop_fails_without_notes():
@@ -961,23 +1043,40 @@ def test_customize_override_accepts_a_case_insensitive_detail_value():
 # ---- verdict_publish --------------------------------------------------------
 
 
+PUBLISH_GITIGNORE = "# proposal build artifacts (managed by proposal-publish)\n*.pdf\n*.typ\n"
+
+
 def test_publish_accepts_a_built_pdf_with_a_maintained_gitignore():
-    passed, why = verdict_publish("ws/proposal.pdf\n*.pdf\n*.typ\n")
+    passed, why = verdict_publish(["topic/topic.pdf"], PUBLISH_GITIGNORE)
     assert passed, why
+    assert "topic/topic.pdf" in why
 
 
 def test_publish_fails_without_a_pdf():
-    passed, why = verdict_publish("")
+    passed, why = verdict_publish([], None)
     assert not passed
     assert "no PDF produced" in why
+
+
+def test_publish_fails_on_a_gitignore_entry_alone():
+    """The `.gitignore` publish keeps names `*.pdf`; a folder holding that file
+    and no build has produced nothing, and the verdict must say so. Read from
+    one listing text, as the verdict once took it, the entry passed for a
+    build; the two now arrive apart."""
+    passed, why = verdict_publish([], PUBLISH_GITIGNORE)
+    assert not passed
+    assert "no PDF produced" in why
+    passed, why = verdict_publish(["topic/topic.typ", "topic/notes.md"], PUBLISH_GITIGNORE)
+    assert not passed, "a built file that is no PDF is no PDF"
 
 
 def test_publish_fails_when_the_gitignore_was_not_maintained():
     """A built PDF that gets committed is the failure this guards: the skill is
     told to keep the workspace .gitignore covering its own output."""
-    passed, why = verdict_publish("ws/proposal.pdf\n")
-    assert not passed
-    assert "gitignore not maintained" in why
+    for gitignore in (None, "", "*.typ\n", "# *.pdf\n"):
+        passed, why = verdict_publish(["topic/topic.pdf"], gitignore)
+        assert not passed, gitignore
+        assert "gitignore not maintained" in why
 
 
 # ---- verdict_draft ----------------------------------------------------------
@@ -1011,7 +1110,7 @@ ENUMERATED_REVIEW = "1. RQ2 overlaps RQ1 — merge them.\n2. The delta is implic
 
 def test_verdict_review_accepts_an_enumerated_review_beside_an_untouched_proposal():
     passed, why = verdict_review(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, ENUMERATED_REVIEW, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, ENUMERATED_REVIEW, "p/review.md"
     )
     assert passed, why
 
@@ -1021,7 +1120,7 @@ def test_verdict_review_reports_where_the_proposal_was_changed():
     is the fastest way to see what it touched."""
     passed, why = verdict_review(
         ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL.replace("body", "BODY"),
-        ENUMERATED_REVIEW, "p-review.md",
+        ENUMERATED_REVIEW, "p/review.md",
     )
     assert not passed
     assert "modified the proposal" in why
@@ -1029,7 +1128,7 @@ def test_verdict_review_reports_where_the_proposal_was_changed():
 
 
 def test_verdict_review_reports_a_missing_proposal_without_a_diff_offset():
-    passed, why = verdict_review(ORIGINAL_PROPOSAL, None, ENUMERATED_REVIEW, "p-review.md")
+    passed, why = verdict_review(ORIGINAL_PROPOSAL, None, ENUMERATED_REVIEW, "p/review.md")
     assert not passed
     assert "file missing" in why
 
@@ -1039,7 +1138,7 @@ def test_verdict_review_reports_a_missing_proposal_without_a_diff_offset():
     ("The proposal reads well overall, with some issues.", "not enumerated"),
 ])
 def test_verdict_review_rejects_a_missing_or_unenumerated_review(review, needle):
-    passed, why = verdict_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review, "p-review.md")
+    passed, why = verdict_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review, "p/review.md")
     assert not passed
     assert needle in why
 
@@ -1054,7 +1153,7 @@ HOLLOW_VERDICT_REVIEW = (
 
 def test_verdict_hollow_review_accepts_the_no_viable_core_verdict():
     passed, why = verdict_hollow_review(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, HOLLOW_VERDICT_REVIEW, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, HOLLOW_VERDICT_REVIEW, "p/review.md"
     )
     assert passed, why
     assert "swap" in why
@@ -1064,7 +1163,7 @@ def test_verdict_hollow_review_accepts_the_no_viable_core_verdict():
 def test_verdict_hollow_review_rejects_a_softened_verdict():
     soft = HOLLOW_VERDICT_REVIEW.replace("no viable thesis core", "needs revision")
     passed, why = verdict_hollow_review(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, soft, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, soft, "p/review.md"
     )
     assert not passed
     assert "no viable thesis core" in why
@@ -1073,7 +1172,7 @@ def test_verdict_hollow_review_rejects_a_softened_verdict():
 def test_verdict_hollow_review_rejects_a_verdict_buried_below_the_findings():
     buried = ENUMERATED_REVIEW + "\n" * 6 + "Verdict: no viable thesis core (swap, delta).\n"
     passed, why = verdict_hollow_review(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, buried, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, buried, "p/review.md"
     )
     assert not passed
     assert "opening lines" in why
@@ -1085,7 +1184,7 @@ def test_verdict_hollow_review_requires_two_tests_cited_by_name():
         "1. Everything is generic.\n"
     )
     passed, why = verdict_hollow_review(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, one_test, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, one_test, "p/review.md"
     )
     assert not passed
     assert "at least two" in why
@@ -1097,7 +1196,7 @@ def test_verdict_hollow_review_reads_method_fit_with_or_without_hyphen():
         "1. The methodology never touches the questions.\n"
     )
     passed, why = verdict_hollow_review(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, spaced, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, spaced, "p/review.md"
     )
     assert passed, why
 
@@ -1105,7 +1204,7 @@ def test_verdict_hollow_review_reads_method_fit_with_or_without_hyphen():
 def test_verdict_hollow_review_still_requires_an_untouched_proposal():
     passed, why = verdict_hollow_review(
         ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL.replace("body", "BODY"),
-        HOLLOW_VERDICT_REVIEW, "p-review.md",
+        HOLLOW_VERDICT_REVIEW, "p/review.md",
     )
     assert not passed
     assert "modified the proposal" in why
@@ -1121,7 +1220,7 @@ GERMAN_REVIEW = (
 
 def test_verdict_review_localized_accepts_a_german_review():
     passed, why = verdict_review_localized(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, GERMAN_REVIEW, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, GERMAN_REVIEW, "p/review.md"
     )
     assert passed, why
     assert "German" in why
@@ -1129,7 +1228,7 @@ def test_verdict_review_localized_accepts_a_german_review():
 
 def test_verdict_review_localized_rejects_an_english_review_of_a_german_proposal():
     passed, why = verdict_review_localized(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, ENUMERATED_REVIEW, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, ENUMERATED_REVIEW, "p/review.md"
     )
     assert not passed
     assert "written in German" in why
@@ -1137,7 +1236,7 @@ def test_verdict_review_localized_rejects_an_english_review_of_a_german_proposal
 
 def test_verdict_review_localized_still_enforces_the_structural_check_first():
     passed, why = verdict_review_localized(
-        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL + "edited", GERMAN_REVIEW, "p-review.md"
+        ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL + "edited", GERMAN_REVIEW, "p/review.md"
     )
     assert not passed
     assert "modified the proposal" in why
@@ -1156,7 +1255,7 @@ BULLETED_REVIEW = "- RQ2 overlaps RQ1 — merge them.\n- The delta is implicit.\
 
 def test_a_numbered_record_does_not_make_bulleted_findings_enumerated():
     review = review_with_record(BULLETED_REVIEW, ["Which A?", "Which B?"])
-    passed, why = verdict_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review, "p-review.md")
+    passed, why = verdict_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review, "p/review.md")
     assert not passed
     assert why == "review not enumerated"
     titled = review_with_record("- The title reaches your certificate; abstract it.\n",
@@ -1169,7 +1268,7 @@ def test_a_numbered_record_does_not_make_bulleted_findings_enumerated():
 def test_a_german_record_does_not_make_an_english_review_german():
     review = review_with_record(ENUMERATED_REVIEW, F04_QUESTIONS)
     passed, why = verdict_review_localized(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review,
-                                           "p-review.md")
+                                           "p/review.md")
     assert not passed
     assert "written in German" in why
 
@@ -1177,7 +1276,7 @@ def test_a_german_record_does_not_make_an_english_review_german():
 def test_a_german_review_with_its_record_stays_german():
     review = review_with_record(GERMAN_REVIEW, F04_QUESTIONS, "## Begutachtete Forschungsfragen")
     passed, why = verdict_review_localized(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review,
-                                           "p-review.md")
+                                           "p/review.md")
     assert passed, why
 
 
@@ -1186,7 +1285,7 @@ def test_a_test_name_in_the_record_is_not_a_cited_test():
                 "1. Everything is generic.\n")
     review = review_with_record(one_test, ["How large is the delta between the two tools?"])
     passed, why = verdict_hollow_review(ORIGINAL_PROPOSAL, ORIGINAL_PROPOSAL, review,
-                                        "p-review.md")
+                                        "p/review.md")
     assert not passed
     assert "at least two" in why
 
@@ -1278,22 +1377,22 @@ def snaps(*rounds: tuple[int, dict[str, int]]) -> list[dict]:
 
 def test_notes_progress_accepts_early_notes_that_grow_before_the_seed():
     passed, why = verdict_notes_progress(snaps(
-        (2, {"topic.notes.md": 100}),
-        (14, {"topic.notes.md": 900}),
-        (18, {"topic.notes.md": 900, "topic.md": 400}),
+        (2, {"topic/notes.md": 100}),
+        (14, {"topic/notes.md": 900}),
+        (18, {"topic/notes.md": 900, "topic/topic.md": 400}),
     ))
     assert passed, why
 
 
 def test_notes_progress_fails_when_no_notes_file_ever_appeared():
-    passed, why = verdict_notes_progress(snaps((5, {}), (18, {"topic.md": 400})))
+    passed, why = verdict_notes_progress(snaps((5, {}), (18, {"topic/topic.md": 400})))
     assert not passed
     assert "never appeared" in why
 
 
 def test_notes_progress_fails_when_the_notes_file_arrives_too_late():
     passed, why = verdict_notes_progress(snaps(
-        (12, {"topic.notes.md": 100}), (14, {"topic.notes.md": 900}),
+        (12, {"topic/notes.md": 100}), (14, {"topic/notes.md": 900}),
     ))
     assert not passed
     assert "first appeared at round 12" in why
@@ -1301,7 +1400,7 @@ def test_notes_progress_fails_when_the_notes_file_arrives_too_late():
 
 def test_notes_progress_fails_when_the_notes_file_never_grows():
     passed, why = verdict_notes_progress(snaps(
-        (2, {"topic.notes.md": 100}), (14, {"topic.notes.md": 100}),
+        (2, {"topic/notes.md": 100}), (14, {"topic/notes.md": 100}),
     ))
     assert not passed
     assert "had not grown" in why
@@ -1311,15 +1410,203 @@ def test_notes_progress_fails_when_a_proposal_is_seeded_before_convergence():
     """The expensive failure for this skill: writing the student's proposal
     before the student has converged on the idea."""
     passed, why = verdict_notes_progress(snaps(
-        (2, {"topic.notes.md": 100}),
-        (6, {"topic.notes.md": 900, "topic.md": 400}),
-        (14, {"topic.notes.md": 900, "topic.md": 400}),
+        (2, {"topic/notes.md": 100}),
+        (6, {"topic/notes.md": 900, "topic/topic.md": 400}),
+        (14, {"topic/notes.md": 900, "topic/topic.md": 400}),
     ))
     assert not passed
     assert "already present at round 6" in why
+
+
+def test_notes_progress_takes_no_kept_file_of_an_idea_for_a_seed():
+    """The snapshots carry names only: a kept file in `idea/` is no proposal
+    by its name, and so no seed before convergence."""
+    passed, why = verdict_notes_progress(snaps(
+        (2, {"idea/notes.md": 100, "idea/candidates.md": 50}),
+        (14, {"topic/notes.md": 900, "topic/candidates.md": 50}),
+        (18, {"topic/notes.md": 900, "topic/candidates.md": 50, "topic/topic.md": 400}),
+    ))
+    assert passed, why
 
 
 def test_notes_progress_fails_without_snapshots():
     passed, why = verdict_notes_progress([])
     assert not passed
     assert "no workspace snapshots" in why
+
+
+# ---- folder-layout dev scenarios: import with figures --------------------------
+# (testing-harness: Folder-layout dev scenarios; adopt-proposal-folders, design D12)
+
+IMPORTED = "sensor-anomaly-triage"
+FIGURE_A = "![Figure 1: Pipeline](img/pipeline.png)"
+FIGURE_B = "![Figure 2: Queue](img/queue.png)"
+MARKER_B = "[TODO: re-add figure from page 3 as img/queue.png]"
+
+
+def imported(body: str, *extra: str, notes: bool = True) -> tuple[list[str], dict]:
+    texts = {f"{IMPORTED}/{IMPORTED}.md": f"# T\n\n*Master's Thesis Proposal*\n\n{body}\n"
+                                          "\n---\nreferences: []\n---\n",
+             "submission.pdf": ""}
+    if notes:
+        texts[f"{IMPORTED}/notes.md"] = NOTES_TEXT
+    present = sorted({*texts, *extra})
+    return present, texts
+
+
+def test_import_figures_passes_on_two_extracted_figures():
+    present, texts = imported(f"{FIGURE_A}\n\n{FIGURE_B}", f"{IMPORTED}/img/pipeline.png",
+                              f"{IMPORTED}/img/queue.png")
+    passed, why = verdict_import_figures(present, texts.get)
+    assert passed, why
+    assert "2 resolved" in why
+
+
+def test_import_figures_accepts_one_figure_left_as_a_page_marker():
+    present, texts = imported(f"{FIGURE_A}\n\n{MARKER_B}", f"{IMPORTED}/img/pipeline.png")
+    passed, why = verdict_import_figures(present, texts.get)
+    assert passed, why
+
+
+def test_import_figures_fails_on_markers_alone():
+    """The request asked for the figures to be extracted: two markers are what
+    an import without an extraction tool leaves, which the runner reports
+    untested before the run, never as this verdict's pass."""
+    marker_a = "[TODO: re-add figure from page 2 as img/pipeline.png]"
+    present, texts = imported(f"{marker_a}\n\n{MARKER_B}")
+    passed, why = verdict_import_figures(present, texts.get)
+    assert not passed
+    assert "no figure link resolves" in why
+
+
+@pytest.mark.parametrize(("body", "files", "needle"), [
+    (f"{FIGURE_A}", (f"{IMPORTED}/img/pipeline.png",), "1 figure reference"),
+    (f"{FIGURE_A}\n{FIGURE_B}\n{MARKER_B}", (f"{IMPORTED}/img/pipeline.png",
+                                             f"{IMPORTED}/img/queue.png"), "3 figure references"),
+    (f"{FIGURE_A}\n![Figure 2](img/sensor-anomaly-triage-queue.png)",
+     (f"{IMPORTED}/img/pipeline.png", f"{IMPORTED}/img/sensor-anomaly-triage-queue.png"),
+     "slug prefix"),
+    (f"{FIGURE_A}\n{FIGURE_B}", (f"{IMPORTED}/img/pipeline.png", "img/queue.png"),
+     "`img/queue.png` does not resolve"),
+    (f"{FIGURE_A}\n![Figure 2](figures/queue.png)",
+     (f"{IMPORTED}/img/pipeline.png", f"{IMPORTED}/figures/queue.png"), "not an `img/<name>`"),
+])
+def test_import_figures_fails_on_a_wrong_reference(body, files, needle):
+    present, texts = imported(body, *files)
+    passed, why = verdict_import_figures(present, texts.get)
+    assert not passed
+    assert needle in why
+
+
+def test_import_figures_needs_the_folder_and_its_notes_file():
+    present, texts = imported(f"{FIGURE_A}\n\n{MARKER_B}", f"{IMPORTED}/img/pipeline.png",
+                              notes=False)
+    passed, why = verdict_import_figures(present, texts.get)
+    assert not passed
+    assert f"`{IMPORTED}/notes.md`" in why
+    flat = {"sensor-anomaly-triage.md": texts[f"{IMPORTED}/{IMPORTED}.md"]}
+    passed, why = verdict_import_figures(sorted(flat), flat.get)
+    assert not passed
+    assert "no imported proposal" in why
+
+
+# ---- folder-layout dev scenarios: figures embedded, with tier evidence -----------
+
+PROPOSAL = f"{IMPORTED}/{IMPORTED}.md"
+STEM = f"{IMPORTED}/{IMPORTED}"
+SOURCE = (f"# T\n\n*Master's Thesis Proposal*\n\n{FIGURE_A}\n\n{FIGURE_B}\n").encode()
+TWO_IMAGES = b"%PDF-1.7\n1 0 obj << /Type /XObject /Subtype /Image >>\n2 0 obj <</Subtype/Image>>"
+ONE_IMAGE = b"%PDF-1.7\n1 0 obj << /Type /XObject /Subtype /Image >>"
+STAGED_F16 = {PROPOSAL: SOURCE, f"{IMPORTED}/img/pipeline.png": b"\x89PNG a",
+              f"{IMPORTED}/img/queue.png": b"\x89PNG b"}
+TYPST_LINE = f"built via typst: {IMPORTED}.pdf, {IMPORTED}.typ\n"
+LATEX_LINE = f"note: built via LaTeX\nbuilt via xelatex: {IMPORTED}.pdf, {IMPORTED}.tex\n"
+DOCX_LINE = f"no PDF engine found — falling back to docx.\nbuilt via pandoc: {IMPORTED}.docx\n"
+
+
+def docx(media: int) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", "<w:document/>")
+        for i in range(media):
+            archive.writestr(f"word/media/rId{i}.png", b"\x89PNG")
+    return buffer.getvalue()
+
+
+def built(**outputs: bytes) -> dict[str, bytes]:
+    return {**STAGED_F16, **{f"{STEM}.{ext}": data for ext, data in outputs.items()}}
+
+
+def test_counting_embedded_figures():
+    assert pdf_images(TWO_IMAGES) == 2
+    assert pdf_images(b"%PDF-1.7 /Subtype /Form") == 0
+    assert docx_media(docx(2)) == 2
+    assert docx_media(b"not a zip") == 0
+
+
+def test_the_build_line_names_the_tier():
+    assert built_tiers(TYPST_LINE) == ["typst"]
+    assert built_tiers(LATEX_LINE) == ["latex"]
+    assert built_tiers(DOCX_LINE) == ["docx"]
+    assert built_tiers("built via tectonic: a.pdf\nbuilt via typst: a.pdf\n") == ["latex", "typst"]
+    assert built_tiers("pandoc not found — no build possible.") == []
+
+
+def test_the_latex_engines_are_publishs_own():
+    assert LATEX_ENGINES == publish.LATEX_ENGINES
+
+
+@pytest.mark.parametrize(("tier", "after", "line"), [
+    ("typst", built(pdf=TWO_IMAGES, typ=b"#set page()"), TYPST_LINE),
+    ("latex", built(pdf=TWO_IMAGES, tex=b"\\documentclass"), LATEX_LINE),
+    ("docx", built(docx=docx(2)), DOCX_LINE),
+])
+def test_figures_embedded_on_each_tier(tier, after, line):
+    """Scenarios: Publish on the typst, the LaTeX and the word-processor tier."""
+    passed, why = verdict_figures_embedded(tier, PROPOSAL, STAGED_F16, after, line)
+    assert passed, why
+    assert "2 of 2 figures" in why
+
+
+@pytest.mark.parametrize(("tier", "after", "line", "needle"), [
+    ("typst", built(pdf=TWO_IMAGES, typ=b"x"), LATEX_LINE, "no `built via typst` line"),
+    ("typst", built(pdf=ONE_IMAGE, typ=b"x"), TYPST_LINE, "embeds 1 of 2 figures"),
+    ("typst", built(pdf=TWO_IMAGES), TYPST_LINE, f"`{STEM}.typ`"),
+    ("latex", built(pdf=TWO_IMAGES), LATEX_LINE, f"`{STEM}.tex`"),
+    ("latex", built(pdf=TWO_IMAGES, tex=b"x", typ=b"x"), LATEX_LINE, f"`{STEM}.typ` was added"),
+    ("docx", built(docx=docx(1)), DOCX_LINE, "embeds 1 of 2 figures"),
+    ("docx", built(docx=docx(2), pdf=TWO_IMAGES), DOCX_LINE, "a PDF was added"),
+    ("docx", built(), DOCX_LINE, "was not added or changed by the run"),
+])
+def test_figures_embedded_fails_without_its_evidence(tier, after, line, needle):
+    passed, why = verdict_figures_embedded(tier, PROPOSAL, STAGED_F16, after, line)
+    assert not passed
+    assert needle in why
+
+
+def test_a_staged_output_the_run_left_alone_is_no_evidence():
+    staged = built(pdf=TWO_IMAGES, typ=b"x")
+    passed, why = verdict_figures_embedded("typst", PROPOSAL, staged, dict(staged), TYPST_LINE)
+    assert not passed
+    assert f"`{STEM}.pdf` was not added or changed by the run" in why
+    rebuilt = {**staged, f"{STEM}.pdf": TWO_IMAGES + b" rebuilt"}
+    assert verdict_figures_embedded("typst", PROPOSAL, staged, rebuilt, TYPST_LINE)[0]
+
+
+def test_the_figures_counted_are_those_of_the_proposal_the_user_asked_for():
+    """A run that drops a figure link it could not resolve and then builds
+    embeds fewer figures than the staged proposal links: the count comes from
+    what was staged, the document the user asked to publish."""
+    after = built(pdf=ONE_IMAGE, typ=b"#set page()")
+    after[PROPOSAL] = SOURCE.replace(FIGURE_B.encode(), b"")
+    passed, why = verdict_figures_embedded("typst", PROPOSAL, STAGED_F16, after, TYPST_LINE)
+    assert not passed
+    assert "embeds 1 of 2 figures" in why
+
+
+def test_a_proposal_without_figures_proves_nothing():
+    staged = {PROPOSAL: b"# T\n\n*Master's Thesis Proposal*\n"}
+    after = {**staged, f"{STEM}.pdf": TWO_IMAGES, f"{STEM}.typ": b"x"}
+    passed, why = verdict_figures_embedded("typst", PROPOSAL, staged, after, TYPST_LINE)
+    assert not passed
+    assert "links no figure" in why

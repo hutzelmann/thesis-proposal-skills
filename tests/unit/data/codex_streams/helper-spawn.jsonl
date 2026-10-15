@@ -1,8 +1,8 @@
 {"type":"thread.started","thread_id":"0199a0f0-0000-7000-8000-000000000003"}
 {"type":"turn.started"}
-{"type":"item.completed","item":{"id":"item_0","type":"file_change","changes":[{"path":"__WS__/submission-feedback.md","kind":"add"}],"status":"completed"}}
-{"type":"item.started","item":{"id":"item_1","type":"collab_tool_call","tool":"spawn_agent","sender_thread_id":"0199a0f0-0000-7000-8000-000000000003","receiver_thread_ids":[],"prompt":"Follow references/verifier-brief.md. Feedback: submission-feedback.md","agents_states":{},"status":"in_progress"}}
-{"type":"item.completed","item":{"id":"item_1","type":"collab_tool_call","tool":"spawn_agent","sender_thread_id":"0199a0f0-0000-7000-8000-000000000003","receiver_thread_ids":["0199a0f0-0000-7000-8000-0000000000a1"],"prompt":"Follow references/verifier-brief.md. Feedback: submission-feedback.md","agents_states":{},"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_0","type":"file_change","changes":[{"path":"__WS__/submission/feedback.md","kind":"add"}],"status":"completed"}}
+{"type":"item.started","item":{"id":"item_1","type":"collab_tool_call","tool":"spawn_agent","sender_thread_id":"0199a0f0-0000-7000-8000-000000000003","receiver_thread_ids":[],"prompt":"Follow references/verifier-brief.md. Feedback: submission/feedback.md","agents_states":{},"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"collab_tool_call","tool":"spawn_agent","sender_thread_id":"0199a0f0-0000-7000-8000-000000000003","receiver_thread_ids":["0199a0f0-0000-7000-8000-0000000000a1"],"prompt":"Follow references/verifier-brief.md. Feedback: submission/feedback.md","agents_states":{},"status":"completed"}}
 {"type":"item.completed","item":{"id":"item_2","type":"collab_tool_call","tool":"wait","sender_thread_id":"0199a0f0-0000-7000-8000-000000000003","receiver_thread_ids":["0199a0f0-0000-7000-8000-0000000000a1"],"prompt":null,"agents_states":{},"status":"completed"}}
 {"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Synthetic feedback summary after verification."}}
 {"type":"turn.completed","usage":{"input_tokens":30000,"cached_input_tokens":20000,"output_tokens":2500}}

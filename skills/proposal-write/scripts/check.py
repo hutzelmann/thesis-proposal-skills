@@ -23,11 +23,12 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import sys
 import tomllib
 import unicodedata
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -89,8 +90,10 @@ RULE_IDS = (
     "methodology-branch-invalid",
     "paths-proposals-invalid",
     "proposal-misplaced",
+    "proposal-folder-mismatch",
     # workspace family
     "companion-orphaned",
+    "build-definition-unused",
     # structure
     "heading-style-setext",
     "timeline-detail-unknown",
@@ -270,15 +273,38 @@ def override_key_findings(overrides: dict) -> list[Finding]:
 
 def resolve_guidelines(proposal: Path, explicit: Path | None) -> Path | None:
     """The governing override file: an explicit path, else `guidelines.md`
-    beside the proposal, else in the working directory — the workspace root
-    when the proposal lives in a configured subdirectory. The first file found
-    governs the whole run; deliberately no ancestor search."""
+    beside the proposal, in its folder, else in the working directory, which is
+    the workspace root. The first file found governs the whole run;
+    deliberately no ancestor search."""
     if explicit is not None:
         return explicit
     for candidate in (proposal.parent / "guidelines.md", Path.cwd() / "guidelines.md"):
         if candidate.exists():
             return candidate
     return None
+
+
+# The governing file's chain position, as the report names it. By position
+# only: a report relayed into a bug report must carry no directory name.
+GOVERNING_LABELS = {
+    "beside-proposal": "beside the proposal",
+    "working-directory": "working directory",
+    "explicit": "explicit",
+    "none": "none (defaults)",
+}
+
+
+def governing_position(proposal: Path, explicit: Path | None) -> str:
+    """Which chain position governed the run: a key of GOVERNING_LABELS. A run
+    started inside the proposal's folder finds no root file, so it says none
+    rather than leaving the defaults silent (skill-check: Governing override
+    file named by position)."""
+    if explicit is not None:
+        return "explicit"
+    found = resolve_guidelines(proposal, None)
+    if found is None:
+        return "none"
+    return "beside-proposal" if found == proposal.parent / "guidelines.md" else "working-directory"
 
 
 def load_overrides(proposal: Path, explicit: Path | None) -> dict:
@@ -309,45 +335,113 @@ def paths_value_problem(value: object) -> str | None:
     return None
 
 
-def paths_findings(proposal: Path, overrides: dict, guidelines: Path | None) -> list[Finding]:
-    """Value and placement findings for the configured proposal location.
-
-    The workspace root is the governing guidelines.md's own directory, so the
-    placement comparison is well-defined for every position in the resolution
-    chain. Skills honor only the configured location; a proposal outside it
-    fails loudly here instead of half the skills silently disagreeing."""
+def location_value(structure: dict, overrides: dict) -> tuple[str, list[Finding]]:
+    """The proposal location relative to the workspace root, and the finding
+    for a configured value that cannot be applied, which leaves the default."""
+    default = structure.get("paths", {}).get("proposals", ".")
     if not overridden(overrides, "paths", "proposals"):
-        return []
+        return default, []
     value = overrides["paths"]["proposals"]
     problem = paths_value_problem(value)
-    if problem is not None:
+    if problem is None:
+        return value, []
+    return default, [error(
+        "paths-proposals-invalid",
+        f"guidelines.md: [paths] proposals {problem}, not `{value}` — "
+        "the default location applies",
+    )]
+
+
+@dataclass(frozen=True)
+class Workspace:
+    """Where the workspace findings are measured from (design D17 of
+    adopt-proposal-folders): the root is the directory of an explicitly passed
+    override file, else the working directory. Both paths are resolved."""
+
+    root: Path
+    location: Path
+    prefix: str       # the location as a report names it: `proposals/`, or empty
+    configured: str   # the applied [paths] proposals value, empty for the default
+    explicit: bool = False  # the root is an explicitly passed override file's directory
+
+
+def workspace(root: Path, value: str, configured: bool, explicit: bool = False) -> Workspace:
+    root = root.resolve()
+    shown = Path(value).as_posix().strip("/")
+    prefix = "" if shown in ("", ".") else shown + "/"
+    return Workspace(root, (root / value).resolve(), prefix, value if configured else "",
+                     explicit)
+
+
+def placement_findings(proposal: Path, ws: Workspace) -> list[Finding]:
+    """`proposal` (resolved) is expected at `<location>/<slug>/<slug>.md`
+    (skill-check: Proposal-location value validated, misplacement reported).
+    A folder directly in the location named unlike its proposal is the
+    half-finished rename, reported as such instead (skill-check: Proposal folder
+    named by its slug). Skills honor only proposal folders in the location, so a
+    proposal anywhere else fails loudly here instead of half the skills
+    silently disagreeing."""
+    stem, folder = proposal.stem, proposal.parent
+    if folder.parent == ws.location and folder.name != stem:
+        name = _shown(folder.name)
         return [error(
-            "paths-proposals-invalid",
-            f"guidelines.md: [paths] proposals {problem}, not `{value}` — "
-            "the default location applies",
+            "proposal-folder-mismatch",
+            f"`{_shown(proposal.name)}` sits in the folder `{name}`, which is not named "
+            f"after it: the folder and the file name are both the slug, so `{name}` "
+            f"and `{_shown(stem)}` must agree — a rename moves the folder and the proposal "
+            "file together; finish it by renaming one of the two",
         )]
-    if guidelines is None:
+    if proposal == ws.location / stem / f"{stem}.md":
         return []
-    expected = (guidelines.resolve().parent / value).resolve()
-    if proposal.resolve().parent != expected:
-        return [error(
-            "proposal-misplaced",
-            f"`{proposal.name}` is outside the configured proposal location: "
-            f"`{guidelines}` sets [paths] proposals = `{value}` — move the "
-            "proposal and its companion files there",
-        )]
-    return []
+    return [error("proposal-misplaced", misplacement_message(proposal, ws))]
+
+
+def misplacement_message(proposal: Path, ws: Workspace) -> str:
+    """Where the proposal is expected, and what to do about it. The root and
+    the folder alone cannot tell every case apart, so the message names each
+    reading it cannot rule out: a root named like the proposal is its folder
+    when the agent changed into it, and a flat workspace from before the folder
+    layout otherwise; a folder named after the proposal that sits deeper than
+    the location is misplaced, or the check was started above the workspace
+    root."""
+    stem, folder = proposal.stem, proposal.parent
+    slug = _shown(stem)
+    configured = (f", the location guidelines.md sets with [paths] proposals = "
+                  f"`{ws.configured}`" if ws.configured else "")
+    head = (f"`{_shown(proposal.name)}` is not at `{ws.prefix}{slug}/{slug}.md`, relative "
+            f"to the workspace root{configured}")
+    if folder == ws.root and folder.name == stem:
+        if ws.explicit:
+            return head + (
+                f" — the workspace root is the directory of the override file passed "
+                f"explicitly, `{slug}/`, which is named like the proposal: if it is the "
+                "proposal's folder, pass the workspace root's override file instead, or "
+                "none; otherwise move the proposal into a folder of its own there")
+        return head + (
+            f" — the check ran from `{slug}/`, which is named like the proposal: if it is "
+            "the proposal's folder, run the check from the workspace root; if it is the "
+            "workspace root, move the proposal into a folder of its own there")
+    if folder.name == stem:
+        return head + (
+            " — every proposal lives in a folder of its own named after it, directly in "
+            "the proposal location: move the folder there, or, if the check was not "
+            "started from the workspace root, run it from there")
+    return head + (" — every proposal lives in a folder of its own named after it; move "
+                   "the proposal and the files of its family there")
 
 
 # ---------- workspace family -------------------------------------------------
 #
-# One vocabulary for the proposal family (proposal-file-format: Proposal family
-# under one handle). The kinds are the role names of the table in
+# One vocabulary for the proposal family (proposal-file-format: One folder per
+# proposal, Proposal family under one handle). Every proposal lives in a folder
+# of its own, named by its slug. Files that leave the folder carry that handle
+# (HANDLE_SUFFIXES); files that stay are named by their role (ROLE_NAMES) or by
+# a free label. The roles are those of the table in
 # shared/blocks/workspace-files.md, and an L0 test holds the two equal both
-# ways. family_member() is pure and name-only; family_members() classifies a
-# whole listing by the skill-check rule and is what the warning, the harness's
-# verdicts and the test helpers share, so none of them classifies a file
-# differently from the warning a writer sees.
+# ways. family_member() and proposal_folder() are pure; family_members()
+# classifies a listing of location-relative paths and is what the harness's
+# verdicts share, so no verdict classifies a file differently from the warning
+# a writer sees.
 
 SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 FAMILY_ROLES = (
@@ -355,8 +449,29 @@ FAMILY_ROLES = (
     "handout", "built output", "kept file", "figure",
 )
 PROPOSAL, NOTES, HARVEST, REVIEW, FEEDBACK, HANDOUT, BUILT, KEPT, FIGURE = FAMILY_ROLES
-# the table's slug-less row: ideation notes before any topic phrase exists
-IDEATION_NOTES = "ideation.notes.md"
+# files that stay in the folder, matched by their exact name: a kept
+# `peer-review.md` is never the review
+ROLE_NAMES = {NOTES: "notes.md", HARVEST: "harvest.md", REVIEW: "review.md",
+              FEEDBACK: "feedback.md"}
+BUILT_EXTENSIONS = frozenset({"pdf", "typ", "tex", "docx"})
+# the hand-in export; mirrored from publish.py, a pin test keeps them equal
+HANDOUT_SUFFIX = ".handout.md"
+# files that leave the folder, by what follows the handle: the folder's own
+# under its slug, or previous outputs under an earlier one
+HANDLE_SUFFIXES = {".md": PROPOSAL, HANDOUT_SUFFIX: HANDOUT,
+                   **{f".{ext}": BUILT for ext in sorted(BUILT_EXTENSIONS)}}
+# the figures folder inside a proposal's folder; a figure is `img/<name>.<ext>`
+FIGURE_FOLDER = "img"
+FIGURES = FIGURE_FOLDER + "/"
+# no kept file takes one of these labels, nor the folder's own slug
+RESERVED_LABELS = frozenset({"notes", "review", "feedback", "harvest", "handout",
+                             FIGURE_FOLDER})
+# never a proposal folder, whatever it holds; hidden names never are either
+RESERVED_FOLDERS = frozenset({"bug-report", FIGURE_FOLDER})
+# a notes file with these five section headings, in any order, makes its folder
+# a proposal folder before any proposal exists; read only to classify
+NOTES_HEADINGS = ("Decisions", "Open Points", "Next Focus", "Excluded Literature", "Log")
+NOTES_HEADING_RE = re.compile(r"^## +(.+?)[ \t]*$", re.MULTILINE)
 # allowed at the workspace root; never family members (Working material stays
 # out of the workspace). Hidden names are never classified at all, which covers
 # .gitignore, the installers' skill folders and their install record.
@@ -364,31 +479,18 @@ WORKSPACE_LEVEL = frozenset({
     "guidelines.md", "api-keys.env", "bug-report",
     "check-output.txt", "version-output.txt", "skills-lock.json",
 })
-# Mirrored from publish.py, a pin test keeps them equal. A recipe file counts by
-# its name alone: the check opens no file to look for the target, so an
-# unrelated Makefile only keeps built outputs quiet.
+# Mirrored from publish.py, a pin test keeps them equal. By its name alone a
+# recipe file is never a stray; as a build definition publish never uses, it
+# counts only with the target, which is the one recipe read the check makes.
 BUILD_STEM = "proposal-build"
 RECIPE_NAMES = frozenset({"makefile", "gnumakefile", "justfile"})
-BUILT_EXTENSIONS = frozenset({"pdf", "typ", "tex", "docx"})
-COMPANION_SUFFIXES = {"-review": REVIEW, "-feedback": FEEDBACK}
-HANDOUT_SUFFIX = "-handout"
-SHELTERS = frozenset({PROPOSAL, NOTES, HARVEST})
-UNAMBIGUOUS = frozenset({REVIEW, FEEDBACK, HANDOUT, FIGURE})
-# Kept files make a slug reportable only under this many words, the lower bound
-# of Content-derived slug filenames: one-word tool and project names
-# (`thesis.synctex.gz`, `tsconfig.app.json`) are never a skill's slug.
-KEPT_SLUG_WORDS = 2
-# the shared figures folder beside the proposal; a listed name inside it is
-# `img/<file>`
-FIGURE_FOLDER = "img"
-FIGURES = FIGURE_FOLDER + "/"
-FIGURE_LINK_RE = re.compile(rf"\]\(\s*(?:\./)?({FIGURES}[^)\s]+)")
+RECIPE_TARGET_RE = re.compile(rf"^{BUILD_STEM}\b[^\n]*:", re.MULTILINE)
 ORPHAN_CAUSE = ("a rename that moved only part of the family is the usual cause; "
-                "a file you placed there on purpose can stay")
+                "a file you placed there on purpose can be left as it is")
 
 
 def is_build_definition(name: str) -> bool:
-    """A workspace build definition, looked up as publish.py looks it up: the
+    """A workspace build definition by its name, as publish.py looks it up: the
     stem, or a recipe name case-folded with a leading dot stripped."""
     return (name == BUILD_STEM or name.startswith(BUILD_STEM + ".")
             or name.lower().lstrip(".") in RECIPE_NAMES)
@@ -396,106 +498,91 @@ def is_build_definition(name: str) -> bool:
 
 def workspace_allowed(name: str) -> bool:
     """Allowed in the workspace and never a family member: hidden, workspace-
-    level, ideation notes, a build definition, or anything inside an allowed
-    folder."""
+    level, a build definition, or anything inside an allowed folder."""
     parts = name.rstrip("/").split("/")
     top = parts[0]
     return (any(part.startswith(".") for part in parts) or top in WORKSPACE_LEVEL
-            or top == IDEATION_NOTES or is_build_definition(top))
+            or is_build_definition(top))
 
 
-def _shape(name: str) -> tuple[str, str] | None:
-    """(slug, kind) of a top-level name by its shape alone; `-review` and
-    `-feedback` names still read as proposals here. A folder ends in `/`."""
-    stem, dot, rest = name.rstrip("/").partition(".")
-    if not dot or not SLUG_RE.fullmatch(stem) or not all(rest.split(".")):
-        return None
-    if name.endswith("/"):
-        return stem, KEPT
-    if rest == "md":
-        base = stem.removesuffix(HANDOUT_SUFFIX)
-        return (base, HANDOUT) if base != stem else (stem, PROPOSAL)
-    if rest in ("notes.md", "harvest.md"):
-        return stem, NOTES if rest == "notes.md" else HARVEST
-    if rest in BUILT_EXTENSIONS:
-        return stem, BUILT
-    return (stem, KEPT) if "." in rest else None
+def is_slug(name: str) -> bool:
+    """Slug-shaped: lowercase ASCII letters and digits joined by single
+    hyphens, one word or more (`idea`, `idea-2`)."""
+    return bool(SLUG_RE.fullmatch(name))
 
 
-def family_handles(names: Iterable[str]) -> frozenset[str]:
-    """The slugs the family-shaped top-level names carry: the slug-shaped part
-    before the first `.`, and a handout's base slug."""
-    handles = set()
-    for name in names:
-        if name.startswith(FIGURES) or "/" in name.rstrip("/") or workspace_allowed(name):
-            continue
-        if (shape := _shape(name)) is not None:
-            handles.add(shape[0])
-    return frozenset(handles)
+def notes_shaped(text: str) -> bool:
+    """Whether a notes file carries the five section headings, in any order.
+    Classification, not validation: nothing is reported about the headings."""
+    found = {m.group(1) for m in NOTES_HEADING_RE.finditer(text)}
+    return set(NOTES_HEADINGS) <= found
 
 
-def family_member(name: str, handles: frozenset[str]) -> tuple[str, str] | None:
-    """(slug, kind) of one name relative to the listed directory, such as
-    `img/x.png` or `x.probe/`, or None when it is not a family member. Name
-    only: a `-review` or `-feedback` name is a companion when its base slug is
-    in `handles`, else a proposal. A whole listing is classified by
-    family_members(), which applies the skill-check rule to those names."""
+def proposal_folder(name: str, files: Collection[str],
+                    read: Callable[[str], str | None]) -> bool:
+    """Whether the folder `name`, holding `files` (names relative to it), is a
+    proposal folder: slug-shaped, not reserved, and holding a proposal named
+    after it, a harvest record, or a notes file with the five headings.
+    `read(name)` gives a file's text, or None when it cannot; an unreadable
+    notes file keeps the folder one, which keeps every warning quiet."""
+    if not is_slug(name) or name in RESERVED_FOLDERS:
+        return False
+    if f"{name}.md" in files or ROLE_NAMES[HARVEST] in files:
+        return True
+    if ROLE_NAMES[NOTES] not in files:
+        return False
+    text = read(ROLE_NAMES[NOTES])
+    return text is None or notes_shaped(text)
+
+
+def _label(name: str, slug: str) -> bool:
+    """A free label for a kept file in the folder `slug`/."""
+    return is_slug(name) and name != slug and name not in RESERVED_LABELS
+
+
+def family_member(name: str, slug: str) -> str | None:
+    """The role of `name`, a path relative to the proposal folder `slug`/ (a
+    subfolder as `name/`), or None when it is no family member: hidden,
+    workspace-level and build files, reserved labels, unclassified names. A
+    file named by any slug-shaped handle is the folder's own or a previous
+    output; a markdown file under another slug is a kept file by its name."""
     if workspace_allowed(name):
         return None
-    if name.startswith(FIGURES):
-        figure = name.removeprefix(FIGURES)
-        owners = [h for h in handles if "/" not in figure and figure.startswith(h + "-")]
-        return (max(owners, key=len), FIGURE) if owners else None
-    if "/" in name.rstrip("/") or (shape := _shape(name)) is None:
-        return None
-    if shape[1] == PROPOSAL:
-        for suffix, role in COMPANION_SUFFIXES.items():
-            base = shape[0].removesuffix(suffix)
-            if base != shape[0] and base in handles:
-                return base, role
-    return shape
+    top, sep, rest = name.partition("/")
+    if sep:
+        if top == FIGURE_FOLDER:
+            return FIGURE if rest and "/" not in rest else None
+        return KEPT if _label(top, slug) else None
+    role = next((role for role, role_name in ROLE_NAMES.items() if name == role_name), None)
+    stem, dot, ext = name.partition(".")
+    if role is not None or not dot or not is_slug(stem) or not all(ext.split(".")):
+        return role
+    handle = HANDLE_SUFFIXES.get("." + ext)
+    if handle is not None and (handle != PROPOSAL or stem == slug):
+        return handle
+    return KEPT if _label(stem, slug) else None
 
 
-def _companion_of(slug: str) -> tuple[str, str] | None:
-    for suffix, role in COMPANION_SUFFIXES.items():
-        base = slug.removesuffix(suffix)
-        if base != slug and SLUG_RE.fullmatch(base):
-            return base, role
-    return None
-
-
-def family_members(names: Iterable[str], ends_in_block: Callable[[str], bool],
-                   own: str = "") -> dict[str, tuple[str, str]]:
-    """(slug, kind) of every family member of a listing: top-level names, a
-    folder as `name/`, figures as `img/<file>`. A `-review` or `-feedback` name
-    whose base slug has no proposal here is a proposal when
-    `ends_in_block(name)`, else that base slug's companion (skill-check:
-    Orphaned companions reported as a warning); `own`, the checked proposal,
-    is one whatever its name. Those names are decided shortest first, so a
-    base that is itself one is settled before it is asked about, and
-    `ends_in_block` is called only for them. Figures resolve last, by longest
-    match over every member's slug."""
-    names = list(names)
-    members: dict[str, tuple[str, str]] = {}
-    pending = []
-    for name in names:
-        if name.startswith(FIGURES) or (member := family_member(name, frozenset())) is None:
+def family_members(paths: Iterable[str], read: Callable[[str], str | None] | None = None
+                   ) -> dict[str, tuple[str, str]]:
+    """(slug, role) of every family member among `paths`, file paths relative to
+    the proposal location: a file of a proposal folder that classifies as a
+    member of it. A file at the location's root or in any other folder is none.
+    `read(path)` gives a path's text, or None when it cannot; it is asked only
+    about a folder's `notes.md`, and without it every such folder counts."""
+    folders: dict[str, list[str]] = {}
+    for path in paths:
+        top, sep, rest = path.partition("/")
+        if sep and rest:
+            folders.setdefault(top, []).append(rest)
+    members = {}
+    for folder, files in folders.items():
+        def text(name: str, folder: str = folder) -> str | None:
+            return read(f"{folder}/{name}") if read is not None else None
+        if not proposal_folder(folder, files, text):
             continue
-        companion = _companion_of(member[0]) if member[1] == PROPOSAL and name != own else None
-        if companion is None:
-            members[name] = member
-        else:
-            pending.append((len(name), name, member[0], companion))
-    proposals = {slug for slug, kind in members.values() if kind == PROPOSAL}
-    for _, name, slug, companion in sorted(pending):
-        if companion[0] not in proposals and ends_in_block(name):
-            members[name] = (slug, PROPOSAL)
-            proposals.add(slug)
-        else:
-            members[name] = companion
-    handles = frozenset(slug for slug, _ in members.values())
-    members.update({name: member for name in names if name.startswith(FIGURES)
-                    and (member := family_member(name, handles)) is not None})
+        members.update({f"{folder}/{rel}": (folder, role) for rel in files
+                        if (role := family_member(rel, folder)) is not None})
     return members
 
 
@@ -509,139 +596,233 @@ def _readable_name(name: str) -> bool:
     return True
 
 
-def _listing(directory: Path) -> list[str]:
-    names = [e.name + "/" if e.is_dir() else e.name for e in directory.iterdir()
-             if _readable_name(e.name)]
-    figures = directory / FIGURE_FOLDER
-    if figures.is_dir():
-        names += [FIGURES + e.name for e in figures.iterdir()
-                  if e.is_file() and _readable_name(e.name)]
-    return sorted(names)
+def _shown(name: str) -> str:
+    """A name the listings did not filter, as a report may print it: the
+    proposal's own file name and its folder's name come from the path the check
+    was given, so one that is not valid UTF-8 keeps its readable part, the
+    undecodable bytes replaced."""
+    return os.fsencode(name).decode("utf-8", "replace")
 
 
-def _ends_in_block(directory: Path) -> Callable[[str], bool]:
-    """The one read this finding makes: whether a `-review` or `-feedback`
-    file ends in a metadata block. An unreadable file stays a proposal, which
-    keeps the warning quiet."""
-    def ends_in_block(name: str) -> bool:
-        try:
-            text = (directory / name).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return True
-        return split_proposal(text)[1].found
-    return ends_in_block
+def _entries(directory: Path) -> list[str]:
+    """The names in `directory`, a folder as `name/`, hidden names left out;
+    nothing for a directory that is missing or cannot be listed."""
+    try:
+        return sorted(e.name + "/" if e.is_dir() else e.name for e in directory.iterdir()
+                      if _readable_name(e.name) and not e.name.startswith("."))
+    except OSError:
+        return []
 
 
-def _by_slug(members: dict[str, tuple[str, str]]) -> dict[str, list[tuple[str, str]]]:
-    grouped: dict[str, list[tuple[str, str]]] = {}
-    for name, (slug, kind) in sorted(members.items()):
-        grouped.setdefault(slug, []).append((name, kind))
-    return grouped
+def _text(path: Path) -> str | None:
+    """A file's text for one of the classifying reads, None when it cannot be
+    read: a file this script does not own must never break the check."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
 
 
-def _reportable(slug: str, files: list[tuple[str, str]], shelter: bool) -> bool:
-    """A slug with no proposal, notes file or harvest record (`shelter`: in
-    this listing, which is the proposal location) and an unambiguous companion
-    or, under a slug of KEPT_SLUG_WORDS or more, at least two kept files.
-    Built outputs never decide it."""
-    kinds = {kind for _, kind in files}
-    if shelter and SHELTERS & kinds:
-        return False
-    kept = [kind for _, kind in files].count(KEPT)
-    return bool(UNAMBIGUOUS & kinds) or (
-        kept >= 2 and len(slug.split("-")) >= KEPT_SLUG_WORDS)
+def _reader(folder: Path) -> Callable[[str], str | None]:
+    return lambda name: _text(folder / name)
 
 
-def _orphans(members: dict[str, tuple[str, str]], quiet_builds: bool,
-             where: str = "") -> list[Finding]:
-    """`where` is empty for the proposal location; at the root, nothing there
-    shelters a slug, since only the location does."""
+def proposal_shaped(text: str) -> bool:
+    """Opens with a `# ` title followed by an emphasized subtitle paragraph and
+    ends in a metadata block: the proposal's own frame, which a kept list ending
+    in a metadata block lacks (design Q5)."""
+    body, meta = split_proposal(text)
+    frame = parse_frame(body)
+    return meta.found and frame.title_is_first and frame.subtitle_emphasized
+
+
+def _orphan(path: str, why: str) -> Finding:
+    return warn("companion-orphaned", f"`{path}` {why} — {ORPHAN_CAUSE}")
+
+
+def _own_folder_findings(proposal: Path, ws: Workspace) -> list[Finding]:
+    """Inside the checked proposal's folder: a second proposal, recognized by
+    its frame, and a proposal folder moved into this one."""
+    folder = proposal.parent
+    own = _shown(folder.name)
+    shown = f"{ws.prefix}{own}" if folder.parent == ws.location else own
+    place = f"the proposal location `{ws.prefix}`" if ws.prefix else "the proposal location"
+    checked = _shown(proposal.name)
     found = []
-    for slug, files in _by_slug(members).items():
-        if not _reportable(slug, files, shelter=not where):
-            continue
+    for name in _entries(folder):
+        if _nested_folder(folder, name):
+            found.append(_orphan(
+                f"{shown}/{name}", f"is a proposal folder inside the folder of "
+                f"`{checked}`; proposal folders sit directly in {place}, so it "
+                "belongs there"))
+        elif _second_proposal(folder / name, proposal):
+            found.append(_orphan(
+                f"{shown}/{name}", f"opens and ends like a proposal but sits in the folder of "
+                f"`{checked}`; a proposal lives in a folder of its own, "
+                f"`{ws.prefix}{name.partition('.')[0]}/{name}`"))
+    return found
+
+
+def _nested_folder(folder: Path, name: str) -> bool:
+    """A subfolder, `img/` aside, that is a proposal folder itself."""
+    sub = name.removesuffix("/")
+    return (name.endswith("/") and sub != FIGURE_FOLDER
+            and proposal_folder(sub, _entries(folder / sub), _reader(folder / sub)))
+
+
+def _second_proposal(path: Path, proposal: Path) -> bool:
+    """A markdown file named by another slug that carries the proposal frame."""
+    stem, _, ext = path.name.partition(".")
+    return (ext == "md" and path != proposal and is_slug(stem)
+            and stem not in RESERVED_LABELS and proposal_shaped(_text(path) or ""))
+
+
+def _location_folders(ws: Workspace, own: Path) -> dict[str, bool]:
+    """Each slug-shaped, unreserved folder of the location but the checked
+    proposal's own, and whether it is a proposal folder."""
+    out = {}
+    for name in _entries(ws.location):
+        folder = name.removesuffix("/")
+        if (name.endswith("/") and is_slug(folder) and folder not in RESERVED_FOLDERS
+                and ws.location / folder != own):
+            path = ws.location / folder
+            out[folder] = proposal_folder(folder, _entries(path), _reader(path))
+    return out
+
+
+def _unsheltered_findings(ws: Workspace, folders: dict[str, bool]) -> list[Finding]:
+    """The unambiguous companions in a slug-shaped folder that is no proposal
+    folder (design D19): what a rename that moved only part of a family leaves."""
+    found = []
+    for folder in sorted(name for name, sheltered in folders.items() if not sheltered):
+        names = set(_entries(ws.location / folder))
         found += [
-            warn("companion-orphaned",
-                 f"`{name}`{where} carries the slug `{slug}`, but no proposal, notes "
-                 f"file or harvest record in the proposal location does — {ORPHAN_CAUSE}")
-            for name, kind in files if not (kind == BUILT and quiet_builds)
+            _orphan(f"{ws.prefix}{folder}/{name}",
+                    f"lies in `{ws.prefix}{folder}/`, which holds no proposal, notes file or "
+                    "harvest record")
+            for name in (ROLE_NAMES[REVIEW], ROLE_NAMES[FEEDBACK], folder + HANDOUT_SUFFIX)
+            if name in names
         ]
     return found
 
 
-def _root_orphans(root: Path, value: str, members: dict[str, tuple[str, str]],
-                  quiet_builds: bool) -> list[Finding]:
-    """The workspace root of a configured proposal location: a family file whose
-    slug lives in the location lies outside it; any other follows the rule.
-    Figures at the root resolve to the location's slugs too."""
-    sheltered = {slug for slug, kind in members.values() if kind in SHELTERS}
-    names = _listing(root)
-    at_root = family_members(names, _ends_in_block(root))
-    handles = frozenset({slug for slug, _ in at_root.values()} | sheltered)
-    at_root.update({n: m for n in names if n.startswith(FIGURES)
-                    and (m := family_member(n, handles)) is not None})
-    outside = {n: m for n, m in at_root.items() if m[0] in sheltered}
-    found = [
-        warn("companion-orphaned",
-             f"`{name}` at the workspace root carries the slug `{slug}` but lies outside "
-             f"the proposal location `{value}`, where that family sits — {ORPHAN_CAUSE}")
-        for name, (slug, kind) in sorted(outside.items())
-        if kind != PROPOSAL and not (kind == BUILT and quiet_builds)
-    ]
-    rest = {n: m for n, m in at_root.items() if n not in outside}
-    return found + _orphans(rest, quiet_builds, where=" at the workspace root")
+ROOT_STRAYS = frozenset({ROLE_NAMES[REVIEW], ROLE_NAMES[FEEDBACK], ROLE_NAMES[HARVEST], FIGURES})
 
 
-def _stale_links(own: str, text: str, members: dict[str, tuple[str, str]]) -> list[Finding]:
-    """Figure links in the checked proposal under another slug. The old slug is
-    named only when a family file other than a figure carries it: from the
-    link and the image alone, where the slug ends is unknowable."""
-    carried = {slug for name, (slug, _) in members.items() if not name.startswith(FIGURES)}
+OUTSIDE = "outside any proposal folder"
+
+
+def _root_stray(name: str, base: Path, sheltered: Collection[str], prefix: str) -> str | None:
+    """What makes a name at a root a stray family file, as the tail of its
+    warning, or None when it is none. A name that starts with a proposal
+    folder's slug belongs in that folder; a markdown file under a slug counts
+    when it ends in a metadata block, a notes file when it carries the five
+    headings."""
+    owner = max((slug for slug in sheltered if name.startswith(slug + ".")), key=len,
+                default=None)
+    if owner is not None:
+        return f"and it belongs in the proposal folder `{prefix}{owner}/`"
+    if name in ROOT_STRAYS:
+        return OUTSIDE
+    stem, _, ext = name.partition(".")
+    if name == ROLE_NAMES[NOTES]:
+        return OUTSIDE if notes_shaped(_text(base / name) or "") else None
+    if not is_slug(stem) or ext not in ("md", HANDOUT_SUFFIX[1:]):
+        return None
+    if ext == "md":
+        if not split_proposal(_text(base / name) or "")[1].found:
+            return None
+        return f"{OUTSIDE}; a proposal lives in a folder of its own, `{prefix}{stem}/{name}`"
+    return OUTSIDE
+
+
+def _root_findings(base: Path, proposal: Path, sheltered: Collection[str],
+                   ws: Workspace) -> list[Finding]:
+    """Family files at the location's root or the workspace root, where no
+    proposal's file belongs."""
+    at_root = base == ws.root
+    shown = "" if at_root else ws.prefix
+    where = "at the workspace root" if at_root else "at the root of the proposal location"
     found = []
-    for link in dict.fromkeys(FIGURE_LINK_RE.findall(text)):
-        figure = link.removeprefix(FIGURES)
-        if "/" in figure or figure.startswith(own + "-"):
+    for name in _entries(base):
+        if workspace_allowed(name) or base / name == proposal:
             continue
-        old = max((s for s in carried - {own} if figure.startswith(s + "-")), key=len,
-                  default=None)
-        named = f" but with `{old}`, a slug other files here still carry" if old else ""
-        found.append(warn(
-            "companion-orphaned",
-            f"the proposal links `{link}`, whose file name does not start with its own "
-            f"slug `{own}` followed by `-`{named} — {ORPHAN_CAUSE}",
-        ))
+        tail = _root_stray(name, base, sheltered, ws.prefix)
+        if tail is not None:
+            found.append(_orphan(f"{shown}{name}", f"lies {where}, {tail}"))
     return found
 
 
-def _configured_root(proposal: Path, overrides: dict,
-                     guidelines: Path | None) -> tuple[Path, str] | None:
-    if guidelines is None or not overridden(overrides, "paths", "proposals"):
-        return None
-    value = overrides["paths"]["proposals"]
-    root = guidelines.resolve().parent
-    if paths_value_problem(value) is not None or root == proposal.resolve().parent:
-        return None
-    return root, value
-
-
-def family_findings(proposal_path: Path, overrides: dict, guidelines: Path | None,
-                    text: str) -> list[Finding]:
-    """Orphaned companions around the checked proposal (skill-check: Orphaned
-    companions reported as a warning). Lists the proposal's directory and its
-    `img/`, and the workspace root when a proposal location is configured;
-    changes nothing, and opens another file only to tell a proposal from a
-    companion."""
-    location = proposal_path.parent
-    names = _listing(location)
-    members = family_members(names, _ends_in_block(location), own=proposal_path.name)
-    quiet_builds = any(is_build_definition(n) for n in names if "/" not in n)
-    found = _orphans(members, quiet_builds)
-    if (root := _configured_root(proposal_path, overrides, guidelines)) is not None:
-        found += _root_orphans(*root, members, quiet_builds)
-    own = proposal_path.name.removesuffix(".md")
-    if SLUG_RE.fullmatch(own):
-        found += _stale_links(own, text, members)
+def family_findings(proposal: Path, ws: Workspace) -> list[Finding]:
+    """Orphaned companions around the checked proposal, `proposal` resolved
+    (skill-check: Orphaned companions reported as a warning). Lists the
+    proposal's folder and its subfolders, the location's root, the workspace
+    root and the location's slug-shaped folders; changes nothing, and opens a
+    file only for the frame, metadata-block and notes-headings tests. Called
+    only for a proposal whose folder sits directly in the location
+    (workspace_findings)."""
+    found = _own_folder_findings(proposal, ws)
+    folders = _location_folders(ws, proposal.parent)
+    sheltered = {folder for folder, is_one in folders.items() if is_one}
+    sheltered.add(proposal.parent.name)
+    found += _unsheltered_findings(ws, folders)
+    for base in dict.fromkeys((ws.location, ws.root)):
+        found += _root_findings(base, proposal, sheltered, ws)
     return found
+
+
+def build_definitions(directory: Path) -> list[str]:
+    """The workspace build definitions in `directory`, recognized as publish.py
+    recognizes one: `proposal-build` with or without an extension, or a recipe
+    file that declares the `proposal-build` target. An unreadable recipe is
+    none."""
+    try:
+        entries = sorted((e for e in directory.iterdir() if _readable_name(e.name)),
+                         key=lambda e: e.name)
+    except OSError:
+        return []
+    return [entry.name for entry in entries if entry.is_file() and (
+        entry.name == BUILD_STEM or entry.name.startswith(BUILD_STEM + ".")
+        or (entry.name.lower().lstrip(".") in RECIPE_NAMES
+            and RECIPE_TARGET_RE.search(_text(entry) or "")))]
+
+
+def build_findings(ws: Workspace) -> list[Finding]:
+    """A build definition at the location's root or the workspace root, where
+    publish never looks (skill-check: Unused build definitions reported).
+    Called only for a proposal whose folder sits directly in the location, so
+    neither root is that folder (workspace_findings)."""
+    found = []
+    for base in dict.fromkeys((ws.location, ws.root)):
+        at_root = base == ws.root
+        shown = "" if at_root else ws.prefix
+        where = "at the workspace root" if at_root else "at the root of the proposal location"
+        found += [warn(
+            "build-definition-unused",
+            f"`{shown}{name}` {where} is a build definition the publish step never uses: "
+            "it looks for one only in the proposal's folder — copy it into each "
+            "proposal folder that should be built with it",
+        ) for name in build_definitions(base)]
+    return found
+
+
+def workspace_findings(proposal_path: Path, structure: dict, overrides: dict,
+                       root: Path, explicit: bool = False) -> list[Finding]:
+    """The location value, the proposal's placement, its orphaned companions
+    and unused build definitions, all measured from `root`, which is an
+    explicitly passed override file's directory when `explicit`. A proposal
+    whose folder does not sit directly in the location is misplaced, or the
+    check started somewhere other than the workspace root: either way the
+    roots it would list are not known to be the workspace's, so only the
+    placement error is reported, and the scans follow once it is fixed."""
+    value, found = location_value(structure, overrides)
+    configured = overridden(overrides, "paths", "proposals") and not found
+    ws = workspace(root, value, configured, explicit)
+    proposal = proposal_path.resolve()
+    found += placement_findings(proposal, ws)
+    if proposal.parent.parent != ws.location:
+        return found
+    return found + family_findings(proposal, ws) + build_findings(ws)
 
 
 # ---------- narrow metadata extraction ---------------------------------------
@@ -1301,13 +1482,12 @@ RQ_RECORD_HEADING = re.compile(
 
 
 def review_path(proposal: Path) -> Path:
-    """The review file the review skill writes for this proposal; the one
-    place this script derives its name. The suffix is the `review` entry of
-    the family's role table, applied to the stem whatever its shape: a
-    classification through family_member() would name no review for a stem
-    that is not a slug, such as `My Proposal`."""
-    suffix = next(s for s, role in COMPANION_SUFFIXES.items() if role == REVIEW)
-    return proposal.with_name(proposal.stem + suffix + ".md")
+    """The review file the review skill writes for this proposal: the `review`
+    entry of the family's role table, in the proposal's folder; the one place
+    this script derives its name. It follows the folder whatever the
+    proposal's name, so a stem that is not a slug, such as `My Proposal`, has
+    its review read too."""
+    return proposal.parent / ROLE_NAMES[REVIEW]
 
 
 def rq_record_end(review: str, start: int) -> int:
@@ -1999,8 +2179,12 @@ def build_context(body: str, meta: Metadata, structure: dict, overrides: dict) -
 
 
 def check_findings(proposal_path: Path, structure: dict, overrides: dict,
-                   guidelines: Path | None = None) -> list[Finding]:
-    """Every mechanical finding for one proposal, in report order."""
+                   root: Path | None = None, explicit: bool = False) -> list[Finding]:
+    """Every mechanical finding for one proposal, in report order. The
+    workspace findings are measured from `root`, by default the working
+    directory, which is the workspace root a user's agent runs from;
+    `explicit` says the root is an explicitly passed override file's
+    directory instead."""
     text = proposal_path.read_text(encoding="utf-8")
     body, meta = split_proposal(text)
 
@@ -2014,8 +2198,8 @@ def check_findings(proposal_path: Path, structure: dict, overrides: dict,
     # before the rules: a key that will not be honoured explains every verdict
     # below it, and reading those first would waste the user's time.
     findings += override_key_findings(overrides)
-    findings += paths_findings(proposal_path, overrides, guidelines)
-    findings += family_findings(proposal_path, overrides, guidelines, text)
+    findings += workspace_findings(proposal_path, structure, overrides,
+                                   root if root is not None else Path.cwd(), explicit)
 
     ctx = build_context(body, meta, structure, overrides)
     for rule in RULES:
@@ -2071,15 +2255,17 @@ def section_text(body: str, title: str) -> str:
 
 # ---------- report -----------------------------------------------------------
 
-def render_report(name: str, digest: str, findings: list[Finding]) -> str:
+def render_report(name: str, digest: str, findings: list[Finding], governing: str) -> str:
     """The human report. Its wording is the skill's user-facing output; the
-    machine-readable mode exists so nothing has to parse it."""
+    machine-readable mode exists so nothing has to parse it. `governing` is a
+    key of GOVERNING_LABELS."""
     errors = [f for f in findings if f.level == "error"]
     warnings = [f for f in findings if f.level == "warning"]
     lines = [f"# Check: {name}"]
     # identifies the exact content checked; a re-run with a differing digest
     # means the file changed between the runs (read-only mandate tripwire)
     lines.append(f"digest: sha256:{digest}")
+    lines.append(f"guidelines: {GOVERNING_LABELS[governing]}")
     lines.append(
         "\n## Verified mechanically — errors" if errors
         else "\n## Verified mechanically — no errors"
@@ -2128,23 +2314,28 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     structure = load_structure(args.structure)
-    guidelines = resolve_guidelines(args.proposal, args.guidelines)
     overrides = load_overrides(args.proposal, args.guidelines)
-    findings = check_findings(args.proposal, structure, overrides, guidelines)
+    # the workspace root: an explicit override file's directory, else here
+    explicit = args.guidelines is not None
+    root = args.guidelines.parent if explicit else Path.cwd()
+    findings = check_findings(args.proposal, structure, overrides, root, explicit)
+    governing = governing_position(args.proposal, args.guidelines)
     digest = hashlib.sha256(args.proposal.read_bytes()).hexdigest()
     exit_code = 1 if any(f.level == "error" for f in findings) else 0
+    name = _shown(args.proposal.name)
 
     if args.json:
         print(json.dumps({
-            "file": args.proposal.name,
+            "file": name,
             "digest": f"sha256:{digest}",
+            "guidelines": governing,
             "exit_code": exit_code,
             "findings": [
                 {"level": f.level, "rule": f.rule, "message": f.message} for f in findings
             ],
         }, ensure_ascii=False, indent=2))
     else:
-        print(render_report(args.proposal.name, digest, findings))
+        print(render_report(name, digest, findings, governing))
     return exit_code
 
 

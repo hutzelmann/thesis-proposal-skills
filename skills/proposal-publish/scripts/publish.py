@@ -2,9 +2,11 @@
 """Build a proposal PDF (or fallback format) via pandoc.
 
 Stdlib-only (Python >= 3.11). Engine resolution: typst (preferred) -> LaTeX
-engine -> docx. Outputs (PDF + intermediate source) land next to the proposal;
-build artifacts are added to the workspace .gitignore. --handout writes a
-stripped markdown export (abstracts removed) instead of building.
+engine -> docx. Outputs (PDF + intermediate source) land in the proposal's
+folder, and build artifacts are added to the .gitignore there. Figures resolve
+against that folder whatever directory this runs from, and the converter's
+warnings are passed through on a successful build. --handout writes a stripped
+markdown export (abstracts removed), `<slug>.handout.md`, instead of building.
 
 A workspace may replace the built-in pipeline with a build definition of its
 own beside the proposal. This script discovers one and hands over: it reports
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -28,6 +31,10 @@ REFERENCES = Path(__file__).resolve().parent.parent / "references"
 LATEX_ENGINES = ("tectonic", "xelatex", "lualatex", "pdflatex")
 GITIGNORE_MARKER = "# proposal build artifacts (managed by proposal-publish)"
 GITIGNORE_ENTRIES = ("*.pdf", "*.typ", "*.tex", "*.docx")
+# the hand-in export leaves the folder, so it carries the proposal's handle
+HANDOUT_SUFFIX = ".handout.md"
+# how pandoc opens a warning; indented lines below one continue it
+WARNING_PREFIX = "[WARNING]"
 
 # Workspace-supplied build. BUILD_STEM matches `proposal-build` with or without
 # a suffix, so a workspace picks whatever it likes; RECIPE_RUNNERS entries count
@@ -207,8 +214,9 @@ def strip_abstracts(text: str) -> str:
     return "\n".join(out)
 
 
-def ensure_gitignore(workspace: Path) -> None:
-    gitignore = workspace / ".gitignore"
+def ensure_gitignore(folder: Path) -> None:
+    """Ignore entries for the build artifacts, in the proposal's folder."""
+    gitignore = folder / ".gitignore"
     existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
     present = {line.strip() for line in existing.splitlines()}
     missing = [e for e in GITIGNORE_ENTRIES if e not in present]
@@ -221,13 +229,40 @@ def ensure_gitignore(workspace: Path) -> None:
     gitignore.write_text(existing + block, encoding="utf-8")
 
 
-def run(cmd: list[str]) -> None:
+def converter_warnings(stderr: str) -> list[str]:
+    """pandoc's warnings in its own words, each with the indented lines that
+    continue it. A figure pandoc cannot find is only a warning, so a build that
+    discarded them on success dropped figures without a word."""
+    out: list[str] = []
+    keep = False
+    for line in stderr.splitlines():
+        if line.startswith(WARNING_PREFIX):
+            keep = True
+        elif not line[:1].isspace():
+            keep = False
+        if keep:
+            out.append(line)
+    return out
+
+
+def run(cmd: list[str], cwd: Path | None = None) -> None:
     # pandoc and typst write UTF-8 on every platform; text=True would decode it
     # in the ANSI code page on Windows and raise on `Ł` (C5 81) even after a
     # successful build. Replaced, not raised: this text only reaches a diagnostic
-    result = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace")
+    result = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace",
+                            cwd=cwd)
     if result.returncode != 0:
         sys.exit(f"build failed: {' '.join(cmd[:2])} …\n{result.stderr.strip()[-2000:]}")
+    for line in converter_warnings(result.stderr):
+        print(line, file=sys.stderr)
+
+
+def nameable(folder: Path) -> bool:
+    """Whether pandoc can be told this folder as its resource path. It splits
+    `--resource-path` on the path-list separator (`:` on POSIX, `;` on
+    Windows), so a folder under `a:b/` would be searched as two directories,
+    neither of them the folder."""
+    return os.pathsep not in str(folder)
 
 
 def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
@@ -236,8 +271,15 @@ def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
     Pure and side-effect free: the export tests and the typst CI script's drift
     guard read exactly what the shipped build path runs, instead of restating it.
     """
+    folder = proposal.parent
     base = [
         "pandoc", str(proposal),
+        # figures resolve against the proposal's folder, not the working
+        # directory: pandoc's default, which dropped every `img/` figure from
+        # LaTeX PDFs and Word documents built from the workspace root with only
+        # a warning. Typst resolves against the .typ file and is unaffected. A
+        # folder pandoc cannot be told about is built from inside it (build())
+        *(["--resource-path", str(folder)] if nameable(folder) else []),
         # the body carries the document frame. subtitle-filter (which runs
         # before the shift is applied) promotes the leading `# <title>` and the
         # emphasized subtitle paragraph into metadata and leaves the closing
@@ -277,21 +319,26 @@ def pandoc_command(proposal: Path, kind: str, lang: str = "en") -> list[str]:
 
 
 def build(proposal: Path, kind: str, tool: str) -> list[Path]:
+    # absolute before any command is built: where the folder cannot be named
+    # to pandoc, pandoc runs from inside it, where its default resource path
+    # finds `img/`, and every path the command names must hold from there
+    proposal = proposal.resolve()
+    cwd = None if nameable(proposal.parent) else proposal.parent
     stem = proposal.with_suffix("")
     lang = infer_lang(proposal.read_text(encoding="utf-8"), load_structure())
     cmd = pandoc_command(proposal, kind, lang)
     if kind == "typst":
         typ, pdf = stem.with_suffix(".typ"), stem.with_suffix(".pdf")
-        run([*cmd, "-o", str(typ)])
+        run([*cmd, "-o", str(typ)], cwd)
         run(["typst", "compile", str(typ), str(pdf)])
         return [pdf, typ]
     if kind == "latex":
         tex, pdf = stem.with_suffix(".tex"), stem.with_suffix(".pdf")
-        run([*cmd, "-s", "-o", str(tex)])
-        run([*cmd, f"--pdf-engine={tool}", "-o", str(pdf)])
+        run([*cmd, "-s", "-o", str(tex)], cwd)
+        run([*cmd, f"--pdf-engine={tool}", "-o", str(pdf)], cwd)
         return [pdf, tex]
     docx = stem.with_suffix(".docx")
-    run([*cmd, "-o", str(docx)])
+    run([*cmd, "-o", str(docx)], cwd)
     return [docx]
 
 
@@ -325,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     proposal = args.proposal.resolve()
 
     if args.handout:
-        target = proposal.with_name(proposal.stem + "-handout.md")
+        target = proposal.with_name(proposal.stem + HANDOUT_SUFFIX)
         export = strip_abstracts(proposal.read_text(encoding="utf-8"))
         # Every other output is an ignored build artifact this script owns. The
         # handout is not ignored, because it is meant to be kept and sent — so a
@@ -341,9 +388,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         target.write_text(export, encoding="utf-8")
+        # Renamed to a plain `.md` in its folder, the export keeps the
+        # proposal's frame and reads as a second proposal there; with the
+        # ending kept it stays a previous output.
         print(
             f"handout written: {target.name} (abstracts stripped — "
-            "rename to include your name before sending)"
+            "rename to include your name before sending, and keep the "
+            f"`{HANDOUT_SUFFIX}` ending, for example "
+            f"`<your-name>-{proposal.stem}{HANDOUT_SUFFIX}`)"
         )
         return 0
 

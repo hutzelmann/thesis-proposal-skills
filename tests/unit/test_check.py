@@ -1,11 +1,13 @@
 """L0: deterministic check script against blueprint fixtures (skill-check spec)."""
 
 import pytest
-from helpers import FIXTURES, run_check
+from helpers import check_fixture, fixture_proposal, run_check, write_proposal
+
+F00 = fixture_proposal("f00-clean-en").read_text(encoding="utf-8")
 
 
 def test_clean_fixture_passes():
-    result = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md")
+    result = check_fixture("f00-clean-en")
     assert result.returncode == 0, result.stdout
     assert "no errors" in result.stdout
     assert "WARNING" not in result.stdout
@@ -15,8 +17,8 @@ def test_digest_line_identifies_checked_content(tmp_path):
     """Read-only tripwire (skill-check spec): digest present, stable, content-bound."""
     import hashlib
 
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_bytes()
-    proposal = tmp_path / "ml-code-review.md"
+    source = fixture_proposal("f00-clean-en").read_bytes()
+    proposal = write_proposal(tmp_path, "ml-code-review", "")
     proposal.write_bytes(source)
     first = run_check(proposal).stdout
     expected = hashlib.sha256(source).hexdigest()
@@ -29,7 +31,7 @@ def test_digest_line_identifies_checked_content(tmp_path):
 
 
 def test_broken_fixture_trips_guardrails():
-    result = run_check(FIXTURES / "f15-format-broken" / "broken-format.md")
+    result = check_fixture("f15-format-broken")
     assert result.returncode == 1
     out = result.stdout
     assert "no blank line before the trailing" in out
@@ -42,7 +44,7 @@ def test_broken_fixture_trips_guardrails():
 
 
 def test_override_workspace_changes_verdicts():
-    result = run_check(FIXTURES / "w02-override-workspace" / "ml-code-review.md")
+    result = check_fixture("w02-override-workspace")
     out = result.stdout
     # timeline heading is un-forbidden by the workspace TOML override
     assert "forbidden section" not in out
@@ -53,20 +55,17 @@ def test_override_workspace_changes_verdicts():
 def test_detailed_timeline_needs_the_override(tmp_path):
     """Same file, without the guidelines.md that selects the detailed mode:
     the phase table under `# Timeline` is then a size-guard error."""
-    source = (FIXTURES / "w02-override-workspace" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    # no guidelines.md next to it -> [timeline] detail is simple
-    victim.write_text(source, encoding="utf-8")
+    source = fixture_proposal("w02-override-workspace").read_text(encoding="utf-8")
+    # no guidelines.md in the workspace -> [timeline] detail is simple
+    victim = write_proposal(tmp_path, "ml-code-review", source)
     result = run_check(victim)
     assert "table in `Timeline`" in result.stdout
     assert "forbidden section: `Timeline`" not in result.stdout  # it is a canonical title now
 
 
 def test_detailed_mode_also_unforbids_work_plan_headings(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"),
-                      encoding="utf-8")
+    victim = write_proposal(tmp_path, "ml-code-review",
+                            F00.replace("# Timeline", "# Timeline and Milestones"))
     (tmp_path / "guidelines.md").write_text(
         '```toml\n[timeline]\ndetail = "detailed"\n```\n', encoding="utf-8")
     result = run_check(victim)
@@ -74,18 +73,14 @@ def test_detailed_mode_also_unforbids_work_plan_headings(tmp_path):
 
 
 def test_work_plan_headings_stay_forbidden_by_default(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source.replace("# Timeline", "# Timeline and Milestones"),
-                      encoding="utf-8")
+    victim = write_proposal(tmp_path, "ml-code-review",
+                            F00.replace("# Timeline", "# Timeline and Milestones"))
     result = run_check(victim)
     assert "matches `milestones`" in result.stdout
 
 
 def test_unknown_timeline_detail_is_reported(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")
+    victim = write_proposal(tmp_path, "ml-code-review", F00)
     (tmp_path / "guidelines.md").write_text(
         '```toml\n[timeline]\ndetail = "gantt"\n```\n', encoding="utf-8")
     result = run_check(victim)
@@ -96,9 +91,7 @@ def test_unknown_timeline_detail_is_reported(tmp_path):
 def test_retired_override_key_is_reported_not_ignored(tmp_path):
     """A workspace whose overrides quietly stopped applying is worse off than one
     that fails: the settings look present and do nothing."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")
+    victim = write_proposal(tmp_path, "ml-code-review", F00)
     (tmp_path / "guidelines.md").write_text(
         "```toml\nmin_references = 8\n```\n", encoding="utf-8")
     result = run_check(victim)
@@ -109,102 +102,22 @@ def test_retired_override_key_is_reported_not_ignored(tmp_path):
 
 
 def test_unknown_override_key_is_reported(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")
+    victim = write_proposal(tmp_path, "ml-code-review", F00)
     (tmp_path / "guidelines.md").write_text(
         "```toml\n[references]\nmin_cout = 8\n```\n", encoding="utf-8")  # typo
     result = run_check(victim)
     assert "unknown workspace override `[references] min_cout`" in result.stdout
 
 
-def workspace_with_subdir(tmp_path, toml: str, subdir: str = "proposals"):
-    """A workspace root holding guidelines.md, with the proposal one level down."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    (tmp_path / "guidelines.md").write_text(f"```toml\n{toml}```\n", encoding="utf-8")
-    home = tmp_path / subdir
-    home.mkdir()
-    victim = home / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")
-    return victim
+# The proposal location, its placement and the governing override file's
+# position are tested in test_check_placement.py.
 
 
-def test_root_guidelines_governs_proposal_in_configured_subdirectory(tmp_path, monkeypatch):
-    """The working-directory chain position: the workspace root's guidelines.md
-    is found and honoured although nothing sits beside the proposal."""
-    victim = workspace_with_subdir(
-        tmp_path, '[paths]\nproposals = "proposals/"\n[references]\nmin_count = 8\n')
-    monkeypatch.chdir(tmp_path)
-    result = run_check(victim)
-    assert "at least 8 required" in result.stdout
-    assert "outside the configured proposal location" not in result.stdout
-
-
-def test_guidelines_beside_the_proposal_governs_the_whole_run(tmp_path, monkeypatch):
-    """First file found wins whole-file: the working-directory position is not
-    consulted to fill in keys the beside-the-proposal file lacks."""
-    victim = workspace_with_subdir(tmp_path, "[references]\nmin_count = 8\n")
-    (victim.parent / "guidelines.md").write_text(
-        "```toml\n[references]\nmin_count = 9\n```\n", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-    result = run_check(victim)
-    assert "at least 9 required" in result.stdout
-    assert "at least 8 required" not in result.stdout
-
-
-def test_no_guidelines_anywhere_means_pure_defaults(tmp_path, monkeypatch):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
+def test_no_guidelines_anywhere_means_pure_defaults(tmp_path):
+    victim = write_proposal(tmp_path, "ml-code-review", F00)
     result = run_check(victim)
     assert result.returncode == 0, result.stdout
-
-
-@pytest.mark.parametrize("value", ['"/srv/proposals"', '"../elsewhere"', '"~/proposals"', "5"])
-def test_invalid_paths_value_is_reported_and_default_applies(tmp_path, value):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")
-    (tmp_path / "guidelines.md").write_text(
-        f"```toml\n[paths]\nproposals = {value}\n```\n", encoding="utf-8")
-    result = run_check(victim)
-    assert "guidelines.md: [paths] proposals" in result.stdout
-    assert result.returncode == 1
-    # the invalid value is not applied: no placement comparison happens
-    assert "outside the configured proposal location" not in result.stdout
-
-
-def test_unknown_paths_leaf_is_reported(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")
-    (tmp_path / "guidelines.md").write_text(
-        '```toml\n[paths]\nproposal = "proposals/"\n```\n', encoding="utf-8")  # typo
-    result = run_check(victim)
-    assert "unknown workspace override `[paths] proposal`" in result.stdout
-
-
-def test_misplaced_proposal_is_an_error(tmp_path):
-    """A straggler beside guidelines.md after the workspace configured a
-    subdirectory: skills honour only the configured location, so the check
-    says so instead of half the skills silently disagreeing."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")
-    (tmp_path / "guidelines.md").write_text(
-        '```toml\n[paths]\nproposals = "proposals/"\n```\n', encoding="utf-8")
-    result = run_check(victim)
-    assert "outside the configured proposal location" in result.stdout
-    assert "[paths] proposals = `proposals/`" in result.stdout
-    assert result.returncode == 1
-
-
-def test_unset_paths_key_never_raises_a_location_finding(tmp_path, monkeypatch):
-    victim = workspace_with_subdir(tmp_path, "[references]\nmin_count = 8\n")
-    monkeypatch.chdir(tmp_path)
-    result = run_check(victim)
-    assert "outside the configured proposal location" not in result.stdout
+    assert "guidelines: none (defaults)" in result.stdout
 
 
 CASE_STUDY_TOML = """```toml
@@ -228,8 +141,7 @@ guidance = "how the material is coded and synthesised"
 def test_workspace_branch_passes_end_to_end():
     """The positive control lives as a fixture so the merge is exercised through
     the script, not only through the merge function."""
-    result = run_check(
-        FIXTURES / "w04-methodology-branch" / "flaky-test-trust.md")
+    result = check_fixture("w04-methodology-branch")
     assert result.returncode == 0, result.stdout
     assert "no errors" in result.stdout
 
@@ -237,20 +149,16 @@ def test_workspace_branch_passes_end_to_end():
 def test_workspace_branch_requires_its_own_subsections(tmp_path):
     # CASE_STUDY_TOML replaces the *shipped* case_study branch (same id), so this
     # also proves replace-by-id: the shipped subsections stop applying.
-    source = (FIXTURES / "f25-case-study" /
-              "release-readiness-signals.md").read_text(encoding="utf-8")
-    victim = tmp_path / "case.md"
-    victim.write_text(source.replace("## Analysis", "## Findings"), encoding="utf-8")
+    source = fixture_proposal("f25-case-study").read_text(encoding="utf-8")
+    victim = write_proposal(tmp_path, "case", source.replace("## Analysis", "## Findings"))
     (tmp_path / "guidelines.md").write_text(CASE_STUDY_TOML, encoding="utf-8")
     result = run_check(victim)
     assert "methodology subsection missing: `Analysis`" in result.stdout
 
 
 def test_disabled_shipped_branch_becomes_unknown(tmp_path):
-    source = (FIXTURES / "f17-theoretical" /
-              "physical-unit-consistency.md").read_text(encoding="utf-8")
-    victim = tmp_path / "theory.md"
-    victim.write_text(source, encoding="utf-8")
+    source = fixture_proposal("f17-theoretical").read_text(encoding="utf-8")
+    victim = write_proposal(tmp_path, "theory", source)
     (tmp_path / "guidelines.md").write_text(
         "```toml\n[methodologies.theoretical]\nenabled = false\n```\n", encoding="utf-8")
     out = run_check(victim).stdout
@@ -259,9 +167,7 @@ def test_disabled_shipped_branch_becomes_unknown(tmp_path):
 
 
 def test_research_question_bounds_are_overridable(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ml-code-review.md"
-    victim.write_text(source, encoding="utf-8")  # three questions
+    victim = write_proposal(tmp_path, "ml-code-review", F00)  # three questions
     (tmp_path / "guidelines.md").write_text(
         "```toml\n[research_questions]\nmax_count = 2\n```\n", encoding="utf-8")
     result = run_check(victim)
@@ -271,11 +177,9 @@ def test_research_question_bounds_are_overridable(tmp_path):
 def test_deeper_sections_still_checked(tmp_path):
     """Section matching is by title text, not level: a file one level deeper
     than the convention is still fully checked."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    demoted = source.replace("\n### ", "\n#### ").replace("\n## ", "\n### ")
+    demoted = F00.replace("\n### ", "\n#### ").replace("\n## ", "\n### ")
     demoted = demoted.replace("(RQ3)", "")  # break one cross-ref
-    victim = tmp_path / "demoted.md"
-    victim.write_text(demoted, encoding="utf-8")
+    victim = write_proposal(tmp_path, "demoted", demoted)
     result = run_check(victim)
     assert "(RQ3) never referenced" in result.stdout
 
@@ -300,9 +204,7 @@ def with_extra_research_questions(source: str, count: int) -> str:
 def test_too_many_research_questions_errors(tmp_path):
     """The count bounds scope, and scope is exactly what an over-long list has
     not decided. Six questions is a second thesis hiding in the first."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "six-questions.md"
-    victim.write_text(with_extra_research_questions(source, 6), encoding="utf-8")
+    victim = write_proposal(tmp_path, "six-questions", with_extra_research_questions(F00, 6))
     result = run_check(victim)
     assert result.returncode == 1
     assert "6 research questions — at most 5 allowed" in result.stdout
@@ -310,17 +212,13 @@ def test_too_many_research_questions_errors(tmp_path):
 
 def test_research_questions_at_the_bound_pass(tmp_path):
     """Five is allowed: the rule is an upper bound, not a target of three."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "five-questions.md"
-    victim.write_text(with_extra_research_questions(source, 5), encoding="utf-8")
+    victim = write_proposal(tmp_path, "five-questions", with_extra_research_questions(F00, 5))
     result = run_check(victim)
     assert "research questions — at most" not in result.stdout
 
 
 def test_multiple_metadata_blocks_error(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "double.md"
-    victim.write_text("---\ntitle: front\n---\n\n" + source, encoding="utf-8")
+    victim = write_proposal(tmp_path, "double", "---\ntitle: front\n---\n\n" + F00)
     result = run_check(victim)
     assert "additional metadata block" in result.stdout
 
@@ -349,10 +247,8 @@ def with_nameless_references(source: str, sentence: str) -> str:
 
 
 def test_author_in_text_citation_of_authorless_reference_warns(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "nameless.md"
-    victim.write_text(with_nameless_references(source, "@NoName01Standard states this."),
-                      encoding="utf-8")
+    victim = write_proposal(tmp_path, "nameless",
+                            with_nameless_references(F00, "@NoName01Standard states this."))
     result = run_check(victim)
     out = result.stdout
     assert "`@NoName01Standard` is cited author-in-text" in out
@@ -361,29 +257,24 @@ def test_author_in_text_citation_of_authorless_reference_warns(tmp_path):
 
 
 def test_bracketed_citation_of_authorless_reference_is_silent(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "bracketed.md"
-    victim.write_text(with_nameless_references(source, "Reported widely [@NoName01Standard]."),
-                      encoding="utf-8")
+    victim = write_proposal(tmp_path, "bracketed",
+                            with_nameless_references(F00, "Reported widely [@NoName01Standard]."))
     result = run_check(victim)
     assert "cited author-in-text" not in result.stdout
 
 
 def test_author_in_text_citation_of_editor_only_reference_is_silent(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "editor.md"
-    victim.write_text(with_nameless_references(source, "@Ed02Collected collects work."),
-                      encoding="utf-8")
+    victim = write_proposal(tmp_path, "editor",
+                            with_nameless_references(F00, "@Ed02Collected collects work."))
     result = run_check(victim)
     assert "cited author-in-text" not in result.stdout
 
 
 def test_author_metadata_key_warns(tmp_path):
     """Proposals are anonymous; the key renders verbatim on the title page."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "named.md"
-    victim.write_text(source.replace("\nreferences:", "\nauthor: Erika Musterfrau\nreferences:", 1),
-                      encoding="utf-8")
+    victim = write_proposal(
+        tmp_path, "named",
+        F00.replace("\nreferences:", "\nauthor: Erika Musterfrau\nreferences:", 1))
     result = run_check(victim)
     out = result.stdout
     assert "`author:` found — proposals are anonymous by default" in out
@@ -394,16 +285,14 @@ def test_author_metadata_key_warns(tmp_path):
 
 def test_author_placeholder_warns_too(tmp_path):
     """The reported defect: an unfilled placeholder reaching the title page."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "todo-author.md"
-    named = source.replace("\nreferences:", "\nauthor: [TODO: add author]\nreferences:", 1)
-    victim.write_text(named, encoding="utf-8")
+    named = F00.replace("\nreferences:", "\nauthor: [TODO: add author]\nreferences:", 1)
+    victim = write_proposal(tmp_path, "todo-author", named)
     assert "`author:` found" in run_check(victim).stdout
 
 
 def test_reference_author_fields_do_not_trip_the_key_warning():
     """f00 has `author:` inside every reference entry — indented, so not the key."""
-    result = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md")
+    result = check_fixture("f00-clean-en")
     assert "`author:` found" not in result.stdout
 
 
@@ -412,11 +301,9 @@ def with_sentence(source: str, sentence: str) -> str:
                           "# Introduction to the Topic\n\n" + sentence, 1)
 
 
-def check_sentence(tmp_path, sentence: str, name: str = "typed.md") -> str:
+def check_sentence(tmp_path, sentence: str, name: str = "typed") -> str:
     """f00's first reference is Chen25Learning, authored by Chen and Novak."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / name
-    victim.write_text(with_sentence(source, sentence), encoding="utf-8")
+    victim = write_proposal(tmp_path, name, with_sentence(F00, sentence))
     return run_check(victim).stdout
 
 
@@ -456,24 +343,27 @@ def test_typed_author_name_of_a_different_reference_is_not_flagged(tmp_path):
 
 
 def test_typed_author_name_never_fails_the_run(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "advisory.md"
-    victim.write_text(with_sentence(source, "Chen et al. [@Chen25Learning] propose a detector."),
-                      encoding="utf-8")
+    victim = write_proposal(
+        tmp_path, "advisory",
+        with_sentence(F00, "Chen et al. [@Chen25Learning] propose a detector."))
     result = run_check(victim)
     assert "author name typed" in result.stdout
     assert result.returncode == 0, "the typed-name check is advisory, never a failure"
 
 
 def test_first_person_capitalized_caught(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "fp.md"
-    victim.write_text(source.replace(
+    victim = write_proposal(tmp_path, "fp", F00.replace(
         "Software quality assurance relies heavily",
         "We propose a novel approach. Our contribution relies heavily",
-    ), encoding="utf-8")
+    ))
     result = run_check(victim)
     assert "first-person pronouns" in result.stdout
+
+
+def with_key(source: str, key: str) -> str:
+    """f00 with its first reference key, and every citation of it, renamed."""
+    return source.replace("- id: Chen25Learning", f"- id: {key}").replace(
+        "@Chen25Learning", f"@{key}")
 
 
 @pytest.mark.parametrize(("key", "reason"), [
@@ -483,21 +373,15 @@ def test_first_person_capitalized_caught(tmp_path):
     ("2023Survey", "starts with the year"),
 ])
 def test_malformed_reference_key_warns(tmp_path, key, reason):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "keys.md"
-    victim.write_text(source.replace("- id: Chen25Learning", f"- id: {key}")
-                            .replace("@Chen25Learning", f"@{key}"), encoding="utf-8")
+    victim = write_proposal(tmp_path, "keys", with_key(F00, key))
     result = run_check(victim)
     assert f"reference id `{key}` does not follow" in result.stdout, reason
     assert result.returncode == 0, "key shape is advisory, never a failure"
 
 
 def test_overlong_reference_key_warns(tmp_path):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
     long_key = "Bacchelli13Expectations"
-    victim = tmp_path / "long.md"
-    victim.write_text(source.replace("- id: Chen25Learning", f"- id: {long_key}")
-                            .replace("@Chen25Learning", f"@{long_key}"), encoding="utf-8")
+    victim = write_proposal(tmp_path, "long", with_key(F00, long_key))
     out = run_check(victim).stdout
     assert f"`{long_key}` is 23 characters" in out
     assert "does not follow" not in out, "well-formed but long: one complaint, not two"
@@ -509,10 +393,7 @@ def test_overlong_reference_key_warns(tmp_path):
     "vanDerAalst16Mining",  # particle-bearing name, 19 chars
 ])
 def test_conforming_reference_keys_stay_silent(tmp_path, key):
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "ok.md"
-    victim.write_text(source.replace("- id: Chen25Learning", f"- id: {key}")
-                            .replace("@Chen25Learning", f"@{key}"), encoding="utf-8")
+    victim = write_proposal(tmp_path, "ok", with_key(F00, key))
     out = run_check(victim).stdout
     assert "does not follow" not in out
     assert "characters — keep keys" not in out
@@ -520,9 +401,8 @@ def test_conforming_reference_keys_stay_silent(tmp_path, key):
 
 def test_boolean_literal_key_is_not_also_shape_warned(tmp_path):
     """`on` is already an error; one complaint per key is enough."""
-    source = (FIXTURES / "f15-format-broken" / "broken-format.md").read_text(encoding="utf-8")
-    victim = tmp_path / "bool.md"
-    victim.write_text(source, encoding="utf-8")
+    source = fixture_proposal("f15-format-broken").read_text(encoding="utf-8")
+    victim = write_proposal(tmp_path, "bool", source)
     out = run_check(victim).stdout
     assert "`on` is a YAML boolean literal" in out
     assert "reference id `on` does not follow" not in out
@@ -542,9 +422,7 @@ def inflate(source: str, words: int) -> str:
 def test_length_estimate_warns_over_limit(tmp_path):
     """Default limit 5 pages at 500 words/page; the overrun is a warning, never
     an error (guidance-model spec: default page limit)."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "long.md"
-    victim.write_text(inflate(source, 2600), encoding="utf-8")
+    victim = write_proposal(tmp_path, "long", inflate(F00, 2600))
     result = run_check(victim)
     assert result.returncode == 0, result.stdout
     assert "estimated length" in result.stdout
@@ -553,23 +431,19 @@ def test_length_estimate_warns_over_limit(tmp_path):
 
 
 def test_length_estimate_stays_silent_within_limit():
-    result = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md")
+    result = check_fixture("f00-clean-en")
     assert "estimated length" not in result.stdout
 
 
 def test_length_estimate_respects_override(tmp_path):
     """A workspace page limit both relaxes and tightens the default."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "long.md"
-    victim.write_text(inflate(source, 2600), encoding="utf-8")
+    victim = write_proposal(tmp_path, "long", inflate(F00, 2600))
     (tmp_path / "guidelines.md").write_text(
         "```toml\n[length]\npage_limit = 10\n```\n", encoding="utf-8")
     assert "estimated length" not in run_check(victim).stdout
 
     tight = tmp_path / "tight"
-    tight.mkdir()
-    short = tight / "short.md"
-    short.write_text(inflate(source, 600), encoding="utf-8")
+    short = write_proposal(tight, "short", inflate(F00, 600))
     (tight / "guidelines.md").write_text(
         "```toml\n[length]\npage_limit = 1\n```\n", encoding="utf-8")
     out = run_check(short).stdout
@@ -582,9 +456,7 @@ def test_page_limit_override_must_be_a_positive_number(tmp_path, value):
     """A quoted, negative, zero, non-finite, or boolean value degrades to the
     default with an error — never a crash, never a silently disabled rule
     (skill-check spec: advisory reporting)."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "typed.md"
-    victim.write_text(source, encoding="utf-8")
+    victim = write_proposal(tmp_path, "typed", F00)
     (tmp_path / "guidelines.md").write_text(
         f"```toml\n[length]\npage_limit = {value}\n```\n", encoding="utf-8")
     result = run_check(victim)
@@ -597,9 +469,7 @@ def test_page_limit_override_must_be_a_positive_number(tmp_path, value):
 def test_min_references_override_must_be_a_non_negative_integer(tmp_path, value):
     """Same degradation for the reference minimum: error plus the default, which
     the clean fixture satisfies — so no shortfall error alongside."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "typed.md"
-    victim.write_text(source, encoding="utf-8")
+    victim = write_proposal(tmp_path, "typed", F00)
     (tmp_path / "guidelines.md").write_text(
         f"```toml\n[references]\nmin_count = {value}\n```\n", encoding="utf-8")
     result = run_check(victim)
@@ -612,9 +482,7 @@ def test_min_references_override_must_be_a_non_negative_integer(tmp_path, value)
 def test_reference_density_override_must_be_a_non_negative_number(tmp_path, value):
     """Same degradation for the density constant: error plus the default, which
     the short clean fixture satisfies — so no shortfall warning alongside."""
-    source = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
-    victim = tmp_path / "typed.md"
-    victim.write_text(source, encoding="utf-8")
+    victim = write_proposal(tmp_path, "typed", F00)
     (tmp_path / "guidelines.md").write_text(
         f"```toml\n[references]\nmin_per_1000_words = {value}\n```\n", encoding="utf-8")
     result = run_check(victim)
@@ -626,6 +494,6 @@ def test_reference_density_override_must_be_a_non_negative_number(tmp_path, valu
 def test_footer_scopes_clean_verdict():
     """A clean result must say substance was not judged (skill-check spec:
     two-bucket honest reporting)."""
-    out = run_check(FIXTURES / "f00-clean-en" / "ml-code-review.md").stdout
+    out = check_fixture("f00-clean-en").stdout
     assert "substance is not judged here" in out
     assert "review skill renders that verdict" in out

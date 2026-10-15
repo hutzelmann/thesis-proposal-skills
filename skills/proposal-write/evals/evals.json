@@ -5,9 +5,9 @@
     {
       "id": 1,
       "task": "write_from_seed",
-      "prompt": "Please turn my idea notes into a full proposal draft. The file is ws/data-drift-detection.md. Keep my idea, mark anything missing as TODO.",
+      "prompt": "Please turn my idea notes into a full proposal draft. The file is data-drift-detection/data-drift-detection.md. Keep my idea, mark anything missing as TODO.",
       "files": [
-        "ws/data-drift-detection.md"
+        "data-drift-detection/data-drift-detection.md"
       ],
       "expected_output": "A complete proposal draft grown from the seed idea, mechanically sound apart from a tolerated reference shortfall, with gaps marked TODO.",
       "assertions": [
@@ -19,9 +19,9 @@
     {
       "id": 2,
       "task": "write_repair_citations",
-      "prompt": "Please do a writing pass over ws/dependency-update-breakage.md so it is ready for my supervisor. I cannot answer any questions — decide and tell me what you did.",
+      "prompt": "Please do a writing pass over dependency-update-breakage/dependency-update-breakage.md so it is ready for my supervisor. I cannot answer any questions — decide and tell me what you did.",
       "files": [
-        "ws/dependency-update-breakage.md"
+        "dependency-update-breakage/dependency-update-breakage.md"
       ],
       "expected_output": "The over-citing draft revised so that no sentence repeats exactly the citations of the sentence before it, every source is still cited, and each continuation refers back to its source in words.",
       "assertions": [
@@ -33,9 +33,9 @@
     {
       "id": 3,
       "task": "write_rich_seed",
-      "prompt": "Please turn my idea notes in ws/flaky-test-prediction.md into a full proposal draft. Keep my idea, mark anything missing as TODO. I cannot answer any questions — decide and tell me what you did.",
+      "prompt": "Please turn my idea notes in flaky-test-prediction/flaky-test-prediction.md into a full proposal draft. Keep my idea, mark anything missing as TODO. I cannot answer any questions — decide and tell me what you did.",
       "files": [
-        "ws/flaky-test-prediction.md"
+        "flaky-test-prediction/flaky-test-prediction.md"
       ],
       "expected_output": "A complete proposal draft from an eleven-reference seed that cites each source once per continuous use — the run opened by the author-in-text form, later sentences referring back in words — and groups prior work by theme.",
       "assertions": [

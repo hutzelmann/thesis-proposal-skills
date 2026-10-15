@@ -11,6 +11,6 @@
     }
   },
   "semantic": [
-    "two figure links (img/sensor-anomaly-triage-a.png, img/sensor-anomaly-triage-b.png) must survive import with slug-prefixed img/ paths — check treats them as body text and ignores them"
+    "two figure links (img/a.png, img/b.png) must survive import as img/<name> paths inside the proposal's folder, with no slug prefix — check treats them as body text and ignores them"
   ]
 }

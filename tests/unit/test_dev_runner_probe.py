@@ -15,7 +15,6 @@ subprocess still runs.
 import argparse
 import json
 import os
-import shutil
 import tomllib
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
@@ -46,6 +45,7 @@ from claude_runner import (
     normalized_proposal,
     parse_events,
     save_events,
+    stage,
     summary,
     summary_rows,
     supervise_extra,
@@ -53,7 +53,13 @@ from claude_runner import (
     telemetry,
     verdict,
 )
-from helpers import CLEAN_DRAFT, FIXTURES, REPO, followed, shipped_registry
+from helpers import (
+    CLEAN_DRAFT,
+    REPO,
+    followed,
+    shipped_registry,
+    write_proposal,
+)
 from host_login import CLAUDE, LOGIN_COMMAND, LoginSource, allowlisted_env, login_note
 from l1_checks import HELPER_TOOLS, load_closing_note, verdict_l2_grades, verdict_single_context
 from routing import DISALLOWED_TOOLS, OUTWARD_TOOLS, tool_calls
@@ -374,19 +380,19 @@ Contradicted: the regulation the export names for municipal websites.
 VERIFIER_EVENTS = [{"type": "assistant", "message": {"content": [{
     "type": "tool_use", "name": "Task",
     "input": {"description": "Verify feedback",
-              "prompt": "Follow references/verifier-brief.md. Feedback: x-feedback.md"},
+              "prompt": "Follow references/verifier-brief.md. Feedback: x/feedback.md"},
 }]}}]
 
 
 def supervise_ws(tmp_path, feedback=SCOPED_FEEDBACK, review=SCOPED_REVIEW):
-    (tmp_path / "accessibility-priority-model.md").write_text(
-        "# Prioritizing Accessibility Requirements\n\nWCAG 2.2 and EN 301 549.\n",
-        encoding="utf-8")
-    (tmp_path / "accessibility-priority-model.notes.md").write_text(
-        "# Notes\n", encoding="utf-8")
-    (tmp_path / "accessibility-priority-model-review.md").write_text(review, encoding="utf-8")
-    (tmp_path / "accessibility-priority-model-feedback.md").write_text(
-        feedback, encoding="utf-8")
+    """A supervise run's result: the normalized proposal in its folder, with
+    the role-named notes, review and feedback beside it."""
+    folder = write_proposal(
+        tmp_path, "accessibility-priority-model",
+        "# Prioritizing Accessibility Requirements\n\nWCAG 2.2 and EN 301 549.\n").parent
+    (folder / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    (folder / "review.md").write_text(review, encoding="utf-8")
+    (folder / "feedback.md").write_text(feedback, encoding="utf-8")
     return tmp_path
 
 
@@ -737,9 +743,9 @@ def judge(monkeypatch):
 
 
 def write_draft(ws: Path) -> None:
-    """A fresh `<slug>.md` beside the seed — named so that it does not end in
-    `-review.md`, which the draft selection skips beside a seed."""
-    (ws / "drift-detection-proposal.md").write_text(CLEAN_DRAFT, encoding="utf-8")
+    """A fresh proposal in a folder of its own, `<slug>/<slug>.md`, beside the
+    seed's folder."""
+    write_proposal(ws, "drift-detection-proposal", CLEAN_DRAFT)
 
 
 def logged(path: Path) -> list[dict]:
@@ -1227,7 +1233,8 @@ async def _no_claude_binary(*_args, **_kwargs):
 
 
 def undecodable_draft(ws: Path) -> None:
-    (ws / "drift-detection-proposal.md").write_bytes(b"# Draft\n\n\xff\xfe not UTF-8\n")
+    path = write_proposal(ws, "drift-detection-proposal", "")
+    path.write_bytes(b"# Draft\n\n\xff\xfe not UTF-8\n")
 
 
 @pytest.mark.parametrize("crash", ["no-binary", "undecodable-draft"])
@@ -1403,13 +1410,14 @@ def test_expect_without_summarize_is_a_usage_error(capsys):
 
 # ---------- customize_override ---------------------------------------------
 
-F00 = "ml-code-review.md"
 OVERRIDE = ('# Workspace rules\n\n```toml\n[references]\nmin_count = 8\n\n'
             '[timeline]\ndetail = "detailed"\n```\n')
 
 
 def customize_ws(tmp_path: Path, guidelines: str | None) -> Path:
-    shutil.copy(FIXTURES / "f00-clean-en" / F00, tmp_path / F00)
+    """f00 staged in its folder, with the override file the run wrote at the
+    workspace root, or none."""
+    stage(SCENARIOS["customize_override"], tmp_path, install_skill=False)
     if guidelines is not None:
         (tmp_path / "guidelines.md").write_text(guidelines, encoding="utf-8")
     return tmp_path

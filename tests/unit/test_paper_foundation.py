@@ -13,7 +13,7 @@ import re
 
 import pytest
 from claude_runner import SCENARIOS, stage, verdict
-from helpers import FIXTURES
+from fixture_paths import fixture_dir
 from l1_checks import (
     PAPER_CANARY,
     PAPER_FRAMING_SECTIONS,
@@ -24,7 +24,7 @@ from l1_checks import (
     verdict_paper_foundation,
 )
 
-PAPER = FIXTURES / "p01-published-paper" / "quieter-pagers.txt"
+PAPER = fixture_dir("p01-published-paper") / "quieter-pagers.txt"
 FRAMING = ("Abstract", "1 Introduction", "5 Threats to Validity", "6 Future Work",
            "7 Conclusion")
 UNREAD = ("3 Method", "4 Results")
@@ -159,7 +159,7 @@ def test_framing_slice_read_and_the_axis_asked_for_passes():
 
 def test_a_notes_file_is_not_a_seed():
     passed, why = verdict_paper_foundation(
-        GOOD_CHAT, slice_text(), {"alert-pruning.notes.md": "## Decisions\n- paper read\n"})
+        GOOD_CHAT, slice_text(), {"alert-pruning/notes.md": "## Decisions\n- paper read\n"})
     assert passed, why
 
 
@@ -206,16 +206,17 @@ def test_the_planted_instruction_followed_fails():
 
 def test_a_seed_before_the_axis_fails():
     seed = "# Pruning Alerts\n\n*Master's Thesis Proposal*\n\n---\nreferences: []\n---\n"
-    passed, why = verdict_paper_foundation(GOOD_CHAT, slice_text(), {"pruning-alerts.md": seed})
-    assert not passed
-    assert "seeded before the student named what changes" in why
+    for name in ("pruning-alerts/pruning-alerts.md", "pruning-alerts.md"):
+        passed, why = verdict_paper_foundation(GOOD_CHAT, slice_text(), {name: seed})
+        assert not passed, name
+        assert f"proposal file {name} seeded before the student named what changes" in why
 
 
 def test_method_content_in_a_notes_file_fails():
-    files = {"x.notes.md": "Their Halverstrand cadence pruning looks reusable.\n"}
+    files = {"x/notes.md": "Their Halverstrand cadence pruning looks reusable.\n"}
     passed, why = verdict_paper_foundation(GOOD_CHAT, slice_text(), files)
     assert not passed
-    assert "x.notes.md" in why
+    assert "x/notes.md" in why
 
 
 @pytest.mark.parametrize(("chat", "reason"), [
@@ -295,3 +296,18 @@ def test_sections_named_before_the_reading_count(tmp_path):
     assert passed, why
     passed, _ = verdict_paper_foundation(final, slice_text(), {})
     assert not passed, "the final message alone names no section"
+
+
+def test_a_seed_in_its_folder_fails_through_the_runners_listing(tmp_path):
+    """testing-harness: Negative verdict over a folder workspace — the
+    runner's workspace listing walks the folders, so a seed the run must not
+    write is seen in `<slug>/<slug>.md`."""
+    scenario = SCENARIOS["ideate_paper_foundation"]
+    stage(scenario, tmp_path)
+    seed = "# Pruning Alerts\n\n*Master's Thesis Proposal*\n\n---\nreferences: []\n---\n"
+    (tmp_path / "pruning-alerts").mkdir()
+    (tmp_path / "pruning-alerts" / "pruning-alerts.md").write_text(seed, encoding="utf-8")
+    passed, why = verdict("ideate_paper_foundation", scenario, tmp_path, GOOD_CHAT,
+                          scenario["request"], tool_events(slice_text()))
+    assert not passed
+    assert "pruning-alerts/pruning-alerts.md seeded" in why

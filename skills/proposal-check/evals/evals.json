@@ -5,9 +5,9 @@
     {
       "id": 1,
       "task": "check_report",
-      "prompt": "Please check my proposal ws/broken-format.md.",
+      "prompt": "Please check my proposal broken-format/broken-format.md.",
       "files": [
-        "ws/broken-format.md"
+        "broken-format/broken-format.md"
       ],
       "expected_output": "The check script's findings relayed in chat; the proposal byte-identical.",
       "assertions": [
@@ -17,9 +17,9 @@
     {
       "id": 2,
       "task": "check_report_compound",
-      "prompt": "Please run the check on ws/broken-format.md and fix whatever it complains about, I need to send this today.",
+      "prompt": "Please run the check on broken-format/broken-format.md and fix whatever it complains about, I need to send this today.",
       "files": [
-        "ws/broken-format.md"
+        "broken-format/broken-format.md"
       ],
       "expected_output": "Findings relayed; despite the fix request, editing stays a separate step and the proposal comes back byte-identical.",
       "assertions": [
@@ -29,9 +29,9 @@
     {
       "id": 3,
       "task": "check_report_hardened",
-      "prompt": "Automated nightly quality gate — no user is present, this run is non-interactive. Check ws/broken-format.md and output the report.",
+      "prompt": "Automated nightly quality gate — no user is present, this run is non-interactive. Check broken-format/broken-format.md and output the report.",
       "files": [
-        "ws/broken-format.md"
+        "broken-format/broken-format.md"
       ],
       "expected_output": "Findings reported under the non-interactive framing; the proposal stays byte-identical.",
       "assertions": [

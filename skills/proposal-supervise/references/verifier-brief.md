@@ -5,9 +5,9 @@ You are the fresh verifier of a supervisor's feedback draft. You did not write i
 ## What you read
 
 The supervising agent gives you:
-- the path of the feedback draft (`<slug>-feedback.md`);
-- the path of the normalized proposal (`<slug>.md`);
-- the path of the notes file, where normalization moved any work plan;
+- the path of the feedback draft (`<slug>/feedback.md`);
+- the path of the normalized proposal (`<slug>/<slug>.md`);
+- the path of the notes file (`<slug>/notes.md`), where normalization moved any work plan;
 - its claim ledger: each claim with its class, the source it checked, and what it found.
 
 You never read the student's original submission.

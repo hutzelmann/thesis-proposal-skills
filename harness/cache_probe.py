@@ -72,9 +72,10 @@ DEFAULT_LOG_DIR = "logs/cache-probe"
 # the mechanism the matrix uses; still `marker` while the matrix is rolled back
 # (support.CACHE_MECHANISM None), so the probe can re-check it (design D2)
 DEFAULT_MECHANISM = support.CACHE_MECHANISM or "marker"
-# the matrix agent's system message (skill_evals.agent_solver), so the cached
-# prefix is the one the matrix sends
-SYSTEM_PROMPT = "You have bash and a text editor. Files live under ws/ (workspace) and skill/."
+# the matrix agent's system message (skill_evals.AGENT_SYSTEM_MESSAGE, held
+# equal by a test), so the cached prefix is the one the matrix sends
+SYSTEM_PROMPT = ("You have bash and a text editor. Your working directory is the "
+                 "user's workspace root.")
 TASK_PROMPT = "Read the workspace notes one by one and say what each covers."
 # Test-only: a model spec that replaces the built models (an offline mock).
 MODEL_OVERRIDE: str | None = None
@@ -137,7 +138,7 @@ def build_replay(turns: int = TURNS, tokens_per_turn: int = TURN_TOKENS) -> list
     tokens. Pure and deterministic."""
     replay = []
     for k in range(turns):
-        path = f"ws/notes/{_VOCAB[(k * 7 + 3) % len(_VOCAB)]}-{k + 1:02d}.md"
+        path = f"notes/{_VOCAB[(k * 7 + 3) % len(_VOCAB)]}-{k + 1:02d}.md"
         if k % 2:
             head = Turn("", "text_editor", {"command": "view", "path": path}, "")
         else:

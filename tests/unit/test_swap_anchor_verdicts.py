@@ -28,7 +28,7 @@ from l1_checks import (
 
 DECORATIVE = fixture_proposal("f31-decorative-tool").read_text(encoding="utf-8")
 ANCHORED = fixture_proposal("f32-tool-as-object").read_text(encoding="utf-8")
-NAME = "ci-repair-agent-configurations-review.md"
+NAME = "ci-repair-agent-configurations/review.md"
 CLOSING = {"English": "This feedback was drafted with AI tools; the swap test is one of them."}
 
 DECORATIVE_REVIEW = """\

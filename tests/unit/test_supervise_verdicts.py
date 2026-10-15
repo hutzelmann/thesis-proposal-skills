@@ -11,6 +11,7 @@ from l1_checks import (
     CLOSING_NOTE_LANGUAGES,
     feedback_body_words,
     load_closing_note,
+    verdict_sources_untouched,
     verdict_supervise_closing,
     verdict_supervise_feedback,
     verdict_supervise_feedback_contract,
@@ -110,21 +111,21 @@ def test_tier_ready_is_word_bounded():
 
 
 def test_personal_data_leak_names_file_and_token():
-    files = {"idea-feedback.md": FEEDBACK + "\nErika Musterfrau, 00000000"}
+    files = {"idea/feedback.md": FEEDBACK + "\nErika Musterfrau, 00000000"}
     ok, why = verdict_supervise_no_personal_data(files, ("Musterfrau", "00000000"))
     assert not ok
-    assert "idea-feedback.md" in why
+    assert "idea/feedback.md" in why
     assert "Musterfrau" in why
 
 
 def test_personal_data_clean_and_missing_feedback():
-    clean = {"idea-feedback.md": FEEDBACK}
+    clean = {"idea/feedback.md": FEEDBACK}
     assert verdict_supervise_no_personal_data(clean, ("Musterfrau", "00000000"))[0]
     assert not verdict_supervise_no_personal_data({}, ("Musterfrau",))[0]
 
 
 def test_personal_data_match_is_case_insensitive():
-    files = {"idea-feedback.md": "contact: ERIKA.MUSTERFRAU@EXAMPLE.ORG"}
+    files = {"idea/feedback.md": "contact: ERIKA.MUSTERFRAU@EXAMPLE.ORG"}
     assert not verdict_supervise_no_personal_data(
         files, ("erika.musterfrau@example.org",))[0]
 
@@ -140,7 +141,7 @@ def test_pointers_ignore_the_repo_name_in_the_install_blurb():
 
 
 def test_feedback_contract_aggregate_passes_when_complete():
-    files = {"idea-feedback.md": FEEDBACK}
+    files = {"idea/feedback.md": FEEDBACK}
     ok, why = verdict_supervise_feedback_contract(files, ("Musterfrau",), SKILL_SET)
     assert ok
     assert "3 curated points" in why
@@ -224,13 +225,13 @@ def test_closing_note_without_an_expected_language_accepts_either():
 
 
 def test_feedback_contract_aggregate_includes_the_closing_note():
-    files = {"idea-feedback.md": FEEDBACK + "\n" + CLOSING["English"]}
+    files = {"idea/feedback.md": FEEDBACK + "\n" + CLOSING["English"]}
     ok, why = verdict_supervise_feedback_contract(
         files, ("Musterfrau",), SKILL_SET, CLOSING, "English")
     assert ok
     assert "closing note carried verbatim" in why
 
-    stale = {"idea-feedback.md": FEEDBACK}
+    stale = {"idea/feedback.md": FEEDBACK}
     ok, why = verdict_supervise_feedback_contract(
         stale, ("Musterfrau",), SKILL_SET, CLOSING, "English")
     assert not ok
@@ -376,12 +377,12 @@ def test_literature_missing_feedback_fails():
 
 
 def test_feedback_contract_aggregate_reads_the_notes_for_literature():
-    files = {"idea-feedback.md": FEEDBACK + "\n" + WOVEN, "idea.notes.md": NOTES}
+    files = {"idea/feedback.md": FEEDBACK + "\n" + WOVEN, "idea/notes.md": NOTES}
     ok, why = verdict_supervise_feedback_contract(files, ("Musterfrau",), SKILL_SET)
     assert ok
     assert "woven" in why
 
-    unrecorded = {"idea-feedback.md": FEEDBACK + "\n" + WOVEN}
+    unrecorded = {"idea/feedback.md": FEEDBACK + "\n" + WOVEN}
     ok, why = verdict_supervise_feedback_contract(unrecorded, ("Musterfrau",), SKILL_SET)
     assert not ok
     assert "not recorded" in why
@@ -390,10 +391,10 @@ def test_feedback_contract_aggregate_reads_the_notes_for_literature():
 def test_feedback_contract_aggregate_scans_the_notes_for_personal_data():
     """The dev runner passes the notes file in beside the feedback; identity
     surviving there is the same defect as in the feedback."""
-    files = {"idea-feedback.md": FEEDBACK, "idea.notes.md": NOTES + "\nErika Musterfrau\n"}
+    files = {"idea/feedback.md": FEEDBACK, "idea/notes.md": NOTES + "\nErika Musterfrau\n"}
     ok, why = verdict_supervise_feedback_contract(files, ("Musterfrau",), SKILL_SET)
     assert not ok
-    assert "idea.notes.md" in why
+    assert "idea/notes.md" in why
 
 
 # ---------- substance only: no format lecture ----------------------------------
@@ -608,7 +609,7 @@ def test_feedback_body_words_exclude_urls_and_the_closing_note():
 def test_feedback_contract_aggregate_catches_a_format_lecture_and_heavy_markup():
     lecture = FEEDBACK + "\nThe Gantt chart does not belong in the proposal.\n## Next steps\n"
     ok, why = verdict_supervise_feedback_contract(
-        {"idea-feedback.md": lecture}, ("Musterfrau",), SKILL_SET)
+        {"idea/feedback.md": lecture}, ("Musterfrau",), SKILL_SET)
     assert not ok
     assert "format remark" in why
     assert "heading line" in why
@@ -616,7 +617,7 @@ def test_feedback_contract_aggregate_catches_a_format_lecture_and_heavy_markup()
 
 def test_feedback_contract_aggregate_checks_locators_only_with_a_proposal():
     point = FEEDBACK + "\n4. Directive (EU) 2016/2102 governs public-sector sites.\n"
-    files = {"idea-feedback.md": point}
+    files = {"idea/feedback.md": point}
     ok, why = verdict_supervise_feedback_contract(files, ("Musterfrau",), SKILL_SET)
     assert ok
     assert "locators not checked" in why
@@ -760,7 +761,7 @@ def test_locators_treat_wcag_versions_as_one_family():
 
 
 def test_verifier_started_with_the_brief_by_path_or_by_content():
-    by_path = [("Task", {"prompt": "Read references/verifier-brief.md and check x-feedback.md"})]
+    by_path = [("Task", {"prompt": "Read references/verifier-brief.md and check x/feedback.md"})]
     by_content = [("Agent", {"prompt": "# Verifier brief — proposal-supervise\n\nYou check …"})]
     assert verdict_supervise_verifier(by_path)[0]
     assert verdict_supervise_verifier(by_content)[0]
@@ -835,3 +836,23 @@ def test_literature_leaves_the_students_own_reference_alone():
     proposal = "references:\n- id: Vigo13\n  DOI: 10.1145/2461121.2461124\n"
     assert not verdict_supervise_literature(FEEDBACK + "\n" + point, "")[0]
     assert verdict_supervise_literature(FEEDBACK + "\n" + point, "", proposal)[0]
+
+
+# ---------- the submission as a source (adopt-proposal-folders, design D22) -----------
+
+
+def test_a_submission_left_as_it_was_saved_passes():
+    """Scenario: Submission saved outside any folder — the staged file is
+    byte-identical after the run."""
+    passed, why = verdict_sources_untouched(["other/review.md"], ["submission.md"])
+    assert passed, why
+    assert "submission.md" in why
+
+
+def test_a_submission_changed_moved_or_deleted_fails():
+    passed, why = verdict_sources_untouched(["submission.md", "x.txt"],
+                                            ["submission.md", "x.txt", "kept.md"])
+    assert not passed
+    assert "`submission.md`" in why
+    assert "`x.txt`" in why
+    assert "kept.md" not in why

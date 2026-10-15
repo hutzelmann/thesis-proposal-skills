@@ -16,12 +16,16 @@ indirection this pins down.
 import asyncio
 import json
 import os
-from pathlib import Path
+import re
+import subprocess
+import sys
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
 import skill_evals
 import support
+from fixture_paths import staged_tree
 from helpers import shipped_registry
 from inspect_ai._util.registry import registry_info
 
@@ -89,6 +93,288 @@ def test_task_stages_exactly_one_sample(task_name):
     assert task.dataset[0].files, "no files staged into the sandbox"
 
 
+SKILL_HOME = skill_evals.SKILL_HOME
+
+
+def workspace_names(files) -> set[str]:
+    """The staged names that are the user's workspace, the installed skills
+    left out."""
+    return {name for name in files if not name.startswith(f"{SKILL_HOME}/")}
+
+
+@pytest.mark.parametrize("fixture", ["f16-figures-import", "w06-reverse-harvest",
+                                     "w09-revised-round"])
+def test_the_sandbox_root_is_the_fixtures_workspace(fixture):
+    """The fixture is the workspace root (design D24 of adopt-proposal-folders),
+    and the sandbox's root is the agent's working directory, so the fixture
+    tree lands there as it lies, figures and companions included, its oracle
+    and import source left behind; the skill is installed beside it the way a
+    project-level install puts it, under a hidden folder no listing reads."""
+    files = skill_evals.stage_files(fixture, "proposal-check")
+    staged = workspace_names(files)
+    assert staged == set(staged_tree(fixture))
+    assert staged
+    assert not {"expected.json", "submission.pdf"} & staged
+    assert f"{SKILL_HOME}/proposal-check/scripts/check.py" in files
+    assert f"{SKILL_HOME}/proposal-check/references/structure.json" in files
+
+
+def materialize(files: dict[str, str], root: Path) -> None:
+    """A sample's files written out as Inspect stages them: a value naming a
+    host file is copied, any other value is the file's content."""
+    for name, value in files.items():
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source = Path(value)
+        if source.is_file():
+            target.write_bytes(source.read_bytes())
+        else:
+            target.write_text(value, encoding="utf-8")
+
+
+def request_of(prompt: str) -> str:
+    return prompt.split("User request: ", 1)[1]
+
+
+# the script-location paragraph's command, as every check-shipping skill writes it
+CHECK_COMMAND = re.compile(r"python3 (\S+/scripts/check\.py) <location>/<slug>/<slug>\.md")
+# tasks whose skill ships the check and whose request names a staged proposal
+CHECKED_TASKS = {
+    "write_from_seed": "W01_PROPOSAL",
+    "write_rich_seed": "W08_PROPOSAL",
+    "write_repair_citations": "F27_PROPOSAL",
+    "check_report": "F15_PROPOSAL",
+    "check_report_compound": "F15_PROPOSAL",
+    "check_report_hardened": "F15_PROPOSAL",
+}
+
+
+@pytest.mark.parametrize(("task_name", "constant"), sorted(CHECKED_TASKS.items()))
+def test_the_documented_check_finds_the_proposal_where_the_agent_works(task_name, constant,
+                                                                       tmp_path):
+    """The agent runs the skill's documented check command from its own working
+    directory, which Inspect's bash tool never changes: the sandbox's root.
+    That root must be the workspace root, the command's script path must
+    resolve there, and the proposal must sit where the request names it,
+    measured from there: otherwise every check the agent runs reports a
+    misplaced proposal and loses the workspace's `guidelines.md`, though the
+    scorer's own check is clean (testing-harness: Check run from the staged
+    workspace's root)."""
+    sample = getattr(skill_evals, task_name)().dataset[0]
+    materialize(sample.files, tmp_path)
+    script = CHECK_COMMAND.search(sample.input).group(1)
+    proposal = getattr(skill_evals, constant)
+    named = [token.rstrip(".,;:") for token in request_of(sample.input).split()
+             if token.rstrip(".,;:").endswith(proposal)]
+    assert named, f"the request does not name {proposal}"
+    done = subprocess.run([sys.executable, script, named[0], "--json"], cwd=tmp_path,
+                          capture_output=True, encoding="utf-8", timeout=60)
+    assert done.returncode in (0, 1), done.stderr
+    data = json.loads(done.stdout)
+    rules = {finding["rule"] for finding in data["findings"]}
+    assert "proposal-misplaced" not in rules, done.stdout
+    assert "proposal-folder-mismatch" not in rules
+    if (tmp_path / "guidelines.md").is_file():
+        assert data["guidelines"] == "working-directory"
+
+
+@pytest.mark.parametrize("task_name", sorted(EXPECTED_SCORERS))
+def test_the_prompt_frames_the_working_directory_as_the_workspace(task_name):
+    """No prompt sends the agent to a workspace below its working directory:
+    the skill's instructions say scripts run from the workspace root, the
+    working directory, and the sandbox gives the agent no other."""
+    prompt = getattr(skill_evals, task_name)().dataset[0].input
+    assert "ws/" not in prompt
+    assert "Your working directory is the" in prompt
+
+
+# Every scorer constant that names a workspace file, by the task that reads it.
+# A proposal or harvest record must be staged where the constant says; a review
+# is written by the run, so it must name the `review.md` of a staged proposal's
+# folder (adopt-proposal-folders, task 5.4).
+SCORER_PATHS = {
+    "write_from_seed": ("W01_PROPOSAL",),
+    "write_rich_seed": ("W08_PROPOSAL",),
+    "write_repair_citations": ("F27_PROPOSAL",),
+    "review_fixture": ("F05_PROPOSAL", "F05_REVIEW"),
+    "review_hollow": ("F22_PROPOSAL", "F22_REVIEW"),
+    "review_ready": ("READINESS_PROPOSAL", "READINESS_REVIEW"),
+    "review_dependency": ("READINESS_PROPOSAL", "READINESS_REVIEW"),
+    "review_converge": ("READINESS_PROPOSAL", "READINESS_REVIEW"),
+    "title_alarm": ("F21_PROPOSAL", "F21_REVIEW"),
+    "check_report": ("F15_PROPOSAL",),
+    "check_report_compound": ("F15_PROPOSAL",),
+    "check_report_hardened": ("F15_PROPOSAL",),
+    "customize_override": ("F00_PROPOSAL",),
+    "reverse_from_harvest": ("W06_HARVEST",),
+    "litsearch_expand": ("W03_PROPOSAL",),
+    "review_fixture_de": ("F04_PROPOSAL", "F04_REVIEW"),
+    "supervise_ready": ("SUBMITTED_PROPOSAL",),
+}
+# a file the user's request names, by its path from the workspace root
+REQUEST_PATH = re.compile(r"(?<![\w/.-])((?:[\w-]+/)*[\w-]+\.(?:md|txt|pdf))(?![\w/])")
+
+
+def named_paths(task_name: str) -> list[tuple[str, str]]:
+    """(what names it, the workspace path) for every file the task's request
+    names and every scorer constant mapped to it."""
+    prompt = getattr(skill_evals, task_name)().dataset[0].input
+    named = [("the request", path) for path in REQUEST_PATH.findall(request_of(prompt))]
+    return named + [(constant, getattr(skill_evals, constant))
+                    for constant in SCORER_PATHS.get(task_name, ())]
+
+
+def unstaged(task_name: str) -> list[str]:
+    staged = workspace_names(getattr(skill_evals, task_name)().dataset[0].files)
+    missing = []
+    for source, path in named_paths(task_name):
+        target = path
+        if source.endswith("_REVIEW"):
+            folder = PurePosixPath(path).parent
+            ok = PurePosixPath(path).name == "review.md" and folder.name
+            target = f"{folder}/{folder.name}.md" if ok else path
+        if target not in staged:
+            missing.append(f"{source}: {path}")
+    return missing
+
+
+@pytest.mark.parametrize("task_name", sorted(EXPECTED_SCORERS))
+def test_every_workspace_path_a_task_names_is_staged(task_name):
+    """The prompt and the scorers read the workspace where the fixture's tree
+    put it: a flat name left over from before the folder layout would send the
+    model, or the verdict, to a file that is not there."""
+    assert unstaged(task_name) == []
+
+
+def test_every_scorer_path_constant_belongs_to_a_task():
+    constants = {name for name in vars(skill_evals)
+                 if name.isupper() and name.endswith(("_PROPOSAL", "_REVIEW", "_HARVEST"))}
+    mapped = {c for names in SCORER_PATHS.values() for c in names}
+    assert constants == mapped
+
+
+# ---------- the sandbox's workspace listings (adopt-proposal-folders, task 5.4) -----
+
+
+class LocalSandbox:
+    """Inspect's local sandbox in miniature: every command runs for real with
+    `root` as the sandbox's working directory, so a listing is measured, not
+    assumed."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        self.calls: list[tuple[list[str], str | None]] = []
+
+    async def exec(self, cmd, timeout=None, cwd=None, **_kwargs):
+        self.calls.append((list(cmd), cwd))
+        # the sandbox's `python3` is this interpreter, on every platform
+        cmd = [sys.executable, *cmd[1:]] if cmd[0] == "python3" else list(cmd)
+        done = subprocess.run(cmd, cwd=self.root / cwd if cwd else self.root,
+                              capture_output=True, encoding="utf-8", timeout=timeout)
+        return SimpleNamespace(stdout=done.stdout, stderr=done.stderr,
+                               returncode=done.returncode, success=done.returncode == 0)
+
+    async def read_file(self, path, text=True):
+        target = self.root / path
+        return target.read_text(encoding="utf-8") if text else target.read_bytes()
+
+
+NOTES = "# Notes\n\n## Decisions\n\n## Open Points\n\n## Next Focus\n\n" \
+        "## Excluded Literature\n\n## Log\n"
+
+
+@pytest.fixture
+def sandbox_ws(tmp_path, monkeypatch):
+    """A staged workspace at the sandbox's root: a proposal folder with its
+    companions, a folder that is no proposal folder, root files, and the
+    installed skill under its hidden folder."""
+    files = {
+        "ml-code-review/ml-code-review.md": "# Proposal\n",
+        "ml-code-review/notes.md": NOTES,
+        "ml-code-review/feedback.md": "Verdict: ready.\n",
+        "ml-code-review/review.md": "1. Finding.\n",
+        "ml-code-review/img/a.png": "png",
+        "meetings/feedback.md": "not a proposal's\n",
+        "guidelines.md": "Prose.\n",
+        "feedback.md": "at the root\n",
+        f"{SKILL_HOME}/proposal-supervise/SKILL.md": "hidden\n",
+        f"{SKILL_HOME}/proposal-supervise/references/notes.md": NOTES,
+    }
+    for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text, encoding="utf-8")
+    box = LocalSandbox(tmp_path)
+    monkeypatch.setattr(skill_evals, "sandbox", lambda *_a, **_k: box)
+    return box
+
+
+@pytest.mark.usefixtures("sandbox_ws")
+def test_the_workspace_listing_walks_the_folders():
+    markdown = asyncio.run(skill_evals.workspace_markdown())
+    assert sorted(markdown) == [
+        "feedback.md", "guidelines.md", "meetings/feedback.md", "ml-code-review/feedback.md",
+        "ml-code-review/ml-code-review.md", "ml-code-review/notes.md",
+        "ml-code-review/review.md"]
+    assert markdown["ml-code-review/notes.md"] == NOTES
+
+
+@pytest.mark.usefixtures("sandbox_ws")
+def test_the_snapshot_sizes_walk_the_folders():
+    sizes = asyncio.run(skill_evals._ws_sizes())
+    assert sizes["ml-code-review/notes.md"] == len(NOTES.encode())
+    assert "ml-code-review/img/a.png" not in sizes, "markdown only"
+    assert not [name for name in sizes if name.startswith(".")]
+
+
+@pytest.mark.usefixtures("sandbox_ws")
+def test_supervise_reads_role_files_of_a_proposal_folder_only():
+    assert asyncio.run(skill_evals.supervise_feedback_files()) == {
+        "ml-code-review/feedback.md": "Verdict: ready.\n"}
+    assert asyncio.run(skill_evals.supervise_notes_text()) == NOTES
+    assert asyncio.run(skill_evals.supervise_proposal_text()) == "# Proposal\n"
+
+
+def test_the_ideate_sample_starts_from_an_empty_workspace():
+    """The dialogue tasks start ideation from nothing: no workspace file is
+    staged, only the skill and its literature-search sibling, so no setup has
+    to empty anything."""
+    sample = skill_evals._ideate_sample()
+    assert sample.setup is None
+    assert workspace_names(sample.files) == set()
+    assert f"{SKILL_HOME}/proposal-lit-search/SKILL.md" in sample.files
+    assert f"{SKILL_HOME}/proposal-ideate/references/guidelines.md" in sample.files
+
+
+def publish_verdict() -> tuple[bool, str]:
+    return skill_evals.verdict_publish(*asyncio.run(skill_evals.publish_listing()))
+
+
+def test_the_publish_listing_reads_the_proposals_folder(sandbox_ws):
+    folder = sandbox_ws.root / "ml-code-review"
+    (folder / "ml-code-review.pdf").write_bytes(b"%PDF")
+    (folder / ".gitignore").write_text("*.pdf\n*.typ\n", encoding="utf-8")
+    built, gitignore = asyncio.run(skill_evals.publish_listing())
+    assert "ml-code-review/ml-code-review.pdf" in built
+    assert gitignore == "*.pdf\n*.typ\n"
+    assert publish_verdict()[0]
+    # a build and its .gitignore at the workspace root are not the folder's
+    for name in ("ml-code-review.pdf", ".gitignore"):
+        (folder / name).rename(sandbox_ws.root / name)
+    assert not publish_verdict()[0]
+
+
+def test_a_gitignore_without_a_build_is_no_publish(sandbox_ws):
+    """The `.gitignore` names `*.pdf`; with no PDF beside it the run built
+    nothing, which a listing line must not stand in for."""
+    folder = sandbox_ws.root / "ml-code-review"
+    (folder / ".gitignore").write_text("*.pdf\n*.typ\n", encoding="utf-8")
+    passed, why = publish_verdict()
+    assert not passed
+    assert "no PDF produced" in why
+    (folder / "ml-code-review.pdf").write_bytes(b"")
+    assert not publish_verdict()[0], "an empty file is no build"
+
+
 def test_l1_scorers_keep_the_marker_the_classifier_reads():
     """`support.scorer_counts` excludes L1 scorers on tasks listed in
     `excluded_l1`. A deterministic scorer without `l1` in its name would keep
@@ -130,8 +416,6 @@ def test_role_models_stay_unrouted_beside_a_routed_model_under_test():
     when the model under test shares the judge's ID and is routed, the role gets
     a distinct, unrouted Model. Without the pin, the `marker` wrapper leaves its
     requests alone (test_openrouter_cache.py pins the request body)."""
-    import re
-
     import matrix
     from inspect_ai.model import get_model
 

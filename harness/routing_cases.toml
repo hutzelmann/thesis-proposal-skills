@@ -97,10 +97,13 @@ lang = "en"
 
 # the write_repair_citations dev scenario's request, verbatim. It carries
 # review's "ready for my supervisor", but it asks for the text to be changed.
-# On 2026-10-04 haiku never loaded a skill for it in three dev runs.
+# On 2026-10-04 haiku never loaded a skill for it in three dev runs. Since
+# adopt-proposal-folders it names the proposal by its folder path, as the dev
+# scenario does: a conditions change the report's recorded staging line
+# (routing.STAGING_CONDITIONS) already marks for the next routing run.
 [[cases]]
 id = "write-polish-collision"
-utterance = "Please do a writing pass over dependency-update-breakage.md so it is ready for my supervisor. I cannot answer any questions — decide and tell me what you did."
+utterance = "Please do a writing pass over dependency-update-breakage/dependency-update-breakage.md so it is ready for my supervisor. I cannot answer any questions — decide and tell me what you did."
 expected = "proposal-write"
 kind = "collision"
 lang = "en"

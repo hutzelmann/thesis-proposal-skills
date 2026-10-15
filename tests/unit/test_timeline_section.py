@@ -10,11 +10,11 @@ import json
 from pathlib import Path
 
 import pytest
-from helpers import FIXTURES, REPO, run_check
+from helpers import REPO, check_fixture, fixture_proposal, run_check, write_proposal
 
 STRUCTURE = REPO / "shared" / "structure.json"
-CLEAN = FIXTURES / "f00-clean-en" / "ml-code-review.md"
-CLEAN_DE = FIXTURES / "f12-clean-de" / "typsystem-einheitenfehler.md"
+CLEAN = fixture_proposal("f00-clean-en")
+CLEAN_DE = fixture_proposal("f12-clean-de")
 
 
 def with_timeline(tmp_path: Path, body: str, source: Path = CLEAN,
@@ -25,9 +25,8 @@ def with_timeline(tmp_path: Path, body: str, source: Path = CLEAN,
     head, _, tail = text.partition(f"## {heading}\n")
     _, sep, rest = tail.partition(f"\n## {ref_heading}\n")
     assert sep, "fixture layout changed: the references heading no longer closes the body"
-    victim = tmp_path / source.name
-    victim.write_text(
-        f"{head}## {heading}\n\n{body}\n\n## {ref_heading}\n{rest}", encoding="utf-8")
+    victim = write_proposal(tmp_path, source.stem,
+                            f"{head}## {heading}\n\n{body}\n\n## {ref_heading}\n{rest}")
     return run_check(victim).stdout
 
 
@@ -37,9 +36,8 @@ def test_missing_timeline_is_an_error(tmp_path):
     text = CLEAN.read_text(encoding="utf-8")
     head, sep, tail = text.partition("## Timeline\n")
     assert sep
-    victim = tmp_path / "no-timeline.md"
-    victim.write_text(head + "## References\n" + tail.partition("\n## References\n")[2],
-                      encoding="utf-8")
+    victim = write_proposal(tmp_path, "no-timeline",
+                            head + "## References\n" + tail.partition("\n## References\n")[2])
     result = run_check(victim)
     assert "required section missing: `Timeline`" in result.stdout
     assert result.returncode == 1
@@ -49,9 +47,8 @@ def test_german_proposal_requires_zeitplan(tmp_path):
     text = CLEAN_DE.read_text(encoding="utf-8")
     head, sep, tail = text.partition("## Zeitplan\n")
     assert sep
-    victim = tmp_path / "kein-zeitplan.md"
-    victim.write_text(head + "## Literatur\n" + tail.partition("\n## Literatur\n")[2],
-                      encoding="utf-8")
+    victim = write_proposal(tmp_path, "kein-zeitplan",
+                            head + "## Literatur\n" + tail.partition("\n## Literatur\n")[2])
     result = run_check(victim)
     assert "required section missing: `Zeitplan`" in result.stdout
 
@@ -124,7 +121,7 @@ def test_german_guard_names_the_german_title(tmp_path):
 # ---------- order ------------------------------------------------------------
 
 def test_canonical_order_passes():
-    assert "out of order" not in run_check(CLEAN).stdout
+    assert "out of order" not in check_fixture("f00-clean-en").stdout
 
 
 def reordered(text: str) -> str:
@@ -140,8 +137,7 @@ def reordered(text: str) -> str:
 
 
 def test_timeline_before_methodology_is_an_error(tmp_path):
-    victim = tmp_path / "reordered.md"
-    victim.write_text(reordered(CLEAN.read_text(encoding="utf-8")), encoding="utf-8")
+    victim = write_proposal(tmp_path, "reordered", reordered(CLEAN.read_text(encoding="utf-8")))
     result = run_check(victim)
     assert "section out of order: `Timeline` before" in result.stdout
     assert result.returncode == 1
@@ -149,8 +145,7 @@ def test_timeline_before_methodology_is_an_error(tmp_path):
 
 def test_order_error_names_the_methodology_as_written(tmp_path):
     """Not the `{methodology}` template — the heading the author actually wrote."""
-    victim = tmp_path / "reordered.md"
-    victim.write_text(reordered(CLEAN.read_text(encoding="utf-8")), encoding="utf-8")
+    victim = write_proposal(tmp_path, "reordered", reordered(CLEAN.read_text(encoding="utf-8")))
     out = run_check(victim).stdout
     assert "{methodology}" not in out.split("section out of order")[1].split("\n")[0]
     assert "Prototype Implementation" in out
@@ -158,22 +153,20 @@ def test_order_error_names_the_methodology_as_written(tmp_path):
 
 def test_non_canonical_headings_do_not_affect_order(tmp_path):
     text = CLEAN.read_text(encoding="utf-8")
-    victim = tmp_path / "extra-heading.md"
-    victim.write_text(
-        text.replace("## Timeline\n", "## Acknowledgements\n\nThanks.\n\n## Timeline\n"),
-        encoding="utf-8")
+    victim = write_proposal(
+        tmp_path, "extra-heading",
+        text.replace("## Timeline\n", "## Acknowledgements\n\nThanks.\n\n## Timeline\n"))
     assert "out of order" not in run_check(victim).stdout
 
 
 def test_override_list_supplies_its_own_order(tmp_path):
     """An overridden [sections] required list is ordered; that order is enforced,
     and the canonical default no longer applies."""
-    victim = tmp_path / "custom.md"
-    victim.write_text(
+    victim = write_proposal(
+        tmp_path, "custom",
         "# A Custom Layout Proposal Document\n\n*Master's Thesis Proposal*\n\n"
         "## Beta\n\nSecond by default, first here.\n\n## Alpha\n\nText.\n\n"
-        "---\nreferences: []\n---\n", encoding="utf-8"
-    )
+        "---\nreferences: []\n---\n")
     (tmp_path / "guidelines.md").write_text(
         '```toml\n[sections]\nrequired = ["Beta", "Alpha"]\n```\n', encoding="utf-8"
     )

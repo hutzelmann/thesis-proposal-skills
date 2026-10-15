@@ -15,10 +15,10 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from fixture_paths import fixture_proposal
 
 REPO = Path(__file__).resolve().parents[2]
 TEMPLATES = REPO / "skills" / "proposal-publish" / "templates"
-FIXTURES = REPO / "tests" / "fixtures"
 
 # the filter joins label and bracket with this; spelled out so no assertion
 # needle can carry an invisible literal instead
@@ -224,16 +224,16 @@ def test_non_breaking_space_survives_typst_writer():
 
 
 @pytest.mark.parametrize(("fixture", "label", "sentence_start"), [
-    ("f12-clean-de/typsystem-einheitenfehler.md", "Vogel", "Gegenüber"),
-    ("f16-figures-import/sensor-anomaly-triage.md", "Duarte", None),
-    ("w03-snowball-seed/serverless-energy-scheduling.md", "Weiss and Lindgren", None),
+    ("f12-clean-de", "Vogel", "Gegenüber"),
+    ("f16-figures-import", "Duarte", None),
+    ("w03-snowball-seed", "Weiss and Lindgren", None),
 ])
 def test_corpus_fixtures_render_their_author_in_text_citations(fixture, label, sentence_start):
     """The corpus already writes `@key` where the authors are the subject; before
     this filter existed those sentences rendered as a bare "[n] propose …".
     The label is joined to its bracket by U+00A0, not a plain space.
     """
-    out = render((FIXTURES / fixture).read_text(encoding="utf-8"))
+    out = render(fixture_proposal(fixture).read_text(encoding="utf-8"))
     assert re.search(rf"{re.escape(label)}{NBSP}\[\d+\]", out), out
     if sentence_start:
         assert not re.search(rf"{sentence_start} \[\d+\]", out), out

@@ -7,7 +7,7 @@
       "task": "troubleshoot_model_rung",
       "prompt": "The write skill produced a draft that ignored half of what I told it. I was running claude-haiku-4-5-20251001. I have already updated the skills by pasting the install prompt again, and it still happens. Is this a bug I should report?",
       "files": [
-        "ws/microservice-technical-debt.md"
+        "microservice-technical-debt/microservice-technical-debt.md"
       ],
       "expected_output": "The unsupported model named as the cause with an actionable remedy; no bug report assembled.",
       "assertions": [

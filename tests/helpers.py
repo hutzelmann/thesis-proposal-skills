@@ -27,50 +27,34 @@ from pathlib import Path
 import check as check_script
 import support
 import sync_shared
+from fixture_paths import FIXTURES as FIXTURES  # re-exported: the corpus root
+from fixture_paths import fixture_dir, fixture_proposal
 from routing import Followed
 
 REPO = Path(__file__).resolve().parents[1]
-FIXTURES = REPO / "tests" / "fixtures"
 MODEL_CATALOG = REPO / "tests" / "unit" / "data" / "model_catalog"
 REGISTRY_PATH = REPO / "harness" / "models.toml"
 
-# markdown that sits beside a fixture proposal without being one: the corpus
-# README and workspace overrides by name; by suffix, a handout and a harvest
-# record (w06) — inputs to a skill, never documents to check or build
-NON_PROPOSAL_MARKDOWN = {"README.md", "guidelines.md"}
-# .notes.md: the companion working file (w10 is the first fixture to carry one)
-NON_PROPOSAL_SUFFIXES = ("-handout.md", ".harvest.md", ".notes.md")
 # the draft the dev-runner tests place in a workspace as a run's produced draft
-CLEAN_DRAFT = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+CLEAN_DRAFT = fixture_proposal("f00-clean-en").read_text(encoding="utf-8")
+# a notes file carrying the five section headings, which alone makes its folder
+# a proposal folder (proposal-file-format: One folder per proposal)
+NOTES_TEXT = ("# Notes\n\n## Decisions\n\n## Open Points\n\n## Next Focus\n\n"
+              "## Excluded Literature\n\n## Log\n")
 # the Copilot host's synthetic fixtures (README there) and the synthetic token
 # every Copilot test writes into a token file or hands to a child
 COPILOT_STREAMS = REPO / "tests" / "unit" / "data" / "copilot_streams"
 COPILOT_TOKEN = "github_pat_SYNTHETIC_TEST_ONLY"
 
 
-def is_fixture_proposal(path: Path) -> bool:
-    """Whether a markdown file in the fixture corpus is a proposal. One
-    predicate for every corpus walker, so a new kind of companion file is
-    excluded everywhere at once rather than wherever someone remembered.
-
-    An earlier round's review (w09) is `<slug>-review.md` beside `<slug>.md`;
-    the suffix alone would also match a proposal slugged `…-review`
-    (f00's `ml-code-review.md`), and a review whose proposal was renamed away
-    (w13) has no sibling. So the check's own listing classifier decides
-    (`family_members`): a `-review` or `-feedback` file whose base slug has no
-    proposal is one only when it ends in a metadata block, and a kept
-    `<slug>.<label>.md` (w15) is never one."""
-    name = path.name
-    if name in NON_PROPOSAL_MARKDOWN or name.endswith(NON_PROPOSAL_SUFFIXES):
-        return False
-    listing = [p.name + "/" if p.is_dir() else p.name for p in path.parent.iterdir()]
-
-    def ends_in_block(other: str) -> bool:
-        text = (path.parent / other).read_text(encoding="utf-8")
-        return check_script.split_proposal(text)[1].found
-
-    member = check_script.family_members(listing, ends_in_block).get(name)
-    return member == (name.removesuffix(".md"), check_script.PROPOSAL)
+def write_proposal(root: Path, slug: str, text: str) -> Path:
+    """`text` as the proposal `<root>/<slug>/<slug>.md`, its folder created:
+    a proposal where a workspace keeps it (proposal-file-format: One folder
+    per proposal)."""
+    path = root / slug / f"{slug}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 @dataclass(frozen=True)
@@ -83,18 +67,29 @@ class CheckRun:
     stdout: str
 
 
-def run_check(proposal: Path, *extra: str) -> CheckRun:
-    """Run the shipped check script in-process and capture its report.
+def run_check(proposal: Path, *extra: str, root: Path | None = None) -> CheckRun:
+    """Run the shipped check script in-process from the workspace root and
+    capture its report. The root is `root`, by default the folder above the
+    proposal's own folder: a user's agent runs the check from there, and the
+    workspace's `guidelines.md`, placement and orphan findings are measured
+    from there (design D17 of adopt-proposal-folders).
 
     In-process is what makes `check.py` visible to coverage: as a subprocess it
     contributed nothing at all, despite being the most-asserted script in the
     repository. The subprocess path stays covered by `test_fixture_oracles.py`,
     which exists to exercise the script exactly as a user invokes it.
     """
+    workspace = root if root is not None else proposal.parent.parent
     buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
+    with contextlib.chdir(workspace), contextlib.redirect_stdout(buffer):
         code = check_script.main([str(proposal), *extra])
     return CheckRun(returncode=code, stdout=buffer.getvalue())
+
+
+def check_fixture(fixture: str, *extra: str) -> CheckRun:
+    """`run_check` over a fixture's proposal from the fixture's root, which is
+    the workspace root its oracle was calibrated from."""
+    return run_check(fixture_proposal(fixture), *extra, root=fixture_dir(fixture))
 
 
 # cleared beside fake_home_env: collect.py looks there first for the skills CLI's lock
@@ -116,11 +111,6 @@ def fake_home(monkeypatch, home: Path) -> None:
         monkeypatch.setenv(name, value)
     for name in FAKE_HOME_UNSET:
         monkeypatch.delenv(name, raising=False)
-
-
-def fixture_proposal(fixture: str) -> Path:
-    """The one proposal markdown file in a fixture directory."""
-    return next(p for p in sorted((FIXTURES / fixture).glob("*.md")) if is_fixture_proposal(p))
 
 
 def review_with_record(review: str, questions: list[str],

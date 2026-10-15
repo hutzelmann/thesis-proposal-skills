@@ -16,11 +16,11 @@ from pathlib import Path
 
 import l2_rubrics
 import pytest
+from fixture_paths import oracle_path
 from l2_rubrics import CRITERIA, DEV_RUBRICS, RUBRICS, judge_prompt, question_for, read_grade
 
 GOLDEN = Path(__file__).resolve().parent / "data" / "l2_prompts"
 INPUTS = json.loads((GOLDEN / "inputs.json").read_text(encoding="utf-8"))
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 @pytest.mark.parametrize("golden", sorted(GOLDEN.glob("*.txt")), ids=lambda p: p.stem)
@@ -85,7 +85,7 @@ def test_review_scenarios_ask_about_the_oracle_semantic_list():
                               ("review_converge", "w09-revised-round"),
                               ("review_swap_decorative", "f31-decorative-tool"),
                               ("review_swap_anchored", "f32-tool-as-object")):
-        oracle = json.loads((FIXTURES / fixture / "expected.json").read_text(encoding="utf-8"))
+        oracle = json.loads(oracle_path(fixture).read_text(encoding="utf-8"))
         [entry] = DEV_RUBRICS[scenario]
         assert entry.question == "oracle"
         assert question_for(entry, "ignored request", oracle) == "; ".join(oracle["semantic"])

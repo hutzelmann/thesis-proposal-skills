@@ -9,11 +9,13 @@ is a rule that was deleted without its entry, and a duplicate identifier makes
 two findings indistinguishable to every consumer keyed on it.
 """
 
+import contextlib
 import json
 
 import check
 import pytest
-from helpers import FIXTURES, REPO, is_fixture_proposal, run_check
+from fixture_paths import corpus_proposals, fixture_dir, fixture_of
+from helpers import FIXTURES, REPO, fixture_proposal, run_check, write_proposal
 
 STRUCTURE = json.loads((REPO / "shared" / "structure.json").read_text(encoding="utf-8"))
 
@@ -23,7 +25,7 @@ def context(text: str, overrides: dict | None = None) -> check.Context:
     return check.build_context(body, meta, STRUCTURE, overrides or {})
 
 
-CLEAN = (FIXTURES / "f00-clean-en" / "ml-code-review.md").read_text(encoding="utf-8")
+CLEAN = fixture_proposal("f00-clean-en").read_text(encoding="utf-8")
 
 
 # ---------- the closed identifier set ----------------------------------------
@@ -50,14 +52,15 @@ def test_every_declared_identifier_is_reachable():
 
 
 def test_every_emitted_identifier_is_declared():
-    """The inverse: a rule may not invent an identifier outside the closed set."""
+    """The inverse: a rule may not invent an identifier outside the closed set.
+    Each fixture is checked from its root, the workspace root its overrides
+    resolve from."""
     emitted = set()
-    for proposal in sorted(FIXTURES.glob("*/*.md")):
-        if not is_fixture_proposal(proposal):
-            continue
-        findings = check.check_findings(
-            proposal, STRUCTURE, check.load_overrides(proposal, None)
-        )
+    for proposal in corpus_proposals():
+        with contextlib.chdir(fixture_dir(fixture_of(proposal))):
+            findings = check.check_findings(
+                proposal, STRUCTURE, check.load_overrides(proposal, None)
+            )
         emitted |= {f.rule for f in findings}
     undeclared = emitted - set(check.RULE_IDS)
     assert not undeclared, f"identifiers emitted but not declared: {sorted(undeclared)}"
@@ -894,6 +897,8 @@ COVERED_BY_UNIT_TESTS = {
     "methodology-branch-invalid",
     "paths-proposals-invalid",
     "proposal-misplaced",
+    # no fixture stops a rename halfway; test_check_placement.py does
+    "proposal-folder-mismatch",
     "metadata-block-missing",
     "title-line-missing",
     "title-not-first",
@@ -950,11 +955,10 @@ COVERED_BY_UNIT_TESTS = {
 def test_json_mode_matches_the_human_report(tmp_path):
     """Same run, two renderings: the exit code and the finding count must agree,
     or a consumer reading one would disagree with a student reading the other."""
-    proposal = tmp_path / "p.md"
-    proposal.write_text(CLEAN.replace("## Timeline", "## Timeline and Milestones"),
-                        encoding="utf-8")
+    proposal = write_proposal(tmp_path, "p", CLEAN.replace("## Timeline",
+                                                           "## Timeline and Milestones"))
     human = run_check(proposal)
-    findings = check.check_findings(proposal, STRUCTURE, {})
+    findings = check.check_findings(proposal, STRUCTURE, {}, tmp_path)
     errors = [f for f in findings if f.level == "error"]
     assert human.returncode == (1 if errors else 0)
     assert human.stdout.count("- ERROR:") == len(errors)
@@ -963,18 +967,14 @@ def test_json_mode_matches_the_human_report(tmp_path):
 
 def test_warnings_alone_still_exit_zero(tmp_path):
     """The check is advisory: it gates nothing on warnings."""
-    proposal = tmp_path / "p.md"
-    proposal.write_text(CLEAN, encoding="utf-8")
-    findings = check.check_findings(proposal, STRUCTURE, {})
+    proposal = write_proposal(tmp_path, "p", CLEAN)
+    findings = check.check_findings(proposal, STRUCTURE, {}, tmp_path)
     assert not [f for f in findings if f.level == "error"]
     assert run_check(proposal).returncode == 0
 
 
-def test_json_mode_suppresses_the_human_report(tmp_path, capsys):
-    proposal = tmp_path / "p.md"
-    proposal.write_text(CLEAN, encoding="utf-8")
-    check.main([str(proposal), "--json"])
-    out = capsys.readouterr().out
+def test_json_mode_suppresses_the_human_report(tmp_path):
+    out = run_check(write_proposal(tmp_path, "p", CLEAN), "--json").stdout
     assert "## Verified mechanically" not in out
     payload = json.loads(out)
     assert payload["digest"].startswith("sha256:")

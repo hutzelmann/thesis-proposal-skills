@@ -5,9 +5,9 @@
     {
       "id": 1,
       "task": "reverse_from_harvest",
-      "prompt": "The thesis this record came from is finished and submitted, and no proposal was ever filed for it. The harvest record beside this message is what you read out of the thesis — `soil-moisture-irrigation.harvest.md`. Write the proposal from it.",
+      "prompt": "The thesis this record came from is finished and submitted, and no proposal was ever filed for it. The harvest record beside this message is what you read out of the thesis — `soil-moisture-irrigation/harvest.md`. Write the proposal from it.",
       "files": [
-        "ws/soil-moisture-irrigation.harvest.md"
+        "soil-moisture-irrigation/harvest.md"
       ],
       "expected_output": "A plan-tense proposal derived from the harvest record: no execution outcomes, no results-only references, framing references kept.",
       "assertions": [

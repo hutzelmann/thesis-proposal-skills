@@ -5,10 +5,10 @@
     {
       "id": 1,
       "task": "review_converge",
-      "prompt": "I revised ws/ci-repair-agent-configurations.md after your last review — please review it again. Is it ready for my supervisor now?",
+      "prompt": "I revised ci-repair-agent-configurations/ci-repair-agent-configurations.md after your last review — please review it again. Is it ready for my supervisor now?",
       "files": [
-        "ws/ci-repair-agent-configurations-review.md",
-        "ws/ci-repair-agent-configurations.md"
+        "ci-repair-agent-configurations/ci-repair-agent-configurations.md",
+        "ci-repair-agent-configurations/review.md"
       ],
       "expected_output": "A second-round review that carries the earlier round over, marks its blockers resolved, keeps the unchanged clarify-early item deferred, and opens ready; the proposal untouched.",
       "assertions": [
@@ -19,9 +19,9 @@
     {
       "id": 2,
       "task": "review_dependency",
-      "prompt": "Please review my proposal ws/ci-repair-agent-configurations.md — is it ready for my supervisor?",
+      "prompt": "Please review my proposal ci-repair-agent-configurations/ci-repair-agent-configurations.md — is it ready for my supervisor?",
       "files": [
-        "ws/ci-repair-agent-configurations.md"
+        "ci-repair-agent-configurations/ci-repair-agent-configurations.md"
       ],
       "expected_output": "A review opening with needs revision whose blocker names the indispensable, doubtful partner access and why it cannot wait; the proposal untouched.",
       "assertions": [
@@ -32,9 +32,9 @@
     {
       "id": 3,
       "task": "review_fixture",
-      "prompt": "Please review my proposal ws/microservice-technical-debt.md — is it ready for my supervisor?",
+      "prompt": "Please review my proposal microservice-technical-debt/microservice-technical-debt.md — is it ready for my supervisor?",
       "files": [
-        "ws/microservice-technical-debt.md"
+        "microservice-technical-debt/microservice-technical-debt.md"
       ],
       "expected_output": "An enumerated review file beside the proposal, finding the seeded defects; the proposal itself byte-identical.",
       "assertions": [
@@ -46,9 +46,9 @@
     {
       "id": 4,
       "task": "review_fixture_de",
-      "prompt": "Bitte begutachte mein Exposé ws/zero-trust-referenzmodell.md — ist es bereit für die Abgabe?",
+      "prompt": "Bitte begutachte mein Exposé zero-trust-referenzmodell/zero-trust-referenzmodell.md — ist es bereit für die Abgabe?",
       "files": [
-        "ws/zero-trust-referenzmodell.md"
+        "zero-trust-referenzmodell/zero-trust-referenzmodell.md"
       ],
       "expected_output": "An enumerated review file in German, finding the seeded defects; the proposal itself byte-identical.",
       "assertions": [
@@ -59,9 +59,9 @@
     {
       "id": 5,
       "task": "review_hollow",
-      "prompt": "Please review my proposal ws/software-quality-ml.md — is it ready for my supervisor?",
+      "prompt": "Please review my proposal software-quality-ml/software-quality-ml.md — is it ready for my supervisor?",
       "files": [
-        "ws/software-quality-ml.md"
+        "software-quality-ml/software-quality-ml.md"
       ],
       "expected_output": "A review opening with the no-viable-thesis-core verdict and citing the failed substance tests by name; the proposal untouched.",
       "assertions": [
@@ -73,9 +73,9 @@
     {
       "id": 6,
       "task": "review_ready",
-      "prompt": "Please review my proposal ws/ci-repair-agent-configurations.md — is it ready for my supervisor?",
+      "prompt": "Please review my proposal ci-repair-agent-configurations/ci-repair-agent-configurations.md — is it ready for my supervisor?",
       "files": [
-        "ws/ci-repair-agent-configurations.md"
+        "ci-repair-agent-configurations/ci-repair-agent-configurations.md"
       ],
       "expected_output": "A review opening ready on a viable proposal that leaves bounded execution decisions open: no proposal blocker, the open decisions filed as clarify-early items with their deferral records; the proposal untouched.",
       "assertions": [
@@ -86,9 +86,9 @@
     {
       "id": 7,
       "task": "title_alarm",
-      "prompt": "Please review my proposal ws/kubernetes-build-dashboard.md — is it ready for my supervisor?",
+      "prompt": "Please review my proposal kubernetes-build-dashboard/kubernetes-build-dashboard.md — is it ready for my supervisor?",
       "files": [
-        "ws/kubernetes-build-dashboard.md"
+        "kubernetes-build-dashboard/kubernetes-build-dashboard.md"
       ],
       "expected_output": "A review raising the tool-shaped title as its own finding with the certificate consequence and abstracted alternatives; the title itself left to the student.",
       "assertions": [

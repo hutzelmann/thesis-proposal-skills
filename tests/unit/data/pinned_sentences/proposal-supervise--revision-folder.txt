@@ -1,0 +1,1 @@
+the revision is normalized into that folder as `<slug>.md` under the folder's own name, replacing the earlier normalized copy: no new folder and no new slug, even when the revised title would derive another

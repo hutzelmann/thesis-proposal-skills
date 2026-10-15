@@ -53,6 +53,18 @@ def test_a_write_on_the_last_call_leaves_nothing_to_read():
 # ---------- the replay ----------------------------------------------------------
 
 
+def test_the_probe_sends_the_matrix_agents_system_message():
+    """The cached prefix is the one the matrix sends, and the replay reads its
+    notes where that message says the agent works: from the workspace root,
+    which is its working directory (adopt-proposal-folders)."""
+    import skill_evals
+
+    assert cp.SYSTEM_PROMPT == skill_evals.AGENT_SYSTEM_MESSAGE
+    paths = [turn.arguments.get("cmd", "").removeprefix("cat ") or turn.arguments["path"]
+             for turn in cp.build_replay()]
+    assert all(path.startswith("notes/") for path in paths), paths
+
+
 def test_the_replay_is_deterministic_and_sized_as_designed():
     replay = cp.build_replay()
     assert replay == cp.build_replay()

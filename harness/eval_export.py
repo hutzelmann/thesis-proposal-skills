@@ -208,10 +208,13 @@ def _task_skills() -> dict[str, str]:
 
 
 def _staged_files(sample) -> list[str]:
-    names = sorted(n for n in (sample.files or {}) if n.startswith("ws/"))
-    if sample.setup and "rm -f ws/*.md" in sample.setup:
-        names = [n for n in names if not n.endswith(".md")]
-    return names
+    """The workspace a task starts from, by path from the workspace root: the
+    sandbox's root holds it, with the installed skills under their hidden
+    folder, which are no input."""
+    import skill_evals
+
+    installed = f"{skill_evals.SKILL_HOME}/"
+    return sorted(n for n in (sample.files or {}) if not n.startswith(installed))
 
 
 def export_evals() -> dict[str, dict]:

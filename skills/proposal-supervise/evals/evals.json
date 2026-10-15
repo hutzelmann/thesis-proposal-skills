@@ -5,13 +5,13 @@
     {
       "id": 1,
       "task": "supervise_feedback",
-      "prompt": "A student emailed me this thesis idea — I saved it as ws/submission-email.txt. Prepare my feedback: the draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path. Do not make any network lookups — no claim checks and no literature — and I cannot answer any further question.",
+      "prompt": "A student emailed me this thesis idea — I saved it as submission-email.txt. Prepare my feedback: the draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path. Do not make any network lookups — no claim checks and no literature — and I cannot answer any further question.",
       "files": [
-        "ws/submission-email.txt"
+        "submission-email.txt"
       ],
       "expected_output": "Paste-ready feedback: verdict tier stated up front, at most five curated points, skill pointers that resolve, none of the submission's personal data, and any literature woven into the points rather than listed.",
       "assertions": [
-        "supervise: a feedback draft exists as the slug-named feedback file and is not empty.",
+        "supervise: a feedback draft exists as the role-named feedback file of the proposal's folder and is not empty.",
         "supervise: the feedback's numbered points are blockers only — at most five, and none only when no point is owed (skill-supervise spec: curated to pressing points). Lettered cut options and the clarify-early dash list are not numbered, so they never count.",
         "supervise: the feedback opens with one of the three verdict tiers, English or German, case-insensitive like every prose-relaying verdict. Word-bounded where the tier is a single word (\"already\" must not count as \"ready\").",
         "supervise: no personal-data token from the submission survives anywhere in the student-facing feedback (skill-supervise spec: intake strips identity). `artifacts` maps file names to contents.",
@@ -26,13 +26,13 @@
     {
       "id": 2,
       "task": "supervise_ready",
-      "prompt": "A student sent me this thesis proposal — I saved it as ws/ci-repair-agent-configurations.md. Prepare my feedback: the draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path. Do not make any network lookups — no claim checks and no literature — and I cannot answer any further question.",
+      "prompt": "A student sent me this thesis proposal — I saved it as ci-repair-agent-configurations.md. Prepare my feedback: the draft I can send back. If the verdict turns out borderline, do not ask me — take the needs-revision path. Do not make any network lookups — no claim checks and no literature — and I cannot answer any further question.",
       "files": [
-        "ws/ci-repair-agent-configurations.md"
+        "ci-repair-agent-configurations.md"
       ],
       "expected_output": "Paste-ready feedback opening ready on a viable proposal: no numbered points, the open execution decisions in a labelled clarify-early block of at most five items, and no promise of a meeting.",
       "assertions": [
-        "supervise: a feedback draft exists as the slug-named feedback file and is not empty.",
+        "supervise: a feedback draft exists as the role-named feedback file of the proposal's folder and is not empty.",
         "supervise: the feedback's numbered points are blockers only — at most five, and none only when no point is owed (skill-supervise spec: curated to pressing points). Lettered cut options and the clarify-early dash list are not numbered, so they never count.",
         "supervise: the feedback opens with one of the three verdict tiers, English or German, case-insensitive like every prose-relaying verdict. Word-bounded where the tier is a single word (\"already\" must not count as \"ready\").",
         "supervise: the feedback steers somewhere real — at least one skill named, and every `proposal-*` name it mentions exists in the installed set. A skill is owed per point, so a feedback that opens ready with no numbered points owes none (sonnet dev run over f28, 2026-10-13).",
