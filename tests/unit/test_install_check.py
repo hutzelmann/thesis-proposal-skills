@@ -1,8 +1,13 @@
-"""L0: the pure halves of the install check — README command extraction and
-shipped-skill derivation. The networked install itself runs as `poe
-install-check` in its own CI workflow, never here."""
+"""L0: the offline halves of the install check — README command extraction,
+shipped-skill derivation, and the smoke run against a real copy of the check
+skill. The networked install itself runs as `poe install-check` in its own CI
+workflow, never here."""
 
 from __future__ import annotations
+
+import json
+import shutil
+import subprocess
 
 import install_check
 import pytest
@@ -115,3 +120,45 @@ def test_record_problems(tmp_path):
     assert install_check.record_problems(tmp_path, "abc", "x") == []
     assert install_check.record_problems(tmp_path, "def", "x") == [
         "x: install record names revision abc, expected def"]
+
+
+# ---------- the smoke, offline (fix-ci-after-folders) -------------------------
+
+
+@pytest.mark.parametrize("inside", [True, False], ids=["npx-project", "installer-home"])
+def test_the_smoke_passes_on_a_real_copy_of_the_check_skill(tmp_path, inside):
+    """Both arms run this against their install: the skills CLI's lands inside
+    the workspace (`<project>/.claude/skills`), the installer's in a separate
+    home. The fixture is staged in its folder and checked from the workspace
+    root, so only the seeded format errors are found, never a placement error
+    and nothing from the install folder (the flat smoke broke on the folder
+    layout in CI and nowhere else)."""
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    installed_root = (workdir if inside else tmp_path / "home") / ".claude" / "skills"
+    shutil.copytree(REPO / "skills" / "proposal-check", installed_root / "proposal-check",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    ok, why = install_check.run_smoke(workdir, installed_root)
+    assert ok, why
+
+
+def check_report(code: int, *rules: str) -> subprocess.CompletedProcess[str]:
+    findings = [{"level": "error", "rule": rule, "message": "m"} for rule in rules]
+    return subprocess.CompletedProcess([], code, json.dumps({"findings": findings}), "")
+
+
+def test_a_placement_error_is_not_the_seeded_findings():
+    """A flat staging still exits 1 with an ERROR; the smoke must not count it."""
+    ok, why = install_check.smoke_outcome(
+        check_report(1, "min-references", "proposal-misplaced"), ["min-references"])
+    assert not ok
+    assert "proposal-misplaced" in why
+
+
+def test_the_smoke_outcome_names_a_wrong_exit_or_a_missing_report():
+    assert install_check.smoke_outcome(check_report(1, "a"), ["a"]) == (
+        True, "installed check.py found the seeded errors")
+    assert "got 2" in install_check.smoke_outcome(
+        subprocess.CompletedProcess([], 2, "", "Traceback"), ["a"])[1]
+    assert "no JSON report" in install_check.smoke_outcome(
+        subprocess.CompletedProcess([], 1, "# Check", ""), ["a"])[1]

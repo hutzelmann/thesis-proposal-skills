@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import subprocess
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import changelog
 import pytest
@@ -229,7 +229,27 @@ def test_main_checked_out_elsewhere_is_left_for_the_maintainer(repo, tmp_path, c
     before = git(repo, "rev-parse", "main")
     assert release(repo) == 0
     assert git(repo, "rev-parse", "main") == before
-    assert f"git -C {other} merge --ff-only develop" in capsys.readouterr().out
+    hint = next(line for line in capsys.readouterr().out.splitlines()
+                if "merge --ff-only develop" in line)
+    # compared as paths, not spellings: the test below owns the spelling
+    shown = hint.split("git -C ", 1)[1].split(" merge --ff-only", 1)[0]
+    assert Path(shown.strip("'\"")).samefile(other)
+
+
+@pytest.mark.parametrize(("reported", "flavour", "printed"), [
+    # git for Windows reports `C:/...`; the native spelling is double-quoted,
+    # since Git Bash strips unquoted backslashes and cmd splits on a space
+    ("C:/Users/dev/main-checkout", PureWindowsPath, r'"C:\Users\dev\main-checkout"'),
+    ("C:/Users/John Doe/main-checkout", PureWindowsPath, r'"C:\Users\John Doe\main-checkout"'),
+    # POSIX: a path of safe characters prints exactly as git reports it
+    ("/home/dev/main-checkout", PurePosixPath, "/home/dev/main-checkout"),
+    ("/home/John Doe/main-checkout", PurePosixPath, "'/home/John Doe/main-checkout'"),
+])
+def test_the_hint_prints_the_checkout_in_the_platforms_spelling(reported, flavour, printed):
+    """The Windows rendering is proven on every OS here, not only in the
+    Windows lane, which is the one place the end-to-end test above runs it."""
+    assert changelog.checkout_hint(reported, flavour) == (
+        f"  git -C {printed} merge --ff-only develop   # `main` is checked out there")
 
 
 @pytest.mark.parametrize("setup", ["feature", "main-with-develop", "main-diverged"])

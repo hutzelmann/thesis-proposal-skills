@@ -287,7 +287,9 @@ NOTES = "# Notes\n\n## Decisions\n\n## Open Points\n\n## Next Focus\n\n" \
 def sandbox_ws(tmp_path, monkeypatch):
     """A staged workspace at the sandbox's root: a proposal folder with its
     companions, a folder that is no proposal folder, root files, and the
-    installed skill under its hidden folder."""
+    installed skill under its hidden folder. Written as bytes: text mode turns
+    each `\\n` into `\\r\\n` on Windows, and the snapshot sizes are measured on
+    disk."""
     files = {
         "ml-code-review/ml-code-review.md": "# Proposal\n",
         "ml-code-review/notes.md": NOTES,
@@ -302,7 +304,7 @@ def sandbox_ws(tmp_path, monkeypatch):
     }
     for rel, text in files.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / rel).write_text(text, encoding="utf-8")
+        (tmp_path / rel).write_bytes(text.encode("utf-8"))
     box = LocalSandbox(tmp_path)
     monkeypatch.setattr(skill_evals, "sandbox", lambda *_a, **_k: box)
     return box

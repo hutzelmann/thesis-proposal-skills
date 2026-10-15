@@ -2006,12 +2006,14 @@ def test_the_live_watch_stops_a_file_tool_pointed_outside_the_workspace(tmp_path
 
 
 def _staged_tree(ws: Path) -> Path:
-    """A staged skill tree with one skill and one regular file; returns its root."""
+    """A staged skill tree with one skill and one regular file; returns its root.
+    Written as bytes, since a digest of the file is compared with a byte
+    literal and text mode would write `\\r\\n` on Windows."""
     skill = ws / ".agents" / "skills" / "proposal-check"
     skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_text("---\nname: proposal-check\n---\nbody\n", encoding="utf-8")
+    (skill / "SKILL.md").write_bytes(b"---\nname: proposal-check\n---\nbody\n")
     (skill / "scripts").mkdir()
-    (skill / "scripts" / "check.py").write_text("print(1)\n", encoding="utf-8")
+    (skill / "scripts" / "check.py").write_bytes(b"print(1)\n")
     return ws / ".agents" / "skills"
 
 

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -42,7 +43,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from itertools import pairwise
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 
 import stamp_version  # sibling script: one stamp format for `release` and the manual path
 
@@ -559,13 +560,24 @@ def _is_ancestor(root: Path, ref: str) -> bool:
     return proc.returncode == 0
 
 
+def checkout_hint(path: str, flavour: Callable[[str], PurePath] = Path) -> str:
+    """The command that fast-forwards a checked-out `main` where it lies, the
+    path in the platform's own spelling and quoted so it survives a paste: git
+    for Windows reports `C:/Users/...`, printed as `"C:\\Users\\..."` because
+    Git Bash strips unquoted backslashes and cmd splits on a space; double
+    quotes are the one quoting cmd, PowerShell and Git Bash all honor. A POSIX
+    path of safe characters prints exactly as git reports it."""
+    native = flavour(path)
+    shown = f'"{native}"' if isinstance(native, PureWindowsPath) else shlex.quote(str(native))
+    return f"  git -C {shown} merge --ff-only {DEVELOP}   # `{MAIN}` is checked out there"
+
+
 def fast_forward_main(root: Path) -> str:
     """Move `main` to the release commit; never touches a checked-out `main`."""
     listing = git(root, "worktree", "list", "--porcelain")
     for block in listing.split("\n\n"):
         if f"branch refs/heads/{MAIN}" in block.splitlines():
-            path = block.splitlines()[0].removeprefix("worktree ")
-            return f"  git -C {path} merge --ff-only {DEVELOP}   # `{MAIN}` is checked out there"
+            return checkout_hint(block.splitlines()[0].removeprefix("worktree "))
     old = git(root, "rev-parse", "--verify", "-q", f"refs/heads/{MAIN}", check=False).strip()
     git(root, "update-ref", f"refs/heads/{MAIN}", "HEAD", *([old] if old else []))
     return ""

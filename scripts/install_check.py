@@ -11,8 +11,9 @@ repository's `install.py --scope all` given the export as a zip. It asserts:
 - exactly the shipped `proposal-*` skills install, nothing else,
 - every installed skill file is byte-identical to the repository's,
 - the installer's records name HEAD's commit (read from the zip comment),
-- the installed proposal-check script runs against a broken fixture and
-  reports findings (scripts, references, and sync copies travel).
+- the installed proposal-check script, run from a workspace that holds the
+  broken f15 fixture in its proposal folder, reports exactly the error rules
+  the fixture's oracle names (scripts, references, and sync copies travel).
 
 The CLI is deliberately unpinned: users run latest, and an installer regression
 that would break their installs is exactly what the scheduled CI run exists to
@@ -37,9 +38,18 @@ import sys
 import tempfile
 from pathlib import Path
 
+# The smoke resolves its fixture through the harness's one corpus-layout
+# module, so the harness directory has to be importable when CI runs this as
+# `python3 scripts/install_check.py`. Under pytest the configured `pythonpath`
+# already lists it, and the path is left alone.
+if (_harness := str(Path(__file__).resolve().parents[1] / "harness")) not in sys.path:
+    sys.path.insert(0, _harness)
+
+from fixture_paths import fixture_proposal, oracle_path
+
 REPO = Path(__file__).resolve().parent.parent
 README = REPO / "README.md"
-SMOKE_FIXTURE = REPO / "tests" / "fixtures" / "f15-format-broken" / "broken-format.md"
+SMOKE_FIXTURE = "f15-format-broken"
 INSTALL_FLAGS = ["-y", "-a", "claude-code", "-s", "*", "--copy"]
 # the installer's all-projects targets and its record (install.py, installation spec)
 INSTALLER_DIRS = (".agents/skills", ".claude/skills")
@@ -88,21 +98,39 @@ def compare_tree(source: Path, installed: Path) -> list[str]:
     return problems
 
 
-def run_smoke(workdir: Path, installed_root: Path) -> tuple[bool, str]:
-    """The installed check script against a known-broken proposal."""
-    proposal = workdir / SMOKE_FIXTURE.name
-    proposal.write_bytes(SMOKE_FIXTURE.read_bytes())
-    script = installed_root / "proposal-check" / "scripts" / "check.py"
-    result = subprocess.run(
-        [sys.executable, str(script), proposal.name],
-        cwd=workdir, capture_output=True, encoding="utf-8", check=False,
-    )
+def smoke_outcome(result: subprocess.CompletedProcess[str],
+                  expected: list[str]) -> tuple[bool, str]:
+    """(ok, why) of the installed check's JSON report: exit 1 with exactly the
+    error rules the fixture's oracle names. Any ERROR is not enough — a
+    proposal staged in the wrong place exits 1 on `proposal-misplaced` alone."""
     if result.returncode != 1:
         return False, (f"expected exit 1 with findings, got {result.returncode}: "
                        f"{result.stderr[-300:]}")
-    if "ERROR" not in result.stdout:
-        return False, "check ran but reported no findings on a broken fixture"
+    try:
+        errors = sorted({f["rule"] for f in json.loads(result.stdout)["findings"]
+                         if f["level"] == "error"})
+    except (ValueError, KeyError, TypeError) as exc:
+        return False, f"check printed no JSON report: {exc!r}"
+    if errors != expected:
+        return False, f"check reported errors {errors}, the fixture's oracle expects {expected}"
     return True, "installed check.py found the seeded errors"
+
+
+def run_smoke(workdir: Path, installed_root: Path) -> tuple[bool, str]:
+    """The installed check script against a known-broken proposal, staged as a
+    workspace holds it — `<workdir>/<slug>/<slug>.md` — and checked from the
+    workspace root with the relative path, as a user's agent runs it."""
+    source = fixture_proposal(SMOKE_FIXTURE)
+    proposal = workdir / source.stem / source.name
+    proposal.parent.mkdir(parents=True, exist_ok=True)
+    proposal.write_bytes(source.read_bytes())
+    oracle = json.loads(oracle_path(SMOKE_FIXTURE).read_text(encoding="utf-8"))
+    script = installed_root / "proposal-check" / "scripts" / "check.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--json", proposal.relative_to(workdir).as_posix()],
+        cwd=workdir, capture_output=True, encoding="utf-8", check=False,
+    )
+    return smoke_outcome(result, sorted(oracle["check"]["rules"]["errors"]))
 
 
 def verbatim_problems(stdout: str, expected: list[str]) -> list[str]:

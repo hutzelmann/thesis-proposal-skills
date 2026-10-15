@@ -300,8 +300,11 @@ EXEMPT = {"harness/fixture_paths.py", "tests/unit/test_fixture_paths.py"}
 
 
 def offending_lines(pattern: re.Pattern[str]) -> list[str]:
+    """Matches in every module that may reach a fixture: the tests, the
+    harness, and the repository scripts (the install check's smoke reads one,
+    and a spelled path there failed only in CI, fix-ci-after-folders)."""
     hits = []
-    for top in ("tests", "harness"):
+    for top in ("tests", "harness", "scripts"):
         for path in sorted((REPO / top).rglob("*.py")):
             rel = path.relative_to(REPO).as_posix()
             if rel in EXEMPT or rel.startswith("tests/fixtures/"):

@@ -448,7 +448,7 @@ Claude-only by construction. Other hosts read the same `description` but select 
 - **The README's `npx skills add …` command.** The command itself is extracted from the README, so rewording it there without updating reality fails the check.
 - **The repository's `install.py --scope all`, given the export as a zip.** The zip's comment carries HEAD's commit id, as a GitHub archive does, and the check asserts the install records name it.
 
-Both arms assert that exactly the eleven shipped skills land byte-identical. Both then run the installed check script against the f15 fixture as a functional smoke.
+Both arms assert that exactly the eleven shipped skills land byte-identical. Both then run the installed check script against the f15 fixture as a functional smoke. The smoke stages the fixture's proposal as a workspace holds it, in its own folder (`<slug>/<slug>.md`), runs the check from the workspace root, and passes only when the error rules it reports are exactly those of the fixture's `expected.json`, so a placement error cannot stand in for the seeded format errors. The fixture is resolved through `harness/fixture_paths.py`, and the smoke itself runs offline in `tests/unit/test_install_check.py` against a copy of the check skill in both install shapes.
 
 It runs in its own CI workflow on push and weekly. On the schedule, `--verbatim` additionally resolves the published GitHub repo with `--list`. The skills CLI is deliberately unpinned: users run latest, and an installer regression is the alarm this exists to raise. The check is networked (npx), so it is not part of `poe test`. The installer's own behaviour (scopes, records, conflicts, sources) is covered offline by `tests/unit/test_install.py`.
 
