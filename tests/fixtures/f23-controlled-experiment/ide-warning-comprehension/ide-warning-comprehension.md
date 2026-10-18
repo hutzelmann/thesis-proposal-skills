@@ -28,7 +28,8 @@ The focus is the causal effect of warning explanation style on developer compreh
 
 ## Methodology for Research: Controlled Experiment
 
-A controlled experiment fits these questions because both ask for a causal effect of one manipulated property — explanation style — on measurable developer behavior, which observation alone cannot isolate.
+Both questions ask how much of a developer's resolution correctness the explanation style causes on its own, apart from the analysis behind the warning.
+A controlled experiment answers that directly: it varies only the style while the defects, the editor and the task order stay fixed, so a difference in resolution is attributable to the style.
 
 ### Hypotheses and Variables
 

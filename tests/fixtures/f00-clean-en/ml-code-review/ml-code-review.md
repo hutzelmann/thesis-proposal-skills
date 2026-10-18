@@ -25,6 +25,9 @@ The focus is on balancing accuracy with false-positive rates to create a practic
 
 ## Methodology for Research: Prototype Implementation
 
+All three questions are about a classifier that does not exist yet: how accurately it flags review-relevant changes, which features it relies on, and how both vary across languages.
+A prototype implementation answers them by building that classifier on existing transformer models and evaluating it on reviewed open-source pull requests in Python and Java.
+
 ### Previous Work
 
 The prototype builds on transformer-based models from the HuggingFace library [@Author24Generic].

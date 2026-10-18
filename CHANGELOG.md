@@ -12,6 +12,10 @@ Installs and updates deliver `main`, which holds the latest release. Work in pro
 
 _On `develop`, not yet released._
 
+### Changed
+
+- Methodology sections now open by stating confidently why the chosen methodology is the right one for the research questions, instead of arguing that it fits; review no longer says such a justification is never required. ([confident-methodology-justification](openspec/changes/archive/2026-10-18-confident-methodology-justification/))
+
 ## [0.9.0] - 2026-10-15
 
 The suite gets this changelog and version numbers, and from now on installs receive released versions only. Every proposal moves into a folder of its own, which breaks workspaces in the old flat layout; its files stay together under one name, a review records which research questions it judged, and a named tool or domain has to matter to the research. The scripts also run on Windows whatever characters they print, and the install guide says how to confirm that a setup works.

@@ -29,7 +29,8 @@ The interest is in the relationship between the signals available and the signal
 
 ## Methodology for Research: Case Study
 
-A case study fits these questions because both ask how a decision is made in its real organisational context, which can only be observed where it happens — no controlled setting reproduces a contested release.
+Both questions concern the signals practitioners actually rely on when a release is contested and the reasoning they record, which exist only inside the team's own release process.
+A case study reads them from that process: it follows one release cycle through the recorded decision meetings, the dashboard history and the defect tracker, and sets what was argued against the dashboard state at that moment.
 
 ### Case and Units of Analysis
 

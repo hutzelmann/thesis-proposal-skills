@@ -536,15 +536,23 @@ The Prototype Implementation contract SHALL require the Evaluation subsection to
 - **THEN** the single-methodology rule is not violated by that naming
 
 ### Requirement: Methodology sections justify method fit
-The guidance SHALL require every methodology section to open with one or two sentences stating why the chosen methodology answers the research questions — the prose counterpart of the method-fit test, written by the student rather than judged only by a reviewer.
+The guidance SHALL require every methodology section to open with one or two sentences stating confidently why the chosen methodology is the right one for the research questions: what answering them demands, and what this methodology does that meets the demand, in the questions' own terms. The opening SHALL NOT be a suitability verdict, the branch's definition restated as a property of the questions, a feasibility argument, or a list of methods not taken.
 
 #### Scenario: Methodology opens without justification
-- **WHEN** a methodology section starts directly with its first subsection and never says why this methodology fits these questions
-- **THEN** guidance-following tooling asks for the opening justification
+- **WHEN** a methodology section starts directly with its first subsection and never says why this methodology is the right one for these questions
+- **THEN** guidance-following tooling asks for the opening justification, as a refinement
+
+#### Scenario: Suitability verdict instead of a justification
+- **WHEN** a methodology section opens by saying the methodology fits the questions because they ask what the methodology does by definition, and that the study can be run this way
+- **THEN** guidance-following tooling restates the opening as what the questions demand and what this methodology does that meets it, as a refinement, and leaves the methodology choice unchanged
 
 #### Scenario: Justification present
-- **WHEN** a methodology section opens by stating that a user study is chosen because the research questions concern observed developer behavior rather than tool performance
+- **WHEN** a methodology section opens by stating that both questions ask whether explanation style itself changes how developers act on a warning, and that only varying the style while the warnings, the code and the task stay fixed attributes a difference in behavior to it
 - **THEN** the requirement is satisfied
+
+#### Scenario: Justification that does not hold
+- **WHEN** the opening names a demand the research questions do not make, or one the chosen methodology cannot meet
+- **THEN** the defect is a method-fit failure, classified as the method-fit test classifies it, not a refinement of wording
 
 ### Requirement: Controlled experiments plan hypotheses, design, and analysis
 The Controlled Experiment branch SHALL require the subsections "Hypotheses and Variables" / "Hypothesen und Variablen", "Design and Participants" / "Versuchsdesign und Teilnehmende", and "Statistical Analysis" / "Statistische Auswertung". The content contract SHALL require: in Hypotheses and Variables, the hypotheses being tested and, named separately, the independent variables with their treatments (what is manipulated) and the dependent variables with their measures (what is measured), plus the known confounding factors; in Design and Participants, the experiment design, how participants are recruited and assigned — random assignment, or a justified quasi-design — and the tasks or instruments used; in Statistical Analysis, the planned tests as a consequence of the chosen design, and the main threats to validity.
@@ -633,7 +641,7 @@ User-facing English text SHALL call the document a proposal and SHALL NOT call i
 - **THEN** the document is called an Exposé, while skill and repository identifiers keep their English names
 
 ### Requirement: Degree-level guidance
-The guidelines SHALL carry a degree-level section stating where the level shows in a proposal, covering exactly four graded dimensions — contribution expectation, research-question origin, literature stance, and scope relative to the available months — in brief prose, and framing everything else as identical across levels by design, with `docs/degree-level-sources.md` named as provenance. The section SHALL state the both-directions bar: demanding a novelty claim from a Bachelor's proposal is the same error as accepting its absence from a Master's proposal. Bachelor-side statements SHALL be phrased as expectations not required, never as prohibitions — incipient novelty in a Bachelor's proposal remains welcome. The section SHALL NOT require an explicit methodology-justification statement at either level: a proposal declares one methodology and the proposal as a whole is its support; methodology fit remains a review-side judgement. The document skeleton, `structure.json`, and all mechanical checks SHALL remain level-blind.
+The guidelines SHALL carry a degree-level section stating where the level shows in a proposal, covering exactly four graded dimensions — contribution expectation, research-question origin, literature stance, and scope relative to the available months — in brief prose, and framing everything else as identical across levels by design, with `docs/degree-level-sources.md` named as provenance. The section SHALL state the both-directions bar: demanding a novelty claim from a Bachelor's proposal is the same error as accepting its absence from a Master's proposal. Bachelor-side statements SHALL be phrased as expectations not required, never as prohibitions — incipient novelty in a Bachelor's proposal remains welcome. The section SHALL state that the methodology section's opening justification is the same at both levels. The document skeleton, `structure.json`, and all mechanical checks SHALL remain level-blind.
 
 #### Scenario: Four dimensions, nothing structural
 - **WHEN** the guidelines' degree-level section is compared with `structure.json` and the check rules
@@ -645,7 +653,7 @@ The guidelines SHALL carry a degree-level section stating where the level shows 
 
 #### Scenario: No justification requirement
 - **WHEN** the section describes methodology at either level
-- **THEN** it requires no explicit justification prose and locates methodology fit in review judgement
+- **THEN** it adds no level-specific justification requirement, states that the methodology section's opening justification is the same at both levels, and never says that no justification is required
 
 ### Requirement: Citation scope
 The guidance SHALL state how far a citation reaches and when a publication is cited again, so that every sentence's source stays recognisable without the same citation being repeated on consecutive sentences.

@@ -41,7 +41,8 @@ The focus is build breakage caused by bot-generated dependency updates in open-s
 
 ## Methodology for Research: Empirical Model Evaluation
 
-An empirical model evaluation fits because all three questions compare the accuracy of predictors on recorded data, which a controlled measurement on held-out updates answers directly.
+All three questions compare how accurately different detectors flag breaking updates on the same recorded history, including on projects the predictor has never seen.
+An empirical model evaluation measures exactly this: it scores the history-based predictor beside the diff-based classifier and the static check on held-out updates and held-out projects, per update type.
 
 ### Data and Baselines
 

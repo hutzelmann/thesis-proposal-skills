@@ -170,12 +170,17 @@ def verdict_l2_grades(grades: dict[str, bool]) -> tuple[bool, str]:
 
 
 def verdict_draft(proposal_text: str | None, check_output: str) -> tuple[bool, str]:
-    """write_from_seed: draft survives and check is clean apart from tolerated errors."""
+    """write_from_seed: draft survives, check is clean apart from tolerated errors,
+    and the methodology section opens with a justification, not a suitability
+    verdict (verdict_methodology_opening)."""
     if not proposal_text:
         return False, "draft file missing or empty"
     bad = disallowed_errors(check_output, DRAFT_ALLOWED_ERRORS)
     if bad:
         return False, "check errors: " + "; ".join(bad)
+    opened, why = verdict_methodology_opening(proposal_text)
+    if not opened:
+        return False, why
     return True, "draft mechanically sound"
 
 
@@ -691,6 +696,60 @@ def verdict_repaired_draft(before: str, after: str | None,
     drafted, why = verdict_draft(after, check_output)
     repaired, detail = verdict_citation_repair(before, after)
     return drafted and repaired, f"{why}; {detail}"
+
+
+# ---------- methodology opening -----------------------------------------------
+# The guidelines open every methodology section with a justification stated as
+# a claim: what the research questions demand, and what the methodology does
+# that meets the demand. Only the lexical half is checked here — a sentence that
+# names the methodology and pronounces it suitable. A branch definition handed
+# back as a reason, or feasibility offered as one, stays review judgement.
+
+METHODOLOGY_PREFIXES = tuple(
+    template.split("{")[0]
+    for template in CHECK_SCRIPT.load_structure(None)["sections"]["titles"]["methodology"].values()
+)
+GENERIC_METHOD_NAMES = re.compile(
+    r"\b(?:this|the) (?:methodology|method|approach)\b"
+    r"|\b(?:diese|die)[rsmn]? (?:methodik|methode)\b",
+    re.IGNORECASE)
+SUITABILITY_FRAMES = re.compile(
+    r"\b(?:fits|suits|is (?:well[- ])?suited|is suitable|is appropriate|lends itself"
+    r"|is chosen|is selected|was chosen|was selected"
+    r"|eignet sich|geeignet|passt|bietet sich|gewählt)\b",
+    re.IGNORECASE)
+
+
+def methodology_opening(text: str) -> tuple[str, str] | None:
+    """(branch title, prose before the first subsection) of the methodology
+    section, found by the heading templates the check uses; None without one."""
+    body, _ = CHECK_SCRIPT.split_proposal(text)
+    prefixes = "|".join(map(re.escape, METHODOLOGY_PREFIXES))
+    head = re.search(rf"^#{{1,6}}[ \t]+(?:{prefixes})(.*)$", body, re.MULTILINE)
+    if not head:
+        return None
+    rest = body[head.end():]
+    stop = re.search(r"^#{1,6}\s", rest, re.MULTILINE)
+    return head.group(1).strip(), rest[: stop.start()] if stop else rest
+
+
+def verdict_methodology_opening(text: str | None) -> tuple[bool, str]:
+    """The methodology section opens with prose before its first subsection,
+    and no sentence of that opening names the methodology and pronounces it
+    suitable ("fits", "is suitable", "eignet sich", …). A draft without a
+    methodology section is left to the check's own `methodology-missing` error."""
+    found = methodology_opening(text or "")
+    if found is None:
+        return True, "no methodology section to open"
+    branch, opening = found
+    prose = " ".join(opening.split())
+    if not prose:
+        return False, "methodology section has no opening before its first subsection"
+    for _, sentence in CHECK_SCRIPT.sentence_spans(prose):
+        named = bool(branch) and branch.lower() in sentence.lower()
+        if (named or GENERIC_METHOD_NAMES.search(sentence)) and SUITABILITY_FRAMES.search(sentence):
+            return False, f"methodology opening gives a suitability verdict: «{sentence[:120]}»"
+    return True, "methodology opening states its justification without a suitability verdict"
 
 
 def verdict_provenance(transcript: str, seed_text: str | None,

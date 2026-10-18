@@ -11,7 +11,7 @@
       ],
       "expected_output": "A complete proposal draft grown from the seed idea, mechanically sound apart from a tolerated reference shortfall, with gaps marked TODO.",
       "assertions": [
-        "write_from_seed: draft survives and check is clean apart from tolerated errors.",
+        "write_from_seed: draft survives, check is clean apart from tolerated errors, and the methodology section opens with a justification, not a suitability verdict (verdict_methodology_opening).",
         "All research questions analytical, self-contained, non-overlapping, not yes/no.",
         "Every sentence carries information essential to this specific thesis; no scene-setting openers, truisms, restated obvious facts, or sentences that would fit any thesis in the area. Length itself is never a defect."
       ]

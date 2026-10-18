@@ -32,7 +32,8 @@ The focus is the effect of agent configuration — the split of work between age
 
 ## Methodology for Research: Empirical Model Evaluation
 
-An empirical model evaluation fits these questions because all three ask how existing agent configurations behave on a fixed benchmark; no new agent is built, and the configurations and their outputs are the objects of study.
+All three questions ask what the agent configuration alone changes about repair outcomes, with the model held fixed.
+An empirical model evaluation isolates that effect: it runs every configuration on the same benchmark failures with the same model, and measures repair rate, patch size and maintainability the same way for each.
 
 ### Data and Baselines
 

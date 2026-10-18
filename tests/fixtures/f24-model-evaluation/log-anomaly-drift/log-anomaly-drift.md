@@ -28,7 +28,8 @@ The focus is the robustness of published log anomaly detectors under distributio
 
 ## Methodology for Research: Empirical Model Evaluation
 
-An empirical model evaluation fits these questions because both ask how existing models behave under a changed evaluation protocol; nothing new is built, and no human participants are involved — the models and the data are the objects of study.
+Both questions ask whether the published accuracy of log anomaly detectors survives an evaluation in which training strictly precedes testing.
+An empirical model evaluation answers this by re-running the same detectors on the same logs under the shuffled and the temporal split, with the same hyperparameters and metrics, so every change in accuracy or ranking belongs to the split.
 
 ### Data and Baselines
 

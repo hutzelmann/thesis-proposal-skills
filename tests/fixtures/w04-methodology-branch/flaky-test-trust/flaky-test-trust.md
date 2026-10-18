@@ -28,7 +28,8 @@ The focus is the interaction between a flaky-test mitigation process and the tea
 
 ## Methodology for Research: Action Research
 
-Action research fits these questions because the first asks for the effect of a change that only exists if the researcher introduces it, and the second for the team's response while it happens — neither is observable in an organisation left unchanged.
+The first question asks for the effect of a quarantine-and-triage process that exists only once it is introduced, the second for how developers' trust responds while that happens.
+Action research answers both from one intervention: the researcher introduces the process with the team in planned cycles, measures the flaky-failure share in each, and records in each retrospective which properties of the process developers credit.
 
 ### Problem Diagnosis
 

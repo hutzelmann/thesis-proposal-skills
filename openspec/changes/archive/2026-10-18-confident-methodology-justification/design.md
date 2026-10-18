@@ -1,0 +1,62 @@
+## Context
+
+See proposal.md — Why. The relevant current state:
+
+- `shared/guidelines/guidelines.md` "Methodology Content" opens with the justification paragraph (one or two sentences, "why this methodology answers these research questions"); "Degree Level" closes with "Neither level requires a statement justifying the methodology choice …". Both reach `proposal-write`, `proposal-review` and `proposal-supervise` through the generated `references/guidelines.md` copies.
+- `skills/proposal-review/SKILL.md` "Level fit" bullet: "Methodology fit is judged, never demanded as justification prose". No pinned sentence covers it (`proposal-review--level-bar.txt` pins only the both-directions bar).
+- The write path is already reached by the justification paragraph: the real draft followed it. The defect is what the paragraph asks for, not whether it is read.
+- `verdict_draft()` in `harness/l1_checks.py` is the L1 core of all three write tasks: `verdict_cited_draft()` and `verdict_repaired_draft()` call it, the Inspect scorers in `harness/skill_evals.py` and the dev runner in `harness/claude_runner.py` call those, and `harness/eval_export.py` projects `verdict_draft`'s docstring into `skills/proposal-write/evals/evals.json`.
+- `l1_checks.py` already loads `check.py` as a module (`CHECK_SCRIPT`), and `check.py` has `split_proposal()`, `headings()` and `section_text()`. The methodology heading templates are `structure.json` `sections.titles.methodology` (`Methodology for Research: {methodology}`, `Forschungsmethodik: {methodology}`).
+- Fixture scan (2026-10-18): seventeen tracked fixture proposals open their methodology with "*X* fits (these questions) because …", twelve of them the shared `ci-repair-agent-configurations` text; twenty have no opening; no German fixture has one. Review currency compares recorded research questions only, and no `expected.json`, review companion or test quotes an opening.
+
+## Goals / Non-Goals
+
+**Goals:**
+- One rule for the methodology opening, stated once, with no other passage contradicting it.
+- A shape for the justification concrete enough that a writer can produce it and a reviewer can tell it apart from a suitability verdict.
+- A mechanical guard on write output for the lexically detectable half of the defect.
+
+**Non-Goals:**
+- No change to which methodology a proposal picks, or to the branch contracts after the opening paragraph.
+- No `check.py` rule and no `structure.json` key: the student-side check stays silent on the opening.
+- No openings added to the twenty fixtures without one.
+- No L2 rubric change and no metered run.
+
+## Decisions
+
+**D1 — Keep the justification; give it a shape.** The maintainer chose this on 2026-10-18 over removing the opening or reducing it to a design summary. The 2026-08-11 provenance (the SIGSOFT General Standard's call to argue why the method answers the questions) stays valid. The defect was two instructions pulling against each other and a missing description of what a good justification is. The contradicting Degree Level sentence goes, not the paragraph.
+
+**D2 — "Confident" means demand plus capability, in the questions' terms.** The paragraph states what the justification contains: what answering these research questions demands (a causal effect isolated from everything else, a comparison measured on shared data, a decision understood where it is made, the evidence a field already holds brought together) and what this methodology does that meets that demand, in the questions' own conditions, objects and measures. It names four things to leave out: a suitability verdict ("fits", "is suitable", "lends itself", "is chosen because"), the branch's definition handed back as a property of the questions, feasibility as the reason, and methodologies not taken. The paragraph closes with one positive example on a synthetic topic, explanation style of IDE warnings (the `f23` fixture's domain): "Both questions ask whether explanation style itself changes how developers act on a warning. Only varying the style while the warnings, the code and the task stay fixed attributes a difference in behavior to it — which is what a controlled experiment does." *Alternative considered:* a before/after pair. Rejected because a full defensive sentence in the reference is a template one paste away. The short quoted phrases name the frame without supplying a sentence to copy. *Why an example at all:* the stage-handoff work (2026-10-13) measured a worked example beating the abstract rule.
+
+**D3 — Classification.** A missing opening, or one written as a suitability verdict, is a refinement: the plan below it may be sound, and the readiness classification keeps wording defects out of the blockers. A justification whose demand is not what the questions ask, or whose methodology cannot meet it, is a method-fit failure and is classified as that test classifies it. The guidelines' method-fit test definition gains no text. The Methodology Content paragraph says where each case goes.
+
+**D4 — Resolving the contradiction.** "Degree Level": the sentence becomes "The methodology section's opening justification (Methodology Content) is the same at both levels." `proposal-review` "Level fit": "Methodology fit is judged, never demanded as justification prose: …" becomes a method-fit judgement of the opening justification and the plan behind it, the same at both levels, with the Master's-level limits question kept. `proposal-supervise` applies the review rules "exactly as the review skill would" and gets no edit. `proposal-write` gets no SKILL.md edit, because the guidelines already reach it (Context).
+
+**D5 — The L1 check folds into `verdict_draft()`.** A new `verdict_methodology_opening(text) -> (bool, str)` locates the methodology section through `CHECK_SCRIPT`'s parsing and the `structure.json` title templates in both languages. It takes the prose between the heading and the first subsection, then fails when that prose is empty or matches a suitability frame. `verdict_draft()` calls it after the check-errors condition. *Alternative considered:* a separate `write_l1_opening` scorer. Rejected because scorer names are pinned (`tests/unit/test_eval_wiring.py`) and counted by the matrix classifier, and a new name would need wiring in three places for one condition. Folding it in reaches Inspect, the dev runner and the `evals.json` projection at once. *Trade-off:* the shipped write verdicts were measured without the condition, so the next gated matrix run re-measures them. Nothing is re-run or re-labelled here.
+
+**D6 — Only the lexical half is mechanized.** A sentence of the opening fails when it names the methodology — the branch title from the heading (a workspace branch's title included), or "this methodology/method/approach", "diese Methodik/Methode" — and carries a suitability frame, case-insensitive. English frames: `fits`, `suits`, `is (well[- ])?suited`, `is suitable`, `is appropriate`, `lends itself`, `is chosen`, `is selected`, `was chosen`, `was selected`. German: `eignet sich`, `ist geeignet`, `passt`, `bietet sich an`, `wird gewählt`, `wurde gewählt`. Sentence boundaries come from `CHECK_SCRIPT.split_sentences()`, so the verdict and the check agree on what a sentence is. Restated definitions, feasibility reasons and methods not taken are semantic. They stay prose for the writer and judgement for the reviewer, under the formalization boundary. *Alternative considered:* a `check.py` warning. Rejected because the check is student-facing and level-blind by spec, and a lexical style lint would teach students to dodge words rather than to write the claim.
+
+**D7 — Fixture rewrites.** Each of the seventeen openings is rewritten in place to the D2 shape, from what its own research questions demand. The twelve `ci-repair-agent-configurations` copies get one new text, byte-identical across copies, as now. The L0 suite runs `verdict_methodology_opening()` over every fixture opening (the "Fixtures model the target" scenario), so a later fixture cannot reintroduce the frame.
+
+**D8 — Verification on the subscription.** The order is TDD. First the verdict and its L0 tests. Then one `uv run poe dev write_from_seed --isolated --model sonnet` run against the current guidelines, expected to fail on the opening (the reproduction). Then the guidance edit, and the same run again, expected to pass. The two runs are compared by their L1 explanations. Haiku runs once after the edit, because haiku is the model most likely to copy a frame. No metered run.
+
+## Risks / Trade-offs
+
+- [The writer avoids the listed verbs but keeps the defensive substance ("is the method that suits …", restated definitions)] → D2 asks for content, not word avoidance, and the review judges the substance; the L1 list is a floor. If dev runs show synonym drift, the next step is an L2 criterion, not a longer list.
+- [False positives: an opening that uses "fits" for something other than the methodology ("the model fits the data")] → a frame counts only in a sentence that names the methodology; L0 tests include such a sentence as a pass. A sentence naming both the methodology and an unrelated "fits" still fails. That is accepted for write output, where the rewrite costs one sentence.
+- [The positive example is copied verbatim into unrelated proposals] → its topic is narrow and synthetic; the dev-run comparison in D8 checks that drafts do not reuse it.
+- [The matrix shows a write regression after the next run] → expected, and confined to the new condition: the explanation names the methodology opening, so the cause is readable from the log.
+
+## Migration Plan
+
+None for users: proposals are prose and nothing reads the opening mechanically outside the harness. Existing workspace `guidelines.md` overrides are prose and unaffected. After archive, `python3 scripts/validate_specs.py --update-baseline` records the two shortened long requirements.
+
+## Measurements
+
+Dev runner, subscription, `--isolated`, run from a clean worktree of `1666e69` plus this change's diff. The main checkout held untracked flat-layout copies of the fixtures, which staging would have copied into the run.
+
+- **Before the guidance edit**, sonnet (`claude-sonnet-5-5`), `write_from_seed`: L1 PASS, $0.19 notional, 8 turns. Opening: "An empirical evaluation of existing detectors on production traces answers all three questions with measurements, and it needs no new detector." followed by `[TODO: confirm methodology choice]`. The suitability frame did not reproduce on the w01 seed, which defers the methodology choice. The defensive substance did: the reason is generic ("answers … with measurements"), and the second clause argues against a methodology not taken. This is the semantic half that design D6 leaves to guidance and review. It is not caught by L1, as the risk above anticipates.
+- **After the guidance edit**, sonnet, `write_from_seed`: L1 PASS, $0.18 notional, 7 turns. Opening: "Each question compares a drift signal with an outcome that becomes observable only later: accuracy loss, shadow-retraining results, or missed degradations. Replaying recorded production traces and scoring every detector against the same delayed labels makes these comparisons directly measurable." The demand comes first, then what the methodology does to meet it, with no suitability verdict and no method not taken. The methodologies not taken survive only inside the `[TODO: confirm methodology choice …]` marker addressed to the student.
+- **After the guidance edit**, haiku (`claude-haiku-5-5`), `write_from_seed`: L1 PASS, $0.02 notional, 10 turns. Opening: "The research questions ask how drift signals relate to measured accuracy loss and to a reference retraining decision. Only evaluating detectors on shared production data, against defined baselines, measures that relation on the same objects." It follows the example's "Only …" shape without reusing its sentence.
+- **After the guidance edit**, sonnet, `review_fixture` (f05, which has no opening): PASS. The review lists "The methodology section has no opening justification" under Optional refinements and asks for the demand and what a systematic review does to meet it, "Avoid a verdict of suitability". No blocker cites the opening.
+- **Added during apply:** `f00-clean-en` gains an opening. It is `CLEAN_DRAFT`, the dev-runner and host tests' stand-in for a passing write draft, so under the new L1 condition it must model the target. The other nineteen fixtures without an opening stay as they are.
