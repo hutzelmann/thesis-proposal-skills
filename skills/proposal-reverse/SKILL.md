@@ -110,11 +110,11 @@ A thesis carries a cover page. The author's name, matriculation number, postal a
 Run the reference validation, then the check, over the file you just wrote:
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/validate_refs.py <location>/<slug>/<slug>.md
-python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <location>/<slug>/<slug>.md
+python3 <skill-dir>/scripts/validate_refs.py <location>/<slug>/<slug>.md
+python3 <skill-dir>/scripts/check.py <location>/<slug>/<slug>.md
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the scripts really live in `scripts/` next to this SKILL.md. Either way, run both from the workspace root, the working directory, where `<location>` is the proposal location (`.` unless `[paths] proposals` sets another): the check measures the proposal's placement and its orphan findings from there. If you cannot find them, say they did not run and name what is therefore unverified — never present your own reading of the file as a script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
+`<skill-dir>` stands for this skill's own folder, the one holding this SKILL.md, which the host names when it loads the skill (as its base directory, or as the path of this SKILL.md); replace it with that folder's path. Run both from the workspace root, the working directory, where `<location>` is the proposal location (`.` unless `[paths] proposals` sets another): the check measures the proposal's placement and its orphan findings from there. If you cannot find them, say they did not run and name what is therefore unverified — never present your own reading of the file as a script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
 Apply the CSL-YAML the validator prints for entries it identified, keep every UNVERIFIABLE entry with a `[TODO: verify reference …]` beside its first citation, and fix everything the check reports except two findings that are not yours to fix: a reference shortfall the thesis genuinely cannot cover, and open `[TODO: …]` markers.
 

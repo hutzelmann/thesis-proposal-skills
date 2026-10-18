@@ -168,20 +168,18 @@ def plain_prompt(request: str) -> str:
 
 
 def skill_prompt(skill: str, request: str) -> str:
-    # the real host substitutes ${CLAUDE_SKILL_DIR} before the model sees the
-    # body; here the skill is installed under skill_home(skill), so the same
-    # substitution keeps every documented script path resolvable from the
-    # workspace root
+    # The body goes in unchanged, its `<skill-dir>` placeholder included: the
+    # real hosts substitute nothing and only name the skill's base directory,
+    # as this intro does, so the model resolves the placeholder from the
+    # skill's own definition (change host-neutral-script-paths, design D4)
     home = skill_home(skill)
     text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
-    text = text.replace("${CLAUDE_SKILL_DIR}", home)
     return (
         "You are an AI agent operating a skill inside a user's proposal workspace.\n"
-        "Your working directory is the workspace root (work there). The skill is "
-        f"installed in `{home}/` (read-only): the script paths inside the "
-        "instructions already name it, and a path the instructions give relative to "
-        f"the skill's own directory (`references/…`, `../<sibling>/…`) resolves from "
-        f"`{home}/`; sibling skills, when installed, sit beside it in `{SKILL_HOME}/`.\n\n"
+        "Your working directory is the workspace root (work there).\n"
+        f"Base directory for this skill: `{home}/` (read-only). Relative paths in "
+        "this skill resolve against this base directory; sibling skills, when "
+        f"installed, sit beside it in `{SKILL_HOME}/`.\n\n"
         f"=== SKILL INSTRUCTIONS ===\n{text}\n=== END SKILL INSTRUCTIONS ===\n\n"
         f"User request: {request}\n"
         "Fulfil exactly this request — nothing beyond it — following the skill "

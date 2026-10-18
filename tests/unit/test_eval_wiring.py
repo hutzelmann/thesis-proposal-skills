@@ -138,6 +138,8 @@ def request_of(prompt: str) -> str:
 
 # the script-location paragraph's command, as every check-shipping skill writes it
 CHECK_COMMAND = re.compile(r"python3 (\S+/scripts/check\.py) <location>/<slug>/<slug>\.md")
+# the base directory the prompt names, as a host does when it loads a skill
+BASE_DIRECTORY = re.compile(r"Base directory for this skill: `([^`]+)/`")
 # tasks whose skill ships the check and whose request names a staged proposal
 CHECKED_TASKS = {
     "write_from_seed": "W01_PROPOSAL",
@@ -159,10 +161,14 @@ def test_the_documented_check_finds_the_proposal_where_the_agent_works(task_name
     measured from there: otherwise every check the agent runs reports a
     misplaced proposal and loses the workspace's `guidelines.md`, though the
     scorer's own check is clean (testing-harness: Check run from the staged
-    workspace's root)."""
+    workspace's root). The body reaches the model with its `<skill-dir>`
+    placeholder intact, and the placeholder resolves to the base directory the
+    prompt names (change host-neutral-script-paths, design D4)."""
     sample = getattr(skill_evals, task_name)().dataset[0]
     materialize(sample.files, tmp_path)
     script = CHECK_COMMAND.search(sample.input).group(1)
+    assert script.startswith("<skill-dir>/"), f"the body was substituted: {script}"
+    script = script.replace("<skill-dir>", BASE_DIRECTORY.search(sample.input).group(1), 1)
     proposal = getattr(skill_evals, constant)
     named = [token.rstrip(".,;:") for token in request_of(sample.input).split()
              if token.rstrip(".,;:").endswith(proposal)]

@@ -26,15 +26,15 @@ One search, one judge, one merge: the scripts — or, when script networking is 
 **Keyword search** (topic or full proposal as context):
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/search.py "distributed consensus energy efficiency" --limit 10
+python3 <skill-dir>/scripts/search.py "distributed consensus energy efficiency" --limit 10
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, the script really lives in `scripts/` next to this SKILL.md, so use that path — but keep running the command from the working directory, where `api-keys.env` is looked up: the fallback changes where the script is found, never where you work. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
+`<skill-dir>` stands for this skill's own folder, the one holding this SKILL.md, which the host names when it loads the skill (as its base directory, or as the path of this SKILL.md); replace it with that folder's path — but keep running the command from the working directory, where `api-keys.env` is looked up: `<skill-dir>` changes where the script is found, never where you work. If you cannot find it, say the script did not run and name what is therefore unverified — never present your own reading of the file as the script's result. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
 **Snowballing** (expand from the proposal's existing references — the systematic way to deepen a literature base; prefer it over keywords once seeds exist), one seed per call:
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/snowball.py 10.1145/3292500.3330919 --direction both
+python3 <skill-dir>/scripts/snowball.py 10.1145/3292500.3330919 --direction both
 ```
 
 Both emit CSL-YAML candidates on stdout; degradation notes (failed sources, missing keys) arrive on stderr — always relay them to the user in one line.

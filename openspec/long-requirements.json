@@ -29,6 +29,14 @@
         "README names the path for a problem": 630,
         "Supervisors can provision a cohort": 551
       }
+    },
+    "host-neutral-script-paths": {
+      "skill-import": {
+        "Output lands in the workspace": 723
+      },
+      "skill-packaging": {
+        "User-side script constraints": 2351
+      }
     }
   },
   "specs": {

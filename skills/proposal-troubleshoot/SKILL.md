@@ -55,7 +55,7 @@ If the workspace holds `guidelines.md`, read it. When the behavior the user obje
 A shipped script exiting non-zero, a missing `python3`, an absent `pandoc` or `typst`, a network refusal. This is a defect or an environment gap, and both are worth a report. Capture the script's output to a file first — the report carries it as evidence:
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/check.py <location>/<slug>/<slug>.md > check-output.txt 2>&1
+python3 <skill-dir>/scripts/check.py <location>/<slug>/<slug>.md > check-output.txt 2>&1
 ```
 
 This skill ships its own copy of the check script, identical to proposal-check's.
@@ -88,10 +88,10 @@ Only for rungs 3 and 4, for an unidentified cause, or for optional model evidenc
 **1. Show what would leave the workspace, before writing anything.** Run the collector in dry-run mode and put its manifest in front of the user:
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py <location>/<slug>/<slug>.md --dry-run
+python3 <skill-dir>/scripts/collect.py <location>/<slug>/<slug>.md --dry-run
 ```
 
-`${CLAUDE_SKILL_DIR}` is substituted by the host with this skill's install directory; on a host that leaves it unexpanded, both scripts really live in `scripts/` next to this SKILL.md, so use that path — but keep running the commands from the workspace root, the working directory, where `<location>` is the proposal location (`.` unless `[paths] proposals` sets another): the report bundle and the captured output are written there, the check measures the proposal's placement and its orphan findings from there, and the fallback changes where a script is found, never where you work or write. If you cannot find a script, say it did not run and name what is therefore unverified — never assemble a report by hand and present it as the collector's output. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
+`<skill-dir>` stands for this skill's own folder, the one holding this SKILL.md, which the host names when it loads the skill (as its base directory, or as the path of this SKILL.md); replace it with that folder's path — but keep running the commands from the workspace root, the working directory, where `<location>` is the proposal location (`.` unless `[paths] proposals` sets another): the report bundle and the captured output are written there, the check measures the proposal's placement and its orphan findings from there, and `<skill-dir>` changes where a script is found, never where you work or write. If you cannot find a script, say it did not run and name what is therefore unverified — never assemble a report by hand and present it as the collector's output. `python3` stands for any Python 3.11 or newer that answers here (`python`, `py -3`, or a versioned name such as `python3.13`); keep the one that worked for the rest of the conversation.
 
 **2. Take the disclosure decision from the user, not from yourself.** Three levels, and the default is the most protective:
 
@@ -106,7 +106,7 @@ Every level also stores the Log section of the proposal's `notes.md`, with the p
 **3. Write the bundle.**
 
 ```
-python3 ${CLAUDE_SKILL_DIR}/scripts/collect.py <location>/<slug>/<slug>.md --level minimal --script-output check-output.txt
+python3 <skill-dir>/scripts/collect.py <location>/<slug>/<slug>.md --level minimal --script-output check-output.txt
 ```
 
 It refuses to overwrite an existing `bug-report/`. If one is there, ask whether it is still needed before passing `--force`. Once the bundle is written it carries the captures, so offer to remove `check-output.txt` and `version-output.txt` from the workspace.

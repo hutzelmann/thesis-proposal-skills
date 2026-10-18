@@ -1,9 +1,12 @@
-"""L0: documented script invocations use the host's skill-directory variable.
+"""L0: documented script invocations use the host-neutral `<skill-dir>` placeholder.
 
 The old workspace-root form (`.claude/skills/<skill>/scripts/…`) silently broke
-on any non-standard install; `${CLAUDE_SKILL_DIR}` resolves everywhere the host
-substitutes it, and every fallback paragraph rescues the hosts that don't
-(skill-packaging spec: User-side script constraints)."""
+on any non-standard install, and `${CLAUDE_SKILL_DIR}` resolved only on the one
+host that substitutes it: every other host handed its shell an unset variable.
+Hosts name the skill's directory when they load a skill, so each script-bearing
+skill defines `<skill-dir>` once and the model fills it in like `<location>`
+(skill-packaging spec: User-side script constraints; change
+host-neutral-script-paths)."""
 
 from __future__ import annotations
 
@@ -16,32 +19,47 @@ SKILL_MDS = sorted(REPO.glob("skills/proposal-*/SKILL.md"))
 SCRIPT_BEARING = sorted(
     md for md in SKILL_MDS if (md.parent / "scripts").is_dir()
 )
+PLACEHOLDER = "<skill-dir>/scripts/"
+# the fixed opening of the one paragraph that defines the placeholder (design D2)
+DEFINITION = "`<skill-dir>` stands for this skill's own folder"
+# a host's substitution variable, `${NAME}` or a `$NAME/scripts/` prefix
+HOST_VARIABLE = re.compile(r"\$\{[A-Za-z_]\w*\}|\$[A-Za-z_]\w*/scripts/")
 
 
 @pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
 def test_no_workspace_root_path_to_any_skills_scripts(skill_md):
     """No skill addresses scripts by an install path. A script another skill
-    owns ships as a synchronized copy and is run through the variable like any
+    owns ships as a synchronized copy and is run through `<skill-dir>` like any
     own script: `.claude/skills/<sibling>/…` broke under user-level and plugin
-    installs, and `${CLAUDE_SKILL_DIR}/../<sibling>/scripts/` is the `../`
-    cross-skill execution shape the audit invariants forbid
+    installs, and `<skill-dir>/../<sibling>/scripts/` is the `../` cross-skill
+    execution shape the audit invariants forbid
     (test_no_cross_skill_script_execution; change desktop-first-install)."""
     assert ".claude/skills/proposal-" not in skill_md.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("skill_md", SCRIPT_BEARING, ids=lambda p: p.parent.name)
-def test_script_invocations_use_the_variable(skill_md):
-    text = skill_md.read_text(encoding="utf-8")
-    bare = re.findall(r"python3 (?!\$\{CLAUDE_SKILL_DIR\})\S*scripts/\S+", text)
-    assert not bare, f"script invocation without ${{CLAUDE_SKILL_DIR}}: {bare}"
-    assert "${CLAUDE_SKILL_DIR}/scripts/" in text
+@pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
+def test_no_host_substitution_variable(skill_md):
+    """No skill relies on one host's syntax. Claude Code substitutes
+    `${CLAUDE_SKILL_DIR}` even inside prose that only names it, and no other
+    host substitutes it at all."""
+    found = HOST_VARIABLE.findall(skill_md.read_text(encoding="utf-8"))
+    assert not found, f"host substitution variable in a shipped skill: {found}"
 
 
 @pytest.mark.parametrize("skill_md", SCRIPT_BEARING, ids=lambda p: p.parent.name)
-def test_fallback_prose_names_the_unexpanded_case(skill_md):
+def test_script_invocations_use_the_placeholder(skill_md):
     text = skill_md.read_text(encoding="utf-8")
-    assert "leaves it unexpanded" in text, "fallback for non-substituting hosts missing"
-    assert "next to this SKILL.md" in text
+    other = re.findall(r"python3 (?!<skill-dir>/scripts/)\S*scripts/\S+", text)
+    assert not other, f"script invocation without {PLACEHOLDER}: {other}"
+    assert PLACEHOLDER in text
+
+
+@pytest.mark.parametrize("skill_md", SCRIPT_BEARING, ids=lambda p: p.parent.name)
+def test_placeholder_defined_once(skill_md):
+    text = skill_md.read_text(encoding="utf-8")
+    assert text.count(DEFINITION) == 1, "`<skill-dir>` definition missing or repeated"
+    assert "holding this SKILL.md" in fallback_paragraph(skill_md), (
+        "the definition does not say which folder `<skill-dir>` is")
 
 
 @pytest.mark.parametrize("skill_md", SKILL_MDS, ids=lambda p: p.parent.name)
@@ -70,10 +88,8 @@ def test_interpreter_clause_once_in_the_fallback_paragraph(skill_md):
     constraints)."""
     text = skill_md.read_text(encoding="utf-8")
     assert text.count(INTERPRETER_CLAUSE) == 1, "interpreter clause missing or repeated"
-    fallback = [p for p in text.split("\n\n") if "leaves it unexpanded" in p]
-    assert len(fallback) == 1, "expected one unexpanded-variable fallback paragraph"
-    assert INTERPRETER_CLAUSE in fallback[0], (
-        "the clause belongs in the paragraph that holds the unexpanded-variable fallback")
+    assert INTERPRETER_CLAUSE in fallback_paragraph(skill_md), (
+        "the clause belongs in the paragraph that defines `<skill-dir>`")
 
 
 # the six skills that ship the check (design D13 of adopt-proposal-folders)
@@ -103,8 +119,11 @@ def test_the_fallback_names_the_workspace_root_stake(skill_md):
 
 
 def fallback_paragraph(skill_md) -> str:
+    """The one paragraph that defines `<skill-dir>` and says where commands run."""
     text = skill_md.read_text(encoding="utf-8")
-    return next(p for p in text.split("\n\n") if "leaves it unexpanded" in p)
+    paragraphs = [p for p in text.split("\n\n") if DEFINITION in p]
+    assert len(paragraphs) == 1, "expected one paragraph defining `<skill-dir>`"
+    return paragraphs[0]
 
 
 def proposal_arguments(skill_md) -> list[str]:
