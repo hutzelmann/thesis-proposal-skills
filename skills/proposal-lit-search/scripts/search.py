@@ -14,6 +14,12 @@ from __future__ import annotations
 import argparse
 import sys
 
+# Run as the program, write no bytecode cache for the siblings below: the
+# skill's install directory is read-only territory. Imported by the tests or
+# the harness, leave their interpreter's setting alone.
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True
+
 import arxiv
 import common
 import crossref

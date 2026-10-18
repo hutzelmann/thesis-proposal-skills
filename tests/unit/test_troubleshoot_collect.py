@@ -1044,6 +1044,27 @@ def test_a_copy_in_an_apps_own_folder_is_hashed_and_named(home):
     assert any(ln.startswith("proposal-check/SKILL.md ") and blob in ln for ln in hashes)
 
 
+def test_a_bytecode_cache_in_an_installed_skill_is_not_hashed(home, monkeypatch):
+    """An earlier release, or the user's own interpreter, left a cache beside the
+    scripts: it is no installed skill file, and a hash of it would match no
+    revision, so identify would report an edited install that is not (change
+    scripts-write-no-bytecode)."""
+    installed = home / ".agents/skills"
+    plant_record(installed)
+    plant_skill(installed, "proposal-troubleshoot")
+    monkeypatch.setattr(collect, "HERE", installed / "proposal-troubleshoot" / "scripts")
+    scripts = installed / "proposal-check" / "scripts"
+    (scripts / "__pycache__").mkdir(parents=True)
+    (scripts / "run.py").write_text("x = 1\n", encoding="utf-8")
+    (scripts / "__pycache__" / "run.cpython-313.pyc").write_bytes(b"\x00cache")
+    (scripts / "run.pyc").write_bytes(b"\x00legacy cache")
+    hashes, count = collect.hash_lines(Path.cwd())
+    assert sorted(ln.split(" ", 1)[0] for ln in hashes) == [
+        "proposal-check/SKILL.md", "proposal-check/scripts/run.py",
+        "proposal-troubleshoot/SKILL.md"]
+    assert count == 3
+
+
 def test_a_collector_run_from_the_shadowing_copy_still_names_it(home, monkeypatch):
     """The student hand-copied the skills into OpenCode's folder, so OpenCode
     runs this collector from there: that folder is the shadowing copy, not the

@@ -21,6 +21,12 @@ import re
 import sys
 from pathlib import Path
 
+# Run as the program, write no bytecode cache for the siblings below: the
+# skill's install directory is read-only territory. Imported by the tests or
+# the harness, leave their interpreter's setting alone.
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common
 import crossref

@@ -180,6 +180,20 @@ def test_rerun_replaces_removes_upstream_deletions_and_names_both_revisions(
     assert not [p for p in root.iterdir() if p.name.startswith(".proposal-")], "staging left"
 
 
+def test_rerun_drops_a_bytecode_cache_left_in_an_installed_skill(env, tmp_path, capsys):
+    """Releases before scripts-write-no-bytecode left one beside the scripts; the
+    swap installs the new folder whole, so no cache survives an update."""
+    home, _ = env
+    source = str(make_zip(tmp_path / "src.zip", skill_set("proposal-check")))
+    run("--scope", "all", "--source", source, capsys=capsys)
+    cache = home / ".claude/skills/proposal-check/scripts/__pycache__"
+    cache.mkdir()
+    (cache / "run.cpython-313.pyc").write_bytes(b"\x00cache")
+    assert run("--scope", "all", "--source", source, capsys=capsys)[0] == 0
+    assert files_under(home / ".claude/skills/proposal-check") == (
+        skill_set("proposal-check")["proposal-check"])
+
+
 def test_unrelated_skills_are_left_alone(env, tmp_path, capsys):
     home, _ = env
     mine = home / ".claude/skills/my-own-skill"
@@ -318,6 +332,19 @@ def test_directory_source_records_an_unknown_revision(env, tmp_path, capsys):
     (src / "SKILL.md").write_text("---\nname: proposal-check\n---\n", encoding="utf-8")
     assert run("--scope", "all", "--source", str(tmp_path / "repo"), capsys=capsys)[0] == 0
     assert install.read_record(home / ".claude/skills")["revision"] == "unknown"
+
+
+def test_directory_source_installs_without_its_bytecode_caches(env, tmp_path, capsys):
+    """A checkout used as the source holds the caches its own test runs wrote."""
+    home, _ = env
+    src = tmp_path / "repo" / "skills" / "proposal-check"
+    (src / "scripts" / "__pycache__").mkdir(parents=True)
+    (src / "SKILL.md").write_text("---\nname: proposal-check\n---\n", encoding="utf-8")
+    (src / "scripts" / "run.py").write_text("x = 1\n", encoding="utf-8")
+    (src / "scripts" / "__pycache__" / "run.cpython-313.pyc").write_bytes(b"\x00cache")
+    assert run("--scope", "all", "--source", str(tmp_path / "repo"), capsys=capsys)[0] == 0
+    assert sorted(files_under(home / ".claude/skills/proposal-check")) == [
+        "SKILL.md", "scripts/run.py"]
 
 
 def test_zip_without_a_commit_comment_records_unknown(env, tmp_path, capsys):
