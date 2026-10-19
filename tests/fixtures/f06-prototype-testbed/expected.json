@@ -14,6 +14,7 @@
     "Reference Vogel28Edge is forward-dated (issued 2028, after the proposal date) — no mechanical date check exists",
     "Evaluation subsection is written almost entirely in passive voice",
     "Four measurement campaigns are planned without any fallback or prioritization — scope risk for a Bachelor's thesis",
-    "Hardware testbed topic lacks an architecture figure of the measurement setup"
+    "Hardware testbed topic lacks an architecture figure of the measurement setup",
+    "LoRaWAN passes the swap test: the title, the purpose, the contribution, the research focus and every research question are scoped to LoRaWAN, and the gap names its media-access behaviour, which no general edge-profiling framework covers, so the claim scope is decided; no swap-test finding"
   ]
 }

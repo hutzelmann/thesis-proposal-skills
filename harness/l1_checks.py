@@ -1075,17 +1075,34 @@ _SWAP_TEST = re.compile(r"swap[- ]test", re.IGNORECASE)
 # no swap finding applies, is not a swap-test finding
 _SWAP_NEGATED = re.compile(r"\b(?:no|not|never|without)\s+(?:\w+\s+){0,2}swap", re.IGNORECASE)
 _SWAP_FAIL = r"\b(?:fail\w*|decorative|replaceable|interchangeable)\b"
-_SWAP_PASS = re.compile(r"\b(?:pass(?:es|ed)?|satisf\w*|survives?)\b", re.IGNORECASE)
-_SENTENCE_END = re.compile(r"(?<=[.;!?])\s+")
+_SWAP_PASS = re.compile(r"\b(?:pass(?:es|ed)?|satisf\w*|survives?)\b"
+                        r"|swap[- ]test\s+(?:holds|is met)\b|\bclears?\s+the\s+swap",
+                        re.IGNORECASE)
+# a pass the sentence denies is a failure cited, not a negated test: "does not
+# pass the swap test", "Swap test not passed", "never passes the swap test"
+_PASS_DENIED = re.compile(
+    r"(?:\b(?:not|never|cannot)|n't|\bfails? to)\s+(?:\w+\s+)?"
+    r"(?:pass(?:es|ed)?|satisf\w*|survives?|clears?)\b",
+    re.IGNORECASE)
+# a finding's sentences and lines, its bold label one of them: a label ends at
+# ".**" or "?**", so the closing markup may sit between the stop and the space
+# ("… (swap test) — missed in the earlier round.** The earlier round passed the
+# name …", opus dev run on w17, round 6)
+_FINDING_SENTENCE_END = re.compile(r"(?<=[.;!?])[*_\"”’)]*\s+|\n+")
 
 
 def swap_failure_cited(item: str) -> bool:
     """Whether an enumerated finding cites the swap test as failed. A sentence
     naming the test counts unless it negates the test ("no swap-test finding",
     "does not fail the swap test") or says the name passes it without an
-    unnegated failure cue — so a bare "Swap test — Mendwright" heading counts."""
-    for sentence in _SENTENCE_END.split(item):
-        if not _SWAP.search(sentence) or _SWAP_NEGATED.search(sentence):
+    unnegated failure cue — so a bare "Swap test — Mendwright" heading counts.
+    A denied pass ("does not pass the swap test") is a failure cue."""
+    for sentence in _FINDING_SENTENCE_END.split(item):
+        if not _SWAP.search(sentence):
+            continue
+        if _PASS_DENIED.search(sentence):
+            return True
+        if _SWAP_NEGATED.search(sentence):
             continue
         lowered = sentence.lower()
         if first_unnegated(lowered, _SWAP_FAIL):
@@ -2002,19 +2019,48 @@ _QUESTION = re.compile(r"[^.?!]*\?")
 # the same question asked indirectly, as an imperative to consider it ("ask
 # yourself what … would change if another … stood in its place", "überlegen
 # Sie, was sich ändern würde, wenn …"): the pinned skill sentence reads that way,
-# and a sonnet run wrote it so (sharpen-swap-test-anchors, task 5.2)
+# and a sonnet run wrote it so (sharpen-swap-test-anchors, task 5.2); or as one
+# the student is told a reader can ask ("a reader can ask what would change if
+# another framework stood in its place", sonnet dev run on f33, 2026-10-19)
 _SENTENCE = re.compile(r"[^.?!]+[.?!]?")
 _INDIRECT_QUESTION = re.compile(
-    r"\b(?:ask (?:yourself|yourselves)|consider|think about|reflect on|imagine)"
+    r"\b(?:ask (?:yourself|yourselves)|(?:you|one|a reader|readers) (?:can|could|may|might) ask"
+    r"|consider|think about|reflect on|imagine)"
     r"\s+(?:\w+\s+){0,2}?(?:what|whether|how|if|which)\b"
     r"|\b(?:überlegen Sie(?: sich)?|fragen Sie sich|prüfen Sie|stellen Sie sich vor)"
     r",?\s+(?:\w+\s+){0,2}?(?:was|ob|wie|welche\w*)\b",
     re.IGNORECASE)
+# "replace" and "instead" count only with the name as their object: a repair
+# direction ("Replace the two opening sentences …", "name the architectures
+# instead") replaces no tool (final verification, 2026-10-19)
 _CONTRAST = re.compile(
-    r"\b(?:comparabl\w*|another|instead|in (?:its|their) place|stood in|stands? in"
-    r"|replac\w*|swapp\w*|alternative\w*|(?:any )?other (?:framework|tool|one)\w*"
+    r"\b(?:comparabl\w*|another|in (?:its|their|\w+'s) place|stood in|stands? in"
+    r"|instead of (?:it|them|the (?:name|framework|tool|platform)|(?-i:[A-Z])\w+)"
+    r"|replac\w*\s+(?:it|them|this (?:name|framework|tool)|the (?:name|framework|tool|platform)"
+    r"|(?-i:[A-Z])\w+)\b|(?:it|(?-i:[A-Z])\w+) (?:were|was|is|be) replaced\b"
+    r"|swapp\w*|alternative\w*|(?:any )?other (?:framework|tool|one)\w*"
     r"|vergleichbar\w*|stattdessen|an (?:seiner|dessen|ihrer) stelle|ersetz\w*)",
     re.IGNORECASE)
+# or as a supposition that makes the replacement, with the question in one of
+# the next two sentences ("Suppose another open-source framework … stood in
+# Mendwright's place. What in your thesis would change?", opus dev runs on f31,
+# f33 and w17, 2026-10-19); a quote that closed the sentence before, or markup,
+# may lead it, since a sentence ending inside a quote leaves its closing mark.
+# Only verbs that suppose: a repair direction ("Replace the two sentences …")
+# or "Put another way" makes no replacement, and the contrast cue must stand
+# after the verb, so "Try replacing" cannot supply its own
+_SUPPOSITION = re.compile(
+    r"^[\s\"”“'’*_)\]]*(?:suppose|imagine|assume|picture|try (?:putting|replacing|swapping)"
+    r"|angenommen|stellen Sie sich vor)\b",
+    re.IGNORECASE)
+SUPPOSITION_REACH = 2
+
+
+def _supposes_replacement(sentence: str) -> bool:
+    """Whether a sentence supposes the replacement: a supposing verb, then a
+    contrast cue after it ("Suppose another framework stood in its place")."""
+    verb = _SUPPOSITION.search(sentence)
+    return bool(verb and _CONTRAST.search(sentence[verb.end():]))
 
 
 def numbered_points(feedback: str | None) -> list[str]:
@@ -2049,13 +2095,23 @@ def _without_closing(feedback: str, closing: dict[str, str] | None) -> str:
 def replacement_questions(point: str) -> list[str]:
     """The sentences of a point that ask the replacement question: a direct
     question, or an indirect one ("ask yourself what …", "consider whether …",
-    "überlegen Sie, was …"), carrying a contrast cue in the same sentence. A
-    quoted research question naming the tool carries no contrast cue, so it
-    is not one."""
-    asked = _QUESTION.findall(point)
-    asked += [s for s in _SENTENCE.findall(point)
-              if not s.rstrip().endswith("?") and _INDIRECT_QUESTION.search(s)]
-    return [q for q in asked if _CONTRAST.search(q)]
+    "überlegen Sie, was …"), carrying a contrast cue in the same sentence; or a
+    direct question within SUPPOSITION_REACH sentences after a supposition that
+    makes the replacement ("Suppose another framework stood in its place."),
+    returned joined to it. A quoted research question naming the tool carries
+    no contrast cue, so it is not one."""
+    sentences = _SENTENCE.findall(point)
+    asked = [q for q in _QUESTION.findall(point) if _CONTRAST.search(q)]
+    asked += [s for s in sentences if not s.rstrip().endswith("?")
+              and _INDIRECT_QUESTION.search(s) and _CONTRAST.search(s)]
+    for i, sentence in enumerate(sentences):
+        if not sentence.rstrip().endswith("?"):
+            continue
+        supposed = next((s for s in sentences[max(0, i - SUPPOSITION_REACH):i]
+                         if _supposes_replacement(s)), None)
+        if supposed:
+            asked.append(f"{supposed.strip()} … {sentence.strip()}")
+    return asked
 
 
 def verdict_supervise_swap_question(feedback: str | None, tool: str = SWAP_PAIR_TOOL,
@@ -2100,6 +2156,274 @@ def verdict_supervise_swap_quiet(feedback: str | None, tool: str = SWAP_PAIR_TOO
         return False, f"{len(points)} numbered point(s) on a ready feedback: {points[0][:120]}"
     mentions = (feedback or "").lower().count(tool.lower())
     return True, f"ready, no points; {tool} mentioned {mentions} time(s)"
+
+
+# The claim-scope cases over the Bachelor's pair f33/f34 and the earlier-round
+# workspaces w17/w18 (testing-harness spec: claim-scope swap coverage). As with
+# the swap pair, the verdicts match labels, status words, quotes and the tool's
+# name only; whether a finding argues the undecided scope is the L2 question.
+_MISSED_EARLIER = re.compile(r"missed\s+in\s+(?:the\s+)?(?:earlier|first|previous)\s+round"
+                             r"|in\s+der\s+früheren\s+runde\s+übersehen", re.IGNORECASE)
+# a point marked new in its head: the word ("New: …", "Neuer Punkt"); "no new"
+# and "not new" are no mark, and "neutral" or "neural" no German one
+_NEW_MARK = re.compile(r"(?<!\bno )(?<!\bnot )\b(?:new|neu(?:e[rsnm]?)?)\b", re.IGNORECASE)
+# an opening sentence that announces the point as new or as one the earlier
+# round did not raise ("One point is new", "One new point remains open", "The
+# point below was not raised in the first round": sonnet and opus dev runs on
+# w17); "new" elsewhere in it ("the new setup runs …") marks nothing
+_NEW_ANNOUNCED = re.compile(
+    r"(?<!\bno )(?<!\bnot )\bnew (?:point|issue|blocker|concern)s?\b"
+    r"|\b(?:point|one|it)\b[^.;:]{0,40}?\b(?:is|was) new\b|\bneue[rn]? punkt"
+    r"|not raised in the (?:first|earlier|previous) round"
+    r"|(?:first|earlier|previous) round did not (?:raise|examine)|should have raised it",
+    re.IGNORECASE)
+# the sentence announcing a point names it: "the point below", "one point", the tool
+_NAMES_POINT = r"\b(?:the|this|one|a) (?:\w+ )?point\b|\bpunkt\b"
+_WITHDRAWN = re.compile(r"\b(?:withdr\w*|demot\w*|zurückgezogen|herabgestuft)", re.IGNORECASE)
+# a withdrawal said not to happen ("no ground to withdraw it", "not demoted"):
+# a negation up to four words before it, within one clause ("no ground to
+# withdraw or demote it")
+_WITHDRAWAL_NEGATED = re.compile(
+    r"(?:\b(?:no|not|never|nothing|nor|without|cannot|kein\w*|nicht|ohne)|n't)"
+    r"(?:\s+(?!and\b|but\b)[\w-]+){0,4}"
+    r"\s+$", re.IGNORECASE)
+# a verification entry that concerns a pass: it, or the lead-in line its
+# bullets hang from, names the swap test or a pass — a verifier dispute that
+# only quotes a sentence naming the tool is no pass entry (sonnet dev run on
+# f34, round 5)
+_PASS_ENTRY = re.compile(r"\bswap|\bpass(?:es|ed|ing)?\b|tauschtest|bestanden|besteht",
+                         re.IGNORECASE)
+_VERIFICATION_ITEM = re.compile(r"\s*(?:[-*]|\d+[.)])\s")
+# a sub-heading inside the verification section: "### Swap-test pass —
+# Mendwright", or a bold line standing alone
+_SUB_HEADING = re.compile(r"#{1,6}\s|\*\*[^*\n]+\*\*:?\s*$")
+# an entry that lists text the pass does not rest on ("Not counted
+# (introduction motivation …): "…" … is not relied on for the pass")
+# (opus dev runs on f34, rounds 8 and 9): the entry opens with the exclusion, or
+# says its text is not relied on — "no claim left out" excludes nothing
+_EXCLUDED_TEXT = re.compile(
+    r"^\s*(?:(?:[-*]|\d+[.)])\s+)?(?:\*\*)?(?:not counted|excluded|left out"
+    r"|outside the (?:claim )?list|nicht gezählt|ausgenommen)\b|\b(?:is|are) not relied on\b",
+    re.IGNORECASE)
+_OPEN_STATUS = ("open", "offen", "not resolved", "unresolved", "nicht erledigt", "nicht gelöst",
+                "nicht behoben")
+_QUOTED = re.compile(r"[\"“„]([^\"“”„]+)[\"”“]")
+# entries of the verification section: blank-line paragraphs and top-level list
+# items, so a nested sub-bullet stays with the item that names the tool
+_CHUNK_BREAK = re.compile(r"\n\s*\n|\n(?=(?:[-*]|\d+[.)])\s)")
+# a quoted span shorter than this could occur in the proposal by chance
+MIN_QUOTE_WORDS = 6
+
+
+def _without_quotes(text: str) -> str:
+    """The text with its quoted spans removed: a quote of the proposal's own
+    "What will be new is …" marks nothing."""
+    return _QUOTED.sub(" ", text)
+
+
+def _earlier_items_on(review: str | None, tool: str) -> list[str]:
+    """The review's earlier-round items that name the tool: its list items, or,
+    where the section is prose, its sentences and semicolon clauses — a sonnet
+    run wrote "Earlier points: the Mendwright role (swap test) — open; …"
+    (dev run on w18, 2026-10-19)."""
+    body = review_sections(review).get("earlier", "")
+    items = enumerated_items(body) or [
+        part for sentence in _SENTENCE_END.split(_collapse(body)) for part in sentence.split(";")]
+    return [item for item in items if tool.lower() in item.lower()]
+
+
+def _point_head(point: str) -> tuple[str, str]:
+    """A point's bold label and the sentence after it (its first sentence
+    where it has no label), quotes removed from the whole point first so a
+    quote that runs past the head marks nothing."""
+    text = _without_quotes(point)
+    label = re.match(r"\s*\d+[.)]\s*\*\*(.+?)\*\*", text)
+    rest = text[label.end():] if label else re.sub(r"^\s*\d+[.)]\s*", "", text)
+    return (label.group(1) if label else ""), _SENTENCE_END.split(rest.strip(), maxsplit=1)[0]
+
+
+def _head_marked_new(point: str) -> str | None:
+    """The head of a point marked new: a label that opens with the word ("New:
+    …", "Neuer Punkt"), a parenthesis carrying it ("(new, missed in the earlier
+    round)"), or an announcement ("This point is new"). A free "new" in the
+    head is no mark — "what will be new is …" paraphrases the proposal's own
+    sentence (final verification, 2026-10-19)."""
+    label, first = _point_head(point)
+    head = f"{label} {first}".strip()
+    if (re.match(r"[\W_]*(?:new|neu(?:e[rsnm]?)?)\b", label, re.IGNORECASE)
+            or any(_NEW_MARK.search(inner) for inner in re.findall(r"\(([^)]*)\)", head))
+            or _NEW_ANNOUNCED.search(head)):
+        return head[:120]
+    return None
+
+
+def _status_clause(item: str, tool: str) -> str:
+    """An earlier-round item's label and status: its bold label and the text
+    after it — or, in prose, after the tool's name — up to the first colon,
+    semicolon or full stop ("**Mendwright's role (swap test)** — open")."""
+    label = re.search(r"\*\*(.+?)\*\*", item)
+    start = label.end() if label else max(item.lower().find(tool.lower()), 0)
+    status = re.split(r"[:;.]", item[start:], maxsplit=1)[0]
+    return f"{label.group(1) if label else ''} {status}"
+
+
+def _withdrawn(item: str, tool: str = SWAP_PAIR_TOOL) -> bool:
+    """Whether an earlier-round item says the point was withdrawn or demoted, in
+    its label or status clause — a withdrawal of something else further on, or
+    one it negates ("no ground to withdraw it"), aside."""
+    clause = _status_clause(item, tool)
+    return any(not _WITHDRAWAL_NEGATED.search(clause[:m.start()])
+               for m in _WITHDRAWN.finditer(clause))
+
+
+def _marked_new(feedback: str | None, point: str, tool: str) -> str | None:
+    """Where the point on the tool is marked new: in its own head, or in an
+    opening sentence before the first point that names the point or the tool
+    and announces it as new; quotes aside, None when it is not."""
+    head = _head_marked_new(point)
+    if head:
+        return head
+    opening = re.split(r"^\s*\d+[.)]\s", feedback or "", maxsplit=1, flags=re.MULTILINE)[0]
+    for sentence in _SENTENCE_END.split(_collapse(_without_quotes(opening))):
+        names = re.search(_NAMES_POINT, sentence, re.IGNORECASE) or tool.lower() in sentence.lower()
+        if names and _NEW_ANNOUNCED.search(sentence):
+            return sentence[:120]
+    return None
+
+
+def verdict_supervise_swap_missed(review: str | None, feedback: str | None,
+                                  tool: str = SWAP_PAIR_TOOL,
+                                  closing: dict[str, str] | None = None) -> tuple[bool, str]:
+    """supervise_swap_earlier_remark: an earlier round's remark that the tool is
+    the object of study, or its credit for the team's access, shields nothing —
+    the review carries an earlier-round section and a swap-test blocker on the
+    tool recorded as missed in the earlier round (in the blocker or in the
+    earlier-round item on the tool), and the feedback asks the replacement
+    question in a point marked new (skill-supervise spec: earlier-round
+    judgements re-examined on the text). Only the blockers and the earlier-round
+    section are read, so a pass listed under verification is no finding."""
+    sections = review_sections(review)
+    if "earlier" not in sections:
+        return False, "no earlier-round section, though an earlier review existed"
+    blocker = next((b for b in enumerated_items(sections.get("blockers", ""))
+                    if swap_failure_cited(b) and tool.lower() in b.lower()), None)
+    if not blocker:
+        return False, f"no swap-test blocker on {tool}"
+    if not (_MISSED_EARLIER.search(blocker)
+            or any(_MISSED_EARLIER.search(i) for i in _earlier_items_on(review, tool))):
+        return False, (f"the swap-test blocker on {tool} is not recorded as missed "
+                       "in the earlier round")
+    ok, why = verdict_supervise_swap_question(feedback, tool, closing)
+    if not ok:
+        return False, why
+    point = next(p for p in numbered_points(feedback) if tool.lower() in p.lower())
+    if not _marked_new(feedback, point, tool):
+        return False, f"the point on {tool} is not marked new: {point[:120]}"
+    return True, f"missed in the earlier round, a new point on {tool}: {blocker[:100]}"
+
+
+def verdict_supervise_point_kept(review: str | None, feedback: str | None,
+                                 tool: str = SWAP_PAIR_TOOL,
+                                 closing: dict[str, str] | None = None) -> tuple[bool, str]:
+    """supervise_swap_earlier_point: a redo over an earlier run whose feedback
+    raised the tool as a point keeps that point — the review's earlier-round
+    section lists it open (or not resolved), by the item's first status word,
+    and no item on the tool says it was withdrawn or demoted, with or without a
+    reason; the new feedback asks the replacement question on the tool, and,
+    a redo being a first intake for the feedback, does not mark that point new
+    (skill-supervise spec: requested re-run read as an earlier round)."""
+    items = _earlier_items_on(review, tool)
+    if not items:
+        return False, f"no earlier-round item on {tool}"
+    withdrawn = next((i for i in items if _withdrawn(i, tool)), None)
+    if withdrawn:
+        return False, f"the earlier point on {tool} is not listed open: {withdrawn[:120]}"
+    statuses = [m.group(1) if (m := _STATUS.search(i.lower())) else None for i in items]
+    if not any(status in _OPEN_STATUS for status in statuses):
+        return False, f"the earlier point on {tool} is not listed open: {items[0][:120]}"
+    ok, why = verdict_supervise_swap_question(feedback, tool, closing)
+    if not ok:
+        return False, why
+    point = next(p for p in numbered_points(feedback) if tool.lower() in p.lower())
+    marked = _marked_new(feedback, point, tool)
+    if marked:
+        return False, f"a redo's feedback is a first intake, but marks the point new: {marked}"
+    return True, f"the earlier point on {tool} is open and carried: {items[0][:100]}"
+
+
+def _pass_entries(body: str, tool: str) -> list[str]:
+    """The chunks of a verification section that list a pass of the tool: the
+    chunk, its colon-ended lead-in or the sub-heading it stands under names
+    the swap test or a pass outside quotes, the tool stands in one of them,
+    and the chunk lists no excluded text (opus dev runs on f34, rounds 8 and 9)."""
+    entries, heading, lead = [], "", ""
+    for chunk in _CHUNK_BREAK.split(body):
+        first = chunk.strip().split("\n", 1)[0]
+        if _SUB_HEADING.match(first):
+            heading, lead = first, ""
+        if not _VERIFICATION_ITEM.match(chunk):
+            lead = chunk if chunk.rstrip().endswith(":") else ""
+            context = f"{heading}\n{chunk}"
+        else:
+            context = f"{heading}\n{lead}\n{chunk}"
+        if (tool.lower() in context.lower() and _PASS_ENTRY.search(_without_quotes(context))
+                and not _EXCLUDED_TEXT.search(_without_quotes(chunk))):
+            entries.append(chunk)
+    return entries
+
+
+def verdict_supervise_pass_listed(review: str | None, proposal: str | None,
+                                  tool: str = SWAP_PAIR_TOOL) -> tuple[bool, str]:
+    """supervise_swap_setting, supervise_swap_anchored: a name the review passes
+    on the swap test is listed in the verification section with the text that
+    carries the pass — a pass entry (one that, or whose lead-in line, names the
+    swap test or a pass) naming the tool, with a quote, or a piece of an elided
+    quote, of at least MIN_QUOTE_WORDS words found verbatim in the proposal
+    (skill-supervise spec: swap-test passes verified as claims about the
+    proposal). A sub-heading naming the pass leads every chunk under it, and an
+    entry that names the pass only to list text it excludes ("Not counted …",
+    "Excluded from the list …") carries nothing. Which sentence carries the
+    pass is not checked here."""
+    body = _review_section(review or "", r"(?:Claim\s+)?Verification|Überprüfung|Verifikation")
+    if body is None:
+        return False, "no verification section"
+    text = _collapse(proposal or "")
+    entries = _pass_entries(body, tool)
+    if not entries:
+        return False, f"the verification section names no pass of {tool}"
+    for entry in entries:
+        for quote in _QUOTED.findall(entry):
+            for piece in re.split(r"…|\.\.\.", quote):
+                span = _collapse(piece).strip(" .,;:")
+                if len(span.split()) >= MIN_QUOTE_WORDS and span in text:
+                    return True, f"pass of {tool} listed with a proposal quote: {span[:100]}"
+    return False, (f"the verification entry on {tool} quotes nothing of the proposal: "
+                   f"{_collapse(entries[0])[:120]}")
+
+
+def verdict_earlier_round_rewritten(written: dict[str, str], staged: dict[str, str],
+                                    proposals: list[str] | None = None) -> tuple[bool, str]:
+    """An earlier-round scenario's run wrote its own review and feedback over the
+    staged earlier ones: the workspace holds one proposal folder, each staged
+    role file exists there once, its text differs from the staged one, and a
+    feedback's numbered points are not the staged points verbatim — so a run that
+    left the earlier round in place, touched only its opening, or wrote a second
+    proposal folder is never graded on the staged files (testing-harness spec:
+    claim-scope swap coverage). A scenario that staged no earlier file fails."""
+    if not staged:
+        return False, "no earlier round was staged"
+    if proposals is not None and len(proposals) != 1:
+        return False, f"{len(proposals)} proposal folder(s), expected one: {', '.join(proposals)}"
+    for name, before in staged.items():
+        found = [text for rel, text in written.items() if rel.rsplit("/", 1)[-1] == name]
+        if len(found) != 1:
+            return False, f"{len(found)} {name} file(s) in the proposal folders, expected one"
+        if found[0].strip() == before.strip():
+            return False, f"{name} is still the staged earlier one: not rewritten"
+        points = numbered_points(before)
+        if name == "feedback.md" and points and numbered_points(found[0]) == points:
+            return False, "feedback.md keeps the staged points verbatim: not rewritten"
+    return True, f"rewrote {', '.join(sorted(staged))} over the staged earlier round"
 
 
 def verdict_supervise_tier(feedback: str | None) -> tuple[bool, str]:

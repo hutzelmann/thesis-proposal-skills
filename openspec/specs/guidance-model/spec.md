@@ -211,7 +211,7 @@ The swap test SHALL apply to named choices as well as to prose. Its scope is the
 - it supplies data or access that no comparable alternative offers;
 - it is the case the proposal argues suits its research questions — a typical, critical or revelatory case, selected as the shipped Case Study contract asks — rather than an instance that merely happened to be at hand.
 
-A comparison of named tools passes by design, because the tools are what it studies. The guidance SHALL state the check as a replacement that compares claims, not nouns: when replacing the name with a comparable alternative, or dropping it, leaves the same claim standing — the research questions, the method and the data unchanged apart from the noun, and the expected contribution still claiming its result for the name's class — the name is decorative and the swap test fails. A contribution that claims its result for this instance SHALL pass. The guidance SHALL reconcile the check with degree-level grading: a Bachelor's contribution close that promises to apply or evaluate something in a named setting passes when it claims its result for that setting, and fails only when it claims a result for the class while the setting stays incidental. The guidance SHALL name the two repairs: state the dependence, or generalize the claim to the name's class. Names of prior work, tools chosen to carry out the method, and domains named only to motivate the topic SHALL NOT be judged by this check; whether they belong is the necessity test's question. The check SHALL stay judgement: no mechanical rule SHALL try to tell a decorative name from an anchored one.
+A comparison of named tools passes by design, because the tools are what it studies. The guidance SHALL state the check as a replacement that compares claims, not nouns: when replacing the name with a comparable alternative, or dropping it, leaves the same claim standing — the research questions, the method and the data unchanged apart from the noun, and the expected contribution still claiming its result for the name's class — the name is decorative and the swap test fails. A contribution that claims its result for this instance SHALL pass unless its claim scope is undecided. The guidance SHALL reconcile the check with degree-level grading: a Bachelor's contribution close that promises to apply or evaluate something in a named setting passes when the thesis's own claims, the gap and the close among them, are all scoped to that setting. The guidance SHALL name the two repairs: state the dependence, or generalize the claim to the name's class. Names of prior work, and tools and domains named only in the method or only to motivate the topic, SHALL NOT be judged by this check; whether they belong is the necessity test's question. The check SHALL stay judgement: no mechanical rule SHALL try to tell a decorative name from an anchored one.
 
 #### Scenario: Generic proposal against the swap test
 - **WHEN** a proposal's introduction, contribution, and research questions would remain plausible after replacing its topic with a neighboring one
@@ -266,8 +266,16 @@ A comparison of named tools passes by design, because the tools are what it stud
 - **THEN** the swap test passes for the company's name, although a comparable company could in principle have been chosen
 
 #### Scenario: Bachelor's evaluation in a named setting
-- **WHEN** a Bachelor's proposal's contribution close promises to evaluate a technique in one named project and claims its result for that project
+- **WHEN** a Bachelor's proposal's contribution close promises to evaluate a technique in one named project and claims its result for that project, and its gap and research questions are scoped to that project too
 - **THEN** the swap test passes for the project's name, and the degree-level grading and the swap test agree that the close is complete
+
+#### Scenario: Bachelor's close beside class-scoped claims
+- **WHEN** a Bachelor's proposal names a platform in its title, purpose, research focus and one research question, its contribution section opens by claiming the gap for the general problem class, its close is scoped to the platform, and the proposal states nothing about why the result is about the platform
+- **THEN** substance-judging tooling reports a swap-test failure for the platform by name, on the claim scope the proposal leaves undecided, rather than passing it under the degree-level clause
+
+#### Scenario: Platform a prototype runs on, named in the title
+- **WHEN** a title and a research question name the platform a prototype is built on, and the research questions, requirements and measures would read the same on any comparable platform
+- **THEN** the swap test judges the name, because it stands in the thesis's own claims and not only in the method, and reports it as decorative
 
 #### Scenario: Name outside the thesis's own claims
 - **WHEN** a library appears only in the methodology as what the prototype is built with, or a domain appears only in the introduction's motivation
@@ -752,3 +760,81 @@ The guidance SHALL state that **review rounds are monotone**: a finding about te
 #### Scenario: Title name an earlier round reported as a refinement
 - **WHEN** an earlier round reported a platform name in the unchanged title only as a title refinement, without holding it to the swap test, and the name fails that test
 - **THEN** a later round reports the swap-test blocker labelled missed in the earlier round with the dependence it lacks stated, and does not repeat the earlier title refinement beside it
+
+### Requirement: Named-choice dependence rests on the proposal's text
+A dependence SHALL count toward a swap-test pass only where the proposal's text states it. For the object of study, the listed claims state it when they put the gap and the result on the name; another anchor needs a sentence saying what the name constrains, supplies or represents, and being at hand is none. A reason given only in conversation or the student's messages, an unstated setting fact, an earlier round's remark and an argument the judge supplies SHALL NOT count.
+
+#### Scenario: Host organisation runs the platform
+- **WHEN** a proposal says the student's host organisation runs the named platform, and nowhere says what the research needs from that platform that a comparable one could not supply
+- **THEN** no data-or-access anchor passes the name, and the swap test judges it by the replacement
+
+#### Scenario: Access the judge infers
+- **WHEN** a judging agent reasons that the host organisation's setup gives the student access no alternative offers, and the proposal does not state that
+- **THEN** the argument passes nothing, and the judge may put it to the student as the dependence the proposal could state
+
+#### Scenario: Use is not dependence
+- **WHEN** the only sentences naming the platform outside the title, purpose and focus say that the evaluation runs in its test environment and compares against its native logs
+- **THEN** no anchor passes the name on those sentences, because they state use, not what the research needs from that platform
+
+#### Scenario: Earlier review's remark
+- **WHEN** an earlier round's review called the platform the object of study or credited the student's access to it, and the current text states no such dependence
+- **THEN** the remark is not evidence for a pass, and the name is judged on the current text
+
+#### Scenario: Reason recorded only in the student's messages
+- **WHEN** the student's messages, as recorded in the workspace, say that the team runs the framework and has access to it, and the proposal says neither
+- **THEN** the recorded reason passes nothing until the proposal carries it
+
+#### Scenario: Object of study by its scope
+- **WHEN** every claim the swap test covers, the gap included, is scoped to the named framework, and no sentence argues why the research needs it
+- **THEN** that scope states the dependence, and the name passes as the object of study
+
+#### Scenario: Behaviour the instance's users rely on
+- **WHEN** a proposal states that the framework ships a default configuration the teams that adopt it keep unless evidence tells them otherwise
+- **THEN** that is something about the framework itself that makes its own result the question, and it counts, while the student's own team running the framework does not
+
+#### Scenario: Reason written into the proposal
+- **WHEN** the student explains in conversation why the platform matters and the revised proposal states that reason in its contribution
+- **THEN** the stated reason counts as the dependence it describes
+
+### Requirement: Claim scope decided before a name passes
+Before the replacement, the guidance SHALL have the judge list the thesis's own claims the swap test covers, whether or not they name it, each with its scope: the named instance or setting, or its class. Where some claim the gap or the result for the class and others for the instance, the instance SHALL be the claim's object only when the proposal states why the result is about it; without that or another anchor the proposal states, the claim scope is undecided and the swap test fails.
+
+#### Scenario: Class-scoped sentence that does not carry the name
+- **WHEN** the contribution section's opening claims the gap for the general problem class without naming the platform, and the close names the platform
+- **THEN** the list holds both sentences with their scopes, so the opening is not left out because the name is absent from it
+
+#### Scenario: Gap attributed to cited work
+- **WHEN** the contribution section states a limitation that the cited studies share, for the general class, before a close scoped to the named framework
+- **THEN** the limitation is listed as a class-scoped gap, while sentences reporting what particular cited studies did are not listed
+
+#### Scenario: Motivation and reports of cited work are not listed
+- **WHEN** the introduction motivates the topic with a class-level problem before its closing purpose, and the contribution reports what particular cited studies did, while every gap, the significance and the close are scoped to the named framework
+- **THEN** neither the motivation nor the report is on the list, the scope is decided, and the name passes as the object of study
+
+#### Scenario: Undecided scope
+- **WHEN** the listed claims put the gap on the class and the result on the platform, and the proposal states no reason why the result is about the platform and no other anchor
+- **THEN** the swap test fails for the platform, and the finding quotes a class-scoped and an instance-scoped claim and names the repairs that decide the scope: scope every gap to the instance, state why the result is about the instance, or generalize the claim to the class
+
+#### Scenario: Being run by the student's team is no reason
+- **WHEN** the mixed-scope proposal says that the student's team runs the framework, and nothing more about why the result is about it
+- **THEN** the scope stays undecided and the swap test fails
+
+#### Scenario: Class gap with an argued instance close
+- **WHEN** the contribution claims the gap for the class and closes by evaluating the named framework itself, stating that the framework ships the default configuration the teams that adopt it run
+- **THEN** the instance is the claim's object and the swap test passes for the framework
+
+#### Scenario: Mixed scope with a stated constraint
+- **WHEN** the title and research questions name a domain whose regulation the method is built around, as the proposal states, and the gap and the result are claimed for the class
+- **THEN** the domain passes on the constraint anchor, and no undecided-scope finding is raised
+
+#### Scenario: Every claim scoped to the setting
+- **WHEN** every listed claim, the gap included, is scoped to the named setting
+- **THEN** the scope is decided and the name passes as the object of study, at either degree level
+
+#### Scenario: One finding per name
+- **WHEN** a name fails the replacement and leaves the scope undecided
+- **THEN** the judge reports one swap-test finding for it, with every repair that applies
+
+#### Scenario: Listing stays judgement
+- **WHEN** a skill applies the claim list
+- **THEN** the list is the judge's reading of the text, and no script, pattern rule or structured data decides a claim's scope

@@ -109,6 +109,24 @@ CRITERIA: dict[tuple[str, str], str] = {
         "replaceable or decorative, because the contribution makes the framework's own "
         "configurations the object of the evaluation; opens ready, and every blocker "
         "it raises is a genuine substance-test failure with its reason.",
+    # dev-runner L2 only: the Bachelor's claim-scope pair has no Inspect twin
+    ("review_swap_scope", "review_swap_scope_l2"):
+        "Opens with needs revision and carries one swap-test blocker on the named "
+        "framework that quotes a claim scoped to the general class and one scoped to the "
+        "framework, says the proposal has not decided which its result holds for, "
+        "credits no dependence the proposal does not state (the student's team running "
+        "the framework, or the method and evaluation using it, is none), names the "
+        "repairs that decide the scope (every gap scoped to the framework, a reason "
+        "why the result is about it, or the claim for the class), and says why it "
+        "cannot wait; it does not pass the name under the Bachelor's named-setting "
+        "clause, asks for no novelty claim, and reports the title's naming once.",
+    ("review_swap_setting", "review_swap_setting_l2"):
+        "Raises no finding, under any test's name, that treats the named framework as "
+        "replaceable or decorative, because every claim the thesis makes, the gap "
+        "included, is scoped to the framework's own two architectures; asks for no "
+        "novelty claim and no generalization, since the Bachelor's close promising that "
+        "evaluation is complete; opens ready, and every blocker it raises is a genuine "
+        "substance-test failure with its reason.",
     ("title_alarm", "title_l2_alarm"):
         "Title raised as its own finding, certificate consequence named, one to "
         "three abstracted alternatives offered, decision left with the student.",
@@ -204,7 +222,8 @@ DEV_RUBRICS: dict[str, tuple[DevCriterion, ...]] = {
         DevCriterion(("review_hollow", "review_hollow_l2"), "review_quality.txt", "oracle"),),
     **{name: (DevCriterion((name, f"{name}_l2"), "readiness.txt", "oracle"),)
        for name in ("review_ready", "review_dependency", "review_converge",
-                    "review_swap_decorative", "review_swap_anchored")},
+                    "review_swap_decorative", "review_swap_anchored",
+                    "review_swap_scope", "review_swap_setting")},
     # graded over the conversation transcript, not a file
     **{name: (DevCriterion((name, f"{name}_l2"), "handoff.txt", "oracle"),)
        for name in HANDOFF_SCENARIOS},

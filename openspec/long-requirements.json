@@ -57,7 +57,7 @@
       "Research involving human participants": 640,
       "Research-question count bounds": 659,
       "Significance and result type at the contribution's close": 539,
-      "Substance tests": 4719,
+      "Substance tests": 4713,
       "Systematic reviews assess primary-study quality": 932,
       "The methodology set is closed per workspace": 698,
       "Thesis title quality": 960,
@@ -184,19 +184,19 @@
     "skill-review": {
       "Content-level review scope": 1386,
       "Degree-level review lenses": 1113,
-      "Named choices held to the swap test": 2020,
+      "Named choices held to the swap test": 1966,
       "Persisted, actionable output": 1473,
       "Research questions recorded in the review": 1202,
       "Review hands over a bounded revision path": 1412,
       "Review rounds converge": 1088,
       "Single-context execution": 2068,
       "Three-tier substance verdict": 1683,
-      "Title assessed as its own dimension": 1063
+      "Title assessed as its own dimension": 1052
     },
     "skill-supervise": {
       "Borderline verdict deferred to the supervisor": 760,
       "Claims verified before hand-over": 2114,
-      "Decorative names reach the student as a question": 1074,
+      "Decorative names reach the student as a question": 1067,
       "Draft-only delivery and feedback separation": 538,
       "Findings reused from check and review, curated to pressing points": 2494,
       "Handoff stays in chat": 580,

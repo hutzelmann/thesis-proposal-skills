@@ -60,6 +60,7 @@ def test_dev_rubrics_cover_exactly_the_scenarios_with_a_rubric_twin():
                                 "review_fixture", "review_hollow", "review_ready",
                                 "review_dependency", "review_converge",
                                 "review_swap_decorative", "review_swap_anchored",
+                                "review_swap_scope", "review_swap_setting",
                                 *l2_rubrics.HANDOFF_SCENARIOS}
     assert {e.name for e in DEV_RUBRICS["write_from_seed"]} == {
         "write_l2_rq_quality", "write_l2_density"}
@@ -84,7 +85,9 @@ def test_review_scenarios_ask_about_the_oracle_semantic_list():
                               ("review_dependency", "f29-doubtful-dependency"),
                               ("review_converge", "w09-revised-round"),
                               ("review_swap_decorative", "f31-decorative-tool"),
-                              ("review_swap_anchored", "f32-tool-as-object")):
+                              ("review_swap_anchored", "f32-tool-as-object"),
+                              ("review_swap_scope", "f33-mixed-scope"),
+                              ("review_swap_setting", "f34-named-setting")):
         oracle = json.loads(oracle_path(fixture).read_text(encoding="utf-8"))
         [entry] = DEV_RUBRICS[scenario]
         assert entry.question == "oracle"

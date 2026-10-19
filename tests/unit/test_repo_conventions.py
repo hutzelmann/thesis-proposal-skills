@@ -313,6 +313,29 @@ def test_every_verdict_has_an_l0_test(verdict):
     )
 
 
+def top_level_names(path: Path) -> list[str]:
+    """Every name a module binds at its top level, once per binding."""
+    names = []
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.append(node.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            names += [t.id for t in targets if isinstance(t, ast.Name)]
+    return names
+
+
+@pytest.mark.parametrize("path", python_files(REPO / "harness"), ids=lambda p: p.name)
+def test_no_harness_module_binds_a_top_level_name_twice(path):
+    """`l1_checks.py` defined `_SENTENCE_END` and `_LIST_ITEM` twice, a thousand
+    lines apart: every function read the later one at call time, so a verdict
+    written against the earlier one silently ran with another regex and failed a
+    correct run (decide-swap-claim-scope, rounds 6 and 9)."""
+    names = top_level_names(path)
+    twice = sorted({name for name in names if names.count(name) > 1})
+    assert not twice, f"{path.name} binds {', '.join(twice)} more than once"
+
+
 def test_private_local_paths_stay_unnamed():
     """The paths in `.git/info/exclude` are private by definition — a committed
     file naming one advertises where sensitive local material lives. The

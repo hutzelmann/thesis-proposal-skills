@@ -46,6 +46,8 @@ from claude_runner import (
     parse_events,
     save_events,
     stage,
+    staged_files,
+    staging_plan,
     summary,
     summary_rows,
     supervise_extra,
@@ -56,6 +58,7 @@ from claude_runner import (
 from helpers import (
     CLEAN_DRAFT,
     REPO,
+    fixture_proposal,
     followed,
     shipped_registry,
     write_proposal,
@@ -501,6 +504,186 @@ def test_save_events_writes_nothing_into_a_workspace_that_is_a_link(tmp_path, ca
     save_events([{"type": "result"}], ws)
     assert (ws / EVENTS_FILE).is_dir()
     assert "is taken by an entry" in capsys.readouterr().err
+
+
+# ---------- claim-scope supervise scenarios (testing-harness: claim-scope coverage) ------
+
+SWAP_SLUG = "ci-repair-agent-configurations"
+
+REDONE_FEEDBACK = f"""**Needs revision** — please address the point below and resubmit.
+
+1. **What the thesis claims about Mendwright.** Your contribution opens with "Evaluations of
+   agent configurations for build repair that hold the model fixed are missing altogether",
+   while the gap you close and your research questions are about Mendwright. What in the
+   thesis would change if a comparable framework stood in its place? Decide the scope:
+   scope every gap to Mendwright, say why the result is about it, or state the claim for
+   agent configurations in general. proposal-write
+
+**Clarify early in the thesis:** these are settled once the thesis starts and are not
+conditions for resubmission or acceptance.
+- the exact model release, recorded with its identifier and access date
+
+What to keep: the paired comparison of the two architectures on the same failures.
+
+{CLOSING_EN}
+"""
+
+KEPT_POINT_REVIEW = """**Verdict: needs revision** — one blocker under the swap test.
+
+## Earlier round
+
+1. **Mendwright's role (swap test)** — open: the passages the point concerned are unchanged.
+
+## Proposal blockers
+
+1. **Mendwright's claim scope is undecided (swap test).** The opening gap is stated for agent
+   configurations in general, the close for Mendwright.
+
+## Verification
+
+Verified by: fresh verifier
+"""
+
+MISSED_REMARK_REVIEW = KEPT_POINT_REVIEW.replace(
+    "1. **Mendwright's role (swap test)** — open: the passages the point concerned are "
+    "unchanged.",
+    "1. **API budget for the second model** — resolved: one model on the group's server.\n"
+    "2. **Title naming Mendwright** — kept as a title refinement without the swap test; "
+    "missed in the earlier round.")
+
+
+def staged_supervise_ws(tmp_path: Path, name: str, review: str | None = None,
+                        feedback: str | None = None) -> Path:
+    """A claim-scope scenario's workspace as staged, the submission imported
+    into its proposal folder where the scenario stages none, and the run's
+    review and feedback written over the earlier round's where given."""
+    scenario = SCENARIOS[name]
+    stage(scenario, tmp_path, install_skill=False)
+    folder = tmp_path / SWAP_SLUG
+    if not (folder / f"{SWAP_SLUG}.md").exists():
+        write_proposal(tmp_path, SWAP_SLUG,
+                       fixture_proposal(scenario["fixture"]).read_text(encoding="utf-8"))
+    for file_name, text in (("review.md", review), ("feedback.md", feedback)):
+        if text is not None:
+            (folder / file_name).write_text(text, encoding="utf-8")
+    return tmp_path
+
+
+def test_tree_scenarios_stage_the_earlier_round_beside_the_root_copy():
+    for name in ("supervise_swap_earlier_remark", "supervise_swap_earlier_point"):
+        plan = staging_plan(SCENARIOS[name])
+        assert f"{SWAP_SLUG}.md" in plan
+        assert {f"{SWAP_SLUG}/review.md", f"{SWAP_SLUG}/feedback.md"} <= set(plan)
+
+
+def test_an_earlier_round_left_in_place_is_not_graded(tmp_path):
+    ws = staged_supervise_ws(tmp_path, "supervise_swap_earlier_point")
+    passed, why = supervise_verdict(SCENARIOS["supervise_swap_earlier_point"], ws,
+                                    VERIFIER_EVENTS)
+    assert not passed
+    assert "not rewritten" in why
+    # the guard returns before the earlier-round verdict: none of its messages
+    for message in ("earlier-round item", "earlier point", "is open and carried",
+                    "replacement question", "marks the point new"):
+        assert message not in why
+
+
+def test_a_review_run_is_graded_against_the_proposal_it_was_given(tmp_path, monkeypatch):
+    """Final verification (2026-10-19): the review verdicts read the original
+    proposal from the snapshot too, so a fixture edited while a review run is
+    in flight is not read as the run modifying the proposal."""
+    scenario = SCENARIOS["review_swap_setting"]
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    stage(scenario, ws, install_skill=False)
+    given = (ws / scenario["proposal"]).read_text(encoding="utf-8")
+    edited = tmp_path / "edited.md"
+    edited.write_text("# Edited after staging\n", encoding="utf-8")
+    monkeypatch.setattr(claude_runner, "fixture_proposal", lambda _fixture: edited)
+    assert claude_runner.staged_original(scenario, ws) == given
+    unstaged = claude_runner.staged_original(scenario, tmp_path / "unstaged")
+    assert unstaged == "# Edited after staging\n"
+
+
+def test_the_guard_compares_against_the_bytes_staged_for_the_run(tmp_path, monkeypatch):
+    """A fixture edited while a run is in flight changes nothing the run is
+    graded against: staged_files() returns the snapshot stage() took."""
+    scenario = SCENARIOS["supervise_swap_earlier_point"]
+    ws = staged_supervise_ws(tmp_path / "ws", "supervise_swap_earlier_point")
+    staged = staged_files(scenario, ws)
+    edited = tmp_path / "edited.md"
+    edited.write_text("edited after staging\n", encoding="utf-8")
+    monkeypatch.setattr(claude_runner, "staging_plan",
+                        lambda _scenario: dict.fromkeys(staged, edited))
+    assert staged_files(scenario, ws) == staged
+    assert set(staged_files(scenario).values()) == {b"edited after staging\n"}
+
+
+def test_the_redo_scenario_passes_a_kept_point(tmp_path):
+    ws = staged_supervise_ws(tmp_path, "supervise_swap_earlier_point",
+                             KEPT_POINT_REVIEW, REDONE_FEEDBACK)
+    passed, why = supervise_verdict(SCENARIOS["supervise_swap_earlier_point"], ws,
+                                    VERIFIER_EVENTS)
+    assert passed, why
+    assert "is open and carried" in why
+
+
+def test_the_redo_scenario_fails_a_withdrawn_point(tmp_path):
+    withdrawn = KEPT_POINT_REVIEW.replace("open: the passages",
+                                          "withdrawn under the named-setting clause; the passages")
+    ws = staged_supervise_ws(tmp_path, "supervise_swap_earlier_point", withdrawn, REDONE_FEEDBACK)
+    passed, why = supervise_verdict(SCENARIOS["supervise_swap_earlier_point"], ws,
+                                    VERIFIER_EVENTS)
+    assert not passed
+    assert "not listed open" in why
+
+
+def test_the_resubmission_scenario_passes_a_missed_blocker_and_a_new_point(tmp_path):
+    new_point = REDONE_FEEDBACK.replace("1. **What the thesis", "1. **New: what the thesis")
+    ws = staged_supervise_ws(tmp_path, "supervise_swap_earlier_remark",
+                             MISSED_REMARK_REVIEW, new_point)
+    passed, why = supervise_verdict(SCENARIOS["supervise_swap_earlier_remark"], ws,
+                                    VERIFIER_EVENTS)
+    assert passed, why
+    assert "missed in the earlier round" in why
+
+
+def test_the_redo_scenario_fails_a_point_marked_new(tmp_path):
+    new_point = REDONE_FEEDBACK.replace("1. **What the thesis", "1. **New: what the thesis")
+    ws = staged_supervise_ws(tmp_path, "supervise_swap_earlier_point",
+                             KEPT_POINT_REVIEW, new_point)
+    passed, why = supervise_verdict(SCENARIOS["supervise_swap_earlier_point"], ws,
+                                    VERIFIER_EVENTS)
+    assert not passed
+    assert "marks the point new" in why
+
+
+READY_FEEDBACK = (f"**Ready** — no substantial revisions are needed from my side.\n\n"
+                  f"What to keep: the paired comparison of Mendwright's two architectures.\n\n"
+                  f"{CLOSING_EN}\n")
+FIRST_INTAKE_REVIEW = KEPT_POINT_REVIEW.replace(
+    "## Earlier round\n\n1. **Mendwright's role (swap test)** — open: the passages the point "
+    "concerned are unchanged.\n\n", "")
+
+
+def test_the_scope_scenario_passes_the_replacement_question_only(tmp_path):
+    for feedback, expect in ((REDONE_FEEDBACK, True), (READY_FEEDBACK, False)):
+        ws = staged_supervise_ws(tmp_path / str(expect), "supervise_swap_scope",
+                                 FIRST_INTAKE_REVIEW, feedback)
+        passed, why = supervise_verdict(SCENARIOS["supervise_swap_scope"], ws, VERIFIER_EVENTS)
+        assert passed is expect, why
+
+
+def test_the_setting_scenario_needs_the_pass_listed(tmp_path):
+    quote = ("None of these studies has measured how Mendwright's own two architectures "
+             "differ on build repair with the model held fixed.")
+    listed = ("**Verdict: ready.**\n\n## Proposal blockers\n\nNone.\n\n## Verification\n\n"
+              f"Verified by: fresh verifier\n\n- Swap-test pass, Mendwright: \"{quote}\"\n")
+    for review, expect in ((listed, True), (listed.replace(quote, "it is the object"), False)):
+        ws = staged_supervise_ws(tmp_path / str(expect), "supervise_swap_setting",
+                                 review, READY_FEEDBACK)
+        passed, why = supervise_verdict(SCENARIOS["supervise_swap_setting"], ws, VERIFIER_EVENTS)
+        assert passed is expect, why
 
 
 def test_supervise_scenarios_allow_exactly_one_verifier():

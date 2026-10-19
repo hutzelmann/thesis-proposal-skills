@@ -1,0 +1,21 @@
+{
+  "fixture": "w17-earlier-object-remark",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "an earlier review and feedback exist for the same idea, so this is a resubmission: the new review carries an earlier-round section",
+    "the earlier blocker on the ungranted API budget is resolved: the revised text runs one model on the group's own server",
+    "the earlier title refinement that called Mendwright the object of study is no swap-test verdict, and neither is the earlier feedback's credit for the team's Mendwright pipeline; the name is judged on the current text",
+    "Mendwright fails the swap test on the undecided claim scope, as in f33-mixed-scope; the new review records the swap-test blocker as missed in the earlier round, and the feedback carries it as a numbered point marked new, offering the three directions that decide the scope",
+    "the student's message recorded in the notes Log, that the team runs Mendwright and has access to it, passes nothing until the proposal states it",
+    "the verdict is needs revision on the swap test alone"
+  ]
+}

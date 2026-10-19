@@ -1,0 +1,19 @@
+{
+  "fixture": "w18-earlier-swap-point",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "the request asks to redo the feedback over an earlier run on the byte-identical text, so for the review this is an earlier round: the new review carries an earlier-round section that lists the earlier swap-test point on Mendwright",
+    "the earlier point stays open, because the passages it concerned are unchanged and Mendwright still fails the swap test on the undecided claim scope; withdrawing or demoting it under the Bachelor's named-setting clause is the reported failure",
+    "the new feedback is written as for a first intake: it carries a numbered point on Mendwright that asks what would change if a comparable framework stood in its place and offers the three directions that decide the scope, with no sentence on what a revision addressed and no point marked new",
+    "the verdict is needs revision on the swap test alone"
+  ]
+}

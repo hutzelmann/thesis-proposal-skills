@@ -212,6 +212,7 @@ from l1_checks import (
     verdict_cited_draft,
     verdict_customize_override,
     verdict_draft,
+    verdict_earlier_round_rewritten,
     verdict_family_only,
     verdict_family_renamed,
     verdict_figures_embedded,
@@ -248,9 +249,12 @@ from l1_checks import (
     verdict_single_context,
     verdict_sources_untouched,
     verdict_supervise_feedback_contract,
+    verdict_supervise_pass_listed,
+    verdict_supervise_point_kept,
     verdict_supervise_ready_block,
     verdict_supervise_review_sections,
     verdict_supervise_scope_options,
+    verdict_supervise_swap_missed,
     verdict_supervise_swap_question,
     verdict_supervise_swap_quiet,
     verdict_supervise_verification_declared,
@@ -304,13 +308,26 @@ READINESS_REVIEW_REQUEST = (f"Please review my proposal {F28} — "
 # root: staged through `sources` as a source document, never as a proposal in
 # its folder (design D22, D24)
 SUBMITTED_AT_ROOT = {"ci-repair-agent-configurations.md": F28}
-READINESS_SUPERVISE_REQUEST = (
-    "A student sent me this thesis proposal — I saved it as "
-    "ci-repair-agent-configurations.md. Prepare my feedback: the draft "
-    "I can send back. If the verdict turns out borderline, do not ask "
+SUPERVISE_REQUEST_TAIL = (
+    "If the verdict turns out borderline, do not ask "
     "me — take the needs-revision path. Do not make any network "
     "lookups — no claim checks and no literature — and I cannot answer "
     "any further question.")
+READINESS_SUPERVISE_REQUEST = (
+    "A student sent me this thesis proposal — I saved it as "
+    "ci-repair-agent-configurations.md. Prepare my feedback: the draft "
+    "I can send back. " + SUPERVISE_REQUEST_TAIL)
+# the two earlier-round shapes of the reported run (testing-harness spec:
+# claim-scope swap coverage): a resubmission after earlier feedback, and a redo
+# the professor asks for over an earlier run's files
+RESUBMISSION_SUPERVISE_REQUEST = (
+    "A student revised their thesis proposal after my earlier feedback and sent it "
+    "again — I saved it as ci-repair-agent-configurations.md. Prepare my feedback: "
+    "the draft I can send back. " + SUPERVISE_REQUEST_TAIL)
+REDO_SUPERVISE_REQUEST = (
+    "Redo my feedback on the student's thesis proposal, which I saved as "
+    "ci-repair-agent-configurations.md: replace the earlier draft in its folder "
+    "with a new one I can send back. " + SUPERVISE_REQUEST_TAIL)
 # the figure fixture's proposal, which the publish scenarios build
 F16 = "sensor-anomaly-triage/sensor-anomaly-triage.md"
 # the tools a run may extract a PDF's figures with (skill-import: Figures
@@ -378,6 +395,23 @@ SCENARIOS = {
         "proposal": F28,
         "request": READINESS_REVIEW_REQUEST,
     },
+    # the claim-scope pair at Bachelor's level (testing-harness spec: claim-scope
+    # swap coverage): f33 states the gap for agent configurations in general beside
+    # a close scoped to Mendwright and no reason why, so the scope is undecided and
+    # a swap-test blocker is expected; f34 lacks only those two sentences, so every
+    # claim is Mendwright's and any swap-test finding is overblocking
+    "review_swap_scope": {
+        "fixture": "f33-mixed-scope",
+        "skill": "proposal-review",
+        "proposal": F28,
+        "request": READINESS_REVIEW_REQUEST,
+    },
+    "review_swap_setting": {
+        "fixture": "f34-named-setting",
+        "skill": "proposal-review",
+        "proposal": F28,
+        "request": READINESS_REVIEW_REQUEST,
+    },
     "review_converge": {
         "fixture": "w09-revised-round",
         "skill": "proposal-review",
@@ -429,8 +463,57 @@ SCENARIOS = {
         "sources": SUBMITTED_AT_ROOT,
         "feedback": True,
         "swap": "anchored",
+        "pass_listed": True,
         "helpers": 1,
         "request": READINESS_SUPERVISE_REQUEST,
+    },
+    # supervisor side of the claim-scope pair, and the two earlier-round shapes
+    # of the reported run on f33's text: a resubmission whose earlier review
+    # called Mendwright the object of study (w17), and a redo over an earlier
+    # run that had raised it as a point (w18). `tree` stages the fixture's
+    # earlier round beside the root copy; the verdict refuses to grade it
+    "supervise_swap_scope": {
+        "fixture": "f33-mixed-scope",
+        "skill": "proposal-supervise",
+        "proposal": F28,
+        "sources": SUBMITTED_AT_ROOT,
+        "feedback": True,
+        "swap": "decorative",
+        "helpers": 1,
+        "request": READINESS_SUPERVISE_REQUEST,
+    },
+    "supervise_swap_setting": {
+        "fixture": "f34-named-setting",
+        "skill": "proposal-supervise",
+        "proposal": F28,
+        "sources": SUBMITTED_AT_ROOT,
+        "feedback": True,
+        "swap": "anchored",
+        "pass_listed": True,
+        "helpers": 1,
+        "request": READINESS_SUPERVISE_REQUEST,
+    },
+    "supervise_swap_earlier_remark": {
+        "fixture": "w17-earlier-object-remark",
+        "skill": "proposal-supervise",
+        "proposal": F28,
+        "sources": SUBMITTED_AT_ROOT,
+        "tree": True,
+        "feedback": True,
+        "earlier": "remark",
+        "helpers": 1,
+        "request": RESUBMISSION_SUPERVISE_REQUEST,
+    },
+    "supervise_swap_earlier_point": {
+        "fixture": "w18-earlier-swap-point",
+        "skill": "proposal-supervise",
+        "proposal": F28,
+        "sources": SUBMITTED_AT_ROOT,
+        "tree": True,
+        "feedback": True,
+        "earlier": "point",
+        "helpers": 1,
+        "request": REDO_SUPERVISE_REQUEST,
     },
     "write_from_seed": {
         "fixture": "w01-ideate-seed",
@@ -908,6 +991,8 @@ REVIEW_VERDICTS = {
     "review_record": verdict_review_records_questions,
     "review_swap_decorative": partial(verdict_review_swap_decorative, tool=SWAP_PAIR_TOOL),
     "review_swap_anchored": partial(verdict_review_swap_anchored, tool=SWAP_PAIR_TOOL),
+    "review_swap_scope": partial(verdict_review_swap_decorative, tool=SWAP_PAIR_TOOL),
+    "review_swap_setting": partial(verdict_review_swap_anchored, tool=SWAP_PAIR_TOOL),
 }
 
 
@@ -1228,13 +1313,16 @@ class QuietHandler(SimpleHTTPRequestHandler):
 def staging_plan(scenario: dict) -> dict[str, Path]:
     """What `stage()` copies, by workspace-relative path: the scenario's
     `sources` alone where it maps workspace names to fixture-relative files
-    (design D24), else the fixture's tree, which is the workspace root, its
-    oracle and import source left behind; nothing without a fixture."""
+    (design D24) — with the fixture's tree beside them where `tree` asks for an
+    earlier round to be staged too — else the fixture's tree, which is the
+    workspace root, its oracle and import source left behind; nothing without a
+    fixture."""
     if not scenario.get("fixture"):
         return {}
     if scenario.get("sources"):
         fixture = fixture_dir(scenario["fixture"])
-        return {name: fixture / rel for name, rel in scenario["sources"].items()}
+        sources = {name: fixture / rel for name, rel in scenario["sources"].items()}
+        return {**staged_tree(scenario["fixture"]), **sources} if scenario.get("tree") else sources
     return staged_tree(scenario["fixture"])
 
 
@@ -1244,9 +1332,11 @@ def stage(scenario: dict, ws: Path, install_skill: bool = True,
     under test and its siblings into the host's skill directory —
     `.claude/skills` for Claude, `.agents/skills` for Codex — without `evals/`."""
     skills = ws.joinpath(*(skill_dir or HOSTS["claude"].skill_dir))
-    for rel, source in staging_plan(scenario).items():
+    plan = staging_plan(scenario)
+    for rel, source in plan.items():
         (ws / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, ws / rel)
+    _STAGED[ws.resolve()] = {rel: (ws / rel).read_bytes() for rel in plan}
     if not install_skill:  # baseline arm: same workspace, no skill discovered
         return
     # evals/ stays out: a model that can read its own eval assertions is not
@@ -1734,6 +1824,44 @@ def normalized_proposal(ws: Path) -> str | None:
     return first_role_text(ws, PROPOSAL_ROLE)
 
 
+def staged_earlier_round(scenario: dict, ws: Path) -> dict[str, str]:
+    """The earlier round's review and feedback a `tree` scenario staged in the
+    proposal's folder, by file name, from what `stage()` wrote."""
+    folder = PurePosixPath(scenario["proposal"]).parent
+    staged = staged_files(scenario, ws)
+    return {name: staged[f"{folder}/{name}"].decode("utf-8")
+            for name in (REVIEW_FILE, "feedback.md") if f"{folder}/{name}" in staged}
+
+
+def swap_verdicts(scenario: dict, ws: Path, review: str | None,
+                  feedback: str | None) -> list[tuple[bool, str]]:
+    """The swap-test verdicts a supervise scenario asks for: the decorative or
+    anchored feedback, the pass listed in the review's verification section, and
+    an earlier round re-examined — the latter only once the run is shown to have
+    rewritten the staged earlier files, so they are never graded as its output."""
+    closing = load_closing_note(SKILLS)
+    results: list[tuple[bool, str]] = []
+    if scenario.get("swap") == "decorative":
+        results.append(verdict_supervise_swap_question(feedback, SWAP_PAIR_TOOL, closing))
+    elif scenario.get("swap") == "anchored":
+        results.append(verdict_supervise_swap_quiet(feedback, SWAP_PAIR_TOOL))
+    if scenario.get("pass_listed"):
+        results.append(verdict_supervise_pass_listed(review, normalized_proposal(ws),
+                                                     SWAP_PAIR_TOOL))
+    if scenario.get("tree"):
+        rewritten = verdict_earlier_round_rewritten(
+            role_files(ws, REVIEW_ROLE, FEEDBACK_ROLE), staged_earlier_round(scenario, ws),
+            sorted(role_files(ws, PROPOSAL_ROLE)))
+        results.append(rewritten)
+        if not rewritten[0]:
+            return results
+    if scenario.get("earlier") == "remark":
+        results.append(verdict_supervise_swap_missed(review, feedback, SWAP_PAIR_TOOL, closing))
+    elif scenario.get("earlier") == "point":
+        results.append(verdict_supervise_point_kept(review, feedback, SWAP_PAIR_TOOL, closing))
+    return results
+
+
 def supervise_verdict(scenario: dict, ws: Path,
                       events: list[dict] | None = None) -> tuple[bool, str]:
     """The feedback contract over the scenario's fixture identity; the verifier
@@ -1756,11 +1884,7 @@ def supervise_verdict(scenario: dict, ws: Path,
                     verdict_supervise_review_sections(review)]
     if scenario.get("ready"):
         results.append(verdict_supervise_ready_block(feedback, load_closing_note(SKILLS)))
-    if scenario.get("swap") == "decorative":
-        results.append(verdict_supervise_swap_question(feedback, SWAP_PAIR_TOOL,
-                                                       load_closing_note(SKILLS)))
-    elif scenario.get("swap") == "anchored":
-        results.append(verdict_supervise_swap_quiet(feedback, SWAP_PAIR_TOOL))
+    results += swap_verdicts(scenario, ws, review, feedback)
     failed = [reason for ok, reason in results if not ok]
     if failed:
         return False, "; ".join(failed)
@@ -1857,13 +1981,23 @@ def figures_verdict(scenario: dict, ws: Path, events: list[dict]) -> tuple[bool,
                             f"{tier} tier the scenario measures: a tool it hides was reached "
                             "another way", untested=True, events=events)
     after = {rel: (ws / rel).read_bytes() for rel in present_files(ws)}
-    return verdict_figures_embedded(tier, scenario["proposal"], staged_files(scenario), after,
+    return verdict_figures_embedded(tier, scenario["proposal"], staged_files(scenario, ws), after,
                                     seen)
 
 
-def staged_files(scenario: dict) -> dict[str, bytes]:
+# What `stage()` wrote into each workspace, by its resolved path. The verdicts
+# compare against these bytes rather than the fixture as it reads when the run
+# ends, so a fixture edited while a run is in flight cannot move a verdict (a
+# 2026-10-19 redo run read its untouched submission as changed that way).
+_STAGED: dict[Path, dict[str, bytes]] = {}
+
+
+def staged_files(scenario: dict, ws: Path | None = None) -> dict[str, bytes]:
     """What `stage()` copied from the scenario's fixture, by workspace-relative
-    path; nothing for a scenario without one."""
+    path — the snapshot taken when `ws` was staged, else the fixture as it
+    reads now; nothing for a scenario without one."""
+    if ws is not None and ws.resolve() in _STAGED:
+        return _STAGED[ws.resolve()]
     return {rel: source.read_bytes() for rel, source in staging_plan(scenario).items()}
 
 
@@ -1881,7 +2015,7 @@ def workspace_changes(scenario: dict, ws: Path) -> tuple[list[str], list[str]]:
     """Which staged files a run changed and which files it added, by path
     relative to the workspace. A scenario without a fixture staged nothing,
     so every file it leaves counts as added."""
-    staged = staged_files(scenario)
+    staged = staged_files(scenario, ws)
     changed = sorted(name for name, data in staged.items()
                      if not (ws / name).is_file() or (ws / name).read_bytes() != data)
     new = [rel for rel in present_files(ws) if rel not in staged]
@@ -1892,7 +2026,7 @@ def family_only(scenario: dict, ws: Path, seed: str = "") -> tuple[bool, str]:
     """verdict_family_only over the run's workspace; no request asks to keep.
     Its metadata-block test reads the workspace, and a staged file the run
     removed from what was staged."""
-    staged = staged_files(scenario)
+    staged = staged_files(scenario, ws)
     _, added = workspace_changes(scenario, ws)
 
     def read(rel: str) -> str:
@@ -1931,7 +2065,7 @@ def calls_by_turn(events: list[dict]) -> list[tuple[int, str, dict]]:
 def kept_verdict(scenario: dict, ws: Path) -> tuple[bool, str]:
     """litsearch_keep: the candidate list kept in the proposal's folder, and
     family-only with keeping licensed."""
-    staged = staged_files(scenario)
+    staged = staged_files(scenario, ws)
     _, added = workspace_changes(scenario, ws)
     return verdict_kept_on_request(added, present_files(ws), sorted(staged),
                                    scenario["proposal"].partition("/")[0], read=text_reader(ws))
@@ -1952,7 +2086,7 @@ def family_verdict(scenario: dict, ws: Path, events: list[dict] | None = None) -
     if kind == "expand":
         results.append(verdict_litsearch_expanded(read(ws / scenario["proposal"])))
     else:
-        staged = staged_files(scenario)
+        staged = staged_files(scenario, ws)
         results.append(verdict_family_renamed(staged, after, scenario["old"]))
         proposal, _ = renamed_proposal(staged, after, scenario["old"])
         if kind == "seed":
@@ -2047,10 +2181,20 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
     return staged_proposal_verdict(name, scenario, ws, chat)
 
 
+def staged_original(scenario: dict, ws: Path) -> str:
+    """The proposal the run was given: the snapshot `stage()` took, so a
+    fixture edited while the run is in flight moves no verdict, else the
+    fixture's file as it reads now (a kept workspace graded later)."""
+    staged = _STAGED.get(ws.resolve(), {})
+    if scenario["proposal"] in staged:
+        return staged[scenario["proposal"]].decode("utf-8")
+    return fixture_proposal(scenario["fixture"]).read_text(encoding="utf-8")
+
+
 def staged_proposal_verdict(name: str, scenario: dict, ws: Path,
                             chat: str) -> tuple[bool, str]:
     """The scenarios judged against the fixture's own proposal file."""
-    original = fixture_proposal(scenario["fixture"]).read_text(encoding="utf-8")
+    original = staged_original(scenario, ws)
     current = read(ws / scenario["proposal"])
     if name == "check_report":
         return verdict_check_report(oracle_path(scenario["fixture"]), original, current, chat)
@@ -2114,7 +2258,7 @@ def l2_artifact(name: str, scenario: dict, ws: Path) -> str | None:
         return transcript(scenario, load_events(ws)) or None
     if name in REVIEW_VERDICTS:
         return read(ws / review_of(scenario["proposal"])) or None
-    original = fixture_proposal(scenario["fixture"]).read_text(encoding="utf-8")
+    original = staged_original(scenario, ws)
     chosen, _ = select_draft(workspace_markdown(ws), scenario["proposal"], original)
     return (read(ws / chosen) or None) if chosen else None
 

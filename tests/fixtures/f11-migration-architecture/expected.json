@@ -13,6 +13,7 @@
   "semantic": [
     "RQ2 is a yes/no question (Laesst sich der Bestandsmonolith ... ohne messbare Ausfallzeit abloesen?)",
     "The Anforderungen subsection reads as a bare muss/soll specification list rather than research-oriented requirements",
-    "Two of five references are vendor documentation (StratoMesh, KubeFlex) grounding the migration-infrastructure choices"
+    "Two of five references are vendor documentation (StratoMesh, KubeFlex) grounding the migration-infrastructure choices",
+    "the warehouse-management domain (Lagerverwaltung) passes the swap test on the constraint its strongly coupled data stock imposes, which the gap states and the decomposition and consistency questions are built around; the class-scoped close on data-intensive legacy systems therefore leaves no undecided scope, and the unnamed system (ein Bestandssystem) is no name; no swap-test finding"
   ]
 }

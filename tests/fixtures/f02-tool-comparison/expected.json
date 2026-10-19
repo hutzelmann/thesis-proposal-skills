@@ -27,6 +27,7 @@
   "semantic": [
     "`Zeitplan` is the canonical German timeline title, so the heading itself is legitimate — what fails is the five-phase Gantt table under it, which the timeline size guard catches instead of the old forbidden-heading rule",
     "The evaluative goal (which tool is best suited) is never sharpened into explicit research questions",
-    "The comparison is grounded only in vendor documentation pages; no scientific literature is cited"
+    "The comparison is grounded only in vendor documentation pages; no scientific literature is cited",
+    "No swap-test finding: the three tools stay unnamed and a comparison of tools passes by design, and JavaScript scopes every claim the test covers — the goal and the recommendation it closes on — so its claim scope is decided; the Motivation's sentences, the missing decision basis and the dynamic-typing argument among them, stand outside the claim list and are not needed for the pass"
   ]
 }

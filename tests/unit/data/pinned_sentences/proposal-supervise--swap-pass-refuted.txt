@@ -1,0 +1,1 @@
+A refuted swap-test pass is judged again on the corrected entry: when it then fails, the name becomes a blocker in the review; curate the points and decide the tier again, then verify what changed.

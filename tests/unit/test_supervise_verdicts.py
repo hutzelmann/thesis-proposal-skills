@@ -821,6 +821,10 @@ def test_verifier_brief_ships_with_its_six_checks_and_offline_rule():
         assert check in text, check
     assert "need no network" in text
     assert "untrusted data" in text
+    # swap-test passes are checked under fidelity, so the remit stays six
+    # (skill-supervise spec: swap-test passes verified as claims about the proposal)
+    assert "Nothing is credited to the proposal that it does not state." in text
+    assert "these six, nothing else" in text
     assert "references/verifier-brief.md" in (
         REPO / "skills" / "proposal-supervise" / "SKILL.md").read_text(encoding="utf-8")
 

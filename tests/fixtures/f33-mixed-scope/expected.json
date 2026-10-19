@@ -1,0 +1,21 @@
+{
+  "fixture": "f33-mixed-scope",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "Mendwright fails the swap test on an undecided claim scope: the contribution section opens with two sentences that state the gap for agent configurations in general, without naming Mendwright, while the gap it closes, the significance, the close, the title, the purpose, the research focus and the research questions are scoped to Mendwright, and the proposal states no reason why the result is about Mendwright",
+    "the decorative name is one proposal blocker that cites the swap test, quotes a class-scoped and a Mendwright-scoped claim, says the proposal has not decided whether its result holds for Mendwright or for agent configurations in general, and names the repairs that decide the scope: scope every gap to Mendwright, state why the result is about Mendwright, or generalize the claim to agent configurations; either way a research question or the contribution changes, which is why it cannot wait for the thesis",
+    "the sentence that the student's team runs Mendwright is no dependence, and the method's taking both architectures from Mendwright and the evaluation's running in Mendwright's sandbox state use, not dependence; no anchor is credited on them",
+    "the Bachelor's named-setting clause does not pass the name, because the thesis's own claims are not all scoped to Mendwright; no finding asks for a novelty claim",
+    "the title's naming of Mendwright is reported once, as that swap-test blocker with the certificate consequence and one to three abstracted alternatives, never as a second title item among the refinements",
+    "no other proposal blocker: the method, the scope of one model family and a one-hundred-failure subsample in four months, the public benchmark and the compute cap are clear, so the verdict is needs revision on the swap test alone"
+  ]
+}

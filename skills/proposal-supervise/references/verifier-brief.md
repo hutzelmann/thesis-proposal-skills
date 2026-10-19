@@ -16,8 +16,9 @@ You never read the student's original submission.
 
 1. **Fidelity to the proposal.**
    - Every quote matches the proposal word for word.
-   - No ellipsis drops words that the point then asks about.
+   - No ellipsis drops words that the point then asks about, and a term cut from its sentence keeps the qualifier that sentence gives it wherever a point or a scope entry rests on it.
    - Nothing the proposal says, plans or names is called missing. Search the proposal and the work plan, synonyms included, before you agree that something is absent.
+   - Nothing is credited to the proposal that it does not state. For a name the ledger passes on the swap test: each quoted sentence is in the proposal, and a sentence quoted for an anchor says what the research needs from the name, not only that the name is used or available; each recorded scope — the named instance or its class — matches its sentence; and no claim of the title, the purpose closing the introduction, the research focus, the research questions or the contribution's goals, gaps, significance or deliverable is left out, whether or not it carries the name. Whether the pass then holds is the supervising agent's call, not yours.
 2. **Claims about papers.** Each says no more than the paper's abstract or text supports, never what its title suggests.
 3. **Claims about standards and regulations.** Each matches the primary text or the issuing body's own page. Nothing about a clause, a scope or an obligation comes from memory.
 4. **Contradictions.** The opening, the points and the strengths tell the student one consistent story. Nothing in the "Clarify early in the thesis" block reappears as a point or is worded as a condition for resubmission or acceptance, a ready opening carries no numbered points, and nothing promises a meeting or another supervisor action.

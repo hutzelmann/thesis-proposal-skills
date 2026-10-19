@@ -1,0 +1,20 @@
+{
+  "fixture": "f34-named-setting",
+  "lang": "en",
+  "check": {
+    "exit_code": 0,
+    "errors_contain": [],
+    "warnings_contain": [],
+    "rules": {
+      "errors": [],
+      "warnings": []
+    }
+  },
+  "semantic": [
+    "Mendwright is the object of study and passes the swap test by the scope of the thesis's own claims: the title, the purpose, the research focus, both research questions, the gap, the significance and the close are all scoped to Mendwright's own two architectures, so the claim scope is decided and nothing more is asked",
+    "no proposal blocker and no finding of any class treats Mendwright as replaceable or decorative, whether under the swap test or under another test's name; the sentence that the student's team runs Mendwright and the method's and evaluation's use of Mendwright are not what the pass rests on, and neither is needed",
+    "the Bachelor's close promising an evaluation of Mendwright's two architectures is complete for the level; no finding asks for a novelty claim or for a generalization to agent configurations in general",
+    "no proposal blocker: the research questions, the contribution, the method, the scope of one model family and a one-hundred-failure subsample in four months, the public benchmark and the compute cap are clear, so the verdict is ready",
+    "the unnamed model version, fixed at the thesis start by a stated rule, is not a blocker; listing it as a clarify-early item is acceptable"
+  ]
+}
