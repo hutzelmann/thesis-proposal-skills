@@ -16,6 +16,7 @@ _On `develop`, not yet released._
 
 - Methodology sections now open by stating confidently why the chosen methodology is the right one for the research questions, instead of arguing that it fits; review no longer says such a justification is never required. ([confident-methodology-justification](openspec/changes/archive/2026-10-18-confident-methodology-justification/))
 - The swap test now judges a named tool, platform or setting by what the proposal itself states: a dependence only the reviewer could argue, or a sentence that merely uses the name, no longer passes it, and a proposal that states its gap for the general class while scoping its result to the named instance without saying why is asked to decide the scope; `proposal-supervise` lists in its review every name it lets pass, with the text that carries it, has its verifier check it, and on a resubmission or a requested redo judges a name an earlier round let through again. This may flag drafts that passed before. ([decide-swap-claim-scope](openspec/changes/archive/2026-10-19-decide-swap-claim-scope/))
+- The ideation skill opens with questions about your own experience and holds back critical tests until you have picked a problem, says when it switches to testing the idea, answers "I don't know" with the usual ways such a question is answered, and asks at the end whether your program requires anything specific. ([open-ideation-before-challenge](openspec/changes/archive/2026-10-28-open-ideation-before-challenge/))
 
 ### Fixed
 

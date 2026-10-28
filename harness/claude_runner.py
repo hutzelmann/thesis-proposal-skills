@@ -224,6 +224,7 @@ from l1_checks import (
     verdict_handoff_untouched,
     verdict_hollow_review,
     verdict_ideate_from_scratch,
+    verdict_ideate_novice,
     verdict_ideate_scoped,
     verdict_import,
     verdict_import_figures,
@@ -789,6 +790,41 @@ SCENARIOS = {
             "My working title is settled: \"Quarantine Decisions for Flaky Tests in Continuous "
             "Integration\". That's enough for today — I cannot reply again, so please create "
             "the seed proposal file now.",
+        ),
+    },
+    # A willing novice (testing-harness spec: Novice ideation dev scenario;
+    # open-ideation-before-challenge, design D7, D8): workplace experience, short
+    # non-native English, a vague problem, a concrete incident, a thin answer that
+    # picks what interests them, an honest "I don't know" to an evidence question,
+    # then a stop for today. Synthetic throughout, lookups declined, nothing
+    # staged; the follow-ups are fixed and do not react. Graded by the Socratic
+    # rubric over the transcript (`dialogue`), the seed or "(no file created)" as
+    # the answer; L1 is verdict_ideate_novice over the workspace
+    "ideate_novice": {
+        "skill": "proposal-ideate",
+        "dialogue": True,
+        "request": (
+            "Hi, I have to find a topic for my master thesis. Your usual questions: I'm in "
+            "M.Sc. Information Systems, no supervisor or research group yet, it's a Master's "
+            "thesis, the proposal in English, I have about five months, and please don't "
+            "look anything up online. Don't write anything into a guidelines.md. My English "
+            "is not perfect, sorry."
+        ),
+        "followups": (
+            "I work part time in the dispatch office of a delivery company. We have a "
+            "software that plans the routes for the drivers, but many drivers don't follow "
+            "it. Maybe something with this?",
+            "Last week one driver ignored the plan the whole day. He said the software sends "
+            "him into a street where his truck cannot turn, and he knows a better way. After "
+            "that all arrival times in the system were wrong and my boss was angry with us "
+            "in the office.",
+            "I am not sure. I think the bigger problem is that nobody learns from what the "
+            "drivers know, it stays in their heads. This part interests me more than the "
+            "software itself.",
+            "Honestly I don't know how I would show something like that. I never did "
+            "research before.",
+            "OK, I have to stop for today. I cannot reply again in this session, so please "
+            "save where we are.",
         ),
     },
     # f16's source PDF alone at the workspace root, under a name with no slug
@@ -1554,6 +1590,22 @@ def turn_texts(events: list[dict]) -> list[str]:
             if e.get("type") == "result" and isinstance(e.get("result"), str)]
 
 
+def shown_turn_texts(events: list[dict]) -> list[str]:
+    """Every turn's text blocks joined, in order: all the student saw in that
+    turn, as the matrix's dialogue transcript carries every assistant message,
+    not only the final one a `result` event repeats."""
+    turns, shown = [], []
+    for event in events:
+        if event.get("type") == "result":
+            turns.append("\n\n".join(shown))
+            shown = []
+        elif event.get("type") == "assistant":
+            shown += [block.get("text") or ""
+                      for block in (event.get("message") or {}).get("content") or []
+                      if isinstance(block, dict) and block.get("type") == "text"]
+    return turns
+
+
 def session_id(events: list[dict]) -> str | None:
     """The session the latest turn ran in, from its `init` event."""
     return next((e.get("session_id") for e in reversed(events)
@@ -1561,11 +1613,13 @@ def session_id(events: list[dict]) -> str | None:
 
 
 def transcript(scenario: dict, events: list[dict]) -> str:
-    """The conversation a handoff rubric grades: each user turn beside the
-    final text the host answered it with."""
+    """The conversation a handoff or dialogue rubric grades: each user turn
+    beside the final text the host answered it with — for a dialogue, every
+    text the turn showed."""
     asked = [scenario["request"], *scenario.get("followups", ())]
+    answers = shown_turn_texts(events) if scenario.get("dialogue") else turn_texts(events)
     return "\n\n".join(f"USER: {question}\n\nASSISTANT: {answer}"
-                       for question, answer in zip(asked, turn_texts(events), strict=False))
+                       for question, answer in zip(asked, answers, strict=False))
 
 
 def follow_up(args: argparse.Namespace, scenario: dict, ws: Path, events: list[dict],
@@ -2166,6 +2220,8 @@ def verdict(name: str, scenario: dict, ws: Path, chat: str,
     if scenario.get("paper"):
         return verdict_paper_foundation(assistant_text(events or []) or chat,
                                         tool_result_text(events or []), workspace_markdown(ws))
+    if scenario.get("dialogue"):
+        return verdict_ideate_novice(present_files(ws), text_reader(ws))
     if scenario.get("feedback"):
         return supervise_verdict(scenario, ws, events)
     if scenario.get("family"):
@@ -2250,12 +2306,23 @@ def resolve_judge(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
     return Judge(model, roles.dev_judge_effort, args.max_notional)
 
 
+NO_FILE = "(no file created)"
+
+
 def l2_artifact(name: str, scenario: dict, ws: Path) -> str | None:
     """What the judge grades, selected as the scenario's L1 verdict selects it:
     the review file, or the produced draft (which may be a fresh `<slug>.md`) —
-    or, for a handoff scenario, the conversation saved with the run."""
+    or, for a handoff scenario, the conversation saved with the run. A
+    dialogue's answer is its seed, or `NO_FILE` as the matrix's dialogue
+    scorers pass it, so a session that rightly seeds nothing is still judged;
+    a run that saved no conversation has nothing to grade."""
     if scenario.get("handoff"):
         return transcript(scenario, load_events(ws)) or None
+    if scenario.get("dialogue"):
+        if not transcript(scenario, load_events(ws)):
+            return None
+        seed, _ = select_draft(workspace_markdown(ws))
+        return (read(ws / seed) if seed else None) or NO_FILE
     if name in REVIEW_VERDICTS:
         return read(ws / review_of(scenario["proposal"])) or None
     original = staged_original(scenario, ws)
@@ -2277,16 +2344,20 @@ def judge_criteria(name: str, scenario: dict, ws: Path,
                    request: str) -> tuple[list[Criterion], dict[str, str]]:
     """One prompt per rubric criterion of the scenario, from the same templates
     and criteria the matrix judge reads; the question is the visible request
-    (the oracle list for the review scenarios). Nothing to grade costs no call:
-    those criteria are reported "not judged"."""
+    (the oracle list for the review scenarios, the conversation for a dialogue).
+    Nothing to grade costs no call: those criteria are reported "not judged"."""
     artifact = l2_artifact(name, scenario, ws)
+    entries = DEV_RUBRICS[name]
     if artifact is None:
-        return [], {entry.name: "not judged: no artifact" for entry in DEV_RUBRICS[name]}
-    facts = fixture_oracle(scenario)
+        return [], {entry.name: "not judged: no artifact" for entry in entries}
+    sources = {entry.question for entry in entries}
+    facts = fixture_oracle(scenario) if "oracle" in sources else {}
+    conversation = transcript(scenario, load_events(ws)) if "transcript" in sources else ""
     return [
-        Criterion(entry.name, judge_prompt(entry.rubric, question_for(entry, request, facts),
-                                           artifact, CRITERIA[entry.key]))
-        for entry in DEV_RUBRICS[name]
+        Criterion(entry.name,
+                  judge_prompt(entry.rubric, question_for(entry, request, facts, conversation),
+                               artifact, CRITERIA[entry.key]))
+        for entry in entries
     ], {}
 
 

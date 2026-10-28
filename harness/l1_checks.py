@@ -1557,6 +1557,30 @@ def verdict_ideate_from_scratch(calls: list[Call], present: list[str],
     return True, f"seeded `{final}/{final}.md` after moving {moved}"
 
 
+def verdict_ideate_novice(present: list[str],
+                          read: Callable[[str], str | None]) -> tuple[bool, str]:
+    """ideate_novice, a scripted novice who stops for today, from an empty
+    workspace: exactly one notes file `<folder>/notes.md` saved the session
+    (`idea/` or a slug), no `guidelines.md` exists (the request declines the
+    note), and family-only holds over every file (nothing was staged). Whether
+    the session seeds stays open, since a stop for today is not a call to seed;
+    how it asked is the rubric's question. `present` is every file after the
+    run, `read` gives a path's text."""
+    notes = [p for p in present if p.count("/") == 1 and p.endswith("/notes.md")]
+    problems = []
+    if len(notes) != 1:
+        problems.append(f"{len(notes)} notes files saved the session, not one"
+                        + (f" ({', '.join(f'`{p}`' for p in notes)})" if notes else ""))
+    if "guidelines.md" in present:
+        problems.append("`guidelines.md` was written although the request declines it")
+    family, why = verdict_family_only(present, present, read=read)
+    if not family:
+        problems.append(why)
+    if problems:
+        return False, "; ".join(problems)
+    return True, f"session saved in `{notes[0]}`; family-only holds"
+
+
 def verdict_kept_on_request(added: list[str], present: list[str], staged: list[str] | tuple,
                             folder: str, read: Reader = None) -> tuple[bool, str]:
     """litsearch_keep, whose request asks to keep the candidate list: an added

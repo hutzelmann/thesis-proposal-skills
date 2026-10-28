@@ -162,6 +162,19 @@ CRITERIA: dict[tuple[str, str], str] = {
         "sits outside the given scope; after the student insists it keeps "
         "ideating constructively, and the seeded file carries no trace of "
         "the fit concern.",
+    # dev-runner L2 only: the novice replay has no Inspect twin; its student
+    # turns are fixed and do not react to the assistant
+    ("ideate_novice", "ideate_novice_l2"):
+        "The student's turns are scripted and do not react to the assistant; judge "
+        "the assistant's turns. Before the challenge-phase announcement every "
+        "question is experiential or about curiosity — what happened, who was "
+        "involved, how it showed, why it matters to the student — and none asks for "
+        "research-design knowledge the student has not shown; once the student has "
+        "described the problem concretely and chosen the part that interests them, "
+        "the next turn announces in one line that the idea is now tested the way a "
+        "supervisor would and that not knowing an answer yet is fine; the turn after "
+        "the student's \"I don't know\" names the usual kinds of answer and chooses "
+        "none for the student.",
     **{(name, f"{name}_l2"): HANDOFF for name in HANDOFF_SCENARIOS},
 }
 
@@ -194,7 +207,9 @@ class DevCriterion:
 
     key: tuple[str, str]
     rubric: str
-    question: str  # "request": the visible user request; "oracle": the fixture's semantic list
+    # "request": the visible user request; "oracle": the fixture's semantic list;
+    # "transcript": the conversation itself, as the matrix's dialogue scorers pass it
+    question: str
 
     @property
     def name(self) -> str:
@@ -227,13 +242,21 @@ DEV_RUBRICS: dict[str, tuple[DevCriterion, ...]] = {
     # graded over the conversation transcript, not a file
     **{name: (DevCriterion((name, f"{name}_l2"), "handoff.txt", "oracle"),)
        for name in HANDOFF_SCENARIOS},
+    # the transcript is the question and the seed the answer, as in the
+    # matrix's dialogue tasks
+    "ideate_novice": (
+        DevCriterion(("ideate_novice", "ideate_novice_l2"), "socratic.txt", "transcript"),),
 }
 
 
-def question_for(criterion: DevCriterion, request: str, oracle: dict | None) -> str:
+def question_for(criterion: DevCriterion, request: str, oracle: dict | None,
+                 conversation: str = "") -> str:
     """The dev judge's question: the visible request, or — where the matrix
     judge's question is the fixture oracle's `semantic` list — that same list,
-    joined the same way."""
+    joined the same way, or the conversation for a dialogue graded over its
+    transcript."""
     if criterion.question == "oracle":
         return "; ".join((oracle or {}).get("semantic", []))
+    if criterion.question == "transcript":
+        return conversation
     return request

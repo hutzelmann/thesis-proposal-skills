@@ -60,7 +60,7 @@ def test_dev_rubrics_cover_exactly_the_scenarios_with_a_rubric_twin():
                                 "review_fixture", "review_hollow", "review_ready",
                                 "review_dependency", "review_converge",
                                 "review_swap_decorative", "review_swap_anchored",
-                                "review_swap_scope", "review_swap_setting",
+                                "review_swap_scope", "review_swap_setting", "ideate_novice",
                                 *l2_rubrics.HANDOFF_SCENARIOS}
     assert {e.name for e in DEV_RUBRICS["write_from_seed"]} == {
         "write_l2_rq_quality", "write_l2_density"}
@@ -101,6 +101,28 @@ def test_handoff_scenarios_share_one_criterion_and_ask_about_the_oracle():
         [entry] = DEV_RUBRICS[scenario]
         assert (entry.rubric, entry.question) == ("handoff.txt", "oracle")
         assert CRITERIA[entry.key] == l2_rubrics.HANDOFF
+
+
+def test_the_novice_replay_asks_about_its_transcript_on_the_socratic_rubric():
+    """The transcript is the question, as in the matrix's dialogue scorers —
+    never the request alone, which would hide every turn the rubric times."""
+    [entry] = DEV_RUBRICS["ideate_novice"]
+    assert (entry.rubric, entry.question) == ("socratic.txt", "transcript")
+    conversation = "USER: Hi.\n\nASSISTANT: What happened last time?"
+    assert question_for(entry, "Hi.", {"semantic": ["unused"]}, conversation) == conversation
+    assert question_for(entry, "Hi.", None) == ""
+
+
+def test_the_socratic_rubric_grades_both_failure_directions():
+    """Timing, not knowing and rhythm sit beside the no-supply rule in the one
+    template every ideation dialogue is judged against (design D6)."""
+    text = (RUBRICS / "socratic.txt").read_text(encoding="utf-8")
+    for clause in ("never supplies idea content", "Timing:", "imagined adversary",
+                   "Not knowing:", "usual kinds of answer", "Rhythm:",
+                   "no more than three consecutive"):
+        assert clause in text, clause
+    prompt = judge_prompt("socratic.txt", "Q", "A", "C")
+    assert prompt.endswith(l2_rubrics.JUDGE_INSTRUCTIONS + "\n")
 
 
 def test_judge_system_is_one_fixed_sentence():
