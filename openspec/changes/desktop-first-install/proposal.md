@@ -94,7 +94,7 @@ The student also had nowhere to read what was ready afterwards. The maintainer f
 - `skill-packaging`: changes three requirements.
   - "Registry installation from the repository" now names three routes instead of the skills.sh CLI alone: prompt+installer, plugin, and CLI.
   - "Installation verified against the tracked tree" now also covers the repository installer, besides the README's CLI command.
-  - "User-side script constraints":
+  - "User-side script constraints" (no longer in this change's delta: `host-neutral-script-paths`, archived first on 2026-10-30, carried these edits into the spec together with its own):
     - a script another skill owns ships as a synchronized copy and is addressed through the skill-directory variable, never by an install path;
     - each script-bearing skill states once what `python3` stands for, instead of per-command platform hints; proposal-check points to the install guide for a missing Python, and no skill names a version-pinned install command (2026-10-13).
 - `user-onboarding`: the README quick start carries the install prompt. Concrete agent walkthroughs become a per-app install guide with verified stamps and a flagged chat-only section. The update-first step and the issue template become route-neutral. Supervisors learn about cohort provisioning.

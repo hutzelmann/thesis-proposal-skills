@@ -191,7 +191,7 @@ The imported proposal and its notes file SHALL be written as `<slug>/<slug>.md` 
 
 #### Scenario: Host leaves the skill-directory variable unexpanded
 
-- **WHEN** the host does not substitute `${CLAUDE_SKILL_DIR}` and the agent falls back to the scripts' real location next to SKILL.md
+- **WHEN** the host substitutes nothing into the skill's text and the agent resolves `<skill-dir>` to the scripts' real location next to SKILL.md
 - **THEN** the agent runs the scripts from the workspace by their full path, and the imported file is created and checked in the workspace, not in the skill directory
 
 #### Scenario: Source document outside the workspace

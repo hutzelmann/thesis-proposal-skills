@@ -11,8 +11,7 @@
         "Plugin definition for apps with a plugin button": 650
       },
       "skill-packaging": {
-        "Installation verified against the tracked tree": 925,
-        "User-side script constraints": 2443
+        "Installation verified against the tracked tree": 925
       },
       "skill-troubleshoot": {
         "Install identified from workspace evidence": 1385,
@@ -28,14 +27,6 @@
         "Literature-search network guidance": 600,
         "README names the path for a problem": 630,
         "Supervisors can provision a cohort": 551
-      }
-    },
-    "host-neutral-script-paths": {
-      "skill-import": {
-        "Output lands in the workspace": 723
-      },
-      "skill-packaging": {
-        "User-side script constraints": 2351
       }
     }
   },
@@ -158,7 +149,7 @@
       "Stage handoff at stopping points": 3240,
       "Uniform failure-path report offer": 1227,
       "Uniform skill opening structure": 1673,
-      "User-side script constraints": 1605,
+      "User-side script constraints": 2351,
       "Workspace-files block in every skill": 2154
     },
     "skill-publish": {
