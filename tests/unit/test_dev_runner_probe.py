@@ -612,7 +612,7 @@ def test_the_guard_compares_against_the_bytes_staged_for_the_run(tmp_path, monke
     ws = staged_supervise_ws(tmp_path / "ws", "supervise_swap_earlier_point")
     staged = staged_files(scenario, ws)
     edited = tmp_path / "edited.md"
-    edited.write_text("edited after staging\n", encoding="utf-8")
+    edited.write_bytes(b"edited after staging\n")  # write_text would write CRLF on Windows
     monkeypatch.setattr(claude_runner, "staging_plan",
                         lambda _scenario: dict.fromkeys(staged, edited))
     assert staged_files(scenario, ws) == staged
@@ -1618,6 +1618,38 @@ def test_customize_override_scenario_fails_without_the_override(tmp_path):
                           customize_ws(tmp_path, None), "")
     assert not passed
     assert "guidelines.md not created" in why
+
+
+def crlf_checkout(ws: Path, rel: str, monkeypatch) -> bytes:
+    """A staged file as a Windows checkout holds it: CRLF on disk and in the
+    snapshot stage() took (l0-windows, CI run 41063611665)."""
+    data = (ws / rel).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    (ws / rel).write_bytes(data)
+    monkeypatch.setitem(claude_runner._STAGED[ws.resolve()], rel, data)
+    return data
+
+
+def test_a_crlf_checkout_is_graded_against_the_proposal_it_was_given(tmp_path, monkeypatch):
+    """The snapshot reads as the file reads back, so an untouched proposal on
+    a CRLF checkout is not taken for one the run modified."""
+    scenario = SCENARIOS["customize_override"]
+    ws = customize_ws(tmp_path, OVERRIDE)
+    crlf_checkout(ws, scenario["proposal"], monkeypatch)
+    given = claude_runner.read(ws / scenario["proposal"])
+    assert claude_runner.staged_original(scenario, ws) == given
+    passed, why = verdict("customize_override", scenario, ws, "")
+    assert passed, why
+
+
+def test_a_crlf_earlier_round_reads_as_its_file(tmp_path, monkeypatch):
+    scenario = SCENARIOS["supervise_swap_earlier_point"]
+    ws = staged_supervise_ws(tmp_path, "supervise_swap_earlier_point")
+    rel = f"{SWAP_SLUG}/review.md"
+    assert rel in claude_runner._STAGED[ws.resolve()], "the scenario stages no earlier review"
+    crlf_checkout(ws, rel, monkeypatch)
+    review = claude_runner.staged_earlier_round(scenario, ws)["review.md"]
+    assert "\r" not in review
+    assert review == claude_runner.read(ws / rel)
 
 
 # ---------- the subscription smoke task (design D8) ---------------------------

@@ -1823,6 +1823,13 @@ def read(path: Path) -> str | None:
     return path.read_text(encoding="utf-8") if path.exists() else None
 
 
+def staged_text(data: bytes) -> str:
+    """Staged bytes as `read` gives the same file back: universal newlines, so
+    a CRLF checkout's snapshot equals its untouched file (l0-windows, CI run
+    41063611665, where every untouched proposal read as modified)."""
+    return data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def workspace_markdown(ws: Path) -> dict[str, str]:
     """Every markdown file the run can leave, by workspace-relative path: the
     listing walks the proposal folders (testing-harness: Check run from the
@@ -1883,7 +1890,7 @@ def staged_earlier_round(scenario: dict, ws: Path) -> dict[str, str]:
     proposal's folder, by file name, from what `stage()` wrote."""
     folder = PurePosixPath(scenario["proposal"]).parent
     staged = staged_files(scenario, ws)
-    return {name: staged[f"{folder}/{name}"].decode("utf-8")
+    return {name: staged_text(staged[f"{folder}/{name}"])
             for name in (REVIEW_FILE, "feedback.md") if f"{folder}/{name}" in staged}
 
 
@@ -2243,7 +2250,7 @@ def staged_original(scenario: dict, ws: Path) -> str:
     fixture's file as it reads now (a kept workspace graded later)."""
     staged = _STAGED.get(ws.resolve(), {})
     if scenario["proposal"] in staged:
-        return staged[scenario["proposal"]].decode("utf-8")
+        return staged_text(staged[scenario["proposal"]])
     return fixture_proposal(scenario["fixture"]).read_text(encoding="utf-8")
 
 
