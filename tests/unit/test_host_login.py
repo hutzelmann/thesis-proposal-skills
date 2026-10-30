@@ -21,7 +21,7 @@ import subprocess
 import sys
 import threading
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import claude_runner
@@ -108,10 +108,14 @@ def host_refresh(link: Path, expires_at: int, refresh: str = "refresh-1") -> Non
 
 
 def wait_for(condition, timeout: float = 2.0) -> bool:
+    """Poll `condition` until it holds. A read refused with PermissionError is
+    "not yet": Windows refuses to open a file while the keeper's `os.replace`
+    swaps it out. The last call after the deadline lets a refusal through."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if condition():
-            return True
+        with suppress(PermissionError):
+            if condition():
+                return True
         time.sleep(0.01)
     return condition()
 
@@ -206,6 +210,20 @@ def test_exit_check_catches_a_replacement_the_poll_missed(linked, monkeypatch):
         host_refresh(link, now_ms() + 9 * HOUR_MS)
     assert refresh_token(source) == "refresh-1"
     assert link.is_symlink()
+
+
+def test_wait_for_rides_out_a_refused_read():
+    """Windows refuses to open a file for the instant a concurrent `os.replace`
+    swaps it out (CI run 39270981381); a poll that hits it is "not yet"."""
+    answers = iter([PermissionError(13, "Permission denied")] * 2 + [True])
+
+    def condition() -> bool:
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    assert wait_for(condition)
 
 
 def test_keeper_ignores_a_configuration_without_a_link(tmp_path):
