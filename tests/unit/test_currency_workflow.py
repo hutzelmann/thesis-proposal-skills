@@ -7,7 +7,10 @@ they may do is pinned here with one property list: exactly three write
 permissions, no secret beyond that token, no model call, no baseline rewrite,
 no merge, a fixed bump branch, the checker in write mode with a report check
 that fails closed, the branch-handling guards, only the watched file staged,
-and CI dispatched on the bump branch. The check runs on `develop` and the pull
+and CI started on the bump branch: GitHub holds the pull_request runs of a pull
+request github-actions[bot] opens or pushes to, so the workflow approves the held
+runs of the commit it pushed and dispatches CI only as the fallback
+(approve-bump-ci-runs). The check runs on `develop` and the pull
 request targets it, since `main` only ever fast-forwards to a release; an update
 moves an open pull request's base there too (finish-two-branch-flow). Narrow
 text extraction only — no YAML parser (the
@@ -38,6 +41,15 @@ GUARDS = (
     '--force-with-lease="refs/heads/$BRANCH:$expected"',
     # the others-check runs whatever the PR state; only a merged tip is rebuilt
     "--state merged",
+)
+# the held CI runs the workflow approves: those of the commit it just pushed,
+# nothing older and nothing it did not cause (approve-bump-ci-runs D2)
+APPROVAL = (
+    ("sha=$(git rev-parse HEAD)", "the pushed commit is not recorded"),
+    ('--workflow ci.yml --event pull_request --commit "$sha"',
+     "held runs are not looked up for the pushed commit"),
+    ("""select(.conclusion == "action_required")""", "held runs are not selected"),
+    ('"repos/$GITHUB_REPOSITORY/actions/runs/$id/approve"', "held CI runs are not approved"),
 )
 
 
@@ -110,8 +122,9 @@ def _bump_problems(weekly: Weekly, text: str, lines: list[str]) -> list[str]:
     problems = []
     if f"BRANCH: {weekly.branch}" not in text:
         problems.append(f"the bump branch is not the fixed {weekly.branch}")
+    problems += [problem for needle, problem in APPROVAL if needle not in text]
     if 'gh workflow run ci.yml --ref "$BRANCH"' not in text:
-        problems.append("CI is not dispatched on the bump branch")
+        problems.append("CI is not dispatched on the bump branch as the fallback")
     if weekly.checker not in text:
         problems.append("the checker does not run in write mode with plain python3")
     if weekly.report_guard not in text:
@@ -220,14 +233,27 @@ def test_the_pin_catches_a_bump_aimed_at_main(weekly, old, new, problem):
 
 
 @weeklies
+@pytest.mark.parametrize(("old", "new", "problem"), [
+    # the first version: CI dispatched only, so held runs stayed and no check reached the PR
+    ('"repos/$GITHUB_REPOSITORY/actions/runs/$id/approve"', '"$id"', "not approved"),
+    # every held run of the branch, older pushes included
+    ('--event pull_request --commit "$sha"', "--event pull_request", "pushed commit"),
+])
+def test_the_pin_catches_a_weakened_approval(weekly, old, new, problem):
+    text = weekly.text()
+    assert text.count(old) == 1, f"workflow drifted: {old!r}"
+    assert any(problem in p for p in workflow_problems(weekly, text.replace(old, new)))
+
+
+@weeklies
 def test_the_pin_catches_a_second_pull_request(weekly):
     text = weekly.text() + "      - run: gh pr create --base develop --head other\n"
     assert any("pull request against" in p for p in workflow_problems(weekly, text))
 
 
 def test_ci_accepts_the_dispatch():
-    """GITHUB_TOKEN pull requests trigger no pull_request run; the currency
-    workflows can start CI only because ci.yml declares workflow_dispatch."""
+    """When no held run can be approved, the currency workflows fall back to
+    dispatching CI, which works only because ci.yml declares workflow_dispatch."""
     triggers = top_level_block((WORKFLOWS / "ci.yml").read_text(encoding="utf-8"), "on")
     assert "  workflow_dispatch:" in triggers
 

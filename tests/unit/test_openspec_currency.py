@@ -307,7 +307,8 @@ def test_the_pr_body_names_the_bump_and_the_maintainers_steps(world, tmp_path):
     world.run("--write", "--pr-body", str(body_path))
     body = body_path.read_text(encoding="utf-8")
     for needle in (f"`{PIN}`", f"`{newer}`", openspec_currency.RELEASES_URL, "uv run poe specs",
-                   "openspec/long-requirements.json", "openspec update", "close and reopen"):
+                   "openspec/long-requirements.json", "openspec update",
+                   "still waits for approval"):
         assert needle in body, needle
 
 

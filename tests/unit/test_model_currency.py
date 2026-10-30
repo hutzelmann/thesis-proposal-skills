@@ -670,7 +670,7 @@ def test_pr_body_carries_what_the_maintainer_needs(tmp_path):
         "uv run poe report", "python3 scripts/sync_shared.py", "gitignored",
         "untested",                                      # until a gated run
         "claude -p --model claude-sonnet-5-5",           # subscription resolved-ID check
-        "close and reopen",                              # dispatched-CI fallback
+        "still waits for approval",                      # a held CI run left over
     ):
         assert needed in body, needed
 

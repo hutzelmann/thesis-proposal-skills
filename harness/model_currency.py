@@ -821,7 +821,8 @@ def render_pr_body(result: Result, as_of: date, stale_files: list[str]) -> str:
     if stale_files:
         body += ["", "## Tracked files still naming an outgoing ID",
                  *(f"- `{path}`" for path in stale_files)]
-    body += ["", "If CI's checks do not appear on this PR, close and reopen it."]
+    body += ["", "The workflow approves the CI runs GitHub holds on this PR; if one still "
+                 "waits for approval, approve it."]
     return "\n".join(body) + "\n"
 
 

@@ -1501,7 +1501,7 @@ A write mode SHALL apply newer-in-line bumps and refreshed prices to the registr
 ### Requirement: Weekly model-bump pull request
 A CI workflow SHALL run the currency check in write mode weekly and on manual dispatch. When the registry changes, it SHALL keep exactly one open pull request from a fixed branch against develop, creating or updating it. It SHALL use only the repository's built-in token, with the least permissions this needs.
 
-Pull requests opened with that token trigger no pull-request workflows, so the workflow SHALL start the regular CI workflow on the bump branch itself.
+GitHub holds the CI runs such a pull request triggers for approval: the workflow SHALL approve those its update caused, or else start the regular CI workflow on the bump branch.
 
 It SHALL NOT overwrite the bump branch once it carries a commit by anyone else; it SHALL comment on the pull request instead. When develop already satisfies every finding, it SHALL close a pull request that is no longer needed.
 
@@ -1515,11 +1515,19 @@ The pull request description SHALL:
 
 Report-only findings, new lines included, SHALL appear in the run summary. A new line alone SHALL NOT open a pull request or fail the run. A pin that is missing or expiring without a writable successor SHALL fail the scheduled run.
 
-The workflow SHALL NOT call any model, read any secret beyond the built-in token, or merge.
+The workflow SHALL NOT call any model or merge.
 
 #### Scenario: New model published
 - **WHEN** the weekly run finds a newer model in a roster line of develop's registry
-- **THEN** a pull request from the fixed branch against develop carries the registry edit and a description with the regeneration instructions, and the regular CI workflow runs on that branch
+- **THEN** a pull request from the fixed branch against develop carries the registry edit and a description with the regeneration instructions, and CI runs on that branch and reports on the pull request
+
+#### Scenario: CI runs held for approval
+- **WHEN** the workflow's push or its update of the pull request leaves CI runs on the pushed commit awaiting approval
+- **THEN** the workflow approves each of them, and the pull request shows their checks with no run left awaiting approval
+
+#### Scenario: No held run to approve
+- **WHEN** no held CI run appears for the pushed commit within the workflow's wait, or an approval fails
+- **THEN** the workflow starts the regular CI workflow on the bump branch and warns in its run log
 
 #### Scenario: Pull request already open
 - **WHEN** a bump pull request is open and a later run finds further changes
@@ -3416,7 +3424,7 @@ The spec gate SHALL validate with one OpenSpec version, pinned in one place, and
 
 #### Scenario: Weekly bump proposed
 - **WHEN** the weekly run finds the pin on develop behind
-- **THEN** one pull request from a fixed branch against develop carries the pin change and nothing else, and the regular CI workflow runs on that branch
+- **THEN** one pull request from a fixed branch against develop carries the pin change and nothing else, and CI runs on that branch and reports on the pull request, its held runs approved by the workflow or, failing that, the regular CI workflow started on the branch, as for the weekly model bump
 
 #### Scenario: Maintainer has pushed to the bump branch
 - **WHEN** the bump branch carries a commit not made by the workflow and not yet on develop

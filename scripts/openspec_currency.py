@@ -223,7 +223,8 @@ def render_pr_body(report: Report) -> str:
         "regenerate the agent skills with `openspec update`; `uv run poe openspec-currency` "
         "warns until both match the pin.",
         "",
-        "If CI's checks do not appear on this pull request, close and reopen it.",
+        "The workflow approves the CI runs GitHub holds on this pull request; if one "
+        "still waits for approval, approve it.",
     ]) + "\n"
 
 

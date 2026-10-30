@@ -8,9 +8,11 @@ name: Model currency
 # The check runs on develop and the pull request targets it: main only ever
 # fast-forwards to a release, so a merged bump reaches users with the next one.
 #
-# A pull request opened with GITHUB_TOKEN triggers no pull_request workflow, so
-# this workflow dispatches ci.yml on the bump branch itself. If the checks do
-# not show on the pull request, closing and reopening it is the fallback.
+# GitHub holds the pull_request runs of a pull request that github-actions[bot]
+# opens or pushes to until someone approves them, so this workflow approves the
+# held CI runs of the commit it pushed, and dispatches ci.yml on the bump branch
+# only when none is held or an approval fails (approve-bump-ci-runs). A CI run
+# that still waits for approval on the pull request is the maintainer's to approve.
 #
 # logs/ is gitignored, so the shipped verdicts cannot be regenerated here: the
 # shipped-verdict L0 test keeps the pull request red until the maintainer runs
@@ -29,7 +31,7 @@ concurrency: model-currency
 permissions:
   contents: write # push the bump branch
   pull-requests: write # open, edit, comment on and close the bump pull request
-  actions: write # dispatch ci.yml on the bump branch
+  actions: write # approve the held CI runs, or dispatch ci.yml on the bump branch
 
 env:
   BRANCH: model-currency/bump
@@ -130,7 +132,34 @@ jobs:
             gh pr create --base develop --head "$BRANCH" \
               --title "Model currency: weekly roster bump" --body-file "$RUNNER_TEMP/body.md"
           fi
-          gh workflow run ci.yml --ref "$BRANCH"
+          # GitHub holds the pull_request runs of a pull request github-actions[bot]
+          # opens or pushes to until someone approves them, and a dispatched run does
+          # not report on the pull request: approve the held CI runs of the commit just
+          # pushed, and dispatch CI only when none is held or an approval fails.
+          sha=$(git rev-parse HEAD)
+          held() {
+            gh run list --workflow ci.yml --event pull_request --commit "$sha" --json databaseId,conclusion \
+              --jq '.[] | select(.conclusion == "action_required") | .databaseId'
+          }
+          runs=""
+          for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            sleep 5
+            runs=$(held || true)
+            if [ -n "$runs" ]; then
+              sleep 10 # one update can trigger more than one run: let the rest arrive
+              runs=$(held || true)
+              break
+            fi
+          done
+          approved=false
+          if [ -n "$runs" ]; then approved=true; fi
+          for id in $runs; do
+            gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/approve" || approved=false
+          done
+          if [ "$approved" != true ]; then
+            echo "::warning::no held CI run was approved for $sha; dispatching ci.yml on $BRANCH instead"
+            gh workflow run ci.yml --ref "$BRANCH"
+          fi
 
       - name: Fail on a pin that is missing or expiring with no successor
         if: steps.check.outputs.alerts != ''
