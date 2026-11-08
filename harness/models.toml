@@ -18,7 +18,7 @@
 prices_as_of = 2026-11-08
 # New version lines in a roster vendor namespace created after this date are
 # reported (never written) by the currency check. Moved by hand only.
-lines_reviewed_as_of = 2026-08-06
+lines_reviewed_as_of = 2026-11-08
 
 # Every model ID used outside the roster. judge and persona are held: the
 # currency check reports a newer model in their line but never rewrites them,
