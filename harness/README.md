@@ -68,7 +68,7 @@ uv run poe smoke                     # subscription: the core scenarios on the d
 uv run poe smoke-inspect             # metered Inspect-wiring check: [roles].smoke × core tasks × 1 epoch via OpenRouter (cost-gated)
 uv run poe matrix --estimate-only    # price a full run without any metered call
 uv run poe matrix --tier cheap      
-uv run poe matrix --models claude-haiku-4.5 gpt-5.6-terra --tasks write_from_seed
+uv run poe matrix --models claude-haiku-4.5 gpt-6.1-terra --tasks write_from_seed
 uv run poe report                    # regenerate README summary + docs/model-support.md
 uv run poe cache-probe --estimate-only   # price the prompt-caching re-check without any metered call
 ```

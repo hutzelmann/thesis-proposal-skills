@@ -157,7 +157,7 @@ Model support, measured by the metered eval matrix on **2026-08-06** (3 epochs p
 | `anthropic/claude-sonnet-5.5` | ❔ untested |  |
 | `anthropic/claude-opus-5.5` | ❔ untested |  |
 | `openai/gpt-6-luna` | ❔ untested | the eval harness could not drive the previous luna pin (Azure strict tool schemas reject Inspect's tools); this pin is not yet re-probed — untested is a harness limitation, not a quality signal |
-| `openai/gpt-5.6-terra` | ❔ untested |  |
+| `openai/gpt-6.1-terra` | ❔ untested |  |
 | `openai/gpt-6.1-sol` | ❔ untested |  |
 | `deepseek/deepseek-v4-pro-0813` | ❔ untested |  |
 | `qwen/qwen3.8-max-0902` | ❔ untested |  |

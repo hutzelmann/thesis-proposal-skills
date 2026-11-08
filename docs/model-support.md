@@ -9,7 +9,7 @@ Generated from the newest eval logs on 2026-08-10. Cells show passed/total epoch
 | `anthropic/claude-sonnet-5.5` | — | — | — | — | — | — | — | — | — | — | — | — |
 | `anthropic/claude-opus-5.5` | — | — | — | — | — | — | — | — | — | — | — | — |
 | `openai/gpt-6-luna` | — | — | — | — | — | — | — | — | — | — | — | — |
-| `openai/gpt-5.6-terra` | — | — | — | — | — | — | — | — | — | — | — | — |
+| `openai/gpt-6.1-terra` | — | — | — | — | — | — | — | — | — | — | — | — |
 | `openai/gpt-6.1-sol` | — | — | — | — | — | — | — | — | — | — | — | — |
 | `deepseek/deepseek-v4-pro-0813` | — | — | — | — | — | — | — | — | — | — | — | — |
 | `qwen/qwen3.8-max-0902` | — | — | — | — | — | — | — | — | — | — | — | — |
