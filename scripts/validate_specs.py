@@ -56,7 +56,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-OPENSPEC_VERSION = "1.16.1"
+OPENSPEC_VERSION = "2.1.1"
 PACKAGE = "@fission-ai/openspec"
 REPO = Path(__file__).resolve().parent.parent
 BASELINE = Path("openspec") / "long-requirements.json"
